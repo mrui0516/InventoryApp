@@ -1,0 +1,926 @@
+﻿{% extends 'stock/base.html' %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<style>
+  :root{
+    --bg:#edf3f8;
+    --card:#ffffff;
+    --soft:#f7fbff;
+    --text:#0f172a;
+    --muted:#526071;
+    --border:#d7e0eb;
+    --accent:#0f5bd8;
+    --accent-soft:#e9f1ff;
+    --good:#0f766e;
+    --good-soft:#e7faf6;
+    --warning:#9a6700;
+    --warning-soft:#fff6df;
+    --danger:#b42318;
+    --danger-soft:#feeceb;
+    --shadow:0 18px 44px rgba(15,23,42,.08);
+  }
+  .dash-page{display:grid;gap:1.35rem}
+  .dash-head,.section-head,.section-top,.mini-head,.item-head{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap}
+  .dash-title{margin:0;font-size:2.05rem;font-weight:900;color:var(--text)}
+  .dash-sub{margin:.35rem 0 0;color:var(--muted);max-width:62rem}
+  .dash-actions,.chip-row,.toolbar-actions,.quick-tags{display:flex;gap:.65rem;flex-wrap:wrap}
+  .dash-card{background:var(--card);border:1px solid var(--border);border-radius:1.15rem;box-shadow:var(--shadow)}
+  .pad{padding:1.15rem}
+  .kicker,.note-pill,.chip,.pill,.status-badge{display:inline-flex;align-items:center;border-radius:999px;font-weight:800}
+  .kicker{padding:.28rem .68rem;background:var(--accent-soft);color:#1849a9;font-size:.78rem;letter-spacing:.05em;text-transform:uppercase}
+  .section-head h2,.section-head h3,.section-top h3{margin:.68rem 0 .12rem;font-weight:900;color:var(--text)}
+  .section-head h2{font-size:1.2rem}
+  .section-head h3,.section-top h3{font-size:1.08rem}
+  .section-head p,.section-top p,.tiny,.muted{color:var(--muted)}
+  .tiny{font-size:.86rem}
+  .toolbar-label,.metric-label{display:block;font-size:.78rem;font-weight:900;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+  .chip{gap:.4rem;padding:.34rem .7rem;background:#edf4ff;border:1px solid #cbdbf4;color:#173761;font-size:.9rem}
+  .chip a{color:#173761;text-decoration:none}
+  .chip-remove{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:1.2rem;
+    height:1.2rem;
+    border-radius:999px;
+    background:rgba(23,55,97,.08);
+    font-size:.95rem;
+    font-weight:900;
+    line-height:1;
+  }
+  .chip-remove:hover{background:rgba(23,55,97,.16)}
+  .snapshot-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:1rem}
+  .summary-grid{display:grid;grid-template-columns:minmax(0,1.75fr) minmax(320px,1fr);gap:1rem}
+  .today-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem}
+  .strategy-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem}
+  .watch-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}
+  .metric-card,.snapshot-card,.mix-item,.rank-item,.inventory-box,.mini-card{padding:1rem 1.05rem;border:1px solid var(--border);border-radius:1rem;background:#fbfcfe}
+  .snapshot-card.highlight{background:linear-gradient(180deg,#ffffff,#edf4ff);border-color:#bcd0f0}
+  .metric-value{margin-top:.5rem;font-size:1.72rem;line-height:1.05;font-weight:900;color:var(--text)}
+  .metric-sub{margin-top:.45rem;color:var(--muted);font-size:.92rem}
+  .chart-wrap{padding:1rem;border:1px solid var(--border);border-radius:1rem;background:linear-gradient(180deg,#fbfdff,#f2f7fd)}
+  #salesBarChart{width:100%!important;height:310px!important;display:block}
+  .mix-list,.mini-list,.rank-list,.stack-list{display:grid;gap:.8rem}
+  .mix-track{width:100%;height:10px;border-radius:999px;background:#edf2f8;border:1px solid #dbe5f1;overflow:hidden}
+  .mix-fill{height:100%;background:linear-gradient(90deg,#7fb0ff,#155eef);border-radius:999px}
+  .mini-list{gap:.55rem}
+  .mini-head{align-items:baseline}
+  .item-name,.item-value{font-weight:850;color:var(--text)}
+  .product-rank{display:grid;grid-template-columns:52px minmax(0,1fr);gap:.8rem;align-items:center}
+  .product-thumb,.product-placeholder{width:52px;height:52px;border-radius:.9rem;object-fit:cover;border:1px solid #dae4f1;background:#f4f7fb}
+  .product-placeholder{display:grid;place-items:center;color:#60748d;font-size:.72rem;text-transform:uppercase}
+  .inline-product{display:grid;grid-template-columns:48px minmax(0,1fr);gap:.75rem;align-items:center}
+  .inline-product-thumb-wrap,.inline-product-thumb-empty{width:48px;height:48px;border-radius:.85rem;border:1px solid #dae4f1;background:#f4f7fb}
+  .inline-product-thumb-wrap{padding:0;overflow:hidden;display:block;cursor:zoom-in}
+  .inline-product-thumb{width:100%;height:100%;object-fit:cover;display:block}
+  .inline-product-thumb-empty{display:grid;place-items:center;color:#60748d;font-size:.68rem;font-weight:800;text-align:center;padding:.25rem}
+  .table-wrap{overflow:auto;border:1px solid var(--border);border-radius:1rem;background:#fff}
+  .table thead th{font-size:.79rem;font-weight:900;letter-spacing:.05em;text-transform:uppercase;color:#243549;background:#eef3f9;border-bottom:1px solid var(--border)}
+  .table td,.table th{vertical-align:middle}
+  .order-detail{background:#f9fbff}
+  .pill{min-width:2rem;justify-content:center;padding:.18rem .55rem;background:#eff6ff;border:1px solid #cadef7;color:#193865}
+  .status-badge{padding:.24rem .55rem;font-size:.82rem}
+  .status-warning{background:var(--warning-soft);color:var(--warning)}
+  .status-danger{background:var(--danger-soft);color:var(--danger)}
+  .note-pill{padding:.4rem .8rem;border:1px solid #c9daf6;background:#f7faff;color:#173761;font-size:.88rem}
+  .note-pill.good{background:var(--good-soft);color:var(--good)}
+  .note-pill.warn{background:var(--warning-soft);color:var(--warning)}
+  .note-pill.bad{background:var(--danger-soft);color:var(--danger)}
+  .split-col{display:grid;gap:1rem;height:100%}
+  .lowstock .accordion-item{border:1px solid var(--border);border-radius:1rem;overflow:hidden;margin-bottom:.75rem}
+  .lowstock .accordion-button{font-weight:900;color:var(--text);background:#f7faff;box-shadow:none}
+  .lowstock .accordion-button:not(.collapsed){background:#ecf3ff;color:#173761}
+  .lowstock-shell{display:grid;gap:1rem}
+  .lowstock-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.75rem}
+  .lowstock-stat{padding:.85rem .95rem;border:1px solid var(--border);border-radius:1rem;background:#fbfcfe}
+  .lowstock-stat .label{display:block;font-size:.78rem;font-weight:900;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+  .lowstock-stat .value{margin-top:.4rem;font-size:1.4rem;font-weight:900;color:var(--text)}
+  .lowstock-stat .sub{margin-top:.18rem;font-size:.85rem;color:var(--muted)}
+  .lowstock-focus-list{display:grid;gap:.65rem}
+  .lowstock-focus-item{padding:.78rem .88rem;border:1px solid var(--border);border-radius:1rem;background:#fbfcfe}
+  .lowstock-brand-scroll{max-height:430px;overflow:auto;padding-right:.2rem}
+  .lowstock-brand-head{display:flex;justify-content:space-between;align-items:center;gap:.75rem;width:100%}
+  .lowstock-brand-meta{display:flex;gap:.45rem;flex-wrap:wrap;align-items:center}
+  .lowstock-extra{margin-top:.85rem;padding-top:.85rem;border-top:1px dashed #d7e0eb}
+  .lowstock-extra summary{cursor:pointer;font-weight:900;color:#173761;list-style:none}
+  .lowstock-extra summary::-webkit-details-marker{display:none}
+  .lowstock-extra summary::after{content:"Show more";margin-left:.55rem;font-size:.86rem;color:var(--muted);font-weight:700}
+  .lowstock-extra[open] summary::after{content:"Hide"}
+  .qr-image{width:180px;height:180px;border-radius:1rem;border:1px solid var(--border)}
+  @media (max-width:1400px){.snapshot-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+  @media (max-width:1199px){.summary-grid,.strategy-grid,.watch-grid{grid-template-columns:1fr}.today-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media (max-width:767px){.dash-title{font-size:1.7rem}.snapshot-grid,.today-grid,.lowstock-summary-grid{grid-template-columns:1fr}#salesBarChart{height:260px!important}.product-rank{grid-template-columns:46px minmax(0,1fr)}.product-thumb,.product-placeholder{width:46px;height:46px}}
+</style>
+
+<div class="dash-page">
+  <div class="dash-head">
+    <div>
+      <h1 class="dash-title">Dashboard</h1>
+      <p class="dash-sub">
+        {% if isManger %}
+          Cleaner monthly analysis, debt snapshot, inventory watch, and daily operations arranged by business priority.
+        {% else %}
+          Focused daily workspace with stock visibility and today&apos;s order flow in one place.
+        {% endif %}
+      </p>
+    </div>
+    <div class="dash-actions">
+      {% if isManger %}<a class="btn btn-outline-primary" href="{{ sales_records_month_url }}">Open month history</a>{% endif %}
+      <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#mobileAccessModal">Mobile access</button>
+    </div>
+  </div>
+
+  {% if isManger %}
+    <form method="get" class="dash-card pad">
+      <div class="row g-3 align-items-end">
+        <div class="col-lg-3 col-md-4">
+          <label class="toolbar-label" for="dashboard-month">Month</label>
+          <input id="dashboard-month" type="month" name="month" class="form-control" value="{{ selected_month }}">
+        </div>
+        <div class="col-lg-5 col-md-8">
+          <label class="toolbar-label">Categories</label>
+          <div class="dropdown w-100">
+            <button class="btn btn-outline-secondary dropdown-toggle w-100 text-start" type="button" data-bs-toggle="dropdown">Filter categories</button>
+            <div class="dropdown-menu p-3 w-100" style="max-height:22rem;overflow:auto;">
+              {% for c in categories %}
+                <label class="form-check d-flex align-items-center gap-2 mb-2">
+                  <input class="form-check-input" type="checkbox" name="cat" value="{{ c.id }}" {% if c.id|stringformat:"s" in selected_cat_ids %}checked{% endif %}>
+                  <span>{{ c.name }}</span>
+                </label>
+              {% empty %}
+                <div class="tiny">No categories yet.</div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-4">
+          <div class="toolbar-actions justify-content-lg-end">
+            <a class="btn btn-outline-secondary" href="{{ prev_month_url }}">Previous</a>
+            <a class="btn btn-outline-secondary" href="{{ current_month_url }}">Current</a>
+            {% if next_month_url %}<a class="btn btn-outline-secondary" href="{{ next_month_url }}">Next</a>{% endif %}
+            <button type="submit" class="btn btn-primary">Apply</button>
+            <a class="btn btn-outline-dark" href="{% url 'dashboard' %}">Reset</a>
+          </div>
+        </div>
+      </div>
+      <div class="mt-3">
+        {% if selected_cat_chips %}
+          <div class="chip-row">
+            {% for chip in selected_cat_chips %}<span class="chip">{{ chip.name }} <a href="{{ chip.remove_url }}" class="chip-remove" aria-label="Remove {{ chip.name }}" title="Remove {{ chip.name }}">&times;</a></span>{% endfor %}
+          </div>
+        {% elif dashboard_defaulted_to_perfume %}
+          <div class="tiny">Defaulting to {{ dashboard_default_category_name }} until you choose another category.</div>
+        {% else %}
+          <div class="tiny">Showing all categories.</div>
+        {% endif %}
+      </div>
+    </form>
+
+    <div class="dash-card pad">
+      <div class="section-head">
+        <div>
+          <span class="kicker">Business Snapshot</span>
+          <h2>{{ month_label }}</h2>
+          <p>{{ month_scope_label }} summary with debt, perfume inventory, and monthly pressure points together.</p>
+        </div>
+        <div class="quick-tags">
+          {% if best_sales_day %}<span class="note-pill good">Best day {{ best_sales_day.date|date:"Y-m-d" }} · EUR {{ best_sales_day.amount|floatformat:2 }}</span>{% endif %}
+          <span class="note-pill">Sold SKUs {{ month_sold_product_count }}</span>
+          <span class="note-pill">Active customers {{ month_active_customer_count }}</span>
+        </div>
+      </div>
+      <div class="snapshot-grid">
+        <div class="snapshot-card highlight">
+          <div class="metric-label">Sales Revenue</div>
+          <div class="metric-value">EUR {{ month_sales_amount|floatformat:2 }}</div>
+          <div class="metric-sub">{{ month_order_count }} orders · {{ month_sales_qty }} items · avg ticket EUR {{ month_avg_ticket|floatformat:2 }}</div>
+        </div>
+        <div class="snapshot-card">
+          <div class="metric-label">{% if show_profit %}Gross Profit{% else %}Average Ticket{% endif %}</div>
+          <div class="metric-value">{% if show_profit %}EUR {{ month_sales_profit|floatformat:2 }}{% else %}EUR {{ month_avg_ticket|floatformat:2 }}{% endif %}</div>
+          <div class="metric-sub">{% if show_profit %}Margin {{ month_gross_margin_pct|floatformat:1 }}% · FIFO based{% else %}{{ month_active_customer_count }} active customers this month{% endif %}</div>
+        </div>
+        <div class="snapshot-card">
+          <div class="metric-label">Purchase Spend</div>
+          <div class="metric-value">EUR {{ month_purchase_amount|floatformat:2 }}</div>
+          <div class="metric-sub">{{ month_purchase_group_count }} purchase groups · {{ month_purchase_qty }} units · {{ month_purchase_to_sales_pct|floatformat:1 }}% of sales</div>
+        </div>
+        <div class="snapshot-card">
+          <div class="metric-label">Receivables Summary</div>
+          <div class="metric-value">EUR {{ open_receivable_balance|floatformat:2 }}</div>
+          <div class="metric-sub">{{ open_invoice_count }} open · {{ overdue_invoice_count }} overdue · collected {{ receivable_collection_ratio_pct|floatformat:1 }}%</div>
+        </div>
+        <div class="snapshot-card">
+          <div class="metric-label">Perfume Stock</div>
+          <div class="metric-value">{{ perfume_stock_units }}</div>
+          <div class="metric-sub">{{ perfume_stock_sku_count }} perfume SKUs · stock cost EUR {{ perfume_stock_cost|floatformat:2 }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="summary-grid">
+      <div class="dash-card pad h-100">
+        <div class="section-top">
+          <div>
+            <span class="kicker">Sales Trend</span>
+            <h3>Sales trend</h3>
+            <p>Daily sales bars for {{ month_label }}. Click a bar to jump to that day.</p>
+          </div>
+          <div class="quick-tags">
+            <span class="note-pill">Debt added EUR {{ month_receivables_added|floatformat:2 }}</span>
+            <span class="note-pill good">Collected EUR {{ month_receipts_collected|floatformat:2 }}</span>
+          </div>
+        </div>
+        <div class="chart-wrap"><canvas id="salesBarChart"></canvas></div>
+        <div class="row g-3 mt-1">
+          <div class="col-lg-6">
+            <div class="mini-card h-100">
+              <div class="section-top">
+                <div>
+                  <h3>Payment mix</h3>
+                  <p>How this month&apos;s revenue was paid.</p>
+                </div>
+              </div>
+              <div class="mix-list">
+                {% for row in month_payment_breakdown %}
+                  {% if forloop.counter <= 4 %}
+                    <div class="mix-item">
+                      <div class="item-head">
+                        <span class="item-name">{{ row.label }}</span>
+                        <span class="item-value">EUR {{ row.amount|floatformat:2 }}</span>
+                      </div>
+                      <div class="mix-track mt-2"><div class="mix-fill" style="width: {{ row.share_pct|floatformat:2 }}%;"></div></div>
+                      <div class="tiny mt-2">{{ row.share_pct|floatformat:1 }}% of monthly sales</div>
+                    </div>
+                  {% endif %}
+                {% empty %}
+                  <div class="tiny">No sales in this period yet.</div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+          <div class="col-lg-6">
+            <div class="mini-card h-100">
+              <div class="section-top">
+                <div>
+                  <h3>Collection focus</h3>
+                  <p>Debt position and collection rhythm in one compact block.</p>
+                </div>
+              </div>
+              <div class="stack-list">
+                <div class="mix-item">
+                  <div class="mini-head"><span class="muted">Open balance</span><span class="item-value">EUR {{ open_receivable_balance|floatformat:2 }}</span></div>
+                  <div class="mini-head mt-2"><span class="muted">Open invoices</span><span class="item-value">{{ open_invoice_count }}</span></div>
+                  <div class="mini-head mt-2"><span class="muted">Overdue invoices</span><span class="item-value">{{ overdue_invoice_count }}</span></div>
+                </div>
+                <div class="mix-item">
+                  <div class="mini-head"><span class="muted">Receivables added</span><span class="item-value">EUR {{ month_receivables_added|floatformat:2 }}</span></div>
+                  <div class="mini-head mt-2"><span class="muted">Receipts collected</span><span class="item-value">EUR {{ month_receipts_collected|floatformat:2 }}</span></div>
+                  <div class="mini-head mt-2"><span class="muted">Collection ratio</span><span class="item-value">{{ receivable_collection_ratio_pct|floatformat:1 }}%</span></div>
+                </div>
+                {% if ar_scope_note %}<div class="tiny">Open receivable balance stays global and is not reduced by category filtering.</div>{% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dash-card pad">
+        <div class="section-top">
+          <div>
+            <span class="kicker">Inventory & Buying</span>
+            <h3>Inventory intelligence</h3>
+            <p>Stock cost, perfume depth, alerts, and supplier concentration.</p>
+          </div>
+        </div>
+        <div class="stack-list">
+          <div class="inventory-box">
+            <div class="mini-head"><span class="muted">Current stock units</span><span class="item-value">{{ current_stock_units }}</span></div>
+            <div class="mini-head mt-2"><span class="muted">Current stock cost</span><span class="item-value">EUR {{ current_stock_cost|floatformat:2 }}</span></div>
+            <div class="mini-head mt-2"><span class="muted">Current stock SKUs</span><span class="item-value">{{ current_stock_sku_count }}</span></div>
+          </div>
+          <div class="inventory-box">
+            <div class="mini-head"><span class="muted">Perfume units</span><span class="item-value">{{ perfume_stock_units }}</span></div>
+            <div class="mini-head mt-2"><span class="muted">Perfume stock cost</span><span class="item-value">EUR {{ perfume_stock_cost|floatformat:2 }}</span></div>
+            <div class="mini-head mt-2"><span class="muted">Perfume SKUs</span><span class="item-value">{{ perfume_stock_sku_count }}</span></div>
+          </div>
+          <div class="inventory-box">
+            <div class="mini-head"><span class="muted">Low-stock SKUs</span><span class="note-pill warn">{{ low_stock_count }}</span></div>
+            <div class="mini-head mt-2"><span class="muted">Out of stock</span><span class="note-pill bad">{{ out_of_stock_count }}</span></div>
+            <div class="mini-head mt-2"><span class="muted">1-2 units left</span><span class="item-value">{{ low_stock_1_2_count }}</span></div>
+            <div class="mini-head mt-2"><span class="muted">3-4 units left</span><span class="item-value">{{ low_stock_3_4_count }}</span></div>
+          </div>
+          <div class="inventory-box">
+            <div class="section-top">
+              <div>
+                <h3>Top suppliers</h3>
+                <p>Who is taking most of the purchase spend.</p>
+              </div>
+            </div>
+            <div class="stack-list">
+              {% for supplier in month_top_suppliers %}
+                <div>
+                  <div class="mini-head"><span class="item-name">{% if supplier.supplier_id %}<a class="text-decoration-none text-dark" href="{% url 'supplier_detail' supplier.supplier_id %}">{{ supplier.name }}</a>{% else %}{{ supplier.name }}{% endif %}</span><span class="item-value">EUR {{ supplier.amount|floatformat:2 }}</span></div>
+                  <div class="tiny">{{ supplier.qty }} units · {{ supplier.lines }} line{{ supplier.lines|pluralize }}</div>
+                </div>
+              {% empty %}
+                <div class="tiny">No purchase activity in this period.</div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dash-card pad">
+      <div class="section-head">
+        <div>
+          <span class="kicker">Strategic Signals</span>
+          <h2>Where to focus next</h2>
+          <p>Fastest sellers, revenue winners, and customer concentration for short-term decisions.</p>
+        </div>
+      </div>
+      <div class="strategy-grid">
+        <div class="dash-card pad h-100">
+          <div class="section-top"><div><h3>Fastest sellers</h3><p>Most units sold in the fewest selling days this month.</p></div></div>
+            <div class="rank-list">
+              {% for row in month_fast_movers %}
+                <div class="rank-item product-rank">
+                  {% if row.image_url %}
+                    <button
+                      type="button"
+                      class="inline-product-thumb-wrap"
+                      data-product-preview-url="{{ row.image_url }}"
+                      data-product-preview-title="{{ row.display_name }}"
+                    >
+                      <img src="{{ row.image_url }}" alt="{{ row.display_name }}" class="inline-product-thumb">
+                    </button>
+                  {% else %}
+                    <div class="inline-product-thumb-empty">No img</div>
+                  {% endif %}
+                  <div>
+                    <div class="item-head"><span class="item-name"><a class="text-decoration-none text-dark" href="{% url 'product_detail' row.product_id %}">{{ row.display_name }}</a></span><span class="item-value">{{ row.qty }}</span></div>
+                    <div class="tiny mt-2">{{ row.sale_day_count }} selling day{{ row.sale_day_count|pluralize }} · {{ row.order_count }} orders · avg {{ row.avg_qty_per_day|floatformat:1 }} units/day</div>
+                    <div class="tiny">Revenue EUR {{ row.amount|floatformat:2 }}</div>
+                  </div>
+                </div>
+              {% empty %}
+                <div class="tiny">No fast-selling pattern yet for this period.</div>
+              {% endfor %}
+            </div>
+        </div>
+        <div class="dash-card pad h-100">
+          <div class="section-top"><div><h3>Top products</h3><p>Highest revenue contributors this month.</p></div><a class="btn btn-sm btn-outline-secondary" href="{% url 'product_list' %}">All products</a></div>
+            <div class="rank-list">
+              {% for row in month_top_products %}
+                <div class="rank-item product-rank">
+                  {% if row.image_url %}
+                    <button
+                      type="button"
+                      class="inline-product-thumb-wrap"
+                      data-product-preview-url="{{ row.image_url }}"
+                      data-product-preview-title="{{ row.display_name }}"
+                    >
+                      <img src="{{ row.image_url }}" alt="{{ row.display_name }}" class="inline-product-thumb">
+                    </button>
+                  {% else %}
+                    <div class="inline-product-thumb-empty">No img</div>
+                  {% endif %}
+                  <div>
+                    <div class="item-head"><span class="item-name"><a class="text-decoration-none text-dark" href="{% url 'product_detail' row.product_id %}">{{ row.display_name }}</a></span><span class="item-value">EUR {{ row.amount|floatformat:2 }}</span></div>
+                    <div class="tiny mt-2">{{ row.qty }} units · {{ row.order_count }} orders · {{ row.share_pct|floatformat:1 }}% of sales</div>
+                    {% if show_profit %}<div class="tiny">Gross profit EUR {{ row.profit|floatformat:2 }}</div>{% endif %}
+                  </div>
+                </div>
+              {% empty %}
+                <div class="tiny">No product sales yet in this period.</div>
+              {% endfor %}
+            </div>
+        </div>
+        <div class="dash-card pad h-100">
+          <div class="section-top"><div><h3>Top customers</h3><p>Revenue concentration and who deserves attention.</p></div><a class="btn btn-sm btn-outline-secondary" href="{% url 'customer_search' %}">All customers</a></div>
+            <div class="rank-list">
+              {% for row in month_top_customers %}
+                <div class="rank-item">
+                  <div class="item-head"><span class="item-name"><a class="text-decoration-none text-dark" href="{% url 'customer_detail' row.customer_id %}">{{ row.name }}</a></span><span class="item-value">EUR {{ row.amount|floatformat:2 }}</span></div>
+                  <div class="tiny mt-2">{{ row.order_count }} orders · {{ row.qty }} items · {{ row.share_pct|floatformat:1 }}% of sales</div>
+                  {% if show_profit %}<div class="tiny">Gross profit EUR {{ row.profit|floatformat:2 }}</div>{% endif %}
+                </div>
+              {% empty %}
+                <div class="tiny">No customer-linked sales yet in this period.</div>
+              {% endfor %}
+              {% if month_walk_in_summary %}
+                <div class="rank-item" style="background:#f5f9ff">
+                  <div class="item-head"><span class="item-name">Walk-in / no customer</span><span class="item-value">EUR {{ month_walk_in_summary.amount|floatformat:2 }}</span></div>
+                  <div class="tiny mt-2">{{ month_walk_in_summary.order_count }} orders · {{ month_walk_in_summary.qty }} items</div>
+                </div>
+              {% endif %}
+            </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dash-card pad">
+      <div class="section-head">
+        <div>
+          <span class="kicker">Inventory Pressure</span>
+          <h2>Capital lock and slow movers</h2>
+          <p>See which stock is tying up the most cash, which SKUs are moving slowly, and where attention can free money faster.</p>
+        </div>
+      </div>
+      <div class="watch-grid">
+        <div class="dash-card pad h-100">
+          <div class="section-top"><div><h3>Most capital locked stock</h3><p>Highest on-hand cost still sitting in inventory.</p></div></div>
+          <div class="rank-list">
+            {% for row in capital_locked_products %}
+              <div class="rank-item product-rank">
+                {% if row.image_url %}
+                  <button
+                    type="button"
+                    class="inline-product-thumb-wrap"
+                    data-product-preview-url="{{ row.image_url }}"
+                    data-product-preview-title="{{ row.display_name }}"
+                  >
+                    <img src="{{ row.image_url }}" alt="{{ row.display_name }}" class="inline-product-thumb">
+                  </button>
+                {% else %}
+                  <div class="inline-product-thumb-empty">No img</div>
+                {% endif %}
+                <div>
+                  <div class="item-head"><span class="item-name"><a class="text-decoration-none text-dark" href="{% url 'product_detail' row.product_id %}">{{ row.display_name }}</a></span><span class="item-value">EUR {{ row.stock_cost|floatformat:2 }}</span></div>
+                  <div class="tiny mt-2">{{ row.stock_qty }} units on hand · {{ row.stock_share_pct|floatformat:1 }}% of stock cost · sold {{ row.period_sales_qty }} this period</div>
+                  <div class="tiny">
+                    {% if row.last_sold_at %}
+                      Last sold {{ row.last_sold_at|date:"Y-m-d" }}
+                    {% else %}
+                      Never sold yet
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+            {% empty %}
+              <div class="tiny">No current stock to analyse.</div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="dash-card pad h-100">
+          <div class="section-top"><div><h3>Slow movers</h3><p>Current stock with weak sales pace over the last 45 days.</p></div></div>
+          <div class="rank-list">
+            {% for row in slow_movers %}
+              <div class="rank-item product-rank">
+                {% if row.image_url %}
+                  <button
+                    type="button"
+                    class="inline-product-thumb-wrap"
+                    data-product-preview-url="{{ row.image_url }}"
+                    data-product-preview-title="{{ row.display_name }}"
+                  >
+                    <img src="{{ row.image_url }}" alt="{{ row.display_name }}" class="inline-product-thumb">
+                  </button>
+                {% else %}
+                  <div class="inline-product-thumb-empty">No img</div>
+                {% endif %}
+                <div>
+                  <div class="item-head"><span class="item-name"><a class="text-decoration-none text-dark" href="{% url 'product_detail' row.product_id %}">{{ row.display_name }}</a></span><span class="item-value">{{ row.rolling_45d_qty }}</span></div>
+                  <div class="tiny mt-2">{{ row.stock_qty }} units on hand · stock cost EUR {{ row.stock_cost|floatformat:2 }}</div>
+                  <div class="tiny">
+                    {% if row.days_since_last_sale is not None %}
+                      Last sold {{ row.days_since_last_sale }} day{{ row.days_since_last_sale|pluralize }} ago
+                    {% else %}
+                      No sale history yet
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+            {% empty %}
+              <div class="tiny">No slow movers identified.</div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <div class="dash-card pad mt-3">
+        <div class="section-top"><div><h3>Operator insights</h3><p>Short automated observations from the current stock, buying, sales, and debt picture.</p></div></div>
+        <div class="stack-list">
+          {% for insight in strategic_insights %}
+            <div class="rank-item">
+              <div class="item-head">
+                <span class="item-name">{{ insight.title }}</span>
+                <span class="note-pill {% if insight.tone == 'good' %}good{% elif insight.tone == 'bad' %}bad{% else %}warn{% endif %}">{{ insight.tone|title }}</span>
+              </div>
+              <div class="tiny mt-2">{{ insight.body }}</div>
+            </div>
+          {% empty %}
+            <div class="tiny">No special pressure signal right now. Stock, buying, and collections look balanced for this view.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="dash-card pad">
+    <div class="section-head">
+      <div>
+        <span class="kicker">Today Operations</span>
+        <h2>Today operations</h2>
+        <p>Live activity for {{ today|date:"Y-m-d" }} in a compact operating view.</p>
+      </div>
+      <div class="quick-tags">
+        {% if isManger %}
+          <span class="note-pill">{{ total_products }} products tracked</span>
+          <span class="note-pill">Stock on hand {{ total_stock }}</span>
+        {% else %}
+          <span class="note-pill">Today focus</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="today-grid">
+      <div class="snapshot-card"><div class="metric-label">Sold Today</div><div class="metric-value">{{ today_sales_qty }}</div><div class="metric-sub">Items sold today</div></div>
+      <div class="snapshot-card highlight">
+        <div class="metric-label">Sales Today</div>
+        <div class="metric-value">EUR {{ total_sales_today|floatformat:2 }}</div>
+        <div class="metric-sub">{{ today_order_count }} orders completed today</div>
+      </div>
+      <div class="snapshot-card"><div class="metric-label">Orders Today</div><div class="metric-value">{{ today_order_count }}</div><div class="metric-sub">Counter transactions</div></div>
+      {% if isManger %}<div class="snapshot-card"><div class="metric-label">Inbound Today</div><div class="metric-value">{{ today_purchases }}</div><div class="metric-sub">{% if show_purchase_metrics %}Value EUR {{ today_purchase_amount|floatformat:2 }}{% else %}Units received today{% endif %}</div></div>{% endif %}
+      {% if show_profit %}<div class="snapshot-card"><div class="metric-label">Gross Profit Today</div><div class="metric-value">EUR {{ total_profit_today|floatformat:2 }}</div><div class="metric-sub">Estimated cost EUR {{ total_cost_today|floatformat:2 }}</div></div>{% endif %}
+    </div>
+
+    <div class="row g-4 mt-1">
+      <div class="{% if isManger %}col-xl-8{% else %}col-12{% endif %}">
+        <div class="dash-card pad h-100">
+          <div class="section-head"><div><h3>Today&apos;s sales orders</h3><p>Compact live order tracking with expandable product details.</p></div></div>
+          <div class="table-wrap">
+            <table class="table table-hover mb-0">
+              <thead>
+                <tr>
+                  <th>Order</th>
+                  <th>Customer</th>
+                  <th>Time</th>
+                  <th class="text-center">Qty</th>
+                  {% if show_order_financials %}<th class="text-end">Amount</th>{% endif %}
+                  <th class="text-end">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for o in sale_orders_today %}
+                  <tr>
+                    <td>#{{ o.id }}</td>
+                    <td>{% if o.customer %}{% if isManger %}<a class="text-decoration-none" href="{% url 'customer_detail' o.customer.id %}">{{ o.customer.name }}</a>{% else %}{{ o.customer.name }}{% endif %}{% else %}<span class="text-muted">Walk-in / no customer</span>{% endif %}</td>
+                    <td>{{ o.created_at|date:"H:i" }}</td>
+                    <td class="text-center"><span class="pill">{{ o.view_total_qty }}</span></td>
+                    {% if show_order_financials %}<td class="text-end fw-bold">EUR {{ o.view_total_amount|floatformat:2 }}</td>{% endif %}
+                    <td class="text-end"><div class="d-flex justify-content-end gap-2"><a class="btn btn-sm btn-outline-primary" href="{% url 'sale_order_detail' o.id %}">Print</a><button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#today-order-{{ o.id }}">Details</button></div></td>
+                  </tr>
+                  <tr class="order-detail collapse" id="today-order-{{ o.id }}">
+                    <td colspan="{% if show_order_financials %}6{% else %}5{% endif %}" class="p-0">
+                      <div class="table-wrap" style="border:0;border-radius:0">
+                        <table class="table mb-0">
+                          <thead>
+                            <tr>
+                              <th>Product</th>
+                              <th class="text-center">Qty</th>
+                              {% if show_order_financials %}
+                                <th class="text-end">Unit</th>
+                                <th class="text-end">Total</th>
+                                <th class="text-end">Payment</th>
+                              {% endif %}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {% for it in o.view_items_today %}
+                              <tr>
+                                <td>
+                                  <div class="inline-product">
+                                    {% if it.image_url %}
+                                      <button
+                                        type="button"
+                                        class="inline-product-thumb-wrap"
+                                        data-product-preview-url="{{ it.image_url }}"
+                                        data-product-preview-title="{{ it.product.display_name }}"
+                                      >
+                                        <img src="{{ it.image_url }}" alt="{{ it.product.display_name }}" class="inline-product-thumb">
+                                      </button>
+                                    {% else %}
+                                      <div class="inline-product-thumb-empty">No img</div>
+                                    {% endif %}
+                                    <div>
+                                      {% if isManger %}<a class="text-decoration-none" href="{% url 'product_detail' it.product.id %}">{{ it.product.display_name }}</a>{% else %}{{ it.product.display_name }}{% endif %}
+                                    </div>
+                                  </div>
+                                </td>
+                                <td class="text-center">{{ it.quantity }}</td>
+                                {% if show_order_financials %}
+                                  <td class="text-end">EUR {{ it.unit_price|floatformat:2 }}</td>
+                                  <td class="text-end fw-bold">EUR {{ it.line_total|floatformat:2 }}</td>
+                                  <td class="text-end">{{ it.payment_label }}</td>
+                                {% endif %}
+                              </tr>
+                            {% endfor %}
+                          </tbody>
+                        </table>
+                      </div>
+                    </td>
+                  </tr>
+                {% empty %}
+                  <tr><td colspan="{% if show_order_financials %}6{% else %}5{% endif %}" class="text-center py-4 text-muted">No sales orders today.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {% if isManger %}
+        <div class="col-xl-4">
+          <div class="split-col">
+            {% if show_purchase_metrics %}
+              <div class="dash-card pad">
+                <div class="section-head"><div><h3>Today&apos;s inbound</h3><p>Latest received products and purchase cost.</p></div></div>
+                <div class="table-wrap">
+                  <table class="table table-hover mb-0">
+                    <thead><tr><th>Product</th><th class="text-center">Qty</th><th class="text-end">Total</th></tr></thead>
+                    <tbody>
+                      {% for p in purchases_today_records %}
+                        {% if forloop.counter <= 8 %}
+                          <tr>
+                            <td>
+                              <div class="inline-product">
+                                {% if p.image_url %}
+                                  <button
+                                    type="button"
+                                    class="inline-product-thumb-wrap"
+                                    data-product-preview-url="{{ p.image_url }}"
+                                    data-product-preview-title="{{ p.product.display_name }}"
+                                  >
+                                    <img src="{{ p.image_url }}" alt="{{ p.product.display_name }}" class="inline-product-thumb">
+                                  </button>
+                                {% else %}
+                                  <div class="inline-product-thumb-empty">No img</div>
+                                {% endif %}
+                                <div>
+                                  <a class="text-decoration-none" href="{% url 'product_detail' p.product.id %}">{{ p.product.display_name }}</a>
+                                  <div class="tiny">{% if p.supplier %}{{ p.supplier.name }}{% else %}No supplier linked{% endif %} · {{ p.date|date:"H:i" }}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td class="text-center">{{ p.quantity }}</td>
+                            <td class="text-end fw-bold">EUR {{ p.view_total_cost|floatformat:2 }}</td>
+                          </tr>
+                        {% endif %}
+                      {% empty %}
+                        <tr><td colspan="3" class="text-center py-4 text-muted">No inbound records today.</td></tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% if isManger %}
+  <div class="dash-card pad mt-4">
+    <div class="section-head">
+      <div>
+        <span class="kicker">Inventory Risk</span>
+        <h2>Low stock warning</h2>
+        <p>Compact shortage view with quick action first, then brand detail below.</p>
+      </div>
+      <div class="quick-tags">
+        <span class="note-pill warn">{{ low_stock_count }} low-stock SKU{{ low_stock_count|pluralize }}</span>
+        <span class="note-pill bad">{{ out_of_stock_count }} out now</span>
+      </div>
+    </div>
+
+    {% if low_brand_blocks %}
+      <div class="lowstock-shell">
+        <div class="lowstock-summary-grid">
+          <div class="lowstock-stat">
+            <span class="label">Out Now</span>
+            <div class="value">{{ out_of_stock_count }}</div>
+            <div class="sub">Need replenishment first</div>
+          </div>
+          <div class="lowstock-stat">
+            <span class="label">1-2 Left</span>
+            <div class="value">{{ low_stock_1_2_count }}</div>
+            <div class="sub">Highest near-term risk</div>
+          </div>
+          <div class="lowstock-stat">
+            <span class="label">3-4 Left</span>
+            <div class="value">{{ low_stock_3_4_count }}</div>
+            <div class="sub">Watch before next order</div>
+          </div>
+        </div>
+
+        <div>
+          <div class="section-top mb-2">
+            <div>
+              <h3>Most urgent SKUs</h3>
+              <p>Prioritised by zero stock first, then best sellers among low stock items.</p>
+            </div>
+          </div>
+          <div class="lowstock-focus-list">
+            {% for p in low_stock_focus_products %}
+              <div class="lowstock-focus-item">
+                <div class="inline-product">
+                  {% if p.image_url %}
+                    <button
+                      type="button"
+                      class="inline-product-thumb-wrap"
+                      data-product-preview-url="{{ p.image_url }}"
+                      data-product-preview-title="{{ p.display_name }}"
+                    >
+                      <img src="{{ p.image_url }}" alt="{{ p.display_name }}" class="inline-product-thumb">
+                    </button>
+                  {% else %}
+                    <div class="inline-product-thumb-empty">No img</div>
+                  {% endif %}
+                  <div>
+                    <div class="item-head">
+                      <span class="item-name"><a class="text-decoration-none text-dark" href="{% url 'product_detail' p.id %}">{{ p.display_name }}</a></span>
+                      <span class="status-badge {% if p.stock > 0 %}status-warning{% else %}status-danger{% endif %}">{{ p.stock }}</span>
+                    </div>
+                    <div class="tiny mt-2">{{ p.brand|default:"Unknown brand" }} · sold {{ p.sold }} · {% if p.stock == 0 %}out of stock{% else %}{{ p.stock }} left{% endif %}</div>
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div>
+          <div class="section-top mb-2">
+            <div>
+              <h3>Brands to review</h3>
+              <p>Top shortage clusters first. Remaining brands stay collapsed below.</p>
+            </div>
+          </div>
+          <div class="lowstock-brand-scroll">
+            <div class="accordion lowstock" id="lowStockAccordion">
+              {% for block in low_stock_primary_blocks %}
+                <div class="accordion-item">
+                  <h2 class="accordion-header" id="lowStockHeading{{ forloop.counter }}">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#lowStockCollapse{{ forloop.counter }}">
+                      <span class="lowstock-brand-head">
+                        <span>{{ block.brand }}</span>
+                        <span class="lowstock-brand-meta">
+                          {% if block.out_count %}<span class="note-pill bad">{{ block.out_count }} out</span>{% endif %}
+                          <span class="pill">{{ block.count }}</span>
+                        </span>
+                      </span>
+                    </button>
+                  </h2>
+                  <div id="lowStockCollapse{{ forloop.counter }}" class="accordion-collapse collapse" data-bs-parent="#lowStockAccordion">
+                    <div class="accordion-body">
+                      <div class="table-wrap">
+                        <table class="table mb-0">
+                          <thead><tr><th>Product</th><th class="text-center">Sold</th><th class="text-center">Stock</th></tr></thead>
+                          <tbody>
+                            {% for p in block.products %}
+                              <tr>
+                                <td><a class="text-decoration-none" href="{% url 'product_detail' p.id %}">{{ p.display_name }}</a></td>
+                                <td class="text-center">{{ p.sold }}</td>
+                                <td class="text-center">{% if p.stock > 0 %}<span class="status-badge status-warning">{{ p.stock }}</span>{% else %}<span class="status-badge status-danger">0</span>{% endif %}</td>
+                              </tr>
+                            {% endfor %}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+
+          {% if low_stock_extra_blocks %}
+            <details class="lowstock-extra">
+              <summary>{{ low_stock_extra_brand_count }} more brand{{ low_stock_extra_brand_count|pluralize }} · {{ low_stock_extra_product_count }} more SKU{{ low_stock_extra_product_count|pluralize }}</summary>
+              <div class="accordion lowstock mt-3" id="lowStockAccordionExtra">
+                {% for block in low_stock_extra_blocks %}
+                  <div class="accordion-item">
+                    <h2 class="accordion-header" id="lowStockExtraHeading{{ forloop.counter }}">
+                      <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#lowStockExtraCollapse{{ forloop.counter }}">
+                        <span class="lowstock-brand-head">
+                          <span>{{ block.brand }}</span>
+                          <span class="lowstock-brand-meta">
+                            {% if block.out_count %}<span class="note-pill bad">{{ block.out_count }} out</span>{% endif %}
+                            <span class="pill">{{ block.count }}</span>
+                          </span>
+                        </span>
+                      </button>
+                    </h2>
+                    <div id="lowStockExtraCollapse{{ forloop.counter }}" class="accordion-collapse collapse" data-bs-parent="#lowStockAccordionExtra">
+                      <div class="accordion-body">
+                        <div class="table-wrap">
+                          <table class="table mb-0">
+                            <thead><tr><th>Product</th><th class="text-center">Sold</th><th class="text-center">Stock</th></tr></thead>
+                            <tbody>
+                              {% for p in block.products %}
+                                <tr>
+                                  <td><a class="text-decoration-none" href="{% url 'product_detail' p.id %}">{{ p.display_name }}</a></td>
+                                  <td class="text-center">{{ p.sold }}</td>
+                                  <td class="text-center">{% if p.stock > 0 %}<span class="status-badge status-warning">{{ p.stock }}</span>{% else %}<span class="status-badge status-danger">0</span>{% endif %}</td>
+                                </tr>
+                              {% endfor %}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            </details>
+          {% endif %}
+        </div>
+      </div>
+    {% else %}
+      <div class="tiny">No low-stock products right now.</div>
+    {% endif %}
+  </div>
+{% endif %}
+
+<div class="modal fade" id="mobileAccessModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="border-radius:1rem">
+      <div class="modal-header"><h5 class="modal-title">Open on mobile</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body text-center">
+        <p class="text-muted">Scan this QR code to open the system on your phone.</p>
+        <img class="qr-image" src="data:image/png;base64,{{ qr_code_base64 }}" alt="QR Code">
+        <div class="small text-break mt-3">{{ site_url }}</div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Close</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="dashboardProductPreviewModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content" style="border-radius:1rem">
+      <div class="modal-header">
+        <h5 class="modal-title" id="dashboardProductPreviewTitle">Product image</h5>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-3">
+        <img id="dashboardProductPreviewImg" src="" alt="" class="img-fluid w-100 rounded-4">
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const modalEl = document.getElementById('dashboardProductPreviewModal');
+    const modalImg = document.getElementById('dashboardProductPreviewImg');
+    const modalTitle = document.getElementById('dashboardProductPreviewTitle');
+
+    document.addEventListener('click', (event) => {
+      const trigger = event.target.closest('[data-product-preview-url]');
+      if (!trigger) return;
+      modalImg.src = trigger.dataset.productPreviewUrl;
+      modalImg.alt = trigger.dataset.productPreviewTitle || 'Product image';
+      modalTitle.textContent = trigger.dataset.productPreviewTitle || 'Product image';
+      bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    });
+  }());
+</script>
+
+{% if isManger %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  (function () {
+    var chartElement = document.getElementById('salesBarChart');
+    if (!chartElement || typeof Chart === 'undefined') return;
+    var labels = [{% for point in chart_data %}"{{ point.date|date:'Y-m-d' }}"{% if not forloop.last %}, {% endif %}{% endfor %}];
+    var salesValues = [{% for point in chart_data %}{{ point.sales|floatformat:2 }}{% if not forloop.last %}, {% endif %}{% endfor %}];
+    var detailUrls = [{% for point in chart_data %}"{{ point.detail_url }}"{% if not forloop.last %}, {% endif %}{% endfor %}];
+    new Chart(chartElement.getContext('2d'), {
+      type: 'bar',
+      data: {labels: labels, datasets: [{label: 'Daily Sales (EUR)', data: salesValues, backgroundColor: 'rgba(21,94,239,.82)', borderColor: 'rgba(15,23,42,.92)', borderWidth: 1.4, borderRadius: 7, maxBarThickness: 28}]},
+      options: {
+        responsive: true, maintainAspectRatio: false, plugins: {legend: {display: false}},
+        scales: {
+          x: {grid: {display: false}, ticks: {color: '#526071', maxRotation: 0, minRotation: 0, autoSkip: true}},
+          y: {beginAtZero: true, ticks: {color: '#526071', callback: function (value) { return 'EUR ' + value; }}, grid: {color: 'rgba(148,163,184,.24)'}}
+        },
+        onClick: function (event, elements) {
+          if (!elements.length) return;
+          var index = elements[0].index;
+          if (detailUrls[index]) window.location.href = detailUrls[index];
+        }
+      }
+    });
+  }());
+</script>
+{% endif %}
+{% endblock %}
+

@@ -1,0 +1,145 @@
+{% extends 'stock/base.html' %}
+{% block title %}Adjust Inbound Order #{{ order.id }}{% endblock %}
+
+{% block content %}
+<style>
+  .inbound-edit-shell{display:grid;gap:1rem}
+  .inbound-edit-card{background:#fff;border:1px solid #d9e2ee;border-radius:1.15rem;box-shadow:0 18px 40px rgba(15,23,42,.06)}
+  .inbound-edit-pad{padding:1.2rem}
+  .eyebrow{display:inline-flex;align-items:center;padding:.28rem .68rem;border-radius:999px;background:#eaf2ff;color:#1747a6;font-size:.78rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase}
+  .page-head{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap}
+  .page-title{margin:.4rem 0 0;font-size:2rem;font-weight:900;color:#10213a}
+  .page-sub{margin:.35rem 0 0;color:#5a6b81;max-width:62rem}
+  .line-table{overflow:auto;border:1px solid #d9e2ee;border-radius:1rem}
+  .line-table table{margin-bottom:0}
+  .line-table thead th{background:#eef4fb;color:#223246;font-size:.79rem;font-weight:900;letter-spacing:.05em;text-transform:uppercase;border-bottom:1px solid #d9e2ee}
+  .product-cell{display:grid;grid-template-columns:52px minmax(0,1fr);gap:.8rem;align-items:center}
+  .product-thumb,.product-thumb-empty{width:52px;height:52px;border-radius:.85rem;border:1px solid #dae4f1;background:#f4f7fb}
+  .product-thumb{overflow:hidden;display:block}
+  .product-thumb img{width:100%;height:100%;object-fit:cover}
+  .product-thumb-empty{display:grid;place-items:center;color:#60748d;font-size:.7rem;font-weight:800}
+  .meta-note{font-size:.88rem;color:#5a6b81}
+  .locked-note{display:inline-flex;align-items:center;padding:.24rem .55rem;border-radius:999px;background:#fff4e8;color:#9b4d09;font-size:.8rem;font-weight:800}
+</style>
+
+<div class="inbound-edit-shell">
+  <section class="inbound-edit-card inbound-edit-pad">
+    <div class="page-head">
+      <div>
+        <span class="eyebrow">Inbound record</span>
+        <h1 class="page-title">Adjust Inbound Order #{{ order.id }}</h1>
+        <p class="page-sub">Update supplier, invoice details, recorded time, quantity, and unit cost without opening Django admin. Already sold units stay protected.</p>
+      </div>
+      <div class="d-flex gap-2 flex-wrap">
+        <a href="{{ next_url }}" class="btn btn-outline-secondary">Back</a>
+      </div>
+    </div>
+  </section>
+
+  <form method="post" class="inbound-edit-card inbound-edit-pad">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ next_url }}">
+    {{ formset.management_form }}
+
+    {% if form.non_field_errors %}
+      <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+    {% endif %}
+    {% if formset.non_form_errors %}
+      <div class="alert alert-danger">{{ formset.non_form_errors }}</div>
+    {% endif %}
+
+    <div class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label fw-bold" for="{{ form.supplier.id_for_label }}">Supplier</label>
+        {{ form.supplier }}
+        {% if form.supplier.errors %}<div class="text-danger small mt-1">{{ form.supplier.errors|join:', ' }}</div>{% endif %}
+      </div>
+      <div class="col-md-4">
+        <label class="form-label fw-bold" for="{{ form.invoice_no.id_for_label }}">Invoice no.</label>
+        {{ form.invoice_no }}
+        {% if form.invoice_no.errors %}<div class="text-danger small mt-1">{{ form.invoice_no.errors|join:', ' }}</div>{% endif %}
+      </div>
+      <div class="col-md-4">
+        <label class="form-label fw-bold" for="{{ form.invoice_date.id_for_label }}">Invoice date</label>
+        {{ form.invoice_date }}
+        {% if form.invoice_date.errors %}<div class="text-danger small mt-1">{{ form.invoice_date.errors|join:', ' }}</div>{% endif %}
+      </div>
+      <div class="col-md-4">
+        <label class="form-label fw-bold" for="{{ form.recorded_at.id_for_label }}">Recorded at</label>
+        {{ form.recorded_at }}
+        <div class="meta-note mt-1">This date also updates the linked purchase batches.</div>
+        {% if form.recorded_at.errors %}<div class="text-danger small mt-1">{{ form.recorded_at.errors|join:', ' }}</div>{% endif %}
+      </div>
+      <div class="col-md-8">
+        <label class="form-label fw-bold" for="{{ form.note.id_for_label }}">Note</label>
+        {{ form.note }}
+        {% if form.note.errors %}<div class="text-danger small mt-1">{{ form.note.errors|join:', ' }}</div>{% endif %}
+      </div>
+    </div>
+
+    <div class="line-table mt-4">
+      <table class="table align-middle">
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th class="text-center">Sold</th>
+            <th class="text-center">Remaining</th>
+            <th style="width:140px;">Quantity</th>
+            <th style="width:160px;">Unit Cost</th>
+            <th class="text-center" style="width:120px;">Delete</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for line_form in formset.forms %}
+            <tr>
+              {{ line_form.id }}
+              <td>
+                <div class="product-cell">
+                  {% if line_form.instance.image_url %}
+                    <a href="{% url 'product_detail' line_form.instance.product.id %}" class="product-thumb">
+                      <img src="{{ line_form.instance.image_url }}" alt="{{ line_form.instance.display_name }}">
+                    </a>
+                  {% else %}
+                    <div class="product-thumb-empty">No img</div>
+                  {% endif %}
+                  <div>
+                    <div class="fw-bold">{{ line_form.instance.display_name }}</div>
+                    <div class="meta-note">{{ line_form.instance.product.barcode }}</div>
+                  </div>
+                </div>
+              </td>
+              <td class="text-center"><span class="locked-note">{{ line_form.instance.sold_units }}</span></td>
+              <td class="text-center">{{ line_form.instance.remaining }}</td>
+              <td>
+                {{ line_form.quantity }}
+                {% if line_form.quantity.errors %}<div class="text-danger small mt-1">{{ line_form.quantity.errors|join:', ' }}</div>{% endif %}
+              </td>
+              <td>
+                {{ line_form.cost_price }}
+                {% if line_form.cost_price.errors %}<div class="text-danger small mt-1">{{ line_form.cost_price.errors|join:', ' }}</div>{% endif %}
+              </td>
+              <td class="text-center">
+                {% if line_form.instance.sold_units %}
+                  <span class="meta-note">Locked</span>
+                {% else %}
+                  <div class="form-check d-inline-flex justify-content-center">
+                    {{ line_form.DELETE }}
+                  </div>
+                {% endif %}
+                {% if line_form.non_field_errors %}<div class="text-danger small mt-1">{{ line_form.non_field_errors|join:', ' }}</div>{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="meta-note mt-3">If a line already has sold units, you can still increase quantity or fix cost, but you cannot reduce below the sold amount or delete that line.</div>
+
+    <div class="d-flex gap-2 flex-wrap mt-4">
+      <button type="submit" class="btn btn-primary">Save inbound changes</button>
+      <a href="{{ next_url }}" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

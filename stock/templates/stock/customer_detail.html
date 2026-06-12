@@ -1,0 +1,966 @@
+{% extends 'stock/base.html' %}
+{% block title %}Customer Details{% endblock %}
+{% block content %}
+<div class="container my-4 customer-page">
+  <style>
+    .customer-page{
+      --bg:#f6f7fb;
+      --card:#ffffff;
+      --text:#0f172a;
+      --muted:#475569;
+      --border:rgba(15,23,42,.1);
+      --accent:#2563eb;
+      --accent-soft:#e8f0ff;
+      --success:#047857;
+      --success-soft:#ecfdf5;
+      --warning:#b45309;
+      --warning-soft:#fff7ed;
+      --danger:#b91c1c;
+      --danger-soft:#fef2f2;
+      --shadow:0 14px 32px rgba(15,23,42,.08);
+      --radius:20px;
+    }
+
+    .hero-card,
+    .summary-card,
+    .month-card,
+    .ar-card,
+    .empty-card{
+      background:var(--card);
+      border:1px solid var(--border);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+    }
+
+    .hero-card{
+      padding:1.2rem;
+      display:flex;
+      justify-content:space-between;
+      gap:1.2rem;
+      align-items:flex-start;
+      margin-bottom:1rem;
+    }
+    .hero-main{
+      display:flex;
+      gap:1rem;
+      min-width:0;
+      flex:1;
+    }
+    .avatar{
+      width:72px;
+      height:72px;
+      border-radius:999px;
+      display:grid;
+      place-items:center;
+      font-size:1.5rem;
+      font-weight:900;
+      color:#0f172a;
+      background:linear-gradient(180deg,#dbeafe,#eff6ff);
+      border:1px solid #bfdbfe;
+      flex:0 0 72px;
+    }
+    .hero-title{
+      margin:0;
+      color:var(--text);
+      font-size:1.9rem;
+      font-weight:900;
+      letter-spacing:-.02em;
+    }
+    .hero-sub{
+      margin:.3rem 0 0;
+      color:var(--muted);
+      font-weight:700;
+    }
+    .hero-grid{
+      display:grid;
+      grid-template-columns:repeat(3, minmax(0, 1fr));
+      gap:.8rem;
+      margin-top:1rem;
+    }
+    .hero-field{
+      padding:.8rem .9rem;
+      border-radius:16px;
+      background:#f8fafc;
+      border:1px solid rgba(148,163,184,.18);
+    }
+    .hero-label{
+      display:block;
+      color:var(--muted);
+      font-size:.78rem;
+      font-weight:900;
+      letter-spacing:.04em;
+      text-transform:uppercase;
+    }
+    .hero-value{
+      display:block;
+      color:var(--text);
+      font-size:1rem;
+      font-weight:800;
+      margin-top:.2rem;
+      word-break:break-word;
+    }
+    .notes-card{
+      margin-top:.8rem;
+      padding:.85rem .95rem;
+      border-radius:16px;
+      background:#fff7ed;
+      border:1px solid #fed7aa;
+      color:#7c2d12;
+      font-weight:700;
+    }
+    .hero-actions{
+      display:flex;
+      flex-wrap:wrap;
+      gap:.6rem;
+      justify-content:flex-end;
+    }
+    .hero-actions .btn{
+      border-radius:12px;
+      font-weight:800;
+    }
+
+    .summary-grid{
+      display:grid;
+      grid-template-columns:repeat(3, minmax(0, 1fr));
+      gap:1rem;
+      margin-bottom:1rem;
+    }
+    .summary-card{
+      padding:1rem 1.1rem;
+    }
+    .summary-label{
+      color:var(--muted);
+      font-size:.88rem;
+      font-weight:800;
+    }
+    .summary-value{
+      margin-top:.35rem;
+      color:var(--text);
+      font-size:1.6rem;
+      font-weight:900;
+      line-height:1.1;
+    }
+    .summary-sub{
+      margin-top:.3rem;
+      color:var(--muted);
+      font-size:.88rem;
+      font-weight:700;
+    }
+
+    .section-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:1rem;
+      margin:1.5rem 0 .9rem;
+    }
+    .section-head h3{
+      margin:0;
+      color:var(--text);
+      font-size:1.25rem;
+      font-weight:900;
+    }
+    .section-note{
+      color:var(--muted);
+      font-size:.92rem;
+      font-weight:700;
+    }
+
+    .ar-card{
+      padding:1rem 1.1rem;
+      margin-bottom:1.2rem;
+    }
+    .ar-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:1rem;
+      margin-bottom:.9rem;
+    }
+    .ar-head h4{
+      margin:0;
+      color:var(--text);
+      font-size:1.05rem;
+      font-weight:900;
+    }
+    .ar-grid{
+      display:grid;
+      grid-template-columns:repeat(4, minmax(0, 1fr));
+      gap:.8rem;
+      margin-bottom:1rem;
+    }
+    .ar-stat{
+      padding:.85rem .95rem;
+      border-radius:16px;
+      border:1px solid rgba(148,163,184,.2);
+      background:#f8fafc;
+    }
+    .ar-stat .label{
+      color:var(--muted);
+      font-size:.78rem;
+      font-weight:900;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+    }
+    .ar-stat .value{
+      margin-top:.2rem;
+      color:var(--text);
+      font-size:1.15rem;
+      font-weight:900;
+    }
+    .chips{
+      display:flex;
+      flex-wrap:wrap;
+      gap:.5rem;
+      margin-bottom:1rem;
+    }
+    .chip{
+      display:inline-flex;
+      align-items:center;
+      padding:.3rem .7rem;
+      border-radius:999px;
+      background:#f8fafc;
+      border:1px solid rgba(148,163,184,.24);
+      color:#334155;
+      font-size:.82rem;
+      font-weight:800;
+    }
+    .chip.warn{
+      background:var(--warning-soft);
+      border-color:#fdba74;
+      color:#9a3412;
+    }
+    .chip.danger{
+      background:var(--danger-soft);
+      border-color:#fecaca;
+      color:#991b1b;
+    }
+
+    .month-card{
+      overflow:hidden;
+      margin-bottom:1rem;
+    }
+    .month-head{
+      display:flex;
+      justify-content:space-between;
+      gap:1rem;
+      padding:1rem 1.1rem;
+      background:linear-gradient(180deg,#f8fbff,#ffffff);
+      border-bottom:1px solid rgba(148,163,184,.16);
+    }
+    .month-title{
+      color:var(--text);
+      font-size:1.15rem;
+      font-weight:900;
+    }
+    .month-meta{
+      margin-top:.25rem;
+      color:var(--muted);
+      font-size:.9rem;
+      font-weight:700;
+    }
+    .month-amount{
+      color:var(--success);
+      font-size:1.15rem;
+      font-weight:900;
+      text-align:right;
+    }
+    .month-body{
+      padding:0 1rem 1rem;
+    }
+    .month-payments{
+      display:flex;
+      flex-wrap:wrap;
+      gap:.45rem;
+      padding:1rem 1rem 0;
+    }
+    .month-payments .pay-pill{
+      background:#f8fafc;
+      border-color:#cbd5e1;
+      color:#0f172a;
+    }
+
+    .day-entry{
+      margin-top:.85rem;
+      border:1px solid rgba(148,163,184,.18);
+      border-radius:18px;
+      overflow:hidden;
+      background:#fff;
+    }
+    .day-entry summary{
+      list-style:none;
+      cursor:pointer;
+    }
+    .day-entry summary::-webkit-details-marker{
+      display:none;
+    }
+    .day-summary{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:1rem;
+      padding:.95rem 1rem;
+      background:#fbfdff;
+    }
+    .day-summary-main{
+      min-width:0;
+    }
+    .day-date{
+      color:var(--text);
+      font-size:1rem;
+      font-weight:900;
+    }
+    .day-meta{
+      margin-top:.25rem;
+      color:var(--muted);
+      font-size:.88rem;
+      font-weight:700;
+    }
+    .day-summary-end{
+      display:flex;
+      align-items:center;
+      gap:.9rem;
+    }
+    .day-total{
+      color:var(--success);
+      font-size:1.05rem;
+      font-weight:900;
+      white-space:nowrap;
+    }
+    .day-arrow,
+    .order-arrow{
+      width:12px;
+      height:12px;
+      border-right:3px solid #0f172a;
+      border-bottom:3px solid #0f172a;
+      transform:rotate(45deg);
+      transition:transform .2s ease, border-color .2s ease;
+      flex:0 0 auto;
+    }
+    .day-entry[open] .day-arrow,
+    .order-entry[open] .order-arrow{
+      transform:rotate(225deg);
+      border-color:#1d4ed8;
+    }
+    .day-body{
+      padding:0 1rem 1rem;
+      border-top:1px solid rgba(148,163,184,.16);
+    }
+
+    .order-entry{
+      margin-top:.85rem;
+      border:1px solid rgba(148,163,184,.18);
+      border-radius:16px;
+      overflow:hidden;
+      background:#fff;
+    }
+    .order-entry summary{
+      list-style:none;
+      cursor:pointer;
+    }
+    .order-entry summary::-webkit-details-marker{
+      display:none;
+    }
+    .order-summary{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:1rem;
+      padding:.9rem 1rem;
+      background:linear-gradient(180deg,#ffffff,#fbfdff);
+    }
+    .order-summary-main{
+      min-width:0;
+      flex:1;
+    }
+    .order-badge{
+      display:inline-flex;
+      align-items:center;
+      padding:.24rem .65rem;
+      border-radius:999px;
+      background:var(--accent-soft);
+      color:#1d4ed8;
+      font-size:.8rem;
+      font-weight:900;
+    }
+    .order-time{
+      margin-top:.45rem;
+      color:var(--text);
+      font-size:1rem;
+      font-weight:900;
+    }
+    .order-meta{
+      margin-top:.25rem;
+      color:var(--muted);
+      font-size:.86rem;
+      font-weight:700;
+    }
+    .order-summary-end{
+      display:flex;
+      align-items:center;
+      gap:1rem;
+    }
+    .order-total{
+      color:var(--success);
+      font-size:1.15rem;
+      font-weight:900;
+      text-align:right;
+    }
+    .profit-note{
+      margin-top:.3rem;
+      color:#065f46;
+      font-size:.8rem;
+      font-weight:900;
+      line-height:1.2;
+    }
+    .profit-note.negative{
+      color:#b91c1c;
+    }
+    .order-payments{
+      display:flex;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+      gap:.4rem;
+      margin-top:.45rem;
+    }
+    .pay-pill{
+      display:inline-flex;
+      align-items:center;
+      padding:.24rem .6rem;
+      border-radius:999px;
+      background:#eff6ff;
+      border:1px solid #bfdbfe;
+      color:#1d4ed8;
+      font-size:.78rem;
+      font-weight:800;
+    }
+    .order-body{
+      padding:0 1rem 1rem;
+      border-top:1px solid rgba(148,163,184,.16);
+    }
+    .order-tools{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:.8rem;
+      padding:.8rem 0;
+    }
+    .hint{
+      color:var(--muted);
+      font-size:.88rem;
+      font-weight:700;
+    }
+
+    .table thead th{
+      background:#f8fafc;
+      color:#475569;
+      font-size:.78rem;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+    }
+    .table td{
+      vertical-align:middle;
+    }
+    .item-name{
+      color:var(--text);
+      font-weight:800;
+    }
+    .item-name a{
+      color:inherit;
+      text-decoration:none;
+    }
+    .item-name a:hover{
+      color:#1d4ed8;
+    }
+    .num{
+      font-variant-numeric:tabular-nums;
+      font-weight:800;
+    }
+    .table-product{
+      display:grid;
+      grid-template-columns:56px minmax(0,1fr);
+      gap:.8rem;
+      align-items:center;
+    }
+    .table-product-thumb-wrap,
+    .table-product-thumb-empty{
+      width:56px;
+      height:56px;
+      border-radius:16px;
+      border:1px solid rgba(148,163,184,.24);
+      background:#f8fafc;
+    }
+    .table-product-thumb-wrap{
+      padding:0;
+      overflow:hidden;
+      display:block;
+      cursor:zoom-in;
+    }
+    .table-product-thumb{
+      width:100%;
+      height:100%;
+      object-fit:cover;
+      display:block;
+    }
+    .table-product-thumb-empty{
+      display:grid;
+      place-items:center;
+      color:var(--muted);
+      font-size:.7rem;
+      font-weight:800;
+      text-align:center;
+      padding:.25rem;
+    }
+
+    .empty-card{
+      padding:1.1rem 1.2rem;
+      color:var(--muted);
+      font-weight:700;
+    }
+
+    @media (max-width: 991.98px){
+      .hero-card,
+      .hero-main,
+      .month-head,
+      .day-summary,
+      .order-summary{
+        flex-direction:column;
+        align-items:flex-start;
+      }
+      .hero-grid,
+      .summary-grid,
+      .ar-grid{
+        grid-template-columns:1fr 1fr;
+      }
+      .month-amount,
+      .day-total,
+      .order-total{
+        text-align:left;
+      }
+      .order-payments{
+        justify-content:flex-start;
+      }
+    }
+
+    @media (max-width: 575.98px){
+      .hero-grid,
+      .summary-grid,
+      .ar-grid{
+        grid-template-columns:1fr;
+      }
+      .hero-actions,
+      .order-tools{
+        width:100%;
+        justify-content:flex-start;
+      }
+      .table thead{
+        display:none;
+      }
+      .table,
+      .table tbody,
+      .table tr,
+      .table td{
+        display:block;
+        width:100%;
+      }
+      .table tr{
+        padding:.75rem 0;
+        border-top:1px solid #eef2f7;
+      }
+      .table td{
+        border:0;
+        padding:.2rem 0;
+      }
+      .table td::before{
+        content:attr(data-label);
+        display:block;
+        color:var(--muted);
+        font-size:.76rem;
+        font-weight:800;
+        text-transform:uppercase;
+        letter-spacing:.03em;
+        margin-bottom:.1rem;
+      }
+    }
+  </style>
+
+  <div class="hero-card">
+    <div class="hero-main">
+      <div class="avatar">{{ customer.name|default:"?"|first|upper }}</div>
+      <div class="hero-text">
+        <h1 class="hero-title">{{ customer.name }}</h1>
+        <p class="hero-sub">A full relationship view with contact details, payment follow-up, and order history grouped by month, date, and time.</p>
+        {% if show_sensitive %}
+          <div class="hero-grid">
+            <div class="hero-field">
+              <span class="hero-label">NIF</span>
+              <span class="hero-value">{{ customer.nif|default:"-" }}</span>
+            </div>
+            <div class="hero-field">
+              <span class="hero-label">Phone</span>
+              <span class="hero-value">{{ customer.phone|default:"-" }}</span>
+            </div>
+            <div class="hero-field">
+              <span class="hero-label">Email</span>
+              <span class="hero-value">{{ customer.email|default:"-" }}</span>
+            </div>
+          </div>
+          {% if customer.notes %}
+            <div class="notes-card">{{ customer.notes }}</div>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+    {% if show_sensitive %}
+      <div class="hero-actions">
+        <a href="{% url 'edit_customer' customer.id %}" class="btn btn-outline-primary">Edit</a>
+        <a href="{% url 'ar_new' %}?customer={{ customer.id }}" class="btn btn-success">New IOU</a>
+        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteCustomerModal">Delete</button>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="summary-grid">
+    {% if show_sales_sensitive %}
+      <div class="summary-card">
+        <div class="summary-label">Total Spent</div>
+        <div class="summary-value">€{{ total_spent|floatformat:2 }}</div>
+        <div class="summary-sub">Across all completed orders</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">Average Order</div>
+        <div class="summary-value">EUR {{ average_order_value|floatformat:2 }}</div>
+        <div class="summary-sub">Average basket value for this customer</div>
+      </div>
+    {% endif %}
+    <div class="summary-card">
+      <div class="summary-label">Total Orders</div>
+      <div class="summary-value">{{ total_orders }}</div>
+      <div class="summary-sub">Grouped by month, date, and time</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Last Order</div>
+      <div class="summary-value">
+        {% if last_order_at %}
+          {{ last_order_at|date:"Y-m-d" }}
+        {% else %}
+          -
+        {% endif %}
+      </div>
+      <div class="summary-sub">
+        {% if last_order_at %}
+          {{ last_order_at|date:"H:i" }}
+        {% else %}
+          No orders yet
+        {% endif %}
+      </div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Total Items</div>
+      <div class="summary-value">{{ total_items }}</div>
+      <div class="summary-sub">Units sold to this customer</div>
+    </div>
+    {% if show_sales_sensitive %}
+      <div class="summary-card">
+        <div class="summary-label">Largest Order</div>
+        <div class="summary-value">EUR {{ largest_order_total|floatformat:2 }}</div>
+        <div class="summary-sub">Highest single order value recorded</div>
+      </div>
+    {% endif %}
+    {% if show_profit %}
+      <div class="summary-card">
+        <div class="summary-label">Net Profit</div>
+        <div class="summary-value">€{{ total_profit|floatformat:2 }}</div>
+        <div class="summary-sub">Admin only</div>
+      </div>
+    {% endif %}
+  </div>
+
+  {% if show_ar %}
+    <div class="ar-card">
+      <div class="ar-head">
+        <h4>IOU / AR Overview</h4>
+        <span class="section-note">Open balances only</span>
+      </div>
+      <div class="ar-grid">
+        <div class="ar-stat">
+          <div class="label">Total Due</div>
+          <div class="value">€{{ ar_totals.total_due|floatformat:2 }}</div>
+        </div>
+        <div class="ar-stat">
+          <div class="label">Total Paid</div>
+          <div class="value">€{{ ar_totals.total_paid|floatformat:2 }}</div>
+        </div>
+        <div class="ar-stat">
+          <div class="label">Balance</div>
+          <div class="value {% if ar_totals.balance > 0 %}text-danger{% else %}text-success{% endif %}">€{{ ar_totals.balance|floatformat:2 }}</div>
+        </div>
+        <div class="ar-stat">
+          <div class="label">Overdue</div>
+          <div class="value">{{ ar_overdue.count }}</div>
+        </div>
+      </div>
+      <div class="chips">
+        <span class="chip">Unpaid: {{ ar_counts.unpaid }}</span>
+        <span class="chip warn">Partial: {{ ar_counts.partial }}</span>
+        <span class="chip">Paid: {{ ar_counts.paid }}</span>
+        <span class="chip danger">Overdue: {{ ar_overdue.count }}</span>
+        <span class="chip">
+          Next Due:
+          {% if ar_next_due %} {{ ar_next_due.due_date|date:"Y-m-d" }} (AR #{{ ar_next_due.id }}){% else %} -{% endif %}
+        </span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th>AR #</th>
+              <th>Date</th>
+              <th>Due</th>
+              <th class="text-end">Total</th>
+              <th class="text-end">Paid</th>
+              <th class="text-end">Balance</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for inv in ar_open %}
+              <tr>
+                <td data-label="AR #">#{{ inv.id }}</td>
+                <td data-label="Date">{{ inv.date|date:"Y-m-d" }}</td>
+                <td data-label="Due">
+                  {% if inv.due_date %}
+                    <span class="{% if inv.is_overdue %}text-danger{% endif %}">{{ inv.due_date|date:"Y-m-d" }}</span>
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+                <td class="text-end num" data-label="Total">€{{ inv.total_amount|floatformat:2 }}</td>
+                <td class="text-end num" data-label="Paid">€{{ inv.amount_paid|floatformat:2 }}</td>
+                <td class="text-end num {% if inv.balance_val > 0 %}text-danger{% else %}text-success{% endif %}" data-label="Balance">€{{ inv.balance_val|floatformat:2 }}</td>
+                <td data-label="Status">
+                  <span class="badge {% if inv.status == 'paid' %}bg-success{% elif inv.status == 'partial' %}bg-warning text-dark{% else %}bg-danger{% endif %}">{{ inv.status|capfirst }}</span>
+                </td>
+                <td data-label="">
+                  <a class="btn btn-sm btn-outline-primary" href="{% url 'ar_detail' inv.id %}">View</a>
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="8" class="text-center py-3 text-muted">No open IOUs.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="section-head">
+    <h3>Order Timeline</h3>
+    <span class="section-note">{{ total_orders }} orders grouped by month, date, and time</span>
+  </div>
+
+  {% for month in month_blocks %}
+    <section class="month-card">
+      <div class="month-head">
+        <div>
+          <div class="month-title">{{ month.month_label }}</div>
+          <div class="month-meta">{{ month.totals.orders }} orders, {{ month.totals.qty }} items</div>
+        </div>
+        {% if show_sales_sensitive %}
+          <div>
+            <div class="month-amount">€{{ month.totals.amount|floatformat:2 }}</div>
+            {% if show_profit %}
+              <div class="profit-note {% if month.totals.profit < 0 %}negative{% endif %}">Profit €{{ month.totals.profit|floatformat:2 }}</div>
+            {% endif %}
+          </div>
+        {% endif %}
+      </div>
+      {% if show_sales_sensitive and month.payment_breakdown %}
+        <div class="month-payments">
+          {% for pay in month.payment_breakdown %}
+            <span class="pay-pill">{{ pay.label }} EUR {{ pay.amount|floatformat:2 }}</span>
+          {% endfor %}
+        </div>
+      {% endif %}
+      <div class="month-body">
+        {% for day in month.day_blocks %}
+          <details class="day-entry" {% if forloop.first and forloop.parentloop.first %}open{% endif %}>
+            <summary class="day-summary">
+              <div class="day-summary-main">
+                <div class="day-date">{{ day.date }}</div>
+                <div class="day-meta">{{ day.order_count }} orders, {{ day.totals.qty }} items</div>
+              </div>
+              <div class="day-summary-end">
+                {% if show_sales_sensitive %}
+                  <div>
+                    <div class="day-total">€{{ day.totals.amount|floatformat:2 }}</div>
+                    {% if show_profit %}
+                      <div class="profit-note {% if day.totals.profit < 0 %}negative{% endif %}">Profit €{{ day.totals.profit|floatformat:2 }}</div>
+                    {% endif %}
+                  </div>
+                {% endif %}
+                <span class="day-arrow" aria-hidden="true"></span>
+              </div>
+            </summary>
+            <div class="day-body">
+              {% for order in day.orders %}
+                <details class="order-entry" id="{{ order.detail_id }}">
+                  <summary class="order-summary">
+                    <div class="order-summary-main">
+                      <span class="order-badge">Order #{{ order.id }}</span>
+                      <div class="order-time">{{ order.created_at|date:"H:i" }}</div>
+                      <div class="order-meta">{{ order.display_total_qty }} pcs</div>
+                    </div>
+                    <div class="order-summary-end">
+                      {% if show_sales_sensitive %}
+                        <div>
+                          <div class="order-total">€{{ order.display_total_amount|floatformat:2 }}</div>
+                          {% if show_profit %}
+                            <div class="profit-note {% if order.display_total_profit < 0 %}negative{% endif %}">Profit €{{ order.display_total_profit|floatformat:2 }}</div>
+                          {% endif %}
+                          <div class="order-payments">
+                            {% for pay in order.display_pay_break %}
+                              <span class="pay-pill">{{ pay.label }} €{{ pay.amount|floatformat:2 }}</span>
+                            {% endfor %}
+                          </div>
+                        </div>
+                      {% endif %}
+                      <span class="order-arrow" aria-hidden="true"></span>
+                    </div>
+                  </summary>
+                  <div class="order-body">
+                    <div class="order-tools">
+                      <span class="hint">
+                        {% if show_sales_sensitive %}
+                          Open below to review products, quantities, payment method, and subtotals.
+                        {% else %}
+                          Open below to review products and quantities.
+                        {% endif %}
+                      </span>
+                      <a href="{{ order.detail_url }}" class="btn btn-sm btn-outline-secondary">Print</a>
+                    </div>
+                    <div class="table-responsive">
+                      <table class="table table-sm align-middle mb-0">
+                        <thead>
+                          <tr>
+                            <th>Product</th>
+                            <th class="text-center">Qty</th>
+                            {% if show_sales_sensitive %}
+                              <th class="text-end">Unit Price</th>
+                              <th class="text-end">Subtotal</th>
+                            {% endif %}
+                            {% if show_profit %}
+                              <th class="text-end">Net Profit</th>
+                            {% endif %}
+                            {% if show_sales_sensitive %}
+                              <th>Payment</th>
+                            {% endif %}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {% for item in order.items_list %}
+                            <tr>
+                              <td data-label="Product">
+                                <div class="table-product">
+                                  {% if item.image_url %}
+                                    <button
+                                      type="button"
+                                      class="table-product-thumb-wrap"
+                                      data-product-preview-url="{{ item.image_url }}"
+                                      data-product-preview-title="{{ item.display_name }}"
+                                    >
+                                      <img src="{{ item.image_url }}" alt="{{ item.display_name }}" class="table-product-thumb">
+                                    </button>
+                                  {% else %}
+                                    <div class="table-product-thumb-empty">No image</div>
+                                  {% endif %}
+                                  <div class="item-name">
+                                    {% if item.product %}
+                                      <a href="{% url 'product_detail' item.product.id %}">{{ item.display_name }}</a>
+                                    {% else %}
+                                      {{ item.display_name }}
+                                    {% endif %}
+                                  </div>
+                                </div>
+                              </td>
+                              <td class="text-center num" data-label="Qty">{{ item.quantity }}</td>
+                              {% if show_sales_sensitive %}
+                                <td class="text-end num" data-label="Unit Price">€{{ item.unit_price|floatformat:2 }}</td>
+                                <td class="text-end num" data-label="Subtotal">€{{ item.total_price|floatformat:2 }}</td>
+                              {% endif %}
+                              {% if show_profit %}
+                                <td class="text-end num {% if item.line_profit < 0 %}text-danger{% endif %}" data-label="Net Profit">€{{ item.line_profit|floatformat:2 }}</td>
+                              {% endif %}
+                              {% if show_sales_sensitive %}
+                                <td data-label="Payment"><span class="pay-pill">{{ item.payment_label }}</span></td>
+                              {% endif %}
+                            </tr>
+                          {% endfor %}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </details>
+              {% endfor %}
+            </div>
+          </details>
+        {% endfor %}
+      </div>
+    </section>
+  {% empty %}
+    <div class="empty-card">No orders for this customer yet.</div>
+  {% endfor %}
+
+  {% if show_sensitive %}
+    <div class="modal fade" id="deleteCustomerModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog">
+        <form method="post" action="{% url 'delete_customer' customer.id %}" class="modal-content">
+          {% csrf_token %}
+          <div class="modal-header">
+            <h5 class="modal-title text-danger">Confirm Deletion</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <p>Are you sure you want to delete <strong>{{ customer.name }}</strong> and all related data?</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-danger">Delete</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="modal fade" id="customerProductPreviewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="customerProductPreviewTitle">Product image</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-3">
+          <img id="customerProductPreviewImg" src="" alt="" class="img-fluid w-100 rounded-4">
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  (function () {
+    const modalEl = document.getElementById('customerProductPreviewModal');
+    const modalImg = document.getElementById('customerProductPreviewImg');
+    const modalTitle = document.getElementById('customerProductPreviewTitle');
+
+    document.addEventListener('click', (event) => {
+      const trigger = event.target.closest('[data-product-preview-url]');
+      if (!trigger) return;
+      modalImg.src = trigger.dataset.productPreviewUrl;
+      modalImg.alt = trigger.dataset.productPreviewTitle || 'Product image';
+      modalTitle.textContent = trigger.dataset.productPreviewTitle || 'Product image';
+      bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    });
+  }());
+</script>
+{% endblock %}

@@ -1,0 +1,4984 @@
+# stock/views.py
+import csv
+from decimal import Decimal,ROUND_HALF_UP
+import hashlib
+import json
+from io import BytesIO
+from collections import defaultdict
+from datetime import timedelta, datetime
+import qrcode
+import base64
+from calendar import monthrange
+from django.contrib.auth import get_user_model
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from django.core.paginator import Paginator
+from django.core.cache import cache
+from django.core.exceptions import ValidationError
+from django.db import transaction
+from django.db.models import Q, Sum, Count, Max
+from django.db.models.functions import Coalesce
+from django.http import (
+    Http404, HttpResponse, JsonResponse, FileResponse
+)
+from django.shortcuts import render, redirect, get_object_or_404
+from django.utils.text import slugify
+from django.utils import timezone
+from django.utils.dateparse import parse_date
+from django.views.decorators.http import require_POST
+from django.urls import reverse
+from urllib.parse import urlencode
+
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak,KeepTogether,HRFlowable
+
+from django.db.models import Sum, OuterRef, Subquery, IntegerField, F, DecimalField, DateTimeField, ExpressionWrapper, Q,Value
+from io import BytesIO as _BytesIO
+
+from .forms import (
+    ProductForm, CustomerForm, ARInvoiceForm, ARItemForm, ARItemFormSet, ARPaymentForm,
+    SaleOrderCorrectionForm, SaleCorrectionLineFormSet, SupplierForm, EmployeeAccountForm,
+    PrintProfileForm, InboundOrderEditForm, InboundPurchaseFormSet, DirectPurchaseEditForm,
+)
+from .models import (
+    Product, Purchase, Sale, Supplier, Customer, ProductImage,
+    Category, SaleOrder, InboundOrder, ARInvoice, ARItem, ARPayment,
+    Brand, ProductSeries, SaleOrderChangeLog, AttendanceRecord, PrintProfile
+)
+from .permissions import (
+    has_admin_access,
+    has_manager_access,
+    has_order_reconciliation_access,
+    has_sales_sensitive_access,
+    admin_required,
+    manager_required,
+)
+from .services.dashboard import build_monthly_dashboard_snapshot, resolve_dashboard_month
+from .services.inventory import build_inventory_snapshot
+from .services.order_corrections import (
+    delete_sale_order_correction,
+    save_sale_order_correction,
+)
+from .services.profit import sale_profit_map_for_sale_ids
+from .services import rebuild_all_daily_summaries
+
+from openpyxl import Workbook
+from openpyxl.drawing.image import Image as XLImage
+from openpyxl.styles import PatternFill, Alignment, Font, Border, Side
+from openpyxl.utils import get_column_letter
+from PIL import Image as PILImage
+
+
+def build_product_label(product):
+    if not product:
+        return 'Unknown product'
+    return product.display_name
+
+
+def get_product_image_url(product):
+    if not product:
+        return ''
+
+    images_manager = getattr(product, 'images', None)
+    if images_manager is None:
+        return ''
+
+    for image in images_manager.all():
+        image_file = getattr(image, 'image', None)
+        if not image_file:
+            continue
+        try:
+            return image_file.url
+        except ValueError:
+            continue
+    return ''
+
+
+def build_brand_series_map():
+    mapping = {}
+    for brand in Brand.objects.order_by('name').prefetch_related('series'):
+        mapping[str(brand.id)] = [
+            {'id': series.id, 'name': series.name}
+            for series in brand.series.all().order_by('name')
+        ]
+    return mapping
+
+
+def build_brand_catalog():
+    catalog = []
+    for brand in Brand.objects.order_by('name').prefetch_related('categories'):
+        catalog.append({
+            'id': brand.id,
+            'name': brand.name,
+            'category_ids': [str(category.id) for category in brand.categories.all().order_by('name')],
+        })
+    return catalog
+
+
+def annotate_catalog_metrics(queryset):
+    stock_subquery = (
+        Purchase.objects
+        .filter(product=OuterRef('pk'))
+        .values('product')
+        .annotate(total=Sum('remaining'))
+        .values('total')[:1]
+    )
+    sold_subquery = (
+        Sale.objects
+        .filter(product=OuterRef('pk'))
+        .values('product')
+        .annotate(total=Sum('quantity'))
+        .values('total')[:1]
+    )
+
+    return queryset.annotate(
+        image_count=Count('images', distinct=True),
+        total_stock=Coalesce(Subquery(stock_subquery, output_field=IntegerField()), Value(0)),
+        total_sold=Coalesce(Subquery(sold_subquery, output_field=IntegerField()), Value(0)),
+    )
+
+
+def customer_catalog_case(value):
+    value = (value or '').strip()
+    if not value:
+        return ''
+    return value.title()
+
+
+def build_customer_product_title(product):
+    model_part = (getattr(product, 'model', '') or '').strip()
+    name_part = (getattr(product, 'name', '') or '').strip()
+    title_parts = []
+    if model_part:
+        title_parts.append(model_part)
+    if name_part and name_part.lower() != model_part.lower():
+        title_parts.append(name_part)
+    return customer_catalog_case(' - '.join(title_parts) or name_part or build_product_label(product))
+
+
+def get_catalog_availability_parts(stock_val):
+    stock_val = int(stock_val or 0)
+    if stock_val >= 4:
+        return 'Available now', 'in-stock'
+    if stock_val > 0:
+        return 'Low stock', 'low-stock'
+    return 'Currently unavailable', 'out-stock'
+
+
+SHOPIFY_PRODUCT_CSV_HEADERS = [
+    'Title',
+    'URL handle',
+    'Description',
+    'Vendor',
+    'Product category',
+    'Type',
+    'Tags',
+    'Published on online store',
+    'Status',
+    'SKU',
+    'Barcode',
+    'Option1 name',
+    'Option1 value',
+    'Option1 Linked To',
+    'Option2 name',
+    'Option2 value',
+    'Option2 Linked To',
+    'Option3 name',
+    'Option3 value',
+    'Option3 Linked To',
+    'Price',
+    'Compare-at price',
+    'Cost per item',
+    'Charge tax',
+    'Tax code',
+    'Unit price total measure',
+    'Unit price total measure unit',
+    'Unit price base measure',
+    'Unit price base measure unit',
+    'Inventory tracker',
+    'Inventory quantity',
+    'Continue selling when out of stock',
+    'Weight value (grams)',
+    'Weight unit for display',
+    'Requires shipping',
+    'Fulfillment service',
+    'Product image URL',
+    'Image position',
+    'Image alt text',
+    'Variant image URL',
+    'Gift card',
+    'SEO title',
+    'SEO description',
+    'Color (product.metafields.shopify.color-pattern)',
+    'Google Shopping / Google product category',
+    'Google Shopping / Gender',
+    'Google Shopping / Age group',
+    'Google Shopping / Manufacturer part number (MPN)',
+    'Google Shopping / Ad group name',
+    'Google Shopping / Ads labels',
+    'Google Shopping / Condition',
+    'Google Shopping / Custom product',
+    'Google Shopping / Custom label 0',
+    'Google Shopping / Custom label 1',
+    'Google Shopping / Custom label 2',
+    'Google Shopping / Custom label 3',
+    'Google Shopping / Custom label 4',
+]
+
+
+def _clean_csv_text(value):
+    return (str(value).strip() if value is not None else '')
+
+
+def _build_shopify_base_title(product):
+    seen = set()
+    parts = []
+    for value in [product.brand, product.model, product.name]:
+        cleaned = _clean_csv_text(value)
+        key = cleaned.lower()
+        if cleaned and key not in seen:
+            parts.append(cleaned)
+            seen.add(key)
+    return ' - '.join(parts) or product.display_name or product.barcode
+
+
+def _build_unique_shopify_handle(raw_title, fallback, used_handles):
+    base = slugify(raw_title, allow_unicode=False).strip('-')
+    if not base:
+        base = slugify(fallback, allow_unicode=False).strip('-') or f'product-{fallback}'
+    base = (base[:220].strip('-') or f'product-{fallback}')
+    handle = base
+    suffix = 2
+    while handle in used_handles:
+        suffix_text = f'-{suffix}'
+        handle = f'{base[:255 - len(suffix_text)]}{suffix_text}'
+        suffix += 1
+    used_handles.add(handle)
+    return handle
+
+
+def _format_shopify_money(value):
+    if value is None:
+        return ''
+    return str(Decimal(value).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+
+
+def _first_clean_product_value(group_products, attr):
+    for product in group_products:
+        cleaned = _clean_csv_text(getattr(product, attr, ''))
+        if cleaned:
+            return cleaned
+    return ''
+
+
+def _build_shopify_tags(group_products):
+    seen = set()
+    tags = []
+    for product in group_products:
+        values = [
+            getattr(product.category, 'name', ''),
+            product.brand,
+            product.model,
+            product.name,
+            product.spec,
+            product.color,
+        ]
+        for value in values:
+            cleaned = _clean_csv_text(value)
+            key = cleaned.lower()
+            if cleaned and key not in seen:
+                tags.append(cleaned)
+                seen.add(key)
+    return ', '.join(tags)
+
+
+def _build_shopify_color_metafield(group_products):
+    colors = []
+    seen = set()
+    for product in group_products:
+        color = _clean_csv_text(product.color)
+        key = color.lower()
+        if color and key not in seen:
+            colors.append(color)
+            seen.add(key)
+    return '; '.join(colors)
+
+
+def _build_shopify_image_url(request, product):
+    image_url = get_product_image_url(product)
+    if not image_url:
+        return ''
+    return request.build_absolute_uri(image_url)
+
+
+def _first_shopify_image_url(request, group_products):
+    for product in group_products:
+        image_url = _build_shopify_image_url(request, product)
+        if image_url:
+            return image_url
+    return ''
+
+
+def _apply_shopify_option_columns(row, product, group_products):
+    has_spec = any(_clean_csv_text(item.spec) for item in group_products)
+    has_color = any(_clean_csv_text(item.color) for item in group_products)
+    spec_value = _clean_csv_text(product.spec) or 'Default'
+    color_value = _clean_csv_text(product.color) or 'Default'
+
+    if has_spec:
+        row['Option1 name'] = 'Spec'
+        row['Option1 value'] = spec_value
+        if has_color:
+            row['Option2 name'] = 'Color'
+            row['Option2 value'] = color_value
+            row['Option2 Linked To'] = 'product.metafields.shopify.color-pattern'
+        return
+
+    if has_color:
+        row['Option1 name'] = 'Color'
+        row['Option1 value'] = color_value
+        row['Option1 Linked To'] = 'product.metafields.shopify.color-pattern'
+        return
+
+    if len(group_products) > 1:
+        row['Option1 name'] = 'SKU'
+        row['Option1 value'] = product.barcode
+        return
+
+    row['Option1 name'] = 'Title'
+    row['Option1 value'] = 'Default Title'
+
+
+def get_month_bounds(month_value=None):
+    today = timezone.localdate()
+    if month_value:
+        try:
+            year_str, month_str = month_value.split('-', 1)
+            year = int(year_str)
+            month = int(month_str)
+            month_start = today.replace(year=year, month=month, day=1)
+        except (TypeError, ValueError):
+            month_start = today.replace(day=1)
+    else:
+        month_start = today.replace(day=1)
+
+    last_day = monthrange(month_start.year, month_start.month)[1]
+    month_end = month_start.replace(day=last_day)
+    return month_start, month_end
+
+
+def format_duration_hours(duration):
+    if not duration:
+        return "0.0h"
+    total_seconds = max(duration.total_seconds(), 0)
+    hours = total_seconds / 3600
+    return f"{hours:.1f}h"
+
+
+def append_attendance_note(existing_note, new_note, prefix):
+    new_note = (new_note or '').strip()
+    if not new_note:
+        return existing_note or ''
+    if existing_note:
+        return f"{existing_note}\n{prefix}: {new_note}"
+    return f"{prefix}: {new_note}"
+
+
+def normalize_recorded_at(recorded_at):
+    if timezone.is_naive(recorded_at):
+        return timezone.make_aware(recorded_at, timezone.get_current_timezone())
+    return timezone.localtime(recorded_at)
+
+
+def comparable_recorded_at(recorded_at):
+    if recorded_at is None:
+        return None
+    return normalize_recorded_at(recorded_at)
+
+
+def group_purchases_by_recorded_second(purchases):
+    grouped = defaultdict(list)
+    for purchase in purchases:
+        group_key = comparable_recorded_at(purchase.date).replace(microsecond=0)
+        grouped[group_key].append(purchase)
+    return grouped
+
+
+def annotate_inbound_formset_runtime(formset):
+    for line_form in formset.forms:
+        purchase = getattr(line_form, 'instance', None)
+        if not purchase or not getattr(purchase, 'pk', None):
+            continue
+        purchase.sold_units = max((purchase.quantity or 0) - (purchase.remaining or 0), 0)
+        purchase.line_total = (purchase.cost_price or Decimal('0.00')) * (purchase.quantity or 0)
+
+
+# -----------------------------
+# 入库
+# -----------------------------
+@login_required
+def inbound_view(request):
+
+
+    suppliers = Supplier.objects.all()
+    context = {'suppliers': suppliers}
+
+    if request.method != 'POST':
+        return render(request, 'stock/inbound.html', context)
+
+    # 前端传过来的字段（多行明细 + 可选发票信息）
+    items_json  = (request.POST.get('items_json') or '[]').strip()
+    supplier_id = request.POST.get('supplier') or None
+    invoice_no  = (request.POST.get('invoice_no') or '').strip()
+    invoice_date = (request.POST.get('invoice_date') or '').strip()
+
+    # 解析购物车
+    try:
+        items = json.loads(items_json)
+        assert isinstance(items, list) and items, 'Cart is empty.'
+    except Exception:
+        context['error'] = 'Cart payload is invalid or empty.'
+        return render(request, 'stock/inbound.html', context)
+
+    supplier = Supplier.objects.filter(id=supplier_id).first() if supplier_id else None
+
+    # 简易幂等保护：相同负载 8 秒内仅处理一次
+    idem_raw = '|'.join([
+        request.path,
+        items_json,
+        str(supplier_id or ''),
+        invoice_no,
+        invoice_date,
+    ])
+    idem_key = 'idem:' + hashlib.sha256(idem_raw.encode('utf-8', 'ignore')).hexdigest()
+    if not cache.add(idem_key, 1, timeout=8):
+        # 重复提交，直接返回提示，避免重复入库
+        try:
+            items_tmp = json.loads(items_json)
+            total_tmp = sum(Decimal(str(r.get('cost_price', 0))) * int(r.get('qty', 0)) for r in items_tmp)
+        except Exception:
+            total_tmp = Decimal('0.00')
+        context['success'] = f"✅ Duplicate submission detected and ignored. Total €{total_tmp:.2f}."
+        return render(request, 'stock/inbound.html', context)
+
+    try:
+        with transaction.atomic():
+            order_total = Decimal('0.00')
+
+            if supplier:
+                # 只有填写了 supplier，才创建 InboundOrder
+                order = InboundOrder.objects.create(
+                    supplier=supplier,
+                    invoice_no=invoice_no or None,
+                    invoice_date=invoice_date or None,
+                    total_amount=Decimal('0.00'),
+                )
+
+                for row in items:
+                    barcode = str(row.get('barcode', '')).strip()
+                    try:
+                        qty = int(row.get('qty', 0))
+                        cost_price = Decimal(str(row.get('cost_price', 0)))
+                    except Exception:
+                        raise ValueError('Quantity/cost must be numbers.')
+
+                    if not barcode or qty < 1 or cost_price <= 0:
+                        raise ValueError('Invalid item line.')
+
+                    product = Product.objects.get(barcode=barcode)
+
+                    Purchase.objects.create(
+                        inbound_order=order,
+                        product=product,
+                        supplier=supplier,   # 冗余保存，便于历史查询
+                        quantity=qty,
+                        remaining=qty,
+                        cost_price=cost_price,
+                        date=timezone.now(),
+                    )
+                    order_total += cost_price * qty
+
+                # 回写整单总额
+                order.total_amount = order_total
+                order.save()
+
+                context['success'] = (
+                    f'✅ Inbound order created '
+                    f'(Supplier: {supplier.name}, Total: €{order_total:.2f}).'
+                )
+            else:
+                # 没有 supplier：普通入库，不创建 InboundOrder
+                for row in items:
+                    barcode = str(row.get('barcode', '')).strip()
+                    try:
+                        qty = int(row.get('qty', 0))
+                        cost_price = Decimal(str(row.get('cost_price', 0)))
+                    except Exception:
+                        raise ValueError('Quantity/cost must be numbers.')
+
+                    if not barcode or qty < 1 or cost_price <= 0:
+                        raise ValueError('Invalid item line.')
+
+                    product = Product.objects.get(barcode=barcode)
+
+                    Purchase.objects.create(
+                        inbound_order=None,     # 关键：不归入入库单
+                        product=product,
+                        supplier=None,          # 普通入库不记录供应商
+                        quantity=qty,
+                        remaining=qty,
+                        cost_price=cost_price,
+                        date=timezone.now(),
+                    )
+                    order_total += cost_price * qty
+
+                context['success'] = (
+                    f'✅ Inbound recorded (no supplier, not grouped). '
+                    f'Total: €{order_total:.2f}.'
+                )
+
+    except Product.DoesNotExist:
+        context['error'] = 'One product not found by barcode.'
+    except ValueError as e:
+        context['error'] = str(e)
+    except Exception as e:
+        context['error'] = 'Unexpected error: ' + str(e)
+
+    return render(request, 'stock/inbound.html', context)
+
+
+# -----------------------------
+# 出库（一次订单多个产品 + 每行可选支付方式）
+# 前端通过 items_json 提交：[{barcode, qty, price, payment}, ...]
+# 可选 customer_id
+# -----------------------------
+@login_required
+def outbound_view(request):
+    if request.method != 'POST':
+        return render(request, 'stock/outbound.html')
+
+    items_json = request.POST.get('items_json', '[]')
+    customer_id = request.POST.get('customer_id') or None
+    customer = Customer.objects.filter(id=customer_id).first() if customer_id else None
+
+    # 简易幂等保护：相同负载 8 秒内仅处理一次
+    idem_raw = '|'.join([
+        request.path,
+        items_json,
+        str(customer_id or ''),
+    ])
+    idem_key = 'idem:' + hashlib.sha256(idem_raw.encode('utf-8', 'ignore')).hexdigest()
+    if not cache.add(idem_key, 1, timeout=8):
+        try:
+            items_tmp = json.loads(items_json)
+            total_tmp = sum(Decimal(str(r.get('price', 0))) * int(r.get('qty', 0)) for r in items_tmp)
+            qty_tmp = sum(int(r.get('qty', 0)) for r in items_tmp)
+        except Exception:
+            total_tmp = Decimal('0.00'); qty_tmp = 0
+        return render(request, 'stock/outbound.html', {
+            'success': f'✅ Duplicate submission ignored. Items {qty_tmp}, Total €{total_tmp:.2f}.'
+        })
+
+    try:
+        items = json.loads(items_json)
+        assert isinstance(items, list) and len(items) > 0
+    except Exception:
+        return render(request, 'stock/outbound.html', {'error': 'Cart payload is invalid or empty.'})
+
+    order_revenue = Decimal('0.00')
+    order_qty = 0
+
+    try:
+        with transaction.atomic():
+            # 先建订单头
+            order = SaleOrder.objects.create(customer=customer)
+
+            for row in items:
+                barcode = str(row.get('barcode', '')).strip()
+                payment = str(row.get('payment', '')).strip()
+
+                try:
+                    qty = int(row.get('qty', 0))
+                    price = Decimal(str(row.get('price', 0)))
+                except Exception:
+                    raise ValueError('Quantity/price must be numbers.')
+
+                if not barcode or qty < 1 or price <= 0 or payment not in {'cash', 'card', 'mbway'}:
+                    raise ValueError('Invalid product line.')
+
+                try:
+                    product = Product.objects.get(barcode=barcode)
+                except Product.DoesNotExist:
+                    raise ValueError(f'Product not found by barcode: {barcode}')
+
+                # 库存校验
+                current_stock = product.purchase_set.filter(remaining__gt=0).aggregate(
+                    s=Sum('remaining')
+                )['s'] or 0
+                if qty > current_stock:
+                    raise ValueError(f'{product.name}: only {current_stock} in stock.')
+
+                # FIFO 扣减 & 计算行成本
+                remaining = qty
+                for p in product.purchase_set.filter(remaining__gt=0).order_by('date'):
+                    if remaining <= 0:
+                        break
+                    used = min(remaining, p.remaining)
+                    p.remaining -= used
+                    p.save()
+                    remaining -= used
+
+                # 行项目（每行可选支付方式）
+                Sale.objects.create(
+                    order=order,
+                    product=product,
+                    customer=customer,
+                    quantity=qty,
+                    unit_price=price,
+                    payment_method=payment,
+                    date=timezone.now()
+                )
+
+                order_qty += qty
+                order_revenue += price * qty
+
+    except ValueError as e:
+        return render(request, 'stock/outbound.html', {'error': str(e)})
+    except Exception as e:
+        return render(request, 'stock/outbound.html', {'error': 'Unexpected error: ' + str(e)})
+
+    return render(request, 'stock/outbound.html', {
+        'success': f'✅ Sold {order_qty} items across {len(items)} products. Total €{order_revenue:.2f}.'
+    })
+
+
+# -----------------------------
+# 产品列表
+# -----------------------------
+@login_required
+def product_list_view(request):
+    show_sales_sensitive = has_sales_sensitive_access(request.user)
+    query = request.GET.get('q', '').strip()
+    selected_category = request.GET.get('category')
+    selected_brand = request.GET.get('brand')
+    stock_status = (request.GET.get('stock_status') or '').strip()
+    sort_by = (request.GET.get('sort') or 'latest').strip()
+    state = get_filtered_product_list_state(
+        show_sales_sensitive=show_sales_sensitive,
+        query=query,
+        selected_category=selected_category,
+        selected_brand=selected_brand,
+        stock_status=stock_status,
+        sort_by=sort_by,
+    )
+
+    products_qs = state['products_qs']
+    categories = state['categories']
+    brand_options = state['brand_options']
+    selected_category_int = state['selected_category']
+    selected_brand_id = state['selected_brand']
+    sort_by = state['sort_by']
+    active_filter_labels = state['active_filter_labels']
+
+    total_types = products_qs.count()
+    in_stock_types = products_qs.filter(total_stock__gt=0).count()
+
+    paginator = Paginator(products_qs, 10)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    for p in page_obj:
+        p.display_price = p.default_price
+        p.primary_image_url = get_product_image_url(p)
+
+    total_stock = sum(p.total_stock for p in page_obj)
+    query_params = request.GET.copy()
+    query_params.pop('page', None)
+    context = {
+        'products': page_obj,
+        'page_obj': page_obj,
+        'query': query,
+        'categories': categories,
+        'brands': brand_options,
+        'selected_category': selected_category_int,
+        'selected_brand': selected_brand_id,
+        'stock_status': stock_status,
+        'sort_by': sort_by,
+        'total_types': total_types,
+        'in_stock_types': in_stock_types,
+        'total_stock': total_stock,
+        'filter_querystring': query_params.urlencode(),
+        'active_filter_labels': active_filter_labels,
+        'can_manage': has_manager_access(request.user),
+        'show_sales_sensitive': show_sales_sensitive,
+        'export_defaults': {
+            'price_mode': 'retail',
+            'only_in_stock': stock_status == 'in_stock',
+            'include_images': True,
+        },
+        'shopify_export_defaults': {
+            'only_in_stock': stock_status == 'in_stock',
+        },
+    }
+    return render(request, 'stock/product_list.html', context)
+
+
+def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_category, selected_brand, stock_status, sort_by):
+    recent_sales_start = timezone.now() - timedelta(days=30)
+    stock_subquery = (
+        Purchase.objects
+        .filter(product=OuterRef('pk'))
+        .values('product')
+        .annotate(total=Sum('remaining'))
+        .values('total')[:1]
+    )
+    total_sales_subquery = (
+        Sale.objects
+        .filter(product=OuterRef('pk'))
+        .values('product')
+        .annotate(total=Sum('quantity'))
+        .values('total')[:1]
+    )
+    recent_sales_subquery = (
+        Sale.objects
+        .filter(product=OuterRef('pk'), date__gte=recent_sales_start)
+        .values('product')
+        .annotate(total=Sum('quantity'))
+        .values('total')[:1]
+    )
+    last_sold_subquery = (
+        Sale.objects
+        .filter(product=OuterRef('pk'))
+        .order_by('-date')
+        .values('date')[:1]
+    )
+
+    products_qs = Product.objects.annotate(
+        total_stock=Coalesce(Subquery(stock_subquery, output_field=IntegerField()), Value(0), output_field=IntegerField()),
+    )
+    if show_sales_sensitive:
+        products_qs = products_qs.annotate(
+            total_sold_qty=Coalesce(Subquery(total_sales_subquery, output_field=IntegerField()), Value(0), output_field=IntegerField()),
+            recent_sold_qty=Coalesce(
+                Subquery(recent_sales_subquery, output_field=IntegerField()),
+                Value(0),
+                output_field=IntegerField(),
+            ),
+            last_sold_at=Subquery(last_sold_subquery, output_field=DateTimeField()),
+        )
+    else:
+        products_qs = products_qs.annotate(
+            total_sold_qty=Value(0, output_field=IntegerField()),
+            recent_sold_qty=Value(0, output_field=IntegerField()),
+            last_sold_at=Value(None, output_field=DateTimeField()),
+        )
+    products_qs = (
+        products_qs
+        .select_related('category', 'brand_master', 'series_master')
+        .prefetch_related('images')
+    )
+
+    if query:
+        products_qs = products_qs.filter(
+            Q(name__icontains=query) |
+            Q(barcode__icontains=query) |
+            Q(brand__icontains=query) |
+            Q(model__icontains=query) |
+            Q(spec__icontains=query) |
+            Q(color__icontains=query)
+        )
+
+    if selected_category:
+        products_qs = products_qs.filter(category_id=selected_category)
+
+    brand_options = (
+        Brand.objects
+        .filter(products__isnull=False)
+        .order_by('name')
+        .distinct()
+    )
+    if selected_category:
+        brand_options = brand_options.filter(products__category_id=selected_category).distinct()
+
+    selected_brand_id = None
+    selected_brand_obj = None
+    if selected_brand and str(selected_brand).isdigit():
+        selected_brand_id = int(selected_brand)
+        selected_brand_obj = Brand.objects.filter(id=selected_brand_id).first()
+        if selected_brand_obj:
+            products_qs = products_qs.filter(
+                Q(brand_master_id=selected_brand_id) |
+                Q(brand__iexact=selected_brand_obj.name)
+            )
+
+    if stock_status == 'in_stock':
+        products_qs = products_qs.filter(total_stock__gt=0)
+    elif stock_status == 'low_stock':
+        products_qs = products_qs.filter(total_stock__gt=0, total_stock__lte=5)
+    elif stock_status == 'out_of_stock':
+        products_qs = products_qs.filter(total_stock__lte=0)
+
+    allowed_sort_options = {'latest', 'name_asc', 'stock_desc', 'price_desc', 'price_asc'}
+    if show_sales_sensitive:
+        allowed_sort_options.update({'sales_desc', 'recent_sales_desc'})
+    if sort_by not in allowed_sort_options:
+        sort_by = 'latest'
+
+    sort_options = {
+        'latest': ['-id'],
+        'name_asc': ['brand', 'model', 'name', 'id'],
+        'stock_desc': ['-total_stock', 'brand', 'model', 'name'],
+        'sales_desc': ['-total_sold_qty', '-recent_sold_qty', 'brand', 'model', 'name'],
+        'recent_sales_desc': ['-recent_sold_qty', '-total_sold_qty', 'brand', 'model', 'name'],
+        'price_desc': ['-default_price', 'brand', 'model', 'name'],
+        'price_asc': ['default_price', 'brand', 'model', 'name'],
+    }
+    products_qs = products_qs.order_by(*sort_options.get(sort_by, sort_options['latest']))
+
+    categories = Category.objects.all()
+
+    active_filter_labels = []
+    if query:
+        active_filter_labels.append({'label': f'Search: {query}'})
+    if selected_category and str(selected_category).isdigit():
+        category_obj = categories.filter(id=int(selected_category)).first()
+        if category_obj:
+            active_filter_labels.append({'label': f'Category: {category_obj.name}'})
+    if selected_brand_obj:
+        active_filter_labels.append({'label': f'Brand: {selected_brand_obj.name}'})
+    if stock_status:
+        stock_label_map = {
+            'in_stock': 'In stock',
+            'low_stock': 'Low stock',
+            'out_of_stock': 'Out of stock',
+        }
+        active_filter_labels.append({'label': f'Stock: {stock_label_map.get(stock_status, stock_status)}'})
+
+    sort_label_map = {
+        'latest': 'Latest added',
+        'name_asc': 'Name A-Z',
+        'stock_desc': 'Stock high to low',
+        'sales_desc': 'Best selling',
+        'recent_sales_desc': 'Best selling 30 days',
+        'price_desc': 'Retail price high to low',
+        'price_asc': 'Retail price low to high',
+    }
+    active_filter_labels.append({'label': f'Sort: {sort_label_map.get(sort_by, "Latest added")}'})
+
+    return {
+        'products_qs': products_qs,
+        'categories': categories,
+        'brand_options': brand_options,
+        'selected_category': int(selected_category) if selected_category and str(selected_category).isdigit() else None,
+        'selected_brand': selected_brand_id,
+        'selected_brand_obj': selected_brand_obj,
+        'stock_status': stock_status,
+        'sort_by': sort_by,
+        'active_filter_labels': active_filter_labels,
+    }
+
+
+@login_required
+@manager_required
+def export_product_list_excel(request):
+    show_sales_sensitive = has_sales_sensitive_access(request.user)
+    query = request.GET.get('q', '').strip()
+    selected_category = request.GET.get('category')
+    selected_brand = request.GET.get('brand')
+    stock_status = (request.GET.get('stock_status') or '').strip()
+    sort_by = (request.GET.get('sort') or 'latest').strip()
+    price_mode = (request.GET.get('price_mode') or 'retail').strip()
+    only_in_stock = (request.GET.get('only_in_stock') or '').strip().lower() in {'1', 'true', 'on', 'yes'}
+    include_images = (request.GET.get('include_images') or '').strip().lower() in {'1', 'true', 'on', 'yes'}
+
+    if price_mode not in {'retail', 'wholesale', 'both'}:
+        price_mode = 'retail'
+
+    state = get_filtered_product_list_state(
+        show_sales_sensitive=show_sales_sensitive,
+        query=query,
+        selected_category=selected_category,
+        selected_brand=selected_brand,
+        stock_status=stock_status,
+        sort_by=sort_by,
+    )
+    products_qs = state['products_qs']
+    if only_in_stock:
+        products_qs = products_qs.filter(total_stock__gt=0)
+
+    products = list(products_qs)
+    for product in products:
+        product.export_title = build_customer_product_title(product)
+        product.export_brand = customer_catalog_case((product.brand or '').strip()) or 'No Brand'
+        product.export_model = customer_catalog_case((product.model or '').strip()) or 'Other Selections'
+        product.export_category_name = customer_catalog_case(getattr(product.category, 'name', ''))
+        product.export_availability, _ = get_catalog_availability_parts(product.total_stock)
+
+    base_params = request.GET.copy()
+    for key in ['price_mode', 'only_in_stock', 'include_images']:
+        base_params.pop(key, None)
+    fallback_url = reverse('product_list')
+    if base_params:
+        fallback_url = f"{fallback_url}?{base_params.urlencode()}"
+
+    if not products:
+        messages.warning(request, 'No products matched the current filters and export options.')
+        return redirect(fallback_url)
+
+    brand_groups = {}
+    for product in products:
+        brand_groups.setdefault(product.export_brand, []).append(product)
+
+    wb = Workbook()
+    title_fill = PatternFill('solid', fgColor='FFF6EFE4')
+    header_fill = PatternFill('solid', fgColor='FFE8EEF6')
+    section_fill = PatternFill('solid', fgColor='FFF7F4EE')
+    thin = Side(border_style='thin', color='FFD7DFE8')
+    border = Border(top=thin, bottom=thin, left=thin, right=thin)
+    wrap = Alignment(wrap_text=True, vertical='top')
+    center = Alignment(horizontal='center', vertical='center')
+    sheet_names = set()
+
+    def unique_sheet_title(raw_title):
+        cleaned = (raw_title or 'Products').strip()
+        for char in ['\\', '/', '*', '[', ']', ':', '?']:
+            cleaned = cleaned.replace(char, ' ')
+        cleaned = cleaned[:31] or 'Products'
+        candidate = cleaned
+        suffix = 2
+        while candidate in sheet_names:
+            suffix_text = f" {suffix}"
+            candidate = f"{cleaned[:31-len(suffix_text)]}{suffix_text}"
+            suffix += 1
+        sheet_names.add(candidate)
+        return candidate
+
+    filter_summary_bits = [item['label'] for item in state['active_filter_labels']]
+    if only_in_stock:
+        filter_summary_bits.append('Export: only in-stock products')
+    filter_summary_bits.append(
+        {
+            'retail': 'Price: retail only',
+            'wholesale': 'Price: wholesale only',
+            'both': 'Price: retail + wholesale',
+        }[price_mode]
+    )
+    filter_summary_bits.append('Images: yes' if include_images else 'Images: no')
+    filter_summary = ' | '.join(filter_summary_bits)
+
+    first_sheet = True
+    for brand_name, brand_products in brand_groups.items():
+        if first_sheet:
+            ws = wb.active
+            first_sheet = False
+        else:
+            ws = wb.create_sheet()
+        ws.title = unique_sheet_title(brand_name)
+
+        columns = []
+        if include_images:
+            columns.append(('Image', 16))
+        columns.extend([
+            ('Product', 34),
+            ('Category', 18),
+        ])
+        if price_mode in {'retail', 'both'}:
+            columns.append(('Retail Price', 15))
+        if price_mode in {'wholesale', 'both'}:
+            columns.append(('Wholesale Price', 17))
+        columns.append(('Availability', 20))
+
+        for idx, (_, width) in enumerate(columns, start=1):
+            ws.column_dimensions[get_column_letter(idx)].width = width
+
+        max_col = len(columns)
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max_col)
+        ws.cell(row=1, column=1, value=f'{brand_name} | Customer Product List')
+        ws.cell(row=1, column=1).fill = title_fill
+        ws.cell(row=1, column=1).font = Font(bold=True, size=15)
+        ws.cell(row=1, column=1).alignment = Alignment(vertical='center')
+
+        ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max_col)
+        ws.cell(row=2, column=1, value=filter_summary)
+        ws.cell(row=2, column=1).alignment = wrap
+        ws.cell(row=2, column=1).font = Font(color='FF5B6675')
+
+        current_row = 4
+        model_groups = {}
+        for product in brand_products:
+            model_groups.setdefault(product.export_model, []).append(product)
+
+        for model_name, model_products in model_groups.items():
+            ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=max_col)
+            ws.cell(row=current_row, column=1, value=model_name)
+            ws.cell(row=current_row, column=1).fill = section_fill
+            ws.cell(row=current_row, column=1).font = Font(bold=True, size=11)
+            current_row += 1
+
+            for col_idx, (header, _) in enumerate(columns, start=1):
+                cell = ws.cell(row=current_row, column=col_idx, value=header)
+                cell.fill = header_fill
+                cell.font = Font(bold=True)
+                cell.border = border
+                cell.alignment = center
+            current_row += 1
+
+            for product in model_products:
+                row_idx = current_row
+                col_idx = 1
+
+                if include_images:
+                    ws.cell(row=row_idx, column=col_idx).border = border
+                    ws.cell(row=row_idx, column=col_idx).alignment = center
+                    try:
+                        first_image = product.images.all()[0]
+                        pil = PILImage.open(first_image.image.path)
+                        pil.thumbnail((120, 120))
+                        tmp = _BytesIO()
+                        pil.save(tmp, format='PNG')
+                        tmp.seek(0)
+                        xlimg = XLImage(tmp)
+                        ws.add_image(xlimg, f'{get_column_letter(col_idx)}{row_idx}')
+                        ws.row_dimensions[row_idx].height = 88
+                    except Exception:
+                        pass
+                    col_idx += 1
+
+                ws.cell(row=row_idx, column=col_idx, value=product.export_title).alignment = wrap
+                ws.cell(row=row_idx, column=col_idx).border = border
+                col_idx += 1
+
+                ws.cell(row=row_idx, column=col_idx, value=product.export_category_name or '-').alignment = wrap
+                ws.cell(row=row_idx, column=col_idx).border = border
+                col_idx += 1
+
+                if price_mode in {'retail', 'both'}:
+                    retail_cell = ws.cell(row=row_idx, column=col_idx, value=float(product.default_price) if product.default_price is not None else None)
+                    retail_cell.number_format = 'EUR #,##0.00'
+                    retail_cell.border = border
+                    col_idx += 1
+
+                if price_mode in {'wholesale', 'both'}:
+                    wholesale_cell = ws.cell(row=row_idx, column=col_idx, value=float(product.wholesale_price) if product.wholesale_price is not None else None)
+                    wholesale_cell.number_format = 'EUR #,##0.00'
+                    wholesale_cell.border = border
+                    col_idx += 1
+
+                availability_cell = ws.cell(row=row_idx, column=col_idx, value=product.export_availability)
+                availability_cell.border = border
+                availability_cell.alignment = center
+                current_row += 1
+
+            current_row += 1
+
+        ws.freeze_panes = 'A5'
+
+    export_buffer = _BytesIO()
+    wb.save(export_buffer)
+    export_buffer.seek(0)
+    ts = timezone.localtime().strftime('%Y%m%d_%H%M')
+    filename = f'Customer_Product_List_{ts}.xlsx'
+    response = FileResponse(export_buffer, as_attachment=True, filename=filename)
+    response['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    return response
+
+
+@login_required
+@manager_required
+def export_shopify_inventory_csv(request):
+    show_sales_sensitive = has_sales_sensitive_access(request.user)
+    query = request.GET.get('q', '').strip()
+    selected_category = request.GET.get('category')
+    selected_brand = request.GET.get('brand')
+    stock_status = (request.GET.get('stock_status') or '').strip()
+    sort_by = (request.GET.get('sort') or 'latest').strip()
+    only_in_stock = (request.GET.get('only_in_stock') or '').strip().lower() in {'1', 'true', 'on', 'yes'}
+
+    state = get_filtered_product_list_state(
+        show_sales_sensitive=show_sales_sensitive,
+        query=query,
+        selected_category=selected_category,
+        selected_brand=selected_brand,
+        stock_status=stock_status,
+        sort_by=sort_by,
+    )
+    products_qs = state['products_qs']
+    if only_in_stock:
+        products_qs = products_qs.filter(total_stock__gt=0)
+
+    products = list(products_qs)
+    base_params = request.GET.copy()
+    for key in ['only_in_stock']:
+        base_params.pop(key, None)
+    fallback_url = reverse('product_list')
+    if base_params:
+        fallback_url = f"{fallback_url}?{base_params.urlencode()}"
+
+    if not products:
+        messages.warning(request, 'No products matched the current filters and Shopify export options.')
+        return redirect(fallback_url)
+
+    product_groups = {}
+    for product in products:
+        key = (
+            _clean_csv_text(product.brand).lower(),
+            _clean_csv_text(product.model).lower(),
+            _clean_csv_text(product.name).lower(),
+            product.category_id,
+        )
+        product_groups.setdefault(key, []).append(product)
+
+    ts = timezone.localtime().strftime('%Y%m%d_%H%M')
+    filename = f'Shopify_Product_Inventory_{ts}.csv'
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    response.write('\ufeff')
+
+    writer = csv.DictWriter(response, fieldnames=SHOPIFY_PRODUCT_CSV_HEADERS, lineterminator='\n')
+    writer.writeheader()
+
+    used_handles = set()
+    for group_products in product_groups.values():
+        first_product = group_products[0]
+        base_title = _build_shopify_base_title(first_product)
+        handle = _build_unique_shopify_handle(base_title, first_product.barcode or first_product.id, used_handles)
+        product_description = _first_clean_product_value(group_products, 'description')
+        product_category = _clean_csv_text(getattr(first_product.category, 'name', ''))
+        product_image_url = _first_shopify_image_url(request, group_products)
+        color_metafield = _build_shopify_color_metafield(group_products)
+        tags = _build_shopify_tags(group_products)
+
+        for index, product in enumerate(group_products):
+            current_stock = int(getattr(product, 'total_stock', 0) or 0)
+            variant_image_url = _build_shopify_image_url(request, product)
+            row = {header: '' for header in SHOPIFY_PRODUCT_CSV_HEADERS}
+
+            row.update({
+                'URL handle': handle,
+                'SKU': product.barcode,
+                'Barcode': product.barcode,
+                'Price': _format_shopify_money(product.default_price),
+                'Cost per item': _format_shopify_money(product.current_fifo_cost_price()),
+                'Charge tax': 'TRUE',
+                'Inventory tracker': 'shopify',
+                'Inventory quantity': str(current_stock),
+                'Continue selling when out of stock': 'DENY',
+                'Weight unit for display': 'g',
+                'Requires shipping': 'TRUE',
+                'Fulfillment service': 'manual',
+                'Variant image URL': variant_image_url,
+            })
+
+            if index == 0:
+                row.update({
+                    'Title': base_title,
+                    'Description': product_description,
+                    'Vendor': _clean_csv_text(first_product.brand),
+                    'Product category': product_category,
+                    'Type': product_category,
+                    'Tags': tags,
+                    'Published on online store': 'TRUE',
+                    'Status': 'Active',
+                    'Product image URL': product_image_url,
+                    'Image position': '1' if product_image_url else '',
+                    'Image alt text': base_title if product_image_url else '',
+                    'Gift card': 'FALSE',
+                    'SEO title': base_title,
+                    'SEO description': product_description,
+                    'Color (product.metafields.shopify.color-pattern)': color_metafield,
+                    'Google Shopping / Google product category': product_category,
+                    'Google Shopping / Condition': 'New',
+                    'Google Shopping / Custom product': 'FALSE',
+                })
+
+            _apply_shopify_option_columns(row, product, group_products)
+
+            writer.writerow(row)
+
+    return response
+
+
+# -----------------------------
+# 产品增/改/详情
+# -----------------------------
+@login_required
+@manager_required
+def add_product_view(request):
+    if request.method == 'POST':
+        form = ProductForm(request.POST)
+        if form.is_valid():
+            product = form.save()
+            for img in request.FILES.getlist('images'):
+                ProductImage.objects.create(product=product, image=img)
+            return redirect('product_detail', pk=product.pk)
+    else:
+        form = ProductForm()
+    return render(request, 'stock/add_product.html', {
+        'form': form,
+        'brand_series_map_json': json.dumps(build_brand_series_map()),
+        'brand_catalog_json': json.dumps(build_brand_catalog()),
+    })
+
+
+@login_required
+def product_detail_view(request, pk):
+    product = get_object_or_404(
+        Product.objects.select_related('category', 'brand_master', 'series_master').prefetch_related('images'),
+        pk=pk
+    )
+
+    purchases = product.purchase_set.select_related('supplier').order_by('-date')
+    sales = product.sale_set.select_related('customer').order_by('-date')
+
+    total_stock = sum(p.remaining for p in purchases if p.remaining > 0)
+    fifo_purchase = product.purchase_set.filter(remaining__gt=0).order_by('date').first()
+    fifo_price = fifo_purchase.cost_price if fifo_purchase else None
+
+    return render(request, 'stock/product_detail.html', {
+        'product': product,
+        'purchases': purchases,
+        'sales': sales,
+        'total_stock': total_stock,
+        'fifo_price': fifo_price,
+        'show_sensitive': has_manager_access(request.user),
+        'show_sales_sensitive': has_sales_sensitive_access(request.user),
+    })
+
+@login_required
+@manager_required
+def edit_product_view(request, pk):
+    product = get_object_or_404(
+        Product.objects.select_related('category', 'brand_master', 'series_master'),
+        pk=pk
+    )
+
+    if request.method == 'POST':
+        form = ProductForm(request.POST, request.FILES, instance=product)
+        if form.is_valid():
+            form.save()
+
+            # ✅ 同时兼容 images / images[] 两种 name
+            new_files = []
+            new_files.extend(request.FILES.getlist('images'))
+            new_files.extend(request.FILES.getlist('images[]'))
+
+            saved_count = 0
+            for f in new_files:
+                if not f or not getattr(f, 'size', 0):
+                    continue
+                ProductImage.objects.create(product=product, image=f)
+                saved_count += 1
+
+            if saved_count:
+                messages.success(request, f"✅ Saved product. Uploaded {saved_count} new image(s).")
+            else:
+                # 如果用户确实选择了文件，但后端没接到，多半是前端 name/表单问题
+                if request.POST.get('had_image_selected') == '1':
+                    messages.warning(
+                        request,
+                        "⚠️ No images were received by the server. Check that the file input is inside the form "
+                        "and named 'images' (or 'images[]'), and the form has enctype='multipart/form-data'."
+                    )
+                else:
+                    messages.success(request, "✅ Saved product.")
+
+            # ✅ 保留当前 URL 上的查询串（包含 page、q、category 等）
+            qs = request.META.get('QUERY_STRING', '')
+            detail_url = reverse('product_detail', args=[pk])
+            if qs:
+                detail_url = f"{detail_url}?{qs}"
+            return redirect(detail_url)
+        else:
+            messages.error(request, "❌ Please fix the errors in the form.")
+    else:
+        form = ProductForm(instance=product)
+
+    images = product.images.all()
+    purchases = product.purchase_set.all().order_by('-date')
+    purchase_count = product.purchase_set.count()
+    sale_count = product.sale_set.count()
+    can_delete_product = purchase_count == 0 and sale_count == 0
+    can_force_delete_product = request.user.is_superuser
+    # total available stock (sum of remaining from all batches)
+    total_stock = purchases.aggregate(s=Coalesce(Sum('remaining'), Value(0), output_field=IntegerField()))['s'] or 0
+
+    return render(request, 'stock/edit_product.html', {
+        'form': form,
+        'product': product,
+        'images': images,
+        'purchases': purchases,
+        'total_stock': total_stock,
+        'purchase_count': purchase_count,
+        'sale_count': sale_count,
+        'can_delete_product': can_delete_product,
+        'can_force_delete_product': can_force_delete_product,
+        'brand_series_map_json': json.dumps(build_brand_series_map()),
+        'brand_catalog_json': json.dumps(build_brand_catalog()),
+    })
+
+
+@require_POST
+@login_required
+@manager_required
+def delete_product_view(request, pk):
+    product = get_object_or_404(Product, pk=pk)
+    purchase_count = product.purchase_set.count()
+    sale_count = product.sale_set.count()
+    query_string = request.POST.get('return_querystring', '').strip()
+    force_delete = request.POST.get('force_delete') == '1'
+
+    if (purchase_count or sale_count) and not (force_delete and request.user.is_superuser):
+        blockers = []
+        if purchase_count:
+            blockers.append(f'{purchase_count} purchase record{"s" if purchase_count != 1 else ""}')
+        if sale_count:
+            blockers.append(f'{sale_count} sales record{"s" if sale_count != 1 else ""}')
+        messages.error(
+            request,
+            f'Cannot delete "{product.display_name}" because it still has '
+            + ' and '.join(blockers)
+            + '.'
+        )
+        edit_url = reverse('edit_product', args=[product.pk])
+        if query_string:
+            edit_url = f'{edit_url}?{query_string}'
+        return redirect(edit_url)
+
+    product_name = product.display_name
+    sale_dates = list(product.sale_set.dates('date', 'day'))
+    affected_order_ids = list(
+        product.sale_set.exclude(order_id__isnull=True).values_list('order_id', flat=True).distinct()
+    )
+    affected_inbound_ids = list(
+        product.purchase_set.exclude(inbound_order_id__isnull=True).values_list('inbound_order_id', flat=True).distinct()
+    )
+    image_count = product.images.count()
+
+    with transaction.atomic():
+        for image in list(product.images.all()):
+            if image.image:
+                image.image.delete(save=False)
+
+        product.delete()
+
+        empty_order_count = 0
+        if affected_order_ids:
+            empty_orders = list(
+                SaleOrder.objects.filter(id__in=affected_order_ids)
+                .annotate(item_count=Count('items'))
+                .filter(item_count=0)
+            )
+            empty_order_count = len(empty_orders)
+            if empty_orders:
+                SaleOrder.objects.filter(id__in=[order.id for order in empty_orders]).delete()
+
+        empty_inbound_count = 0
+        if affected_inbound_ids:
+            inbound_orders = list(InboundOrder.objects.filter(id__in=affected_inbound_ids).prefetch_related('items'))
+            empty_inbound_ids = []
+            for inbound_order in inbound_orders:
+                items = list(inbound_order.items.all())
+                if not items:
+                    empty_inbound_ids.append(inbound_order.id)
+                    continue
+                inbound_order.total_amount = sum(
+                    (Decimal(item.quantity) * item.cost_price for item in items),
+                    Decimal('0.00'),
+                )
+                inbound_order.save(update_fields=['total_amount'])
+            if empty_inbound_ids:
+                empty_inbound_count = len(empty_inbound_ids)
+                InboundOrder.objects.filter(id__in=empty_inbound_ids).delete()
+
+    if force_delete and request.user.is_superuser and (purchase_count or sale_count):
+        messages.success(
+            request,
+            f'Product "{product_name}" was force deleted with {purchase_count} purchase record'
+            f'{"s" if purchase_count != 1 else ""}, {sale_count} sales record'
+            f'{"s" if sale_count != 1 else ""}, and {image_count} image'
+            f'{"s" if image_count != 1 else ""} removed.'
+            + (
+                f' Cleaned up {empty_order_count} empty order{"s" if empty_order_count != 1 else ""}'
+                f' and {empty_inbound_count} empty inbound order{"s" if empty_inbound_count != 1 else ""}.'
+                if empty_order_count or empty_inbound_count else ''
+            )
+        )
+    else:
+        messages.success(request, f'Product "{product_name}" was deleted.')
+
+    product_list_url = reverse('product_list')
+    if query_string:
+        product_list_url = f'{product_list_url}?{query_string}'
+    return redirect(product_list_url)
+
+
+# -----------------------------
+# FIFO 扣减（独立工具函数，保留以备脚本使用）
+# -----------------------------
+def apply_fifo(product, quantity_to_deduct):
+    purchases = Purchase.objects.filter(product=product, remaining__gt=0).order_by('date')
+    for purchase in purchases:
+        if quantity_to_deduct <= 0:
+            break
+        available = purchase.remaining
+        deduct = min(available, quantity_to_deduct)
+        purchase.remaining -= deduct
+        purchase.save()
+        quantity_to_deduct -= deduct
+
+
+# -----------------------------
+# 仪表盘
+# -----------------------------
+@login_required
+def _legacy_dashboard_view(request):
+
+    isManger = request.user.is_superuser or request.user.groups.filter(name="Managers").exists()
+
+    site_url = request.build_absolute_uri('/')
+
+    # ------ QR ------
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=6,
+        border=2,
+    )
+    qr.add_data(site_url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    qr_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+    today = timezone.now().date()
+
+    # ====== 分类多选 ======
+    selected_cat_ids = request.GET.getlist('cat')  # ['1', '3', ...]
+    selected_cat_ids_int = [int(x) for x in selected_cat_ids if str(x).isdigit()]
+
+    categories = Category.objects.order_by('name')
+    selected_cats = categories.filter(id__in=selected_cat_ids_int)
+
+    # ---------- 今日 DailySalesSummary ----------
+    try:
+        summary = DailySalesSummary.objects.get(date=today)
+        total_sales_today = summary.total_sales or Decimal('0.00')
+        total_profit_today = summary.total_profit or Decimal('0.00')
+        total_cost_today = (summary.total_sales or Decimal('0.00')) - total_profit_today
+        today_sales_qty = summary.total_items_sold or 0
+    except DailySalesSummary.DoesNotExist:
+        total_sales_today = Decimal('0.00')
+        total_profit_today = Decimal('0.00')
+        total_cost_today = Decimal('0.00')
+        today_sales_qty = 0
+
+    # ---------- 今日销售订单 ----------
+    orders_qs = (
+        SaleOrder.objects
+        .filter(items__date__date=today)
+        .select_related('customer')
+        .prefetch_related('items__product')
+        .order_by('-created_at')
+        .distinct()
+    )
+    if selected_cat_ids_int:
+        orders_qs = orders_qs.filter(items__product__category_id__in=selected_cat_ids_int).distinct()
+
+    sale_orders_today = []
+    for o in orders_qs:
+        view_total_qty = 0
+        view_total_amount = Decimal('0.00')
+        view_pay_break = defaultdict(Decimal)
+        items_today = []
+
+        for it in o.items.all():
+            if it.date.date() != today:
+                continue
+            if selected_cat_ids_int and it.product.category_id not in selected_cat_ids_int:
+                continue
+            items_today.append(it)
+            line_total = (it.unit_price or Decimal('0.00')) * it.quantity
+            view_total_qty += it.quantity
+            view_total_amount += line_total
+            view_pay_break[it.payment_method] += line_total
+
+        if items_today:
+            o.view_total_qty = view_total_qty
+            o.view_total_amount = view_total_amount
+            o.view_pay_break = dict(view_pay_break)
+            o.view_items_today = items_today
+            sale_orders_today.append(o)
+
+    # ---------- 今日入库 ----------
+    purchases_today_records = (
+        Purchase.objects
+        .filter(date__date=today)
+        .select_related('product', 'supplier')
+        .order_by('-date')
+    )
+    if selected_cat_ids_int:
+        purchases_today_records = purchases_today_records.filter(product__category_id__in=selected_cat_ids_int)
+
+    for p in purchases_today_records:
+        p.view_total_cost = (p.cost_price or Decimal('0.00')) * p.quantity
+
+    # ---------- 低库存 ----------
+    stock_subq = (
+        Purchase.objects
+        .filter(product=OuterRef('pk'))
+        .values('product')
+        .annotate(s=Sum('remaining'))
+        .values('s')[:1]
+    )
+    sold_subq = (
+        Sale.objects
+        .filter(product=OuterRef('pk'))
+        .values('product')
+        .annotate(s=Sum('quantity'))
+        .values('s')[:1]
+    )
+    prod_base = Product.objects
+    if selected_cat_ids_int:
+        prod_base = prod_base.filter(category_id__in=selected_cat_ids_int)
+
+    low_qs = (
+        prod_base
+        .annotate(
+            stock=Subquery(stock_subq, output_field=IntegerField()),
+            sold=Subquery(sold_subq,  output_field=IntegerField()),
+        )
+        .annotate(
+            stock=Coalesce(F('stock'), 0),
+            sold=Coalesce(F('sold'), 0),
+        )
+        .filter(stock__lt=5)
+        .only('id', 'brand', 'model', 'name', 'category')
+    )
+
+    low_by_brand = defaultdict(list)
+    for p in low_qs:
+        p.stock = int(p.stock or 0)
+        p.sold  = int(p.sold  or 0)
+        low_by_brand[(p.brand or '—')].append(p)
+
+    for brand, plist in low_by_brand.items():
+        plist.sort(key=lambda x: (-x.sold, x.stock, (x.model or '') + (x.name or '')))
+
+    low_brand_blocks = [
+        {'brand': b, 'products': plist, 'count': len(plist)}
+        for b, plist in low_by_brand.items()
+    ]
+    low_brand_blocks.sort(key=lambda blk: (-blk['count'], blk['brand'].lower()))
+
+    # ---------- 顶部 KPI 其余 ----------
+    prod_for_totals = Product.objects.all()
+    if selected_cat_ids_int:
+        prod_for_totals = prod_for_totals.filter(category_id__in=selected_cat_ids_int)
+
+    total_products = prod_for_totals.count()
+    total_stock = sum([p.total_stock() for p in prod_for_totals])
+
+    today_purchases = sum(p.quantity for p in purchases_today_records)
+
+    # ---------- 月度图表 ----------
+    start_of_month = today.replace(day=1)
+    month_sales_qs = Sale.objects.filter(date__date__gte=start_of_month, date__date__lte=today)
+    if selected_cat_ids_int:
+        month_sales_qs = month_sales_qs.filter(product__category_id__in=selected_cat_ids_int)
+
+    amount_expr = ExpressionWrapper(F('unit_price') * F('quantity'), output_field=DecimalField(max_digits=14, decimal_places=2))
+    day_rows = (
+        month_sales_qs
+        .annotate(day=TruncDate('date'))
+        .values('day')
+        .annotate(total=Sum(amount_expr))
+        .order_by('day')
+    )
+    totals_by_day = {r['day']: float(r['total'] or 0.0) for r in day_rows}
+    chart_data = []
+    cur = start_of_month
+    while cur <= today:
+        chart_data.append({'date': cur.strftime('%Y-%m-%d'), 'sales': totals_by_day.get(cur, 0.0)})
+        cur += timedelta(days=1)
+
+    return render(request, 'stock/dashboard.html', {
+        'categories': categories,
+        'selected_cat_ids': [str(i) for i in selected_cat_ids_int],
+        'selected_cats': selected_cats,
+
+        # KPI from DailySalesSummary
+        'today_sales': today_sales_qty,
+        'total_sales_today': total_sales_today,
+        'total_profit_today': total_profit_today,
+        'total_cost_today': total_cost_today,
+        'today_purchases': today_purchases,
+
+        'sale_orders_today': sale_orders_today,
+        'purchases_today_records': purchases_today_records,
+        'low_brand_blocks': low_brand_blocks,
+
+        'total_products': total_products,
+        'total_stock': total_stock,
+        'chart_data': chart_data,
+
+        'site_url': site_url,
+        'qr_code_base64': qr_base64,
+
+        "isManger": isManger,
+    })
+
+
+
+
+
+# -----------------------------
+# 前端查条码（用于入/出库页）
+# 这里返回库存、最近进价等；前端想隐藏展示也没问题
+# -----------------------------
+@login_required
+def dashboard_view(request):
+    isManger = has_manager_access(request.user)
+    show_sales_sensitive = has_sales_sensitive_access(request.user)
+    show_order_financials = has_order_reconciliation_access(request.user)
+    show_profit = bool(request.user.is_superuser)
+
+    site_url = request.build_absolute_uri('/')
+
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=6,
+        border=2,
+    )
+    qr.add_data(site_url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    qr_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+    today = timezone.localdate()
+    selected_cat_ids = request.GET.getlist('cat')
+    selected_cat_ids_int = [int(x) for x in selected_cat_ids if str(x).isdigit()]
+
+    all_categories = Category.objects.order_by('name')
+    perfume_category = (
+        all_categories
+        .filter(Q(name__iexact='Perfumes') | Q(name__icontains='perfume'))
+        .first()
+    )
+    dashboard_defaulted_to_perfume = False
+    if not selected_cat_ids_int and perfume_category:
+        selected_cat_ids_int = [perfume_category.id]
+        dashboard_defaulted_to_perfume = True
+    categories = all_categories
+    selected_cats = list(categories.filter(id__in=selected_cat_ids_int))
+
+    month_context = resolve_dashboard_month(request.GET.get('month', '').strip(), today)
+    monthly_overview = build_monthly_dashboard_snapshot(
+        month_start=month_context['month_start'],
+        period_end=month_context['period_end'],
+        selected_category_ids=selected_cat_ids_int,
+        show_profit=show_profit,
+    )
+
+    def build_dashboard_url(month_value=None, category_ids=None):
+        params = []
+        if month_value:
+            params.append(('month', month_value))
+        for category_id in category_ids or []:
+            params.append(('cat', str(category_id)))
+        query = urlencode(params, doseq=True)
+        base_url = reverse('dashboard')
+        return f'{base_url}?{query}' if query else base_url
+
+    for point in monthly_overview['chart_data']:
+        point['detail_url'] = (
+            f"{reverse('sales_records')}?"
+            f"{urlencode({'start_date': point['date'].isoformat(), 'end_date': point['date'].isoformat()})}"
+        )
+
+    selected_cat_chips = []
+    for category in selected_cats:
+        remaining_ids = [cat_id for cat_id in selected_cat_ids_int if cat_id != category.id]
+        selected_cat_chips.append({
+            'name': category.name,
+            'remove_url': build_dashboard_url(month_context['month_value'], remaining_ids),
+        })
+
+    payment_labels = dict(Sale.PAYMENT_METHOD_CHOICES)
+    today_sale_ids_qs = Sale.objects.filter(
+        Q(order__created_at__date=today) |
+        Q(order__isnull=True, date__date=today)
+    )
+    if selected_cat_ids_int:
+        today_sale_ids_qs = today_sale_ids_qs.filter(product__category_id__in=selected_cat_ids_int)
+    today_profit_map = sale_profit_map_for_sale_ids(today_sale_ids_qs.values_list('id', flat=True)) if isManger else {}
+
+    orders_qs = (
+        SaleOrder.objects
+        .filter(created_at__date=today)
+        .select_related('customer')
+        .prefetch_related('items__product')
+        .order_by('-created_at')
+        .distinct()
+    )
+    if selected_cat_ids_int:
+        orders_qs = orders_qs.filter(items__product__category_id__in=selected_cat_ids_int).distinct()
+
+    sale_orders_today = []
+    today_sales_qty = 0
+    total_sales_today = Decimal('0.00')
+    total_profit_today = Decimal('0.00')
+
+    for order in orders_qs:
+        view_total_qty = 0
+        view_total_amount = Decimal('0.00')
+        view_pay_break = defaultdict(Decimal)
+        items_today = []
+
+        for item in order.items.all():
+            if selected_cat_ids_int and item.product.category_id not in selected_cat_ids_int:
+                continue
+
+            item.line_total = (item.unit_price or Decimal('0.00')) * item.quantity
+            item.payment_label = payment_labels.get(item.payment_method, (item.payment_method or 'Other').title())
+            item.image_url = get_product_image_url(item.product)
+            items_today.append(item)
+
+            view_total_qty += item.quantity
+            view_total_amount += item.line_total
+            view_pay_break[item.payment_method] += item.line_total
+
+            today_sales_qty += item.quantity
+            total_sales_today += item.line_total
+            total_profit_today += today_profit_map.get(item.id, {}).get('profit', Decimal('0.00'))
+
+        if items_today:
+            order.view_total_qty = view_total_qty
+            order.view_total_amount = view_total_amount
+            order.view_pay_break = dict(view_pay_break)
+            order.view_items_today = items_today
+            sale_orders_today.append(order)
+
+    total_cost_today = total_sales_today - total_profit_today
+
+    purchases_today_records = (
+        Purchase.objects
+        .filter(date__date=today)
+        .select_related('product', 'supplier')
+        .prefetch_related('product__images')
+        .order_by('-date')
+    )
+    if selected_cat_ids_int:
+        purchases_today_records = purchases_today_records.filter(product__category_id__in=selected_cat_ids_int)
+
+    for purchase in purchases_today_records:
+        purchase.view_total_cost = (purchase.cost_price or Decimal('0.00')) * purchase.quantity
+        purchase.image_url = get_product_image_url(purchase.product)
+
+    stock_subq = (
+        Purchase.objects
+        .filter(product=OuterRef('pk'))
+        .values('product')
+        .annotate(s=Sum('remaining'))
+        .values('s')[:1]
+    )
+    sold_subq = (
+        Sale.objects
+        .filter(product=OuterRef('pk'))
+        .values('product')
+        .annotate(s=Sum('quantity'))
+        .values('s')[:1]
+    )
+    prod_base = Product.objects
+    if selected_cat_ids_int:
+        prod_base = prod_base.filter(category_id__in=selected_cat_ids_int)
+
+    low_qs = (
+        prod_base
+        .annotate(
+            stock=Subquery(stock_subq, output_field=IntegerField()),
+            sold=Subquery(sold_subq, output_field=IntegerField()),
+        )
+        .annotate(
+            stock=Coalesce(F('stock'), 0),
+            sold=Coalesce(F('sold'), 0),
+        )
+        .filter(stock__lt=5)
+        .only('id', 'brand', 'model', 'name', 'category')
+    )
+
+    low_by_brand = defaultdict(list)
+    for product in low_qs:
+        product.stock = int(product.stock or 0)
+        product.sold = int(product.sold or 0)
+        low_by_brand[(product.brand or 'Unknown brand')].append(product)
+
+    for brand, products in low_by_brand.items():
+        products.sort(key=lambda item: (-item.sold, item.stock, (item.model or '') + (item.name or '')))
+
+    low_brand_blocks = [
+        {
+            'brand': brand,
+            'products': products,
+            'count': len(products),
+            'out_count': sum(1 for product in products if product.stock == 0),
+        }
+        for brand, products in low_by_brand.items()
+    ]
+    low_brand_blocks.sort(key=lambda item: (-item['count'], item['brand'].lower()))
+    low_stock_count = sum(len(block['products']) for block in low_brand_blocks)
+    out_of_stock_count = sum(
+        1
+        for block in low_brand_blocks
+        for product in block['products']
+        if product.stock == 0
+    )
+    low_stock_1_2_count = sum(
+        1
+        for block in low_brand_blocks
+        for product in block['products']
+        if 1 <= product.stock <= 2
+    )
+    low_stock_3_4_count = sum(
+        1
+        for block in low_brand_blocks
+        for product in block['products']
+        if 3 <= product.stock <= 4
+    )
+    low_stock_focus_products = []
+    for block in low_brand_blocks:
+        for product in block['products']:
+            product.image_url = get_product_image_url(product)
+            low_stock_focus_products.append(product)
+    low_stock_focus_products.sort(
+        key=lambda item: (
+            0 if item.stock == 0 else 1,
+            item.stock,
+            -item.sold,
+            item.display_name.lower(),
+        )
+    )
+    low_stock_focus_products = low_stock_focus_products[:8]
+    low_stock_primary_blocks = low_brand_blocks[:6]
+    low_stock_extra_blocks = low_brand_blocks[6:]
+    low_stock_extra_brand_count = len(low_stock_extra_blocks)
+    low_stock_extra_product_count = sum(block['count'] for block in low_stock_extra_blocks)
+
+    prod_for_totals = Product.objects.all()
+    if selected_cat_ids_int:
+        prod_for_totals = prod_for_totals.filter(category_id__in=selected_cat_ids_int)
+
+    total_products = prod_for_totals.count()
+    total_stock = monthly_overview['current_stock_units']
+
+    today_purchases = sum(purchase.quantity for purchase in purchases_today_records)
+    today_purchase_amount = sum((purchase.view_total_cost for purchase in purchases_today_records), Decimal('0.00'))
+
+    return render(request, 'stock/dashboard.html', {
+        'categories': categories,
+        'selected_cat_ids': [str(i) for i in selected_cat_ids_int],
+        'selected_cats': selected_cats,
+        'selected_cat_chips': selected_cat_chips,
+        'selected_month': month_context['month_value'],
+        'month_label': month_context['month_label'],
+        'month_scope_label': month_context['scope_label'],
+        'period_start': month_context['month_start'],
+        'period_end': month_context['period_end'],
+        'prev_month_url': build_dashboard_url(month_context['prev_month_value'], selected_cat_ids_int),
+        'current_month_url': build_dashboard_url(today.strftime('%Y-%m'), selected_cat_ids_int),
+        'next_month_url': build_dashboard_url(month_context['next_month_value'], selected_cat_ids_int) if month_context['next_month_value'] else '',
+        'sales_records_month_url': (
+            f"{reverse('sales_records')}?"
+            f"{urlencode({'start_date': month_context['month_start'].isoformat(), 'end_date': month_context['period_end'].isoformat()})}"
+        ),
+        'today': today,
+        'today_sales': today_sales_qty,
+        'today_sales_qty': today_sales_qty,
+        'today_order_count': len(sale_orders_today),
+        'total_sales_today': total_sales_today,
+        'total_profit_today': total_profit_today,
+        'total_cost_today': total_cost_today,
+        'today_purchases': today_purchases,
+        'today_purchase_amount': today_purchase_amount,
+        'sale_orders_today': sale_orders_today,
+        'purchases_today_records': purchases_today_records,
+        'low_brand_blocks': low_brand_blocks,
+        'low_stock_primary_blocks': low_stock_primary_blocks,
+        'low_stock_extra_blocks': low_stock_extra_blocks,
+        'low_stock_extra_brand_count': low_stock_extra_brand_count,
+        'low_stock_extra_product_count': low_stock_extra_product_count,
+        'low_stock_focus_products': low_stock_focus_products,
+        'low_stock_count': low_stock_count,
+        'out_of_stock_count': out_of_stock_count,
+        'low_stock_1_2_count': low_stock_1_2_count,
+        'low_stock_3_4_count': low_stock_3_4_count,
+        'total_products': total_products,
+        'total_stock': total_stock,
+        'site_url': site_url,
+        'qr_code_base64': qr_base64,
+        'isManger': isManger,
+        'dashboard_defaulted_to_perfume': dashboard_defaulted_to_perfume,
+        'dashboard_default_category_name': perfume_category.name if perfume_category else '',
+        'employee_daily_only': not isManger,
+        'show_purchase_metrics': isManger,
+        'show_sales_sensitive': show_sales_sensitive,
+        'show_order_financials': show_order_financials,
+        'show_profit': show_profit,
+        'ar_scope_note': bool(selected_cat_ids_int),
+        **monthly_overview,
+    })
+
+
+@login_required
+def check_barcode(request):
+    barcode = request.GET.get('barcode', '').strip()
+    try:
+        product = Product.objects.select_related('brand_master', 'series_master').prefetch_related('images').get(barcode=barcode)
+        # 当前库存（可用不用于表单，仅供前端显示时参考；这里不必返回也可）
+        stock = product.purchase_set.filter(remaining__gt=0).aggregate(s=Sum('remaining'))['s'] or 0
+        # 最近一次进价
+        last_purchase = product.purchase_set.order_by('-date').first()
+        last_cost = last_purchase.cost_price if last_purchase else None
+        image_url = ''
+        for image in product.images.all():
+            try:
+                image_url = image.image.url
+            except ValueError:
+                image_url = ''
+            break
+        display_name = product.display_name
+
+        return JsonResponse({
+            'exists': True,
+            'name': display_name,
+            'display_name': display_name,
+            'brand': product.brand,
+            'model': product.model or '',
+            'product_name': product.name,
+            'spec': product.spec or '',
+            'color': product.color or '',
+            'stock': int(stock),
+            'last_cost': float(last_cost) if last_cost is not None else None,
+            'retail_price': float(product.default_price) if product.default_price is not None else None,
+            'wholesale_price': float(product.wholesale_price) if product.wholesale_price is not None else None,
+            'image_url': image_url,
+        })
+    except Product.DoesNotExist:
+        return JsonResponse({'exists': False})
+
+
+
+# -----------------------------
+# 销售汇总列表/详情
+# -----------------------------
+
+@login_required
+def sale_order_detail_view(request, order_id):
+    order = get_object_or_404(SaleOrder.objects.select_related('customer'), id=order_id)
+    items = list(
+        order.items
+        .select_related('product', 'product__brand_master', 'product__series_master')
+        .order_by('id')
+    )
+
+    show_sensitive = has_manager_access(request.user)
+    show_sales_sensitive = has_sales_sensitive_access(request.user)
+    show_order_financials = has_order_reconciliation_access(request.user)
+    can_print_receipt = request.user.is_authenticated
+    print_mode = request.GET.get('print') == '1'
+    print_layout = 'pos' if request.GET.get('layout') == 'pos' else 'a4'
+    show_receipt_amounts = show_order_financials
+
+    total_qty = sum(i.quantity for i in items)
+    total_amount = sum((i.unit_price * i.quantity for i in items), Decimal('0.00'))
+
+    from collections import defaultdict
+    pay_break = defaultdict(Decimal)
+    for i in items:
+        i.display_name = build_product_label(i.product)
+        i.line_total = (i.unit_price or Decimal('0.00')) * i.quantity
+        i.image_url = get_product_image_url(i.product)
+        pay_break[i.payment_method] += i.unit_price * i.quantity
+
+    shop_profile = PrintProfile.get_solo()
+    back_url = request.GET.get('next', '').strip() or reverse('sale_order_detail', args=[order.id])
+
+    context = {
+        'order': order,
+        'items': items,
+        'total_qty': total_qty,
+        'total_amount': total_amount,
+        'pay_break': dict(pay_break),
+        'can_admin_correct': has_admin_access(request.user),
+        'can_print_receipt': can_print_receipt,
+        'print_mode': print_mode,
+        'print_layout': print_layout,
+        'show_receipt_amounts': show_receipt_amounts,
+        'show_sensitive': show_sensitive,
+        'show_sales_sensitive': show_sales_sensitive,
+        'show_order_financials': show_order_financials,
+        'print_a4_url': f"{reverse('sale_order_detail', args=[order.id])}?print=1&layout=a4",
+        'print_pos_url': f"{reverse('sale_order_detail', args=[order.id])}?print=1&layout=pos",
+        'edit_print_profile_url': f"{reverse('print_profile_edit')}?{urlencode({'next': back_url})}",
+        'shop': {
+            'name': shop_profile.name,
+            'nif': shop_profile.nif,
+            'phone': shop_profile.phone,
+            'address': shop_profile.address,
+            'email': shop_profile.email,
+            'footer_note': shop_profile.footer_note,
+        },
+    }
+    return render(request, 'stock/sale_order_detail.html', context)
+
+
+@login_required
+@admin_required
+def print_profile_edit_view(request):
+    profile = PrintProfile.get_solo()
+    next_url = request.GET.get('next', '').strip() or request.POST.get('next', '').strip() or reverse('dashboard')
+
+    if request.method == 'POST':
+        form = PrintProfileForm(request.POST, instance=profile)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Print header information was updated.')
+            return redirect(next_url)
+        messages.error(request, 'Please fix the print header fields below.')
+    else:
+        form = PrintProfileForm(instance=profile)
+
+    return render(request, 'stock/print_profile_form.html', {
+        'form': form,
+        'next_url': next_url,
+    })
+
+
+def _build_order_correction_initial_lines(order):
+    return [
+        {
+            'product': item.product_id,
+            'quantity': item.quantity,
+            'unit_price': item.unit_price,
+            'payment_method': item.payment_method,
+        }
+        for item in order.items.select_related('product').order_by('id')
+    ]
+
+
+def _collect_correction_line_items(formset):
+    line_items = []
+    for form in formset:
+        cleaned = getattr(form, 'cleaned_data', None)
+        if not cleaned or cleaned.get('DELETE'):
+            continue
+
+        product = cleaned.get('product')
+        quantity = cleaned.get('quantity')
+        unit_price = cleaned.get('unit_price')
+        payment_method = cleaned.get('payment_method')
+
+        if not any([product, quantity, unit_price, payment_method]):
+            continue
+
+        line_items.append({
+            'product': product,
+            'quantity': quantity,
+            'unit_price': unit_price,
+            'payment_method': payment_method,
+        })
+    return line_items
+
+
+@login_required
+@admin_required
+def sale_order_correction_center_view(request):
+    query = request.GET.get('q', '').strip()
+    start_date = parse_date((request.GET.get('start_date') or '').strip())
+    end_date = parse_date((request.GET.get('end_date') or '').strip())
+
+    orders_qs = (
+        SaleOrder.objects
+        .select_related('customer')
+        .prefetch_related('items')
+        .order_by('-created_at', '-id')
+    )
+
+    if query:
+        filters = (
+            Q(customer__name__icontains=query) |
+            Q(customer__nif__icontains=query) |
+            Q(note__icontains=query)
+        )
+        if query.isdigit():
+            filters |= Q(id=int(query))
+        orders_qs = orders_qs.filter(filters)
+
+    if start_date:
+        orders_qs = orders_qs.filter(created_at__date__gte=start_date)
+    if end_date:
+        orders_qs = orders_qs.filter(created_at__date__lte=end_date)
+
+    paginator = Paginator(orders_qs, 25)
+    page_obj = paginator.get_page(request.GET.get('page'))
+
+    for order in page_obj.object_list:
+        items = list(order.items.all())
+        order.view_total_qty = sum(item.quantity for item in items)
+        order.view_total_amount = sum((item.quantity * item.unit_price for item in items), Decimal('0.00'))
+
+    recent_logs = (
+        SaleOrderChangeLog.objects
+        .select_related('changed_by', 'order')
+        .order_by('-created_at', '-id')[:12]
+    )
+
+    return render(request, 'stock/sale_order_correction_center.html', {
+        'page_obj': page_obj,
+        'recent_logs': recent_logs,
+        'query': query,
+        'start_date': request.GET.get('start_date', ''),
+        'end_date': request.GET.get('end_date', ''),
+    })
+
+
+def _sale_order_correction_view(request, order=None):
+    order = order or None
+
+    if request.method == 'POST':
+        form = SaleOrderCorrectionForm(request.POST, instance=order)
+        formset = SaleCorrectionLineFormSet(request.POST, prefix='lines')
+
+        if order and 'delete_order' in request.POST:
+            reason = (request.POST.get('reason') or '').strip()
+            if not reason:
+                form.add_error('reason', 'Reason is required before deleting an order.')
+            if not form.errors:
+                delete_sale_order_correction(
+                    order=order,
+                    changed_by=request.user,
+                    reason=reason,
+                )
+                messages.success(request, f'Order #{order.id} was deleted and current inventory was restored.')
+                return redirect('sale_order_correction_center')
+        elif form.is_valid() and formset.is_valid():
+            line_items = _collect_correction_line_items(formset)
+            if not line_items:
+                formset._non_form_errors = formset.error_class([
+                    'Add at least one valid product line before saving.'
+                ])
+                messages.error(request, 'Please fix the highlighted order lines before saving.')
+            else:
+                try:
+                    saved_order = save_sale_order_correction(
+                        order=order,
+                        customer=form.cleaned_data.get('customer'),
+                        note=form.cleaned_data.get('note'),
+                        order_datetime=form.cleaned_data['order_datetime'],
+                        line_items=line_items,
+                        changed_by=request.user,
+                        reason=form.cleaned_data['reason'],
+                    )
+                except ValidationError as exc:
+                    form.add_error(None, '; '.join(exc.messages))
+                else:
+                    action_label = 'created' if order is None else 'updated'
+                    messages.success(request, f'Historical order #{saved_order.id} {action_label} successfully.')
+                    return redirect('sale_order_correction_edit', order_id=saved_order.id)
+        else:
+            messages.error(request, 'Please fix the highlighted fields before saving the order.')
+    else:
+        form = SaleOrderCorrectionForm(instance=order)
+        initial_lines = _build_order_correction_initial_lines(order) if order else [{}]
+        formset = SaleCorrectionLineFormSet(initial=initial_lines, prefix='lines')
+
+    change_logs = []
+    if order and order.pk:
+        change_logs = order.change_logs.select_related('changed_by').order_by('-created_at', '-id')[:12]
+
+    return render(request, 'stock/sale_order_correction_form.html', {
+        'form': form,
+        'formset': formset,
+        'order': order,
+        'is_create': order is None,
+        'change_logs': change_logs,
+    })
+
+
+@login_required
+@admin_required
+def sale_order_correction_create_view(request):
+    return _sale_order_correction_view(request, order=None)
+
+
+@login_required
+@admin_required
+def sale_order_correction_edit_view(request, order_id):
+    order = get_object_or_404(
+        SaleOrder.objects.select_related('customer').prefetch_related('items__product'),
+        id=order_id,
+    )
+    return _sale_order_correction_view(request, order=order)
+
+
+@login_required
+@manager_required
+def supplier_list_view(request):
+    query = (request.GET.get('q') or '').strip()
+    suppliers_qs = (
+        Supplier.objects
+        .prefetch_related('product_types')
+        .annotate(
+            purchase_count=Count('purchase', distinct=True),
+            inbound_count=Count('inboundorder', distinct=True),
+            last_purchase_at=Max('purchase__date'),
+        )
+        .order_by('name')
+    )
+
+    if query:
+        suppliers_qs = suppliers_qs.filter(
+            Q(name__icontains=query) |
+            Q(phone__icontains=query) |
+            Q(country__icontains=query) |
+            Q(address__icontains=query) |
+            Q(product_types__name__icontains=query)
+        ).distinct()
+
+    suppliers = list(suppliers_qs)
+    supplier_count = len(suppliers)
+    linked_suppliers = sum(1 for supplier in suppliers if supplier.purchase_count or supplier.inbound_count)
+
+    return render(request, 'stock/supplier_list.html', {
+        'suppliers': suppliers,
+        'query': query,
+        'supplier_count': supplier_count,
+        'linked_suppliers': linked_suppliers,
+        'can_manage': has_manager_access(request.user),
+    })
+
+
+@login_required
+@manager_required
+def supplier_detail_view(request, supplier_id):
+    supplier = get_object_or_404(Supplier.objects.prefetch_related('product_types'), id=supplier_id)
+    query = (request.GET.get('q') or '').strip()
+    start_date = parse_date((request.GET.get('start_date') or '').strip())
+    end_date = parse_date((request.GET.get('end_date') or '').strip())
+    next_url = request.get_full_path()
+
+    if request.method == 'POST':
+        if 'link_inbound_order' in request.POST:
+            order = get_object_or_404(
+                InboundOrder.objects.prefetch_related('items__product'),
+                id=int(request.POST.get('order_id', 0)),
+                supplier__isnull=True,
+            )
+            with transaction.atomic():
+                order.supplier = supplier
+                order.save(update_fields=['supplier'])
+                order.items.update(supplier=supplier)
+            messages.success(request, f'Inbound order #{order.id} is now linked to {supplier.name}.')
+            return redirect(next_url)
+
+        if 'link_direct_group' in request.POST or 'link_direct_purchase' in request.POST:
+            raw_ids = (request.POST.get('purchase_ids') or '').strip()
+            purchase_ids = [int(value) for value in raw_ids.split(',') if value.strip().isdigit()]
+            if not purchase_ids:
+                single_id = request.POST.get('purchase_id', '').strip()
+                purchase_ids = [int(single_id)] if single_id.isdigit() else []
+
+            purchases = list(
+                Purchase.objects.select_related('product')
+                .filter(id__in=purchase_ids, supplier__isnull=True, inbound_order__isnull=True)
+                .order_by('date', 'id')
+            )
+            if not purchases or len(purchases) != len(set(purchase_ids)):
+                raise Http404('Purchase group not found.')
+
+            group_key = timezone.localtime(purchases[0].date).replace(microsecond=0)
+            if any(timezone.localtime(item.date).replace(microsecond=0) != group_key for item in purchases):
+                messages.error(request, 'Only purchases recorded at the same time can be linked as one inbound order.')
+                return redirect(next_url)
+
+            total_amount = sum(
+                ((item.cost_price or Decimal('0.00')) * item.quantity for item in purchases),
+                Decimal('0.00'),
+            )
+
+            with transaction.atomic():
+                order = InboundOrder.objects.create(
+                    supplier=supplier,
+                    invoice_date=group_key.date(),
+                    total_amount=total_amount,
+                    status='received',
+                    received_at=group_key,
+                )
+                order.created_at = group_key
+                order.save(update_fields=['created_at'])
+                Purchase.objects.filter(id__in=[item.id for item in purchases]).update(
+                    supplier=supplier,
+                    inbound_order=order,
+                )
+
+            messages.success(
+                request,
+                f'Created inbound order #{order.id} for {supplier.name} from {len(purchases)} grouped purchase item(s).',
+            )
+            return redirect(next_url)
+
+    inbound_orders_qs = (
+        InboundOrder.objects
+        .filter(Q(supplier=supplier) | Q(items__supplier=supplier))
+        .select_related('supplier')
+        .prefetch_related('items__product', 'items__product__images', 'items__supplier')
+        .order_by('-invoice_date', '-created_at', '-id')
+        .distinct()
+    )
+    direct_purchases_qs = (
+        Purchase.objects
+        .filter(supplier=supplier, inbound_order__isnull=True)
+        .select_related('product')
+        .prefetch_related('product__images')
+        .order_by('-date', '-id')
+    )
+
+    if query:
+        inbound_orders_qs = inbound_orders_qs.filter(
+            Q(invoice_no__icontains=query) |
+            Q(note__icontains=query) |
+            Q(items__product__barcode__icontains=query) |
+            Q(items__product__name__icontains=query) |
+            Q(items__product__brand__icontains=query) |
+            Q(items__product__model__icontains=query)
+        ).distinct()
+        direct_purchases_qs = direct_purchases_qs.filter(
+            Q(product__barcode__icontains=query) |
+            Q(product__name__icontains=query) |
+            Q(product__brand__icontains=query) |
+            Q(product__model__icontains=query)
+        )
+
+    if start_date:
+        inbound_orders_qs = inbound_orders_qs.filter(created_at__date__gte=start_date)
+        direct_purchases_qs = direct_purchases_qs.filter(date__date__gte=start_date)
+    if end_date:
+        inbound_orders_qs = inbound_orders_qs.filter(created_at__date__lte=end_date)
+        direct_purchases_qs = direct_purchases_qs.filter(date__date__lte=end_date)
+
+    history_rows = []
+    history_total_amount = Decimal('0.00')
+    history_total_qty = 0
+    product_ids = set()
+    last_purchase_at = None
+
+    for order in inbound_orders_qs:
+        if order.supplier_id == supplier.id:
+            items = list(order.items.all())
+        else:
+            items = [item for item in order.items.all() if item.supplier_id == supplier.id]
+        if not items:
+            continue
+
+        row_amount = Decimal('0.00')
+        row_qty = 0
+        for item in items:
+            item.line_total = (item.cost_price or Decimal('0.00')) * item.quantity
+            item.image_url = get_product_image_url(item.product)
+            item.display_name = build_product_label(item.product)
+            row_amount += item.line_total
+            row_qty += item.quantity
+            product_ids.add(item.product_id)
+
+        sort_at = order.invoice_date or timezone.localdate()
+        created_anchor = comparable_recorded_at(order.created_at or timezone.now())
+        sort_dt = comparable_recorded_at(
+            created_anchor.replace(year=sort_at.year, month=sort_at.month, day=sort_at.day)
+        )
+        history_rows.append({
+            'kind': 'Inbound order',
+            'title': order.invoice_no or f'Inbound Order #{order.id}',
+            'sort_at': sort_dt,
+            'display_date': order.invoice_date or order.created_at.date(),
+            'meta': f'{len(items)} items',
+            'amount': row_amount,
+            'qty': row_qty,
+            'items': items,
+            'note': order.note or '',
+            'edit_url': f"{reverse('inbound_order_edit', args=[order.id])}?{urlencode({'next': next_url})}",
+        })
+        history_total_amount += row_amount
+        history_total_qty += row_qty
+        if not last_purchase_at or sort_dt > comparable_recorded_at(last_purchase_at):
+            last_purchase_at = sort_dt
+
+    direct_groups = group_purchases_by_recorded_second(direct_purchases_qs)
+
+    for group_key, items in direct_groups.items():
+        group_key = comparable_recorded_at(group_key)
+        row_amount = Decimal('0.00')
+        row_qty = 0
+        for item in items:
+            item.line_total = (item.cost_price or Decimal('0.00')) * item.quantity
+            item.image_url = get_product_image_url(item.product)
+            item.display_name = build_product_label(item.product)
+            item.edit_url = f"{reverse('direct_purchase_edit', args=[item.id])}?{urlencode({'next': next_url})}"
+            row_amount += item.line_total
+            row_qty += item.quantity
+            product_ids.add(item.product_id)
+
+        history_rows.append({
+            'kind': 'Direct purchases',
+            'title': group_key.strftime('%Y-%m-%d %H:%M:%S'),
+            'sort_at': group_key,
+            'display_date': group_key.date(),
+            'meta': f'{len(items)} direct purchases',
+            'amount': row_amount,
+            'qty': row_qty,
+            'items': items,
+            'note': '',
+        })
+        history_total_amount += row_amount
+        history_total_qty += row_qty
+        if not last_purchase_at or group_key > comparable_recorded_at(last_purchase_at):
+            last_purchase_at = group_key
+
+    history_rows.sort(
+        key=lambda row: (comparable_recorded_at(row['sort_at']), row['title']),
+        reverse=True,
+    )
+
+    unlinked_inbound_qs = (
+        InboundOrder.objects
+        .filter(supplier__isnull=True)
+        .select_related('supplier')
+        .prefetch_related('items__product', 'items__product__images')
+        .order_by('-invoice_date', '-created_at', '-id')
+    )
+    unlinked_direct_qs = (
+        Purchase.objects
+        .filter(supplier__isnull=True, inbound_order__isnull=True)
+        .select_related('product')
+        .prefetch_related('product__images')
+        .order_by('-date', '-id')
+    )
+
+    if query:
+        unlinked_inbound_qs = unlinked_inbound_qs.filter(
+            Q(invoice_no__icontains=query) |
+            Q(note__icontains=query) |
+            Q(items__product__barcode__icontains=query) |
+            Q(items__product__name__icontains=query) |
+            Q(items__product__brand__icontains=query) |
+            Q(items__product__model__icontains=query)
+        ).distinct()
+        unlinked_direct_qs = unlinked_direct_qs.filter(
+            Q(product__barcode__icontains=query) |
+            Q(product__name__icontains=query) |
+            Q(product__brand__icontains=query) |
+            Q(product__model__icontains=query)
+        )
+
+    if start_date:
+        unlinked_inbound_qs = unlinked_inbound_qs.filter(created_at__date__gte=start_date)
+        unlinked_direct_qs = unlinked_direct_qs.filter(date__date__gte=start_date)
+    if end_date:
+        unlinked_inbound_qs = unlinked_inbound_qs.filter(created_at__date__lte=end_date)
+        unlinked_direct_qs = unlinked_direct_qs.filter(date__date__lte=end_date)
+
+    unlinked_inbound_rows = []
+    for order in unlinked_inbound_qs:
+        items = list(order.items.all())
+        if not items:
+            continue
+        row_total_qty = 0
+        row_total_amount = Decimal('0.00')
+        preview_items = []
+        for item in items:
+            item.line_total = (item.cost_price or Decimal('0.00')) * item.quantity
+            item.display_name = build_product_label(item.product)
+            item.image_url = get_product_image_url(item.product)
+            row_total_qty += item.quantity
+            row_total_amount += item.line_total
+            if len(preview_items) < 3:
+                preview_items.append(item)
+        unlinked_inbound_rows.append({
+            'order': order,
+            'title': order.invoice_no or f'Inbound Order #{order.id}',
+            'recorded_at': order.created_at,
+            'invoice_date': order.invoice_date,
+            'item_count': len(items),
+            'total_qty': row_total_qty,
+            'total_amount': row_total_amount,
+            'preview_items': preview_items,
+            'note': order.note or '',
+        })
+
+    unlinked_direct_rows = []
+    for group_key, items in group_purchases_by_recorded_second(unlinked_direct_qs).items():
+        preview_items = []
+        row_total_qty = 0
+        row_total_amount = Decimal('0.00')
+        for item in items:
+            item.display_name = build_product_label(item.product)
+            item.image_url = get_product_image_url(item.product)
+            item.line_total = (item.cost_price or Decimal('0.00')) * item.quantity
+            row_total_qty += item.quantity
+            row_total_amount += item.line_total
+            if len(preview_items) < 4:
+                preview_items.append(item)
+
+        unlinked_direct_rows.append({
+            'title': f"Standalone group {group_key.strftime('%Y-%m-%d %H:%M:%S')}",
+            'recorded_at': group_key,
+            'item_count': len(items),
+            'total_qty': row_total_qty,
+            'total_amount': row_total_amount,
+            'preview_items': preview_items,
+            'purchase_ids': ','.join(str(item.id) for item in items),
+        })
+
+    unlinked_direct_rows.sort(key=lambda row: row['recorded_at'], reverse=True)
+
+    return render(request, 'stock/supplier_detail.html', {
+        'supplier': supplier,
+        'query': query,
+        'history_rows': history_rows,
+        'history_count': len(history_rows),
+        'total_amount': history_total_amount,
+        'total_qty': history_total_qty,
+        'product_count': len(product_ids),
+        'last_purchase_at': last_purchase_at,
+        'unlinked_inbound_rows': unlinked_inbound_rows,
+        'unlinked_direct_rows': unlinked_direct_rows,
+        'unlinked_inbound_count': len(unlinked_inbound_rows),
+        'unlinked_direct_count': len(unlinked_direct_rows),
+        'start_date': request.GET.get('start_date', ''),
+        'end_date': request.GET.get('end_date', ''),
+    })
+
+
+@login_required
+@manager_required
+def inbound_order_edit_view(request, order_id):
+    order = get_object_or_404(
+        InboundOrder.objects.select_related('supplier').prefetch_related('items__product', 'items__product__images'),
+        id=order_id,
+    )
+    next_url = request.GET.get('next', '').strip() or request.POST.get('next', '').strip() or reverse('sales_records')
+
+    if request.method == 'POST':
+        form = InboundOrderEditForm(request.POST, instance=order)
+        formset = InboundPurchaseFormSet(request.POST, instance=order, prefix='lines')
+
+        if form.is_valid() and formset.is_valid():
+            recorded_at = normalize_recorded_at(form.cleaned_data['recorded_at'])
+            with transaction.atomic():
+                order = form.save(commit=False)
+                order.created_at = recorded_at
+                order.save()
+
+                for line_form in formset.forms:
+                    cleaned = getattr(line_form, 'cleaned_data', None)
+                    if not cleaned:
+                        continue
+
+                    purchase = line_form.instance
+                    sold_units = max((purchase.quantity or 0) - (purchase.remaining or 0), 0)
+
+                    if cleaned.get('DELETE'):
+                        purchase.delete()
+                        continue
+
+                    new_quantity = cleaned['quantity']
+                    purchase.quantity = new_quantity
+                    purchase.remaining = new_quantity - sold_units
+                    purchase.cost_price = cleaned['cost_price']
+                    purchase.supplier = order.supplier
+                    purchase.date = recorded_at
+                    purchase.inbound_order = order
+                    purchase.save()
+
+                remaining_items = list(order.items.all())
+                if not remaining_items:
+                    deleted_order_id = order.id
+                    order.delete()
+                    transaction.on_commit(rebuild_all_daily_summaries)
+                    messages.success(request, f'Inbound order #{deleted_order_id} was deleted because all lines were removed.')
+                    return redirect(next_url)
+
+                order.total_amount = sum(
+                    ((item.cost_price or Decimal('0.00')) * item.quantity for item in remaining_items),
+                    Decimal('0.00'),
+                )
+                order.save(update_fields=['total_amount', 'supplier', 'invoice_no', 'invoice_date', 'note', 'created_at'])
+                transaction.on_commit(rebuild_all_daily_summaries)
+
+            messages.success(request, f'Inbound order #{order.id} was updated.')
+            return redirect(next_url)
+
+        messages.error(request, 'Please fix the inbound fields below before saving.')
+    else:
+        form = InboundOrderEditForm(instance=order)
+        formset = InboundPurchaseFormSet(instance=order, prefix='lines')
+
+    annotate_inbound_formset_runtime(formset)
+    line_summary = []
+    for line_form in formset.forms:
+        purchase = line_form.instance
+        purchase.image_url = get_product_image_url(purchase.product)
+        purchase.display_name = build_product_label(purchase.product)
+        line_summary.append(purchase)
+
+    return render(request, 'stock/inbound_order_edit.html', {
+        'order': order,
+        'form': form,
+        'formset': formset,
+        'next_url': next_url,
+        'line_count': len(line_summary),
+    })
+
+
+@login_required
+@manager_required
+def direct_purchase_edit_view(request, purchase_id):
+    purchase = get_object_or_404(
+        Purchase.objects.select_related('product', 'supplier', 'inbound_order').prefetch_related('product__images'),
+        id=purchase_id,
+    )
+    if purchase.inbound_order_id:
+        next_url = request.GET.get('next', '').strip() or reverse('sales_records')
+        return redirect(f"{reverse('inbound_order_edit', args=[purchase.inbound_order_id])}?{urlencode({'next': next_url})}")
+
+    next_url = request.GET.get('next', '').strip() or request.POST.get('next', '').strip() or reverse('sales_records')
+    sold_units = max((purchase.quantity or 0) - (purchase.remaining or 0), 0)
+
+    if request.method == 'POST':
+        if 'delete_purchase' in request.POST:
+            if sold_units > 0:
+                messages.error(request, 'This purchase line already has sold units, so it cannot be deleted.')
+            else:
+                purchase_label = build_product_label(purchase.product)
+                with transaction.atomic():
+                    purchase.delete()
+                    transaction.on_commit(rebuild_all_daily_summaries)
+                messages.success(request, f'Direct purchase for "{purchase_label}" was deleted.')
+                return redirect(next_url)
+
+        form = DirectPurchaseEditForm(request.POST, instance=purchase)
+        if form.is_valid():
+            recorded_at = normalize_recorded_at(form.cleaned_data['recorded_at'])
+            with transaction.atomic():
+                purchase = form.save(commit=False)
+                purchase.quantity = form.cleaned_data['quantity']
+                purchase.remaining = purchase.quantity - sold_units
+                purchase.date = recorded_at
+                purchase.inbound_order = None
+                purchase.save()
+                transaction.on_commit(rebuild_all_daily_summaries)
+            messages.success(request, f'Direct purchase for "{build_product_label(purchase.product)}" was updated.')
+            return redirect(next_url)
+        messages.error(request, 'Please fix the direct purchase fields below before saving.')
+    else:
+        form = DirectPurchaseEditForm(instance=purchase)
+
+    purchase.sold_units = sold_units
+    purchase.image_url = get_product_image_url(purchase.product)
+    purchase.display_name = build_product_label(purchase.product)
+
+    return render(request, 'stock/direct_purchase_edit.html', {
+        'purchase': purchase,
+        'form': form,
+        'next_url': next_url,
+    })
+
+
+@login_required
+@manager_required
+def supplier_create_view(request):
+    if request.method == 'POST':
+        form = SupplierForm(request.POST)
+        if form.is_valid():
+            supplier = form.save()
+            messages.success(request, f'Supplier "{supplier.name}" created.')
+            return redirect('supplier_list')
+    else:
+        form = SupplierForm()
+
+    return render(request, 'stock/supplier_form.html', {
+        'form': form,
+        'supplier': None,
+        'is_create': True,
+    })
+
+
+@login_required
+@manager_required
+def supplier_edit_view(request, supplier_id):
+    supplier = get_object_or_404(Supplier.objects.prefetch_related('product_types'), id=supplier_id)
+
+    if request.method == 'POST':
+        form = SupplierForm(request.POST, instance=supplier)
+        if form.is_valid():
+            supplier = form.save()
+            messages.success(request, f'Supplier "{supplier.name}" updated.')
+            return redirect('supplier_list')
+    else:
+        form = SupplierForm(instance=supplier)
+
+    return render(request, 'stock/supplier_form.html', {
+        'form': form,
+        'supplier': supplier,
+        'is_create': False,
+    })
+
+
+@login_required
+@manager_required
+@require_POST
+def supplier_delete_view(request, supplier_id):
+    supplier = get_object_or_404(Supplier, id=supplier_id)
+    supplier_name = supplier.name
+    supplier.delete()
+    messages.success(request, f'Supplier "{supplier_name}" deleted. Historical records were kept and unlinked.')
+    return redirect('supplier_list')
+
+
+@login_required
+@admin_required
+def employee_list_view(request):
+    query = (request.GET.get('q') or '').strip()
+    UserModel = get_user_model()
+    employees_qs = (
+        UserModel.objects
+        .filter(is_superuser=False)
+        .annotate(last_clock_in_at=Max('attendance_records__clock_in_at'))
+        .order_by('-is_active', '-is_staff', 'username')
+    )
+    if query:
+        employees_qs = employees_qs.filter(
+            Q(username__icontains=query) |
+            Q(first_name__icontains=query) |
+            Q(last_name__icontains=query) |
+            Q(email__icontains=query)
+        )
+
+    employees = list(employees_qs)
+    open_shifts = {
+        record.user_id: record
+        for record in AttendanceRecord.objects
+        .filter(user__is_superuser=False, clock_out_at__isnull=True)
+        .select_related('user')
+        .order_by('-clock_in_at')
+    }
+
+    for employee in employees:
+        employee.role_label = 'Manager' if employee.is_staff else 'Employee'
+        employee.open_shift = open_shifts.get(employee.id)
+
+    return render(request, 'stock/employee_list.html', {
+        'employees': employees,
+        'query': query,
+        'active_count': sum(1 for employee in employees if employee.is_active),
+        'manager_count': sum(1 for employee in employees if employee.is_staff),
+        'checked_in_count': len(open_shifts),
+    })
+
+
+@login_required
+@admin_required
+def employee_create_view(request):
+    if request.method == 'POST':
+        form = EmployeeAccountForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            messages.success(request, f'Employee account "{user.username}" created.')
+            return redirect('employee_list')
+    else:
+        form = EmployeeAccountForm(initial={'is_active': True, 'role': 'employee'})
+
+    return render(request, 'stock/employee_form.html', {
+        'form': form,
+        'employee': None,
+        'is_create': True,
+    })
+
+
+@login_required
+@admin_required
+def employee_edit_view(request, user_id):
+    UserModel = get_user_model()
+    employee = get_object_or_404(UserModel, id=user_id, is_superuser=False)
+
+    if request.method == 'POST':
+        form = EmployeeAccountForm(request.POST, instance=employee)
+        if form.is_valid():
+            employee = form.save()
+            messages.success(request, f'Employee account "{employee.username}" updated.')
+            return redirect('employee_list')
+    else:
+        form = EmployeeAccountForm(instance=employee)
+
+    return render(request, 'stock/employee_form.html', {
+        'form': form,
+        'employee': employee,
+        'is_create': False,
+    })
+
+
+@login_required
+@admin_required
+@require_POST
+def employee_toggle_active_view(request, user_id):
+    UserModel = get_user_model()
+    employee = get_object_or_404(UserModel, id=user_id, is_superuser=False)
+    employee.is_active = not employee.is_active
+    employee.save(update_fields=['is_active'])
+    state_label = 'activated' if employee.is_active else 'paused'
+    messages.success(request, f'Employee account "{employee.username}" {state_label}.')
+    return redirect('employee_list')
+
+
+@login_required
+@admin_required
+@require_POST
+def employee_delete_view(request, user_id):
+    UserModel = get_user_model()
+    employee = get_object_or_404(UserModel, id=user_id, is_superuser=False)
+    username = employee.username
+    employee.delete()
+    messages.success(request, f'Employee account "{username}" deleted.')
+    return redirect('employee_list')
+
+
+@login_required
+def attendance_view(request):
+    today = timezone.localdate()
+    open_shift = (
+        AttendanceRecord.objects
+        .filter(user=request.user, clock_out_at__isnull=True)
+        .order_by('-clock_in_at', '-id')
+        .first()
+    )
+
+    if request.method == 'POST':
+        action = (request.POST.get('action') or '').strip()
+        note = (request.POST.get('note') or '').strip()
+
+        if action == 'check_in':
+            if open_shift:
+                messages.warning(request, 'You already have an open shift. Please check out first.')
+            else:
+                AttendanceRecord.objects.create(
+                    user=request.user,
+                    clock_in_at=timezone.now(),
+                    note=append_attendance_note('', note, 'Clock-in note'),
+                )
+                messages.success(request, 'Check-in recorded.')
+        elif action == 'check_out':
+            if not open_shift:
+                messages.warning(request, 'No open shift found for checkout.')
+            else:
+                open_shift.clock_out_at = timezone.now()
+                open_shift.note = append_attendance_note(open_shift.note, note, 'Clock-out note')
+                open_shift.save(update_fields=['clock_out_at', 'note'])
+                messages.success(request, 'Check-out recorded.')
+        return redirect('attendance')
+
+    month_value = (request.GET.get('month') or '').strip()
+    team_query = (request.GET.get('team_q') or '').strip()
+    month_start, month_end = get_month_bounds(month_value)
+    selected_month = month_start.strftime('%Y-%m')
+
+    my_records = list(
+        AttendanceRecord.objects
+        .filter(user=request.user, clock_in_at__date__gte=month_start, clock_in_at__date__lte=month_end)
+        .order_by('-clock_in_at', '-id')
+    )
+    my_total_duration = timedelta()
+    for record in my_records:
+        record.view_duration = record.worked_duration
+        record.view_duration_label = format_duration_hours(record.view_duration)
+        my_total_duration += record.view_duration
+
+    context = {
+        'open_shift': open_shift,
+        'today': today,
+        'selected_month': selected_month,
+        'month_start': month_start,
+        'month_end': month_end,
+        'my_records': my_records,
+        'my_shift_count': len(my_records),
+        'my_total_hours_label': format_duration_hours(my_total_duration),
+        'show_team_section': has_manager_access(request.user),
+    }
+
+    if has_manager_access(request.user):
+        team_records_qs = (
+            AttendanceRecord.objects
+            .select_related('user')
+            .filter(user__is_superuser=False, clock_in_at__date__gte=month_start, clock_in_at__date__lte=month_end)
+            .order_by('-clock_in_at', '-id')
+        )
+        if team_query:
+            team_records_qs = team_records_qs.filter(
+                Q(user__username__icontains=team_query) |
+                Q(user__first_name__icontains=team_query) |
+                Q(user__last_name__icontains=team_query)
+            )
+
+        team_records = list(team_records_qs[:120])
+        team_summary = {}
+        for record in team_records:
+            record.view_duration = record.worked_duration
+            record.view_duration_label = format_duration_hours(record.view_duration)
+            summary = team_summary.setdefault(record.user_id, {
+                'user': record.user,
+                'shift_count': 0,
+                'total_duration': timedelta(),
+                'open_shift': False,
+                'last_clock_in_at': record.clock_in_at,
+            })
+            summary['shift_count'] += 1
+            summary['total_duration'] += record.view_duration
+            if record.is_open:
+                summary['open_shift'] = True
+            if record.clock_in_at > summary['last_clock_in_at']:
+                summary['last_clock_in_at'] = record.clock_in_at
+
+        team_members = []
+        for summary in team_summary.values():
+            summary['total_hours_label'] = format_duration_hours(summary['total_duration'])
+            team_members.append(summary)
+        team_members.sort(key=lambda item: (not item['open_shift'], item['user'].username.lower()))
+
+        context.update({
+            'team_query': team_query,
+            'team_records': team_records,
+            'team_members': team_members,
+            'team_open_shift_count': sum(1 for item in team_members if item['open_shift']),
+        })
+
+    return render(request, 'stock/attendance.html', context)
+
+
+
+# -----------------------------
+# 导出（任意时间范围的销售 + 采购）
+# -----------------------------
+@login_required
+@manager_required
+def export_sales_purchases_pdf(request):
+    start_str = request.GET.get('start_date', '').strip()
+    end_str   = request.GET.get('end_date', '').strip()
+    start_date = end_date = None
+    try:
+        if start_str: start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
+    except: start_date = None
+    try:
+        if end_str: end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
+    except: end_date = None
+
+    if not start_date and not end_date:
+        buf = BytesIO(); buf.write(b'No date selected'); buf.seek(0)
+        return FileResponse(buf, as_attachment=True, filename='sales_report.pdf')
+
+    if start_date and not end_date: end_date = start_date
+    if end_date and not start_date: start_date = end_date
+    if start_date > end_date: start_date, end_date = end_date, start_date
+
+    # ====== 查询 ======
+    sales_qs = (
+        Sale.objects
+        .filter(date__date__gte=start_date, date__date__lte=end_date)
+        .select_related('order', 'product', 'customer')
+        .order_by('date', 'order_id', 'id')
+    )
+
+    # ====== 分组（日期 → 订单）======
+    day_map = defaultdict(lambda: {
+        'orders': defaultdict(lambda: {
+            'order': None,
+            'items': [],
+            'total_qty': 0,
+            'total_amount': Decimal('0.00'),
+            'pay_break': defaultdict(Decimal),
+        }),
+        'totals': {'qty': 0, 'amount': Decimal('0.00')},
+        'pay_break': defaultdict(Decimal),
+        'order_count': 0,
+    })
+
+    for s in sales_qs:
+        d = s.date.date()
+        o = s.order
+        oid = o.id if o else 0
+        pack = day_map[d]['orders'][oid]
+        if pack['order'] is None:
+            if o:
+                o.cust_name = o.customer.name if o.customer else '-'
+                o.created_hm = o.created_at.strftime('%H:%M') if o.created_at else s.date.strftime('%H:%M')
+            pack['order'] = o
+            day_map[d]['order_count'] += 1
+
+        pack['items'].append(s)
+        pack['total_qty'] += s.quantity
+        sub = (s.unit_price or Decimal('0')) * s.quantity
+        pack['total_amount'] += sub
+        pack['pay_break'][(s.payment_method or '').lower()] += sub
+
+        day_map[d]['totals']['qty']    += s.quantity
+        day_map[d]['totals']['amount'] += sub
+        day_map[d]['pay_break'][(s.payment_method or '').lower()] += sub
+
+    # ====== 样式 ======
+    styles  = getSampleStyleSheet()
+    title   = ParagraphStyle('title', parent=styles['Title'], spaceAfter=4)
+    h2      = ParagraphStyle('h2', parent=styles['Heading2'], spaceBefore=6, spaceAfter=6)
+    h3      = ParagraphStyle('h3', parent=styles['Heading3'], spaceBefore=6, spaceAfter=6)
+    p       = ParagraphStyle('p',  parent=styles['Normal'], fontSize=9, leading=11)
+    p_bold  = ParagraphStyle('p_bold', parent=p, fontName='Helvetica-Bold')
+    p_small = ParagraphStyle('p_small', parent=styles['Normal'], fontSize=8, leading=9.6)
+
+    # Summary 专用大字样式（非表格）
+    big_num = ParagraphStyle('big_num', parent=styles['Normal'], fontName='Helvetica-Bold',
+                             fontSize=18, leading=22, textColor=colors.HexColor('#0f172a'))
+    big_lab = ParagraphStyle('big_lab', parent=styles['Normal'], fontName='Helvetica',
+                             fontSize=10, leading=12, textColor=colors.HexColor('#64748b'))
+    line_val = ParagraphStyle('line_val', parent=styles['Normal'], fontName='Helvetica-Bold',
+                              fontSize=12, leading=15, textColor=colors.HexColor('#0f172a'))
+
+    def money(x: Decimal) -> str:
+        x = (x or Decimal('0')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        return f"{x:.2f}"
+
+    # ====== 文档与页眉页脚 ======
+    buf = BytesIO()
+    PAGE = landscape(A4)
+    left, right, top, bottom = 22, 22, 50, 30
+    doc = SimpleDocTemplate(
+        buf, pagesize=PAGE, leftMargin=left, rightMargin=right,
+        topMargin=top, bottomMargin=bottom, title='Sales Report'
+    )
+    usable_w = PAGE[0] - left - right
+
+    THEAD_BG = colors.HexColor('#e2e8f0')
+    THEAD_TX = colors.HexColor('#0f172a')
+    GRID     = colors.HexColor('#cbd5e1')
+    ALT1     = colors.white
+    ALT2     = colors.HexColor('#f8fafc')
+
+    date_filter = f"{start_date} → {end_date}" if start_date != end_date else f"{start_date}"
+    gen_time = datetime.now().strftime('%Y-%m-%d %H:%M')
+
+    def header_footer(c, d):
+        c.saveState()
+        c.setFont("Helvetica-Bold", 9)
+        c.setFillColorRGB(0.06, 0.09, 0.16)
+        c.drawString(d.leftMargin, d.height + d.topMargin - 18, "Sales Report")
+        c.setFont("Helvetica", 8)
+        c.drawRightString(d.pagesize[0]-d.rightMargin, d.height + d.topMargin - 18,
+                          f"Range: {date_filter}   |   Generated: {gen_time}")
+        c.setFont("Helvetica", 8)
+        c.setFillColorRGB(0.34, 0.41, 0.5)
+        c.drawRightString(d.pagesize[0]-d.rightMargin, d.bottomMargin - 12, f"Page {d.page}")
+        c.restoreState()
+
+    # ====== 组件 ======
+    def order_items_table(items):
+        colw = [
+            0.56*usable_w,  # Product
+            0.08*usable_w,  # Qty
+            0.12*usable_w,  # Unit
+            0.14*usable_w,  # Subtotal
+            0.10*usable_w,  # Payment
+        ]
+        rows = [[
+            Paragraph("Product", p_bold),
+            Paragraph("Qty",  p_bold),
+            Paragraph("Unit (€)", p_bold),
+            Paragraph("Subtotal (€)", p_bold),
+            Paragraph("Payment", p_bold),
+        ]]
+        for s in items:
+            prod = s.product
+            brand = getattr(prod, 'brand', '') or ''
+            model = getattr(prod, 'model', '') or ''
+            name  = getattr(prod, 'name', '') or ''
+            line  = " - ".join([x for x in [brand, model, name] if x]) or '—'
+            rows.append([
+                Paragraph(build_product_label(prod) or line, p_small),
+                Paragraph(str(s.quantity), p_small),
+                Paragraph(money(s.unit_price or Decimal('0')), p_small),
+                Paragraph(money((s.unit_price or Decimal('0')) * s.quantity), p_small),
+                Paragraph((s.payment_method or '').capitalize() or '—', p_small),
+            ])
+
+        t = Table(rows, colWidths=colw, repeatRows=1, hAlign='LEFT')
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), THEAD_BG),
+            ('TEXTCOLOR', (0,0), (-1,0), THEAD_TX),
+            ('LINEABOVE', (0,0), (-1,0), 0.6, GRID),
+            ('LINEBELOW', (0,0), (-1,0), 0.6, GRID),
+            ('GRID', (0,0), (-1,-1), 0.25, GRID),
+            ('FONTSIZE', (0,0), (-1,0), 9),
+            ('FONTSIZE', (0,1), (-1,-1), 8),
+            ('LEADING', (0,1), (-1,-1), 10),
+            ('ALIGN', (1,1), (3,-1), 'RIGHT'),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('ROWBACKGROUNDS', (0,1), (-1,-1), [ALT1, ALT2]),
+            ('LEFTPADDING', (0,0), (-1,-1), 5),
+            ('RIGHTPADDING', (0,0), (-1,-1), 5),
+            ('TOPPADDING', (0,0), (-1,-1), 3),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ]))
+        return t
+
+    def day_summary_box(day_dict):
+        orders = day_dict['order_count']
+        qty    = day_dict['totals']['qty']
+        amt    = day_dict['totals']['amount']
+        avg    = (amt/qty) if qty else Decimal('0')
+
+        pay = day_dict['pay_break']
+        cash   = pay.get('cash',   Decimal('0'))
+        card   = pay.get('card',   Decimal('0'))
+        mbway  = pay.get('mbway',  Decimal('0'))
+        others = sum(v for k, v in pay.items() if k not in {'cash', 'card', 'mbway'})
+
+        # 统一 8 列，整页宽度分配；数值单元用更大字号
+        colw = [0.10*usable_w, 0.15*usable_w, 0.10*usable_w, 0.15*usable_w,
+                0.14*usable_w, 0.10*usable_w, 0.16*usable_w, 0.10*usable_w]
+
+        data = [
+            # ── 第1行：核心指标（标签/值交替）
+            [Paragraph("Total (€)", p_bold),  Paragraph(f"€ {money(amt)}", ParagraphStyle('big', parent=p_bold, fontSize=12, leading=14)),
+            Paragraph("Orders", p_bold),     Paragraph(str(orders),       ParagraphStyle('big', parent=p_bold, fontSize=12, leading=14)),
+            Paragraph("Items",  p_bold),     Paragraph(str(qty),          ParagraphStyle('big', parent=p_bold, fontSize=12, leading=14)),
+            Paragraph("Avg Ticket (€)", p_bold), Paragraph(f"€ {money(avg)}", ParagraphStyle('big', parent=p_bold, fontSize=12, leading=14))],
+            # ── 第2行：支付方式拆分
+            [Paragraph("CASH (€)", p_small),  Paragraph(money(cash),  p_small),
+            Paragraph("Card (€)", p_small),  Paragraph(money(card),  p_small),
+            Paragraph("MBWay (€)", p_small), Paragraph(money(mbway), p_small),
+            Paragraph("Other (€)", p_small), Paragraph(money(others), p_small)],
+        ]
+
+        t = Table(data, colWidths=colw, hAlign='LEFT')
+        t.setStyle(TableStyle([
+            # 表头行（第1行）背景更亮、边框更粗，突出 Total 区
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f1f5f9')),
+            ('LINEABOVE',  (0,0), (-1,0), 0.8, GRID),
+            ('LINEBELOW',  (0,0), (-1,0), 0.8, GRID),
+            # 整表边框与网格
+            ('BOX',        (0,0), (-1,-1), 0.6, GRID),
+            ('INNERGRID',  (0,0), (-1,-1), 0.25, GRID),
+            # 标签单元（偶数列 0,2,4,6）底色微弱区分
+            ('BACKGROUND', (0,0), (0,-1), colors.HexColor('#eef2ff')),
+            ('BACKGROUND', (2,0), (2,-1), colors.HexColor('#eef2ff')),
+            ('BACKGROUND', (4,0), (4,-1), colors.HexColor('#eef2ff')),
+            ('BACKGROUND', (6,0), (6,-1), colors.HexColor('#eef2ff')),
+            # 值单元（第1行）字号更大、颜色更深
+            ('FONTSIZE',   (1,0), (1,0), 12),
+            ('FONTSIZE',   (3,0), (3,0), 12),
+            ('FONTSIZE',   (5,0), (5,0), 12),
+            ('FONTSIZE',   (7,0), (7,0), 12),
+            ('TEXTCOLOR',  (1,0), (7,0), colors.HexColor('#0f172a')),
+            ('FONTNAME',   (1,0), (7,0), 'Helvetica-Bold'),
+            # 内边距
+            ('LEFTPADDING',  (0,0), (-1,-1), 6),
+            ('RIGHTPADDING', (0,0), (-1,-1), 6),
+            ('TOPPADDING',   (0,0), (-1,-1), 4),
+            ('BOTTOMPADDING',(0,0), (-1,-1), 4),
+            # 对齐：金额/数量值右对齐更易比较
+            ('ALIGN', (1,0), (1,-1), 'RIGHT'),
+            ('ALIGN', (3,0), (3,-1), 'RIGHT'),
+            ('ALIGN', (5,0), (5,-1), 'RIGHT'),
+            ('ALIGN', (7,0), (7,-1), 'RIGHT'),
+            # 垂直对齐
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ]))
+
+        return [t]
+
+    def order_header_row(o, row):
+        head = Table([[
+            Paragraph(f"Order # {o.id if o else '-'}", p_bold),
+            Paragraph(f"Time: {getattr(o, 'created_hm', '--:--')}", p),
+            Paragraph(f"Customer: {getattr(o, 'cust_name', '-')}", p),
+            Paragraph(f"Total: € {money(row['total_amount'])}", p_bold),
+            Paragraph(" | ".join(f"{k.capitalize()} € {money(v)}" for k,v in row['pay_break'].items()) or "-", p),
+        ]], colWidths=[0.17*usable_w, 0.13*usable_w, 0.34*usable_w, 0.16*usable_w, 0.20*usable_w])
+        head.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#edf2f7')),
+            ('BOX', (0,0), (-1,-1), 0.5, GRID),
+            ('INNERGRID', (0,0), (-1,-1), 0.25, GRID),
+            ('FONTNAME', (0,0), (0,0), 'Helvetica-Bold'),
+            ('FONTNAME', (3,0), (3,0), 'Helvetica-Bold'),
+            ('LEFTPADDING', (0,0), (-1,-1), 6),
+            ('RIGHTPADDING', (0,0), (-1,-1), 6),
+            ('TOPPADDING', (0,0), (-1,-1), 4),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ]))
+        return head
+
+    # ====== 生成内容 ======
+    elements = [
+        Paragraph("📋 Sales Report", title),
+        Paragraph(f"🗓 Date Range: {date_filter}", h3),
+        Spacer(1, 8),
+    ]
+
+    grand_orders = 0
+    grand_qty    = 0
+    grand_amt    = Decimal('0')
+    pay_all      = defaultdict(Decimal)
+
+    first_page = True
+    for d in sorted(day_map.keys(), reverse=True):
+        if not first_page:
+            elements.append(PageBreak())
+        first_page = False
+
+        # 防止页眉重叠
+        elements.append(Spacer(1, 6))
+        elements.append(Paragraph(f"📅 {d}", h2))
+
+        day = day_map[d]
+        grand_orders += day['order_count']
+        grand_qty    += day['totals']['qty']
+        grand_amt    += day['totals']['amount']
+        for k,v in day['pay_break'].items():
+            pay_all[k] += v
+
+        # 日期摘要
+        elements += day_summary_box(day)
+        elements.append(Spacer(1, 6))
+
+        # 订单（id 倒序）
+        for oid, row in sorted(day['orders'].items(), key=lambda kv: kv[0], reverse=True):
+            o = row['order']
+            head = order_header_row(o, row)
+            items_tbl = order_items_table(row['items'])
+            elements.append(KeepTogether([head, Spacer(1, 3), items_tbl, Spacer(1, 8)]))
+
+    # ====== 最后一页：总体 Summary（非表格，突出显示） ======
+    elements.append(PageBreak())
+    elements.append(Paragraph("Overall Summary", h2))
+    elements.append(HRFlowable(width="100%", thickness=0.6, color=colors.HexColor('#cbd5e1')))
+    elements.append(Spacer(1, 8))
+
+    avg_ticket = (grand_amt / grand_qty) if grand_qty else Decimal('0')
+    cash  = pay_all.get('cash',  Decimal('0'))
+    card  = pay_all.get('card',  Decimal('0'))
+    mbway = pay_all.get('mbway', Decimal('0'))
+    others = [(k, v) for k, v in pay_all.items() if k not in {'cash','card','mbway'}]
+
+    # 关键指标（大号）
+    elements += [
+        Paragraph("Total Amount (€)", big_lab),
+        Paragraph(f"€ {money(grand_amt)}", big_num),
+        Spacer(1, 6),
+        Paragraph("Orders", big_lab),
+        Paragraph(f"{grand_orders}", big_num),
+        Spacer(1, 6),
+        Paragraph("Items", big_lab),
+        Paragraph(f"{grand_qty}", big_num),
+        Spacer(1, 10),
+        Paragraph("Average Ticket (€)", big_lab),
+        Paragraph(f"€ {money(avg_ticket)}", line_val),
+        Spacer(1, 14),
+        HRFlowable(width="100%", thickness=0.6, color=colors.HexColor('#e2e8f0')),
+        Spacer(1, 10),
+        Paragraph("Payments Breakdown", big_lab),
+        Paragraph(f"CASH: € {money(cash)}", line_val),
+        Paragraph(f"Card: € {money(card)}", line_val),
+        Paragraph(f"MBWay: € {money(mbway)}", line_val),
+    ]
+    if others:
+        other_line = " · ".join(f"{k.capitalize()}: € {money(v)}" for k,v in sorted(others))
+        elements.append(Paragraph(other_line, line_val))
+
+    # 导出
+    doc.build(elements, onFirstPage=header_footer, onLaterPages=header_footer)
+    buf.seek(0)
+    fname = f"Sales_{start_date}_to_{end_date}.pdf" if start_date != end_date else f"Sales_{start_date}.pdf"
+    return FileResponse(buf, as_attachment=True, filename=fname)
+
+
+# -----------------------------
+# 销售/采购记录（按日期筛选）
+# -----------------------------
+# views.py
+@login_required
+def _legacy_record_view(request):
+    start_str = request.GET.get('start_date', '').strip()
+    end_str   = request.GET.get('end_date', '').strip()
+
+    start_date = end_date = None
+    if start_str:
+        try:
+            start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
+        except:
+            start_date = None
+    if end_str:
+        try:
+            end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
+        except:
+            end_date = None
+
+    if not start_date and not end_date:
+        return render(request, 'stock/sales_records.html', {
+            'start_date': '',
+            'end_date': '',
+            'date_filter': None,
+            'day_blocks': [],
+            'purchase_day_blocks': [],
+            'total_sales_amount': Decimal('0.00'),
+            'total_sales_qty': 0,
+            'avg_ticket': Decimal('0.00'),
+            'payment_totals': {},
+            'total_purchase_amount': Decimal('0.00'),
+            'total_purchase_qty': 0,
+            'show_purchases': False,
+        })
+
+    if start_date and not end_date:
+        end_date = start_date
+    if end_date and not start_date:
+        start_date = end_date
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+
+    # ========= 出库(销售) =========
+    sales_qs = (
+        Sale.objects
+        .filter(date__date__gte=start_date, date__date__lte=end_date)
+        .select_related('order', 'product', 'customer')
+        .order_by('date', 'order_id', 'id')
+    )
+
+    day_map = defaultdict(lambda: {
+        'orders': [],
+        'totals': {'qty': 0, 'amount': Decimal('0.00')},
+        'pay_break': defaultdict(Decimal),
+    })
+    temp = defaultdict(lambda: defaultdict(lambda: {
+        'order': None,
+        'items_today': [],
+        'total_qty': 0,
+        'total_amount': Decimal('0.00'),
+        'pay_break': defaultdict(Decimal),
+    }))
+
+    for s in sales_qs:
+        d = s.date.date()
+        o = s.order
+        row = temp[d][o.id]
+        if row['order'] is None:
+            row['order'] = o
+            row['order'].cust_name = o.customer.name if o.customer else '-'
+            row['order'].created_hhmm = o.created_at.strftime('%H:%M') if o.created_at else s.date.strftime('%H:%M')
+
+        row['items_today'].append(s)
+        row['total_qty'] += s.quantity
+        line_total = (s.unit_price or Decimal('0.00')) * s.quantity
+        row['total_amount'] += line_total
+        row['pay_break'][s.payment_method] += line_total
+
+        day_map[d]['totals']['qty']    += s.quantity
+        day_map[d]['totals']['amount'] += line_total
+        day_map[d]['pay_break'][s.payment_method] += line_total
+
+    day_blocks = []
+    for d in sorted(day_map.keys(), reverse=True):
+        orders = []
+        for _, row in sorted(temp[d].items(), key=lambda kv: kv[0], reverse=True):
+            row['pay_break'] = dict(row['pay_break'])
+            orders.append(row)
+
+        totals = day_map[d]['totals']
+        day_avg_price = (totals['amount'] / totals['qty']) if totals['qty'] else Decimal('0.00')
+        day_blocks.append({
+            'date': d,
+            'orders': orders,
+            'totals': totals,
+            'avg_price': day_avg_price,
+            'pay_break': dict(day_map[d]['pay_break']),
+        })
+
+    total_sales_amount = sum(b['totals']['amount'] for b in day_blocks) if day_blocks else Decimal('0.00')
+    total_sales_qty    = sum(b['totals']['qty'] for b in day_blocks) if day_blocks else 0
+    avg_ticket = (total_sales_amount / total_sales_qty) if total_sales_qty else Decimal('0.00')
+    date_filter = f'{start_date} → {end_date}' if start_date != end_date else f'{start_date}'
+
+    payment_totals = defaultdict(Decimal)
+    for b in day_blocks:
+        for method, amount in b['pay_break'].items():
+            if method:
+                payment_totals[method.lower()] += amount
+
+    # ========= 入库(采购, 聚合到 InboundOrder) =========
+    inbound_orders = (
+        InboundOrder.objects
+        .filter(created_at__date__gte=start_date, created_at__date__lte=end_date)
+        .select_related('supplier')
+        .prefetch_related('items__product')
+        .order_by('-created_at')
+    )
+
+    purchase_map = defaultdict(lambda: {
+        'purchases': [],
+        'totals': {'qty': 0, 'amount': Decimal('0.00')},
+    })
+
+    for order in inbound_orders:
+        d = order.created_at.date()
+        items = list(order.items.all())
+        total_qty = sum(i.quantity for i in items)
+        total_cost = sum((i.cost_price * i.quantity for i in items), Decimal('0.00'))
+
+        purchase_map[d]['purchases'].append({
+            'purchase': order,
+            'items': items,
+            'total_qty': total_qty,
+            'total_cost': total_cost,
+        })
+
+        purchase_map[d]['totals']['qty']    += total_qty
+        purchase_map[d]['totals']['amount'] += total_cost
+
+    purchase_day_blocks = []
+    for d in sorted(purchase_map.keys(), reverse=True):
+        purchase_day_blocks.append({
+            'date': d,
+            'purchases': purchase_map[d]['purchases'],
+            'totals': purchase_map[d]['totals'],
+        })
+
+    total_purchase_amount = sum(b['totals']['amount'] for b in purchase_day_blocks) if purchase_day_blocks else Decimal('0.00')
+    total_purchase_qty    = sum(b['totals']['qty'] for b in purchase_day_blocks) if purchase_day_blocks else 0
+
+    return render(request, 'stock/sales_records.html', {
+        'start_date': start_date.strftime('%Y-%m-%d'),
+        'end_date': end_date.strftime('%Y-%m-%d'),
+        'date_filter': date_filter,
+        'day_blocks': day_blocks,
+        'purchase_day_blocks': purchase_day_blocks,
+        'total_sales_amount': total_sales_amount,
+        'total_sales_qty': total_sales_qty,
+        'avg_ticket': avg_ticket,
+        'payment_totals': dict(payment_totals),
+        'total_purchase_amount': total_purchase_amount,
+        'total_purchase_qty': total_purchase_qty,
+        'show_purchases': True,
+    })
+
+
+@login_required
+def record_view(request):
+    start_str = request.GET.get('start_date', '').strip()
+    end_str = request.GET.get('end_date', '').strip()
+    show_sensitive = has_manager_access(request.user)
+    show_sales_sensitive = has_sales_sensitive_access(request.user)
+    show_order_financials = has_order_reconciliation_access(request.user)
+    show_profit = bool(getattr(request.user, 'is_superuser', False))
+
+    empty_context = {
+        'start_date': '',
+        'end_date': '',
+        'date_filter': None,
+        'day_blocks': [],
+        'purchase_day_blocks': [],
+        'total_sales_amount': Decimal('0.00'),
+        'total_sales_qty': 0,
+        'total_sales_orders': 0,
+        'avg_order_amount': Decimal('0.00'),
+        'payment_totals': {},
+        'total_sales_profit': Decimal('0.00'),
+        'total_purchase_amount': Decimal('0.00'),
+        'total_purchase_qty': 0,
+        'total_purchase_orders': 0,
+        'show_purchases': False,
+        'show_sales_sensitive': show_sales_sensitive,
+        'show_order_financials': show_order_financials,
+        'show_profit': show_profit,
+    }
+
+    start_date = end_date = None
+    if start_str:
+        try:
+            start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
+        except Exception:
+            start_date = None
+    if end_str:
+        try:
+            end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
+        except Exception:
+            end_date = None
+
+    if not start_date and not end_date:
+        return render(request, 'stock/sales_records.html', empty_context)
+
+    if start_date and not end_date:
+        end_date = start_date
+    if end_date and not start_date:
+        start_date = end_date
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+
+    payment_labels = dict(Sale.PAYMENT_METHOD_CHOICES)
+    next_url = request.get_full_path()
+
+    def build_product_label(product):
+        return globals()['build_product_label'](product)
+
+    def get_product_image_url(product):
+        if not product:
+            return ''
+        for image in product.images.all():
+            image_file = getattr(image, 'image', None)
+            if not image_file:
+                continue
+            try:
+                return image_file.url
+            except ValueError:
+                continue
+        return ''
+
+    def annotate_purchase_items(items):
+        annotated_items = list(items)
+        for item in annotated_items:
+            item.display_name = build_product_label(item.product)
+            item.line_total = (item.cost_price or Decimal('0.00')) * item.quantity
+            item.image_url = get_product_image_url(item.product)
+        return annotated_items
+
+    def build_payment_breakdown(source_breakdown):
+        return [
+            {
+                'code': method,
+                'label': payment_labels.get(method, (method or 'Other').title()),
+                'amount': amount,
+            }
+            for method, amount in sorted(source_breakdown.items(), key=lambda item: (-item[1], item[0] or ''))
+            if method
+        ]
+
+    sales_qs = (
+        Sale.objects
+        .annotate(business_at=Coalesce('order__created_at', 'date'))
+        .filter(
+            Q(order__created_at__date__gte=start_date, order__created_at__date__lte=end_date) |
+            Q(order__isnull=True, date__date__gte=start_date, date__date__lte=end_date)
+        )
+        .select_related('order__customer', 'product', 'customer')
+        .prefetch_related('product__images')
+        .order_by('-business_at', '-order_id', '-id')
+    )
+    sale_profit_map = sale_profit_map_for_sale_ids(sales_qs.values_list('id', flat=True)) if show_profit else {}
+
+    day_totals_map = defaultdict(lambda: {
+        'totals': {'qty': 0, 'amount': Decimal('0.00'), 'profit': Decimal('0.00')},
+        'pay_break': defaultdict(Decimal),
+    })
+    grouped_orders = defaultdict(dict)
+
+    for sale in sales_qs:
+        business_at = sale.business_at or sale.date
+        local_business_at = timezone.localtime(business_at)
+        day = local_business_at.date()
+        order = sale.order
+        order_key = order.id if order else f'legacy-{sale.id}'
+        row = grouped_orders[day].get(order_key)
+
+        if row is None:
+            customer_obj = order.customer if order and order.customer_id else sale.customer
+            created_at = timezone.localtime(order.created_at) if order and order.created_at else local_business_at
+            row = {
+                'order': order,
+                'order_id': order.id if order else None,
+                'detail_url': reverse('sale_order_detail', args=[order.id]) if order else None,
+                'customer_name': customer_obj.name if customer_obj else 'Walk-in / No customer',
+                'customer_detail_url': reverse('customer_detail', args=[customer_obj.id]) if customer_obj else None,
+                'created_at': created_at,
+                'created_hhmm': created_at.strftime('%H:%M'),
+                'items_today': [],
+                'total_qty': 0,
+                'total_amount': Decimal('0.00'),
+                'total_profit': Decimal('0.00'),
+                'pay_break': defaultdict(Decimal),
+            }
+            grouped_orders[day][order_key] = row
+
+        sale.display_name = build_product_label(sale.product)
+        sale.line_total = (sale.unit_price or Decimal('0.00')) * sale.quantity
+        sale.payment_label = payment_labels.get(sale.payment_method, (sale.payment_method or 'Other').title())
+        sale.image_url = get_product_image_url(sale.product)
+        sale.line_cost = sale_profit_map.get(sale.id, {}).get('cost', Decimal('0.00')) if show_profit else Decimal('0.00')
+        sale.line_profit = sale_profit_map.get(sale.id, {}).get('profit', Decimal('0.00')) if show_profit else Decimal('0.00')
+
+        row['items_today'].append(sale)
+        row['total_qty'] += sale.quantity
+        row['total_amount'] += sale.line_total
+        row['total_profit'] += sale.line_profit
+        row['pay_break'][sale.payment_method] += sale.line_total
+
+        day_totals_map[day]['totals']['qty'] += sale.quantity
+        day_totals_map[day]['totals']['amount'] += sale.line_total
+        day_totals_map[day]['totals']['profit'] += sale.line_profit
+        day_totals_map[day]['pay_break'][sale.payment_method] += sale.line_total
+
+    day_blocks = []
+    for day in sorted(grouped_orders.keys(), reverse=True):
+        orders = []
+        for row in sorted(
+            grouped_orders[day].values(),
+            key=lambda item: (item['created_at'], item['order_id'] or 0),
+            reverse=True
+        ):
+            row['items_today'].sort(
+                key=lambda item: (
+                    item.display_name.lower(),
+                    item.payment_method or '',
+                    item.id,
+                )
+            )
+            row['pay_break_display'] = build_payment_breakdown(row['pay_break'])
+
+            row['detail_id'] = f"sales-{day.strftime('%Y%m%d')}-{row['order_id'] or row['items_today'][0].id}"
+            orders.append(row)
+
+        totals = day_totals_map[day]['totals']
+        order_count = len(orders)
+        day_blocks.append({
+            'date': day,
+            'orders': orders,
+            'totals': totals,
+            'order_count': order_count,
+            'avg_order_amount': (totals['amount'] / order_count) if order_count else Decimal('0.00'),
+            'pay_break': dict(day_totals_map[day]['pay_break']),
+            'pay_break_display': build_payment_breakdown(day_totals_map[day]['pay_break']),
+        })
+
+    total_sales_amount = sum(block['totals']['amount'] for block in day_blocks) if day_blocks else Decimal('0.00')
+    total_sales_qty = sum(block['totals']['qty'] for block in day_blocks) if day_blocks else 0
+    total_sales_orders = sum(block['order_count'] for block in day_blocks) if day_blocks else 0
+    total_sales_profit = sum(block['totals']['profit'] for block in day_blocks) if day_blocks else Decimal('0.00')
+    avg_order_amount = (total_sales_amount / total_sales_orders) if total_sales_orders else Decimal('0.00')
+    date_filter = f'{start_date} to {end_date}' if start_date != end_date else f'{start_date}'
+
+    payment_totals = defaultdict(Decimal)
+    for block in day_blocks:
+        for method, amount in block['pay_break'].items():
+            if method:
+                payment_totals[method.lower()] += amount
+
+    inbound_orders = (
+        InboundOrder.objects
+        .filter(created_at__date__gte=start_date, created_at__date__lte=end_date)
+        .select_related('supplier')
+        .prefetch_related('items__product', 'items__product__images', 'items__supplier')
+        .order_by('-created_at')
+    )
+
+    purchase_map = defaultdict(lambda: {
+        'purchases': [],
+        'totals': {'qty': 0, 'amount': Decimal('0.00')},
+    })
+
+    for order in inbound_orders:
+        day = order.created_at.date()
+        items = annotate_purchase_items(order.items.all())
+
+        total_qty = sum(item.quantity for item in items)
+        total_cost = sum((item.line_total for item in items), Decimal('0.00'))
+        effective_supplier = order.supplier or next((item.supplier for item in items if item.supplier_id), None)
+
+        purchase_map[day]['purchases'].append({
+            'purchase': order,
+            'items': items,
+            'supplier_name': effective_supplier.name if effective_supplier else 'No supplier linked',
+            'has_supplier': bool(effective_supplier),
+            'identity_label': 'Supplier' if effective_supplier else 'Supplier Missing',
+            'header_badge': f'Inbound #{order.id}',
+            'created_at': order.created_at,
+            'total_qty': total_qty,
+            'total_cost': total_cost,
+            'detail_id': f"purchase-{day.strftime('%Y%m%d')}-{order.id}",
+            'edit_url': f"{reverse('inbound_order_edit', args=[order.id])}?{urlencode({'next': next_url})}",
+        })
+
+        purchase_map[day]['totals']['qty'] += total_qty
+        purchase_map[day]['totals']['amount'] += total_cost
+
+    standalone_purchases = (
+        Purchase.objects
+        .filter(inbound_order__isnull=True, date__date__gte=start_date, date__date__lte=end_date)
+        .select_related('product', 'supplier')
+        .prefetch_related('product__images')
+        .order_by('-date', '-id')
+    )
+
+    standalone_by_day = defaultdict(list)
+    for purchase in standalone_purchases:
+        day = purchase.date.date()
+        standalone_by_day[day].append(purchase)
+
+    for day, purchase_items in standalone_by_day.items():
+        items = annotate_purchase_items(purchase_items)
+        for item in items:
+            item.edit_url = f"{reverse('direct_purchase_edit', args=[item.id])}?{urlencode({'next': next_url})}"
+        total_qty = sum(item.quantity for item in items)
+        total_cost = sum((item.line_total for item in items), Decimal('0.00'))
+        supplier_names = sorted({item.supplier.name for item in items if item.supplier_id})
+        created_at = max(item.date for item in items)
+
+        if len(supplier_names) == 1:
+            supplier_name = supplier_names[0]
+            identity_label = 'Supplier'
+            has_supplier = True
+        elif len(supplier_names) > 1:
+            supplier_name = 'Mixed suppliers'
+            identity_label = 'Purchases'
+            has_supplier = True
+        else:
+            supplier_name = 'No supplier linked'
+            identity_label = 'Purchases'
+            has_supplier = False
+
+        purchase_map[day]['purchases'].append({
+            'purchase': None,
+            'items': items,
+            'supplier_name': supplier_name,
+            'has_supplier': has_supplier,
+            'identity_label': identity_label,
+            'header_badge': 'Purchases',
+            'created_at': created_at,
+            'total_qty': total_qty,
+            'total_cost': total_cost,
+            'detail_id': f"purchase-standalone-{day.strftime('%Y%m%d')}",
+        })
+
+        purchase_map[day]['totals']['qty'] += total_qty
+        purchase_map[day]['totals']['amount'] += total_cost
+
+    purchase_day_blocks = []
+    for day in sorted(purchase_map.keys(), reverse=True):
+        rows = sorted(
+            purchase_map[day]['purchases'],
+            key=lambda item: item['created_at'],
+            reverse=True,
+        )
+        purchase_day_blocks.append({
+            'date': day,
+            'purchases': rows,
+            'totals': purchase_map[day]['totals'],
+            'purchase_count': len(rows),
+        })
+
+    total_purchase_amount = sum(block['totals']['amount'] for block in purchase_day_blocks) if purchase_day_blocks else Decimal('0.00')
+    total_purchase_qty = sum(block['totals']['qty'] for block in purchase_day_blocks) if purchase_day_blocks else 0
+    total_purchase_orders = sum(block['purchase_count'] for block in purchase_day_blocks) if purchase_day_blocks else 0
+
+    return render(request, 'stock/sales_records.html', {
+        'start_date': start_date.strftime('%Y-%m-%d'),
+        'end_date': end_date.strftime('%Y-%m-%d'),
+        'date_filter': date_filter,
+        'day_blocks': day_blocks,
+        'purchase_day_blocks': purchase_day_blocks,
+        'total_sales_amount': total_sales_amount,
+        'total_sales_qty': total_sales_qty,
+        'total_sales_orders': total_sales_orders,
+        'avg_order_amount': avg_order_amount,
+        'payment_totals': dict(payment_totals),
+        'total_sales_profit': total_sales_profit,
+        'total_purchase_amount': total_purchase_amount,
+        'total_purchase_qty': total_purchase_qty,
+        'total_purchase_orders': total_purchase_orders,
+        'show_purchases': show_sensitive,
+        'show_sales_sensitive': show_sales_sensitive,
+        'show_order_financials': show_order_financials,
+        'show_profit': show_profit,
+    })
+
+
+# -----------------------------
+# 其他：图片删除、客户相关、自动完成、目录页
+# -----------------------------
+@require_POST
+@login_required
+@manager_required
+def delete_product_image(request, image_id):
+    image = get_object_or_404(ProductImage, id=image_id)
+    product_id = image.product.id
+    image.delete()
+
+    # 若是 AJAX 请求，返回 JSON；否则跳转回编辑页
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        return JsonResponse({'success': True})
+    return redirect('edit_product', pk=product_id)
+
+
+@login_required
+def check_customer(request):
+    query = request.GET.get('q', '').strip()
+    if not query:
+        return JsonResponse({'exists': False})
+
+    customer = Customer.objects.filter(
+        Q(nif__icontains=query) | Q(name__icontains=query)
+    ).first()
+
+    if customer:
+        return JsonResponse({
+            'exists': True,
+            'id': customer.id,
+            'name': customer.name,
+            'phone': customer.phone,
+            'email': customer.email,
+        })
+
+    return JsonResponse({'exists': False})
+
+
+@login_required
+def customers_autocomplete(request):
+    query = request.GET.get('q', '').strip()
+    results = []
+
+    if query:
+        customers = Customer.objects.filter(
+            Q(name__icontains=query) | Q(nif__icontains=query)
+        ).order_by('name')[:10]
+
+        results = [{'id': c.id, 'name': c.name, 'nif': c.nif} for c in customers]
+
+    return JsonResponse({'results': results})
+
+
+@require_POST
+@login_required
+def add_customer(request):
+    nif = (request.POST.get('nif') or '').strip()
+    name = (request.POST.get('name') or '').strip()
+    phone = (request.POST.get('phone') or '').strip() or None
+    email = (request.POST.get('email') or '').strip() or None
+    notes = (request.POST.get('notes') or '').strip() or None
+
+    # 基本必填校验
+    if not nif or not name:
+        return JsonResponse({'success': False, 'error': 'NIF and name are required.'})
+
+    # NIF 必须为 9 位数字
+    if not nif.isdigit() or len(nif) != 9:
+        return JsonResponse({'success': False, 'error': 'NIF must be exactly 9 digits.'})
+
+    # 检查重复
+    if Customer.objects.filter(nif=nif).exists():
+        return JsonResponse({'success': False, 'error': 'Customer with this NIF already exists.'})
+
+    # 创建客户
+    customer = Customer.objects.create(
+        nif=nif, name=name, phone=phone, email=email, notes=notes
+    )
+
+    return JsonResponse({
+        'success': True,
+        'id': customer.id,
+        'name': customer.name,
+        'phone': customer.phone,
+        'email': customer.email
+    })
+
+@login_required
+def customer_search_view(request):
+    query = request.GET.get('q', '').strip()
+    show_sensitive = has_manager_access(request.user)
+    show_sales_sensitive = has_sales_sensitive_access(request.user)
+    money_field = DecimalField(max_digits=12, decimal_places=2)
+    recent_cutoff = timezone.now() - timedelta(days=60)
+
+    order_count_subquery = (
+        SaleOrder.objects
+        .filter(customer=OuterRef('pk'))
+        .values('customer')
+        .annotate(total=Count('id'))
+        .values('total')[:1]
+    )
+    spent_subquery = (
+        Sale.objects
+        .filter(order__customer=OuterRef('pk'))
+        .values('order__customer')
+        .annotate(
+            total=Sum(
+                ExpressionWrapper(
+                    F('unit_price') * F('quantity'),
+                    output_field=money_field,
+                )
+            )
+        )
+        .values('total')[:1]
+    )
+    balance_subquery = (
+        ARInvoice.objects
+        .filter(customer=OuterRef('pk'))
+        .values('customer')
+        .annotate(
+            total=Sum(
+                ExpressionWrapper(
+                    F('total_amount') - F('amount_paid'),
+                    output_field=money_field,
+                )
+            )
+        )
+        .values('total')[:1]
+    )
+    last_order_subquery = (
+        SaleOrder.objects
+        .filter(customer=OuterRef('pk'))
+        .order_by('-created_at')
+        .values('created_at')[:1]
+    )
+
+    customers_qs = (
+        Customer.objects
+        .annotate(
+            total_orders=Coalesce(Subquery(order_count_subquery, output_field=IntegerField()), Value(0)),
+            total_spent=Coalesce(Subquery(spent_subquery, output_field=money_field), Value(Decimal('0.00'))),
+            balance_due=Coalesce(Subquery(balance_subquery, output_field=money_field), Value(Decimal('0.00'))),
+            last_order_at=Subquery(last_order_subquery, output_field=DateTimeField()),
+        )
+    )
+
+    if query:
+        customers_qs = customers_qs.filter(
+            Q(nif__icontains=query)
+            | Q(name__icontains=query)
+            | Q(phone__icontains=query)
+            | Q(email__icontains=query)
+        )
+
+    customers_qs = customers_qs.order_by('-last_order_at', '-total_orders', 'name')
+
+    customer_summary = customers_qs.aggregate(
+        customer_count=Count('id'),
+        active_count=Count('id', filter=Q(last_order_at__gte=recent_cutoff)),
+        with_orders_count=Count('id', filter=Q(total_orders__gt=0)),
+        open_balance_count=Count('id', filter=Q(balance_due__gt=0)),
+        open_balance_total=Coalesce(Sum('balance_due'), Value(Decimal('0.00'))),
+    )
+    customer_summary['new_count'] = max(
+        0,
+        (customer_summary['customer_count'] or 0) - (customer_summary['with_orders_count'] or 0),
+    )
+
+    paginator = Paginator(customers_qs, 18)
+    page_obj = paginator.get_page(request.GET.get('page'))
+    customers = []
+    for customer in page_obj.object_list:
+        balance_due = customer.balance_due or Decimal('0.00')
+        total_orders = customer.total_orders or 0
+        last_order_at = customer.last_order_at
+        if balance_due > 0 and show_sensitive:
+            customer.activity_label = 'Open balance'
+            customer.activity_class = 'warning'
+        elif total_orders == 0:
+            customer.activity_label = 'New'
+            customer.activity_class = 'neutral'
+        elif last_order_at and last_order_at >= recent_cutoff:
+            customer.activity_label = 'Active'
+            customer.activity_class = 'success'
+        else:
+            customer.activity_label = 'Quiet'
+            customer.activity_class = 'neutral'
+        customers.append(customer)
+
+    return render(request, 'stock/customer_search.html', {
+        'query': query,
+        'customers': customers,
+        'page_obj': page_obj,
+        'customer_summary': customer_summary,
+        'show_sensitive': show_sensitive,
+        'show_sales_sensitive': show_sales_sensitive,
+    })
+
+@login_required
+def _legacy_customer_detail_view(request, customer_id):
+    customer = get_object_or_404(Customer, id=customer_id)
+
+    # ====== 购买历史（按订单） ======
+    orders = (
+        SaleOrder.objects
+        .filter(customer=customer)
+        .prefetch_related('items__product')
+        .order_by('-created_at')
+    )
+
+    total_spent = Decimal('0.00')
+    total_items = 0
+    for o in orders:
+        for it in o.items.all():
+            it.total_price = (it.unit_price or Decimal('0')) * (it.quantity or 0)
+            total_spent += it.total_price
+            total_items += (it.quantity or 0)
+
+    # ====== 欠账（AR）概览 ======
+    today = timezone.now().date()
+    ar_qs = (
+        ARInvoice.objects
+        .filter(customer=customer)
+        .order_by('-created_at')
+    )
+
+    if ar_qs.exists():
+        agg = ar_qs.aggregate(
+            total_due=Sum('total_amount'),
+            total_paid=Sum('amount_paid'),
+        )
+        total_due  = agg['total_due']  or Decimal('0.00')
+        total_paid = agg['total_paid'] or Decimal('0.00')
+    else:
+        total_due = total_paid = Decimal('0.00')
+
+    ar_totals = {
+        'total_due':  total_due,
+        'total_paid': total_paid,
+        'balance':    total_due - total_paid,
+    }
+
+    ar_list = []
+    for inv in ar_qs:
+        inv.balance_val = inv.balance
+        inv.is_overdue = bool(inv.due_date and inv.balance_val > 0 and inv.due_date < today)
+        ar_list.append(inv)
+
+    ar_open = [inv for inv in ar_list if inv.balance_val > 0]
+    show_ar = (ar_totals['balance'] > 0 and len(ar_open) > 0)
+
+    ar_counts = {
+        'unpaid':  sum(1 for inv in ar_open if inv.status == 'unpaid'),
+        'partial': sum(1 for inv in ar_open if inv.status == 'partial'),
+        'paid':    sum(1 for inv in ar_list if inv.status == 'paid'),
+    }
+    ar_overdue = {'count': sum(1 for inv in ar_open if inv.is_overdue)}
+    ar_next_due = (
+        ARInvoice.objects
+        .filter(customer=customer, status__in=['unpaid', 'partial'], due_date__isnull=False)
+        .order_by('due_date')
+        .first()
+    )
+
+    return render(request, 'stock/customer_detail.html', {
+        'customer': customer,
+        'orders': orders,              
+        'total_spent': total_spent,
+        'total_items': total_items,
+
+        'show_ar': show_ar,
+        'ar_totals': ar_totals,
+        'ar_counts': ar_counts,
+        'ar_overdue': ar_overdue,
+        'ar_next_due': ar_next_due,
+        'ar_open': ar_open,
+    })
+
+
+@login_required
+def customer_detail_view(request, customer_id):
+    customer = get_object_or_404(Customer, id=customer_id)
+    show_sensitive = has_manager_access(request.user)
+    show_sales_sensitive = has_sales_sensitive_access(request.user)
+    show_profit = bool(getattr(request.user, 'is_superuser', False))
+
+    payment_labels = dict(Sale.PAYMENT_METHOD_CHOICES)
+
+    def build_product_label(product):
+        return globals()['build_product_label'](product)
+
+    def build_payment_breakdown(source_breakdown):
+        return [
+            {
+                'code': method,
+                'label': payment_labels.get(method, (method or 'Other').title()),
+                'amount': amount,
+            }
+            for method, amount in sorted(source_breakdown.items(), key=lambda item: (-item[1], item[0] or ''))
+            if method
+        ]
+
+    orders_qs = (
+        SaleOrder.objects
+        .filter(customer=customer)
+        .prefetch_related('items__product')
+        .order_by('-created_at')
+    )
+    customer_sale_ids = list(
+        Sale.objects.filter(order__customer=customer).values_list('id', flat=True)
+    )
+    sale_profit_map = sale_profit_map_for_sale_ids(customer_sale_ids) if show_profit else {}
+
+    total_spent = Decimal('0.00')
+    total_items = 0
+    total_orders = 0
+    total_profit = Decimal('0.00')
+    largest_order_total = Decimal('0.00')
+    month_map = defaultdict(lambda: {
+        'days': defaultdict(lambda: {
+            'orders': [],
+            'totals': {'amount': Decimal('0.00'), 'qty': 0, 'profit': Decimal('0.00')},
+        }),
+        'totals': {'amount': Decimal('0.00'), 'qty': 0, 'profit': Decimal('0.00'), 'orders': 0},
+        'payments': defaultdict(Decimal),
+    })
+
+    for order in orders_qs:
+        items = list(order.items.all())
+        pay_break = defaultdict(Decimal)
+        order_total = Decimal('0.00')
+        order_qty = 0
+        order_profit = Decimal('0.00')
+
+        for item in items:
+            item.display_name = build_product_label(item.product)
+            item.total_price = (item.unit_price or Decimal('0.00')) * (item.quantity or 0)
+            item.payment_label = payment_labels.get(item.payment_method, (item.payment_method or 'Other').title())
+            item.line_profit = sale_profit_map.get(item.id, {}).get('profit', Decimal('0.00')) if show_profit else Decimal('0.00')
+            order_total += item.total_price
+            order_qty += item.quantity or 0
+            order_profit += item.line_profit
+            pay_break[item.payment_method] += item.total_price
+
+        order.display_total_amount = order_total
+        order.display_total_qty = order_qty
+        order.display_total_profit = order_profit
+        order.display_pay_break = build_payment_breakdown(pay_break)
+        order.items_list = items
+        order.detail_url = reverse('sale_order_detail', args=[order.id])
+        order.detail_id = f'customer-order-{order.id}'
+
+        total_spent += order_total
+        total_items += order_qty
+        total_orders += 1
+        total_profit += order_profit
+        if order_total > largest_order_total:
+            largest_order_total = order_total
+
+        day = order.created_at.date()
+        month_key = day.replace(day=1)
+        month_entry = month_map[month_key]
+        day_entry = month_entry['days'][day]
+        day_entry['orders'].append(order)
+        day_entry['totals']['amount'] += order_total
+        day_entry['totals']['qty'] += order_qty
+        day_entry['totals']['profit'] += order_profit
+        month_entry['totals']['amount'] += order_total
+        month_entry['totals']['qty'] += order_qty
+        month_entry['totals']['profit'] += order_profit
+        month_entry['totals']['orders'] += 1
+        for method, amount in pay_break.items():
+            month_entry['payments'][method] += amount
+
+    month_blocks = []
+    for month_key in sorted(month_map.keys(), reverse=True):
+        month_entry = month_map[month_key]
+        day_blocks = []
+        for day in sorted(month_entry['days'].keys(), reverse=True):
+            day_entry = month_entry['days'][day]
+            day_entry['orders'].sort(key=lambda item: item.created_at, reverse=True)
+            day_blocks.append({
+                'date': day,
+                'orders': day_entry['orders'],
+                'totals': day_entry['totals'],
+                'order_count': len(day_entry['orders']),
+            })
+
+        month_blocks.append({
+            'month': month_key,
+            'month_label': month_key.strftime('%B %Y'),
+            'day_blocks': day_blocks,
+            'totals': month_entry['totals'],
+            'payment_breakdown': build_payment_breakdown(month_entry['payments']),
+        })
+
+    today = timezone.now().date()
+    ar_qs = (
+        ARInvoice.objects
+        .filter(customer=customer)
+        .order_by('-created_at')
+    )
+
+    if ar_qs.exists():
+        agg = ar_qs.aggregate(
+            total_due=Sum('total_amount'),
+            total_paid=Sum('amount_paid'),
+        )
+        total_due = agg['total_due'] or Decimal('0.00')
+        total_paid = agg['total_paid'] or Decimal('0.00')
+    else:
+        total_due = total_paid = Decimal('0.00')
+
+    ar_totals = {
+        'total_due': total_due,
+        'total_paid': total_paid,
+        'balance': total_due - total_paid,
+    }
+
+    ar_list = []
+    for inv in ar_qs:
+        inv.balance_val = inv.balance
+        inv.is_overdue = bool(inv.due_date and inv.balance_val > 0 and inv.due_date < today)
+        ar_list.append(inv)
+
+    ar_open = [inv for inv in ar_list if inv.balance_val > 0]
+    show_ar = show_sensitive and (ar_totals['balance'] > 0 and len(ar_open) > 0)
+
+    ar_counts = {
+        'unpaid': sum(1 for inv in ar_open if inv.status == 'unpaid'),
+        'partial': sum(1 for inv in ar_open if inv.status == 'partial'),
+        'paid': sum(1 for inv in ar_list if inv.status == 'paid'),
+    }
+    ar_overdue = {'count': sum(1 for inv in ar_open if inv.is_overdue)}
+    ar_next_due = (
+        ARInvoice.objects
+        .filter(customer=customer, status__in=['unpaid', 'partial'], due_date__isnull=False)
+        .order_by('due_date')
+        .first()
+    )
+    last_order_at = orders_qs.first().created_at if total_orders else None
+    average_order_value = (
+        (total_spent / total_orders).quantize(Decimal('0.01'))
+        if total_orders else Decimal('0.00')
+    )
+
+    return render(request, 'stock/customer_detail.html', {
+        'customer': customer,
+        'month_blocks': month_blocks,
+        'total_spent': total_spent,
+        'total_items': total_items,
+        'total_orders': total_orders,
+        'total_profit': total_profit,
+        'largest_order_total': largest_order_total,
+        'average_order_value': average_order_value,
+        'last_order_at': last_order_at,
+        'show_sensitive': show_sensitive,
+        'show_sales_sensitive': show_sales_sensitive,
+        'show_profit': show_profit,
+        'show_ar': show_ar,
+        'ar_totals': ar_totals,
+        'ar_counts': ar_counts,
+        'ar_overdue': ar_overdue,
+        'ar_next_due': ar_next_due,
+        'ar_open': ar_open,
+    })
+
+
+@login_required
+@manager_required
+def edit_customer_view(request, customer_id):
+    customer = get_object_or_404(Customer, id=customer_id)
+
+    if request.method == 'POST':
+        form = CustomerForm(request.POST, instance=customer)
+        if form.is_valid():
+            form.save()
+            return redirect('customer_detail', customer_id=customer.id)
+    else:
+        form = CustomerForm(instance=customer)
+
+    return render(request, 'stock/edit_customer.html', {
+        'form': form,
+        'customer': customer
+    })
+
+@login_required
+@manager_required
+def delete_customer(request, pk):
+    customer = get_object_or_404(Customer, pk=pk)
+    has_sales = Sale.objects.filter(customer=customer).exists()
+
+    if has_sales:
+        if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+            return JsonResponse({'success': False, 'message': '❌ Cannot delete: This customer has sales records.'})
+        messages.error(request, '❌ Cannot delete: This customer has sales records.')
+        return redirect('customer_detail', customer_id=pk)
+
+    if request.method == 'POST':
+        name = customer.name
+        customer.delete()
+        if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+            return JsonResponse({'success': True, 'message': f'✅ Customer "{name}" deleted successfully.'})
+        messages.success(request, f'✅ Customer "{name}" deleted successfully.')
+        return redirect('customer_search')
+
+@login_required
+def products_autocomplete(request):
+    q = request.GET.get('q', '').strip()
+    product_id = request.GET.get('product_id', '').strip()
+    results = []
+    matches = Product.objects.none()
+    base_qs = (
+        Product.objects
+        .select_related('brand_master', 'series_master')
+        .prefetch_related('images')
+    )
+
+    if product_id.isdigit():
+        matches = base_qs.filter(id=int(product_id))[:1]
+    elif q:
+        matches = (
+            base_qs
+            .filter(
+                Q(name__icontains=q) |
+                Q(brand__icontains=q) |
+                Q(model__icontains=q) |
+                Q(spec__icontains=q) |
+                Q(color__icontains=q) |
+                Q(barcode__icontains=q)
+            )
+            .order_by('brand', 'model', 'name', 'spec', 'color')[:12]
+        )
+
+    for p in matches:
+        results.append({
+            'id': p.id,
+            'name': p.name,
+            'display_name': p.display_name,
+            'brand': p.brand or '',
+            'model': p.model or '',
+            'spec': p.spec or '',
+            'color': p.color or '',
+            'barcode': p.barcode,
+            'retail_price': float(p.default_price) if p.default_price is not None else None,
+            'wholesale_price': float(p.wholesale_price) if p.wholesale_price is not None else None,
+            'image_url': get_product_image_url(p),
+        })
+    return JsonResponse({'results': results})
+
+
+
+# -----------------------------
+# 目录页（只展示有图片的产品；品牌/型号分组 + 库存&销量排序）
+# -----------------------------
+
+@login_required
+def catalog_view(request):
+    query = request.GET.get('q', '').strip()
+    category_id = request.GET.get('category', '').strip()
+    selected_category_name = ''
+
+    qs = (
+        annotate_catalog_metrics(
+            Product.objects
+            .filter(images__isnull=False)
+            .distinct()
+        )
+        .select_related('category', 'brand_master', 'series_master')
+        .prefetch_related('images')
+    )
+
+    if query:
+        qs = qs.filter(
+            Q(name__icontains=query) |
+            Q(brand__icontains=query) |
+            Q(model__icontains=query) |
+            Q(spec__icontains=query) |
+            Q(color__icontains=query) |
+            Q(barcode__icontains=query)
+        )
+
+    if category_id:
+        qs = qs.filter(category_id=category_id)
+        selected_category_name = (
+            Category.objects.filter(id=category_id).values_list('name', flat=True).first() or ''
+        )
+        selected_category_name = customer_catalog_case(selected_category_name)
+
+    hot_ids = set(qs.order_by('-total_sold').values_list('id', flat=True)[:5])
+
+    from collections import defaultdict as _dd
+    brand_bucket = _dd(lambda: {
+        'count': 0,
+        'models': _dd(lambda: {'products': [], 'model_sold': 0}),
+        'outro': {'products': [], 'model_sold': 0},
+    })
+
+    all_products = []
+    total_stock_units = 0
+    total_sales_units = 0
+
+    for p in qs:
+        stock_val = int(p.total_stock or 0)
+        p.stock_val = stock_val
+        p.stock_state = 2 if stock_val >= 4 else (1 if stock_val > 0 else 0)
+        p.sales_val = int(p.total_sold or 0)
+        p.primary_image = p.images.first()
+        title_parts = []
+        model_part = (p.model or '').strip()
+        name_part = (p.name or '').strip()
+        if model_part:
+            title_parts.append(model_part)
+        if name_part and name_part.lower() != model_part.lower():
+            title_parts.append(name_part)
+        p.catalog_title = customer_catalog_case(' - '.join(title_parts) or name_part or p.display_name)
+        p.catalog_spec = customer_catalog_case(p.spec)
+        p.catalog_color = customer_catalog_case(p.color)
+        p.catalog_category_name = customer_catalog_case(getattr(p.category, 'name', ''))
+        if stock_val >= 4:
+            p.availability_label = 'Available now'
+            p.availability_class = 'in-stock'
+        elif stock_val > 0:
+            p.availability_label = 'Low stock'
+            p.availability_class = 'low-stock'
+        else:
+            p.availability_label = 'Currently unavailable'
+            p.availability_class = 'out-stock'
+        all_products.append(p)
+        total_stock_units += p.stock_val
+        total_sales_units += p.sales_val
+
+        brand = (p.brand or '').strip() or '—'
+        model_key = (p.model or '').strip()
+
+        if model_key:
+            brand_bucket[brand]['models'][model_key]['products'].append(p)
+            brand_bucket[brand]['models'][model_key]['model_sold'] += p.sales_val
+        else:
+            brand_bucket[brand]['outro']['products'].append(p)
+            brand_bucket[brand]['outro']['model_sold'] += p.sales_val
+
+        brand_bucket[brand]['count'] += 1
+
+    def product_sort_key(prod):
+        return (-prod.stock_state, -prod.stock_val, -prod.sales_val, (prod.display_name or '').lower())
+
+    brands = []
+    for brand_name, data in brand_bucket.items():
+        model_blocks = []
+
+        for model_name, mdata in sorted(
+            data['models'].items(),
+            key=lambda kv: (-kv[1]['model_sold'], kv[0].lower())
+        ):
+            prods = sorted(mdata['products'], key=product_sort_key)
+            model_blocks.append({
+                'model': model_name,
+                'display_model': customer_catalog_case(model_name),
+                'products': prods,
+                'has_stock': any(prod.stock_val > 0 for prod in prods),
+            })
+
+        if data['outro']['products']:
+            outro_sorted = sorted(
+                data['outro']['products'],
+                key=lambda p: (-p.sales_val, -p.stock_state, -p.stock_val, (p.display_name or '').lower())
+            )
+            model_blocks.append({
+                'model': '',
+                'display_model': '',
+                'products': outro_sorted,
+                'has_stock': any(prod.stock_val > 0 for prod in outro_sorted),
+            })
+
+        brands.append({
+            'brand': brand_name,
+            'display_brand': customer_catalog_case(brand_name),
+            'count': data['count'],
+            'models': model_blocks,
+            'has_stock': any(block['has_stock'] for block in model_blocks),
+        })
+
+    brands.sort(key=lambda b: (-b['count'], b['brand'].lower()))
+    categories = Category.objects.all()
+    hot_products = sorted(
+        [product for product in all_products if product.id in hot_ids],
+        key=lambda product: (-(1 if product.stock_val > 0 else 0), -product.sales_val, -product.stock_val, (product.display_name or '').lower()),
+    )
+
+    return render(request, 'stock/catalog.html', {
+        'brands': brands,
+        'categories': categories,
+        'query': query,
+        'selected_category': category_id,
+        'selected_category_name': selected_category_name,
+        'hot_ids': list(hot_ids),
+        'hot_products': hot_products,
+        'total_catalog_products': len(all_products),
+        'total_catalog_brands': len(brands),
+        'total_catalog_stock': total_stock_units,
+        'total_catalog_sales': total_sales_units,
+        'can_manage': has_manager_access(request.user),
+    })
+
+# -----------------------------
+# 导出：目录（按品牌分表）到 Excel
+# -----------------------------
+@login_required
+@manager_required
+def export_catalog_excel(request):
+    q = request.GET.get('q', '').strip()
+    category_id = (request.GET.get('category') or '').strip()
+
+    qs = (
+        annotate_catalog_metrics(
+            Product.objects
+            .filter(images__isnull=False)
+            .distinct()
+        )
+        .select_related('category', 'brand_master', 'series_master')
+        .prefetch_related('images')
+    )
+
+    if q:
+        qs = qs.filter(
+            Q(name__icontains=q) |
+            Q(brand__icontains=q) |
+            Q(model__icontains=q) |
+            Q(spec__icontains=q) |
+            Q(color__icontains=q) |
+            Q(barcode__icontains=q)
+        )
+    if category_id:
+        qs = qs.filter(category_id=category_id)
+
+    from collections import defaultdict as _dd
+    brand_bucket = _dd(lambda: {
+        'count': 0,
+        'models': _dd(lambda: {'products': [], 'model_sold': 0}),
+        'outro': {'products': [], 'model_sold': 0},
+    })
+
+    def _stock_state(v: int) -> int:
+        return 2 if v > 5 else (1 if v > 0 else 0)
+
+    for p in qs:
+        p.stock_val = int(p.total_stock or 0)
+        p.stock_state = _stock_state(p.stock_val)
+        p.sales_val = int(getattr(p, 'total_sold', 0) or 0)
+
+        brand = (p.brand or '').strip() or '—'
+        model_key = (p.model or '').strip()
+        if model_key:
+            brand_bucket[brand]['models'][model_key]['products'].append(p)
+            brand_bucket[brand]['models'][model_key]['model_sold'] += p.sales_val
+        else:
+            brand_bucket[brand]['outro']['products'].append(p)
+            brand_bucket[brand]['outro']['model_sold'] += p.sales_val
+        brand_bucket[brand]['count'] += 1
+
+    if not brand_bucket:
+        return HttpResponse('No products to export for current filters.', content_type='text/plain')
+
+    wb = Workbook()
+    if wb.active:
+        wb.remove(wb.active)
+
+    header_fill = PatternFill('solid', fgColor='FFE2E8F0')
+    thin = Side(border_style='thin', color='FFCBD5E1')
+    border = Border(top=thin, bottom=thin, left=thin, right=thin)
+    wrap = Alignment(wrap_text=True, vertical='top')
+
+    brands_sorted = sorted(
+        [{'brand': b, 'count': data['count']} for b, data in brand_bucket.items()],
+        key=lambda x: (-x['count'], x['brand'].lower())
+    )
+
+    def _product_sort_key(prod):
+        return (-prod.stock_state, -prod.stock_val, -prod.sales_val, (prod.display_name or '').lower())
+
+    for b in brands_sorted:
+        brand_name = b['brand']
+        data = brand_bucket[brand_name]
+
+        ws = wb.create_sheet(title=(brand_name[:30].replace('/', '-') or 'Sem Marca'))
+        ws.freeze_panes = 'A2'
+        ws.column_dimensions['A'].width = 18
+        ws.column_dimensions['B'].width = 40
+        ws.column_dimensions['C'].width = 12
+        ws.column_dimensions['D'].width = 16
+        ws.column_dimensions['E'].width = 60
+
+        headers = ['Foto', 'Nome', 'Preço (€)', 'Stock', 'Descrição']
+        ws.append(headers)
+        for col in ['A','B','C','D','E']:
+            cell = ws[f"{col}1"]
+            cell.fill = header_fill
+            cell.font = Font(bold=True)
+            cell.border = border
+            cell.alignment = Alignment(vertical='center')
+
+        model_blocks = []
+        for model_name, mdata in data['models'].items():
+            prods_sorted = sorted(mdata['products'], key=_product_sort_key)
+            model_blocks.append({'model': model_name, 'products': prods_sorted, 'model_sold': mdata['model_sold']})
+        model_blocks.sort(key=lambda kv: (-kv['model_sold'], kv['model'].lower()))
+
+        outro_sorted = []
+        if data['outro']['products']:
+            outro_sorted = sorted(
+                data['outro']['products'],
+                key=lambda p: (-p.sales_val, -p.stock_state, -p.stock_val, (p.display_name or '').lower())
+            )
+
+        row = 2
+        def _append(prod):
+            nonlocal row
+            # Nome
+            parts = []
+            if (prod.model or '').strip():
+                parts.append(prod.model.strip())
+            parts.append((prod.name or '').strip())
+            disp = ' · '.join([x for x in parts if x]) or (prod.name or '')
+            disp = prod.display_name
+            ws.cell(row=row, column=2, value=disp).alignment = wrap
+
+            # Preço
+            price_val = getattr(prod, 'default_price', None)
+            c_price = ws.cell(row=row, column=3, value=float(price_val) if price_val is not None else None)
+            if price_val is not None:
+                c_price.number_format = '€#,##0.00'
+
+            # Stock 状态
+            s_val = int(getattr(prod, 'total_stock', 0) or 0)
+            if s_val > 5:
+                s_text, s_color, s_font = 'Em stock', 'FFBBF7D0', Font(color='FF065F46', bold=True)
+            elif s_val > 0:
+                s_text, s_color, s_font = 'Baixo', 'FFFED7AA', Font(color='FF7C2D12', bold=True)
+            else:
+                s_text, s_color, s_font = 'Esgotado', 'FFFECACA', Font(color='FF7F1D1D', bold=True)
+            c_stock = ws.cell(row=row, column=4, value=s_text)
+            c_stock.fill = PatternFill('solid', fgColor=s_color)
+            c_stock.font = s_font
+            c_stock.border = border
+            c_stock.alignment = Alignment(horizontal='center', vertical='center')
+
+            # 描述
+            desc = (prod.description or '').strip()
+            if len(desc) > 240:
+                desc = desc[:240] + '…'
+            ws.cell(row=row, column=5, value=desc).alignment = wrap
+
+            # 图片
+            try:
+                first_img = prod.images.all()[0]
+                img_path = first_img.image.path
+                pil = PILImage.open(img_path)
+                pil.thumbnail((120, 120))
+                tmp = _BytesIO(); pil.save(tmp, format='PNG'); tmp.seek(0)
+                xlimg = XLImage(tmp)
+                ws.add_image(xlimg, f'A{row}')
+                ws.row_dimensions[row].height = 95
+            except Exception:
+                pass
+
+            for c in (2,3,4,5):
+                ws.cell(row=row, column=c).border = border
+            row += 1
+
+        for blk in model_blocks:
+            for prod in blk['products']:
+                _append(prod)
+        for prod in outro_sorted:
+            _append(prod)
+
+    buf = _BytesIO(); wb.save(buf); buf.seek(0)
+    ts = datetime.now().strftime('%Y%m%d_%H%M')
+    fname = f"Catalog_{ts}.xlsx"
+    resp = FileResponse(buf, as_attachment=True, filename=fname)
+    resp["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    return resp
+
+# -----------------------------
+# 欠账
+# -----------------------------
+@login_required
+@manager_required
+def ar_new_view(request):
+    # 读取 GET 里的预选客户
+    pre_id = (request.GET.get('customer') or '').strip()
+    pre_customer = None
+    if pre_id.isdigit():
+        pre_customer = Customer.objects.filter(id=int(pre_id)).only('id', 'name', 'nif').first()
+
+    if request.method == 'POST':
+        form = ARInvoiceForm(request.POST)
+        if form.is_valid():
+            invoice = form.save(commit=False)
+
+            #  兜底：若表单未包含 customer 字段，则用隐藏域 customer 赋值
+            if not getattr(invoice, 'customer_id', None):
+                post_cust_id = (request.POST.get('customer') or '').strip()
+                if post_cust_id.isdigit():
+                    invoice.customer_id = int(post_cust_id)
+
+            invoice.total_amount = Decimal('0.00')
+            invoice.save()
+
+            total = Decimal('0.00')
+            product_names = request.POST.getlist('product_name')
+            quantities = request.POST.getlist('quantity')
+            unit_prices = request.POST.getlist('unit_price')
+
+            for name, qty, price in zip(product_names, quantities, unit_prices):
+                try:
+                    qty = int(qty)
+                    price = Decimal(price)
+                    ARItem.objects.create(
+                        invoice=invoice,
+                        product_name=name,
+                        quantity=qty,
+                        unit_price=price
+                    )
+                    total += qty * price
+                except Exception:
+                    continue
+
+            invoice.total_amount = total
+            paid = invoice.amount_paid or Decimal('0')
+            invoice.status = 'paid' if paid >= total else ('partial' if paid > 0 else 'unpaid')
+            invoice.save()
+
+            messages.success(request, f"✅ IOU #{invoice.id} created with total €{total:.2f}")
+            return redirect('ar_detail', invoice_id=invoice.id)
+        else:
+            messages.error(request, "❌ Please fix the errors in the form.")
+    else:
+        # GET 时把预选客户灌入初始值（如果表单包含 customer 字段会生效）
+        init = {}
+        if pre_customer:
+            init['customer'] = pre_customer.id
+        form = ARInvoiceForm(initial=init)
+
+    return render(request, 'stock/ar_new.html', {
+        'form': form,
+        'pre_customer': pre_customer,  # 模板里用来预填隐藏域与搜索框
+    })
+
+@login_required
+def ar_list_view(request):
+    q = request.GET.get('q', '')
+    status = request.GET.get('status', '')
+    sort = request.GET.get('sort', '-id')
+    show_sensitive = has_manager_access(request.user)
+
+    invoices = ARInvoice.objects.all()
+    if q:
+        invoices = invoices.filter(customer__name__icontains=q)
+    if status:
+        invoices = invoices.filter(status=status)
+
+    invoices = invoices.order_by(sort)
+
+    totals = invoices.aggregate(
+        total_amount=Sum('total_amount') or 0,
+        total_paid=Sum('amount_paid') or 0,
+    )
+    totals['balance'] = (totals['total_amount'] or 0) - (totals['total_paid'] or 0)
+
+    context = {
+        'q': q,
+        'status': status,
+        'sort': sort,
+        'invoices': invoices,
+        'totals': totals,
+        'show_sensitive': show_sensitive,
+    }
+    return render(request, 'stock/ar_list.html', context)
+
+@login_required
+def ar_detail_view(request, invoice_id):
+    invoice = get_object_or_404(ARInvoice.objects.select_related('customer'), id=invoice_id)
+    items = invoice.items.all().order_by('id')
+    pay_form = ARPaymentForm()
+    return render(request, 'stock/ar_detail.html', {
+        'invoice': invoice,
+        'items': items,
+        'pay_form': pay_form,
+        'show_sensitive': has_manager_access(request.user),
+    })
+
+
+@require_POST
+@login_required
+@manager_required
+def ar_add_payment_view(request, invoice_id):
+    invoice = get_object_or_404(ARInvoice, id=invoice_id)
+    form = ARPaymentForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "❌ Invalid payment.")
+        return redirect('ar_detail', invoice_id=invoice.id)
+
+    payment = form.save(commit=False)
+    payment.invoice = invoice
+    payment.save()
+
+    # 汇总已付并更新状态
+    total_paid = invoice.payments.aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
+    invoice.amount_paid = total_paid
+    if total_paid >= invoice.total_amount:
+        invoice.status = 'paid'
+    elif total_paid > 0:
+        invoice.status = 'partial'
+    else:
+        invoice.status = 'unpaid'
+    invoice.save()
+
+    messages.success(request, f"💶 Recorded payment €{payment.amount:.2f}")
+    return redirect('ar_detail', invoice_id=invoice.id)
+
+@require_POST
+@login_required
+@manager_required
+def ar_add_items_view(request, invoice_id):
+    invoice = get_object_or_404(ARInvoice, id=invoice_id)
+
+    names = request.POST.getlist('product_name')
+    quantities = request.POST.getlist('quantity')
+    prices = request.POST.getlist('unit_price')
+
+    total_added = Decimal('0.00')
+
+    for name, qty, price in zip(names, quantities, prices):
+        if not name.strip():
+            continue
+        try:
+            qty = int(qty)
+            price = Decimal(price)
+        except:
+            continue
+        ARItem.objects.create(
+            invoice=invoice,
+            product_name=name.strip(),
+            quantity=qty,
+            unit_price=price
+        )
+        total_added += qty * price
+
+    # 更新总金额
+    invoice.total_amount += total_added
+    paid = invoice.amount_paid or Decimal('0')
+    invoice.status = 'paid' if paid >= invoice.total_amount else ('partial' if paid > 0 else 'unpaid')
+    invoice.save()
+
+    messages.success(request, f"✅ Added {len(names)} item(s), total +€{total_added:.2f}")
+    return redirect('ar_detail', invoice_id=invoice.id)
+
+# API: 调整单个购买批次的 remaining
+@login_required
+@require_POST
+def api_adjust_purchase_stock(request):
+    """
+    POST JSON:
+    {
+      "purchase_id": 456,
+      "new_remaining": 50
+    }
+    Only staff users can adjust stock in current policy.
+    """
+    if not (request.user.is_staff or request.user.is_superuser):
+        return JsonResponse({'success': False, 'error': 'Permission denied'}, status=403)
+
+    try:
+        data = json.loads(request.body.decode('utf-8') if isinstance(request.body, bytes) else request.body)
+        purchase_id = int(data.get('purchase_id', 0))
+        new_remaining = int(data.get('new_remaining', 0))
+
+        if new_remaining < 0:
+            return JsonResponse({'success': False, 'error': 'Stock cannot be negative'})
+
+        purchase = get_object_or_404(Purchase.objects.select_related('product'), pk=purchase_id)
+        if new_remaining > purchase.quantity:
+            return JsonResponse({'success': False, 'error': 'Remaining stock cannot exceed original quantity'})
+
+        with transaction.atomic():
+            old_remaining = purchase.remaining
+            purchase.remaining = new_remaining
+            purchase.save(update_fields=['remaining'])
+            inventory_snapshot = build_inventory_snapshot(purchase.product)
+
+        return JsonResponse({
+            'success': True,
+            'message': f'Updated remaining from {old_remaining} to {new_remaining}',
+            'old_remaining': old_remaining,
+            'new_remaining': new_remaining,
+            'inventory_snapshot': inventory_snapshot,
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
+# API: 调整产品总库存（按 FIFO 创建/移除批次）
+@login_required
+@require_POST
+def api_adjust_total_stock(request):
+    """
+    POST JSON:
+    {
+      "product_id": 271,
+      "new_total_stock": 100
+    }
+    """
+    if not (request.user.is_staff or request.user.is_superuser):
+        return JsonResponse({'success': False, 'error': 'Permission denied'}, status=403)
+
+    try:
+        data = json.loads(request.body.decode('utf-8') if isinstance(request.body, bytes) else request.body)
+        product_id = int(data.get('product_id', 0))
+        new_total = int(data.get('new_total_stock', 0))
+
+        if new_total < 0:
+            return JsonResponse({'success': False, 'error': 'Stock cannot be negative'})
+
+        product = get_object_or_404(Product, pk=product_id)
+
+        with transaction.atomic():
+            current_total = product.total_stock()
+            difference = new_total - current_total
+
+            if difference == 0:
+                return JsonResponse({
+                    'success': True,
+                    'message': 'No change needed',
+                    'inventory_snapshot': build_inventory_snapshot(product),
+                })
+
+            if difference > 0:
+                Purchase.objects.create(
+                    product=product,
+                    supplier=None,
+                    quantity=difference,
+                    cost_price=Decimal('0.00'),
+                    remaining=difference,
+                    inbound_order=None
+                )
+                inventory_snapshot = build_inventory_snapshot(product)
+                return JsonResponse({
+                    'success': True,
+                    'message': f'Increased stock by {difference}',
+                    'inventory_snapshot': inventory_snapshot,
+                })
+
+            to_remove = abs(difference)
+            purchases = product.purchase_set.filter(remaining__gt=0).order_by('date', 'id')
+            removed = 0
+            for p in purchases:
+                if to_remove <= 0:
+                    break
+                removable = min(p.remaining, to_remove)
+                p.remaining -= removable
+                p.save(update_fields=['remaining'])
+                removed += removable
+                to_remove -= removable
+
+            inventory_snapshot = build_inventory_snapshot(product)
+            return JsonResponse({
+                'success': True,
+                'message': f'Decreased stock by {removed}',
+                'inventory_snapshot': inventory_snapshot,
+            })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})

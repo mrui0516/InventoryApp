@@ -1,0 +1,207 @@
+{% extends 'stock/base.html' %}
+{% block title %}Attendance{% endblock %}
+
+{% block content %}
+<style>
+  .panel{background:#fff;border:1px solid #dbe5f0;border-radius:1.15rem;box-shadow:0 18px 40px rgba(15,23,42,.06)}
+  .hero{padding:1.35rem}
+  .hero h1{margin:0;font-size:2rem;font-weight:900;color:#10213a}
+  .sub{color:#5a6b81}
+  .grid{display:grid;gap:1rem}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:1rem}
+  .stat{padding:1rem 1.1rem;border-radius:1rem;background:linear-gradient(180deg,#f8fbff,#eef4fb);border:1px solid #d5e2f0}
+  .stat-k{font-size:.78rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#52719a}
+  .stat-v{font-size:1.7rem;font-weight:900;color:#10213a}
+  .pill{display:inline-flex;align-items:center;padding:.32rem .7rem;border-radius:999px;font-size:.8rem;font-weight:800}
+  .pill.open{background:#eaf2ff;color:#1747a6}
+  .pill.closed{background:#eefaf1;color:#0f7a38}
+</style>
+
+<div class="grid">
+  <section class="panel hero">
+    <div class="d-flex justify-content-between gap-3 flex-wrap align-items-start">
+      <div>
+        <h1>Attendance</h1>
+        <p class="sub mb-0">Employees can clock in and out here. Managers can also review monthly team attendance without leaving the system.</p>
+      </div>
+      <div class="text-end">
+        {% if open_shift %}
+          <span class="pill open">Open shift since {{ open_shift.clock_in_at|date:"H:i" }}</span>
+        {% else %}
+          <span class="pill closed">No open shift</span>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section class="panel p-4">
+    <div class="row g-4 align-items-end">
+      <div class="col-lg-8">
+        <div class="h5 mb-2">My shift action</div>
+        <p class="sub mb-3">Add a quick note if needed, then record your check-in or check-out.</p>
+        <form method="post">
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label fw-bold" for="attendance-note">Note</label>
+            <textarea id="attendance-note" name="note" rows="2" class="form-control" placeholder="Optional note for today's shift"></textarea>
+          </div>
+          <div class="d-flex gap-2 flex-wrap">
+            <button type="submit" name="action" value="check_in" class="btn btn-primary" {% if open_shift %}disabled{% endif %}>Check in</button>
+            <button type="submit" name="action" value="check_out" class="btn btn-outline-dark" {% if not open_shift %}disabled{% endif %}>Check out</button>
+          </div>
+        </form>
+      </div>
+      <div class="col-lg-4">
+        <div class="stats">
+          <div class="stat">
+            <div class="stat-k">Selected Month</div>
+            <div class="stat-v">{{ selected_month }}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-k">My Shifts</div>
+            <div class="stat-v">{{ my_shift_count }}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-k">My Hours</div>
+            <div class="stat-v">{{ my_total_hours_label }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel p-4">
+    <div class="d-flex justify-content-between gap-3 flex-wrap align-items-end mb-3">
+      <div>
+        <div class="h5 mb-1">My attendance history</div>
+        <p class="sub mb-0">{{ month_start|date:"Y-m-d" }} to {{ month_end|date:"Y-m-d" }}</p>
+      </div>
+      <form method="get" class="d-flex gap-2 flex-wrap">
+        <input type="month" name="month" value="{{ selected_month }}" class="form-control">
+        <button class="btn btn-outline-primary">Filter month</button>
+      </form>
+    </div>
+    <div class="table-responsive">
+      <table class="table align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Date</th>
+            <th>Clock In</th>
+            <th>Clock Out</th>
+            <th>Hours</th>
+            <th>Note</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for record in my_records %}
+            <tr>
+              <td>{{ record.clock_in_at|date:"Y-m-d" }}</td>
+              <td>{{ record.clock_in_at|date:"H:i" }}</td>
+              <td>{% if record.clock_out_at %}{{ record.clock_out_at|date:"H:i" }}{% else %}<span class="pill open">Open</span>{% endif %}</td>
+              <td>{{ record.view_duration_label }}</td>
+              <td>{{ record.note|default:"-"|linebreaksbr }}</td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="5" class="text-center py-5 text-muted">No attendance records for this month.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {% if show_team_section %}
+    <section class="panel p-4">
+      <div class="d-flex justify-content-between gap-3 flex-wrap align-items-end mb-3">
+        <div>
+          <div class="h5 mb-1">Team attendance overview</div>
+          <p class="sub mb-0">Quick view of open shifts and monthly attendance for the team.</p>
+        </div>
+        <form method="get" class="row g-2 align-items-end">
+          <div class="col-auto">
+            <label class="form-label fw-bold">Month</label>
+            <input type="month" name="month" value="{{ selected_month }}" class="form-control">
+          </div>
+          <div class="col-auto">
+            <label class="form-label fw-bold">Search person</label>
+            <input type="text" name="team_q" value="{{ team_query }}" class="form-control" placeholder="Username or name">
+          </div>
+          <div class="col-auto d-grid">
+            <button class="btn btn-outline-primary">Apply</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="stats mb-4">
+        <div class="stat">
+          <div class="stat-k">Team Members In View</div>
+          <div class="stat-v">{{ team_members|length }}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-k">Open Shifts</div>
+          <div class="stat-v">{{ team_open_shift_count }}</div>
+        </div>
+      </div>
+
+      <div class="table-responsive mb-4">
+        <table class="table align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Employee</th>
+              <th>Shifts</th>
+              <th>Total Hours</th>
+              <th>Latest Clock In</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for member in team_members %}
+              <tr>
+                <td>{{ member.user.username }}</td>
+                <td>{{ member.shift_count }}</td>
+                <td>{{ member.total_hours_label }}</td>
+                <td>{{ member.last_clock_in_at|date:"Y-m-d H:i" }}</td>
+                <td>{% if member.open_shift %}<span class="pill open">Checked in</span>{% else %}<span class="pill closed">Closed</span>{% endif %}</td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="5" class="text-center py-4 text-muted">No team attendance records in this range.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Employee</th>
+              <th>Clock In</th>
+              <th>Clock Out</th>
+              <th>Hours</th>
+              <th>Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for record in team_records %}
+              <tr>
+                <td>{{ record.user.username }}</td>
+                <td>{{ record.clock_in_at|date:"Y-m-d H:i" }}</td>
+                <td>{% if record.clock_out_at %}{{ record.clock_out_at|date:"Y-m-d H:i" }}{% else %}<span class="pill open">Open</span>{% endif %}</td>
+                <td>{{ record.view_duration_label }}</td>
+                <td>{{ record.note|default:"-"|linebreaksbr }}</td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="5" class="text-center py-4 text-muted">No recent attendance rows to show.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% endif %}
+</div>
+{% endblock %}

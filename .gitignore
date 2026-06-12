@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Virtual environment
+.venv/
+venv/
+
+# Django runtime data
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+
+# Environment / secrets
+.env
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+
+# Stray temp files
+tmp_*.xlsx
+tmp_*.txt
+*.tmp

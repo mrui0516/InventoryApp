@@ -1,0 +1,90 @@
+{% extends 'stock/base.html' %}
+{% block title %}Adjust Direct Purchase{% endblock %}
+
+{% block content %}
+<style>
+  .direct-shell{max-width:980px;margin:0 auto;display:grid;gap:1rem}
+  .direct-card{background:#fff;border:1px solid #d9e2ee;border-radius:1.15rem;box-shadow:0 18px 40px rgba(15,23,42,.06)}
+  .direct-pad{padding:1.2rem}
+  .eyebrow{display:inline-flex;align-items:center;padding:.28rem .68rem;border-radius:999px;background:#eaf2ff;color:#1747a6;font-size:.78rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase}
+  .page-head{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap}
+  .page-title{margin:.4rem 0 0;font-size:2rem;font-weight:900;color:#10213a}
+  .page-sub{margin:.35rem 0 0;color:#5a6b81}
+  .product-row{display:grid;grid-template-columns:72px minmax(0,1fr);gap:1rem;align-items:center}
+  .product-thumb,.product-thumb-empty{width:72px;height:72px;border-radius:1rem;border:1px solid #dae4f1;background:#f4f7fb}
+  .product-thumb{overflow:hidden;display:block}
+  .product-thumb img{width:100%;height:100%;object-fit:cover}
+  .product-thumb-empty{display:grid;place-items:center;color:#60748d;font-size:.72rem;font-weight:800}
+</style>
+
+<div class="direct-shell">
+  <section class="direct-card direct-pad">
+    <div class="page-head">
+      <div>
+        <span class="eyebrow">Direct purchase</span>
+        <h1 class="page-title">Adjust standalone inbound batch</h1>
+        <p class="page-sub">Use this page for purchases that were recorded without an inbound order header.</p>
+      </div>
+      <a href="{{ next_url }}" class="btn btn-outline-secondary">Back</a>
+    </div>
+  </section>
+
+  <section class="direct-card direct-pad">
+    <div class="product-row">
+      {% if purchase.image_url %}
+        <a href="{% url 'product_detail' purchase.product.id %}" class="product-thumb">
+          <img src="{{ purchase.image_url }}" alt="{{ purchase.display_name }}">
+        </a>
+      {% else %}
+        <div class="product-thumb-empty">No img</div>
+      {% endif %}
+      <div>
+        <div class="fw-bold fs-4">{{ purchase.display_name }}</div>
+        <div class="text-muted">{{ purchase.product.barcode }}</div>
+        <div class="text-muted mt-2">Sold already: {{ purchase.sold_units }} · Current remaining: {{ purchase.remaining }}</div>
+      </div>
+    </div>
+  </section>
+
+  <form method="post" class="direct-card direct-pad">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ next_url }}">
+
+    {% if form.non_field_errors %}
+      <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+    {% endif %}
+
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label fw-bold" for="{{ form.supplier.id_for_label }}">Supplier</label>
+        {{ form.supplier }}
+        {% if form.supplier.errors %}<div class="text-danger small mt-1">{{ form.supplier.errors|join:', ' }}</div>{% endif %}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label fw-bold" for="{{ form.recorded_at.id_for_label }}">Recorded at</label>
+        {{ form.recorded_at }}
+        {% if form.recorded_at.errors %}<div class="text-danger small mt-1">{{ form.recorded_at.errors|join:', ' }}</div>{% endif %}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label fw-bold" for="{{ form.quantity.id_for_label }}">Quantity</label>
+        {{ form.quantity }}
+        <div class="small text-muted mt-1">Cannot go below {{ purchase.sold_units }} because those units were already sold.</div>
+        {% if form.quantity.errors %}<div class="text-danger small mt-1">{{ form.quantity.errors|join:', ' }}</div>{% endif %}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label fw-bold" for="{{ form.cost_price.id_for_label }}">Unit cost</label>
+        {{ form.cost_price }}
+        {% if form.cost_price.errors %}<div class="text-danger small mt-1">{{ form.cost_price.errors|join:', ' }}</div>{% endif %}
+      </div>
+    </div>
+
+    <div class="d-flex gap-2 flex-wrap mt-4">
+      <button type="submit" class="btn btn-primary">Save direct purchase</button>
+      <a href="{{ next_url }}" class="btn btn-outline-secondary">Cancel</a>
+      {% if not purchase.sold_units %}
+        <button type="submit" name="delete_purchase" value="1" class="btn btn-outline-danger" onclick="return confirm('Delete this direct purchase record? This cannot be undone.');">Delete record</button>
+      {% endif %}
+    </div>
+  </form>
+</div>
+{% endblock %}

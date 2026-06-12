@@ -1,0 +1,141 @@
+{% extends 'stock/base.html' %}
+{% block title %}Edit Customer{% endblock %}
+
+{% block content %}
+
+<style>
+  :root{
+    --ds-border: rgba(0,0,0,.08);
+    --ds-card:#fff;
+    --ds-text:#1f2937;
+    --ds-muted:#6b7280;
+    --ds-accent:#3b82f6;
+    --ds-radius:.9rem;
+  }
+
+  h2{ font-weight:800; letter-spacing:.2px; color:var(--ds-text); }
+
+  /* 卡片与基础样式 */
+  .ds-card{
+    border:1px solid var(--ds-border);
+    border-radius: var(--ds-radius);
+    background: var(--ds-card);
+    box-shadow: 0 2px 10px rgba(0,0,0,.04);
+  }
+  .muted{ color:var(--ds-muted); }
+
+  /* 因为用的是 form.as_p，这里把 p 当作每个表单行来精修 */
+  form.ds-card p{
+    margin-bottom: .9rem;
+  }
+  form.ds-card p > label{
+    display:block;
+    font-weight:700;
+    margin-bottom:.35rem;
+    color:var(--ds-text);
+  }
+  form.ds-card input[type="text"],
+  form.ds-card input[type="email"],
+  form.ds-card input[type="tel"],
+  form.ds-card input[type="number"],
+  form.ds-card input[type="date"],
+  form.ds-card input:not([type]),
+  form.ds-card select,
+  form.ds-card textarea{
+    display:block;
+    width:100%;
+    border-radius:.65rem;
+    border:1px solid var(--ds-border);
+    padding:.65rem .9rem;
+    font-size:1rem;
+    line-height:1.4;
+    background:#fff;
+  }
+  form.ds-card input:focus,
+  form.ds-card select:focus,
+  form.ds-card textarea:focus{
+    border-color: color-mix(in oklab, var(--ds-accent) 55%, #7aa2ff 45%);
+    box-shadow: 0 0 0 .2rem rgba(59,130,246,.14);
+    outline: none;
+  }
+  /* Django 错误信息 */
+  form.ds-card .errorlist{
+    margin:.35rem 0 0 0; padding:0; list-style:none;
+    color:#b91c1c; font-size:.92rem;
+  }
+
+  /* 两列布局（自动流式，窄屏回落一列） */
+  .form-grid{
+    display:grid;
+    grid-template-columns: repeat(2, minmax(0,1fr));
+    gap:1rem 1.25rem;
+  }
+  .form-grid > p{ margin:0; }     /* 让 p 成为网格项 */
+  .form-grid > p:has(textarea){ grid-column: 1 / -1; } /* 描述类大字段占整行 */
+  .form-actions{ display:flex; gap:.6rem; flex-wrap:wrap; }
+
+  .btn{ border-radius:.65rem; }
+  .btn-primary{ box-shadow: 0 8px 16px rgba(59,130,246,.18); }
+
+  /* 手机端优化 */
+  @media (max-width: 576px){
+    .form-grid{ grid-template-columns: 1fr; gap:.85rem; }
+    form.ds-card input, form.ds-card select, form.ds-card textarea{
+      padding:.85rem 1rem; font-size:1rem;
+    }
+    .form-actions{
+      position: sticky; bottom:.5rem; z-index:5;
+      background:transparent; padding-top:.5rem;
+    }
+    .form-actions .btn{ flex:1 1 auto; }
+  }
+</style>
+
+<h2 class="mb-4">✏️ Edit Customer — <span class="muted">{{ customer.name }}</span></h2>
+
+<form id="customer-form" method="post" class="card p-4 shadow-sm ds-card">
+  {% csrf_token %}
+  <!-- 用 grid 包裹 form.as_p，让每个 p 自动进入网格 -->
+  <div class="form-grid">
+    {{ form.as_p }}
+  </div>
+
+  <div class="form-actions mt-3">
+    <button type="submit" class="btn btn-primary">💾 Save Changes</button>
+    <a href="{% url 'customer_detail' customer.id %}" class="btn btn-secondary">↩️ Cancel</a>
+  </div>
+</form>
+
+<script>
+  // 可选增强：如果存在 NIF / Phone 字段，做轻量输入辅助（不依赖具体字段名也尽量兼容）
+  (function(){
+    const form = document.getElementById('customer-form');
+    if (!form) return;
+
+    // 1) 自动给可能的电话号码字段设置合适的键盘
+    const phone = form.querySelector('input[name*="phone" i]');
+    if (phone){
+      phone.setAttribute('inputmode','tel');
+      phone.setAttribute('autocomplete','tel');
+    }
+
+    // 2) 可能的 NIF: 仅数字、最多 9 位
+    const nif = form.querySelector('input[name*="nif" i]');
+    if (nif){
+      nif.setAttribute('inputmode','numeric');
+      nif.setAttribute('maxlength','9');
+      nif.addEventListener('input', ()=>{
+        nif.value = nif.value.replace(/\D/g,'').slice(0,9);
+      });
+    }
+
+    // 3) 自动扩展 textarea 高度
+    form.querySelectorAll('textarea').forEach(ta=>{
+      const fit = ()=>{ ta.style.height='auto'; ta.style.height=(ta.scrollHeight+2)+'px'; };
+      ta.addEventListener('input', fit);
+      setTimeout(fit, 0);
+    });
+  })();
+</script>
+
+{% endblock %}

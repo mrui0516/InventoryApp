@@ -1,0 +1,1065 @@
+﻿{% extends 'stock/base.html' %}
+{% load static %}
+{% block title %}Inbound{% endblock %}
+
+{% block content %}
+<h2 class="mb-4">📥 Inbound - Add Stock</h2>
+
+{% if error %}<div class="alert alert-danger mt-3">❌ {{ error }}</div>{% endif %}
+{% if success %}<div class="alert alert-success mt-3">✅ {{ success }}</div>{% endif %}
+
+<!-- Scan / Search (with autocomplete dropdown) -->
+<form id="scan-form" class="mb-3 position-relative">
+  <label for="barcode" class="form-label">Scan or Search Product</label>
+  <input
+    type="text"
+    id="barcode"
+    class="form-control"
+    placeholder="Enter barcode / name / brand / model"
+    autofocus
+    autocomplete="off"
+  >
+  <div id="autocomplete-list"
+       class="list-group position-absolute w-100 shadow-sm d-none"
+       style="z-index: 1000; max-height: 320px; overflow:auto;"></div>
+</form>
+
+<div id="product-image-preview" class="product-image-preview" aria-hidden="true">
+  <img id="product-image-preview-img" src="" alt="">
+  <div class="product-image-preview-title" id="product-image-preview-title"></div>
+</div>
+
+<div id="scan-info" class="alert d-none"></div>
+
+<form id="inbound-form" method="post" class="inbound-shell">
+  {% csrf_token %}
+  <input type="hidden" name="items_json" id="items_json">
+  <input type="hidden" name="idemp_key" id="idemp_key">
+
+  <div class="operation-layout">
+    <div class="operation-main">
+      <section class="operation-card">
+        <div class="operation-card-head">
+          <div>
+            <span class="operation-kicker">Step 1</span>
+            <h3 class="operation-title">Supplier and invoice context</h3>
+            <p class="operation-copy">Link the supplier when available. If left empty, stock still enters the system but will be stored as an ungrouped inbound.</p>
+          </div>
+        </div>
+
+        <div class="row g-3 align-items-end">
+          <div class="col-md-6">
+            <label class="form-label">Supplier</label>
+            <select name="supplier" id="supplier" class="form-select">
+              <option value="">---</option>
+              {% for s in suppliers %}
+                <option value="{{ s.id }}">{{ s.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Invoice No. (optional)</label>
+            <input type="text" name="invoice_no" id="invoice-no" class="form-control" placeholder="e.g. INV-2025-001">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Invoice Date (optional)</label>
+            <input type="date" name="invoice_date" id="invoice-date" class="form-control">
+          </div>
+        </div>
+      </section>
+
+      <section class="operation-card">
+        <div class="operation-card-head">
+          <div>
+            <span class="operation-kicker">Step 2</span>
+            <h3 class="operation-title">Inbound lines</h3>
+            <p class="operation-copy">Review quantity and unit cost. Large cost changes versus the last purchase will be highlighted before save.</p>
+          </div>
+          <div class="summary-badge-row">
+            <span class="summary-badge" id="summary-line-count">0 lines</span>
+            <span class="summary-badge" id="summary-warning-badge">0 warnings</span>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-sm align-middle" id="cart-table">
+            <thead class="table-light">
+              <tr>
+                <th style="width: 40%">Product</th>
+                <th style="width: 110px">Qty</th>
+                <th style="width: 160px">Unit Cost €</th>
+                <th style="width: 140px">Subtotal €</th>
+                <th style="width: 60px"></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+            <tfoot>
+              <tr>
+                <th colspan="3" class="text-end">Total:</th>
+                <th id="grand_total">€0.00</th>
+                <th></th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <aside class="operation-side">
+      <div class="operation-card sticky-review">
+        <span class="operation-kicker">Step 3</span>
+        <h3 class="operation-title">Final review</h3>
+        <p class="operation-copy">The summary below helps catch supplier, invoice or cost mistakes before stock is committed.</p>
+
+        <div class="review-stats">
+          <div class="review-stat">
+            <span class="review-label">Supplier</span>
+            <strong id="summary-supplier">Ungrouped inbound</strong>
+          </div>
+          <div class="review-stat">
+            <span class="review-label">Items</span>
+            <strong id="summary-total-qty">0 pcs</strong>
+          </div>
+          <div class="review-stat">
+            <span class="review-label">Invoice</span>
+            <strong id="summary-invoice">No invoice linked</strong>
+          </div>
+          <div class="review-stat highlight">
+            <span class="review-label">Total</span>
+            <strong id="summary-total-amount">EUR 0.00</strong>
+          </div>
+        </div>
+
+        <div class="guardrail-panel">
+          <div class="guardrail-title">Guardrails</div>
+          <ul class="guardrail-list" id="summary-warning-list">
+            <li>No warnings yet. Add products to review this inbound.</li>
+          </ul>
+        </div>
+
+        <button type="submit" id="submitBtn" class="btn btn-success w-100" disabled>Review and Confirm Inbound</button>
+      </div>
+    </aside>
+  </div>
+</form>
+
+<div class="modal fade" id="inboundReviewModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Final Inbound Review</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="review-modal-grid">
+          <div class="review-modal-card">
+            <div class="review-label">Supplier</div>
+            <div class="review-modal-value" id="review-supplier">Ungrouped inbound</div>
+          </div>
+          <div class="review-modal-card">
+            <div class="review-label">Items</div>
+            <div class="review-modal-value" id="review-qty">0 pcs</div>
+          </div>
+          <div class="review-modal-card">
+            <div class="review-label">Invoice</div>
+            <div class="review-modal-value" id="review-invoice">No invoice linked</div>
+          </div>
+          <div class="review-modal-card">
+            <div class="review-label">Total</div>
+            <div class="review-modal-value" id="review-total">EUR 0.00</div>
+          </div>
+        </div>
+
+        <div class="guardrail-panel mt-3">
+          <div class="guardrail-title">Please double-check</div>
+          <ul class="guardrail-list" id="review-warning-list"></ul>
+        </div>
+
+        <div class="review-line-items mt-3" id="review-line-items"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Back to edit</button>
+        <button type="button" class="btn btn-success" id="confirmInboundBtn">Confirm Inbound Now</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="productPreviewModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="productPreviewModalTitle">Product Image</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-3">
+        <img id="productPreviewModalImg" src="" alt="" class="img-fluid w-100 rounded-4">
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  :root{
+    --ds-border: rgba(0,0,0,.08);
+    --ds-card-bg:#fff;
+    --ds-muted:#6b7280;
+    --ds-text:#1f2937;
+    --ds-accent:#3b82f6;
+    --ds-good:#0f766e;
+    --ds-warn:#b45309;
+    --ds-danger:#b91c1c;
+    --ds-radius:.8rem;
+  }
+  .inbound-shell{
+    display:block;
+  }
+  .operation-layout{
+    display:grid;
+    grid-template-columns:minmax(0,1.75fr) minmax(320px,.95fr);
+    gap:1rem;
+    align-items:start;
+  }
+  .operation-main,
+  .operation-side{
+    display:grid;
+    gap:1rem;
+  }
+  .operation-card{
+    background:#fff;
+    border:1px solid var(--ds-border);
+    border-radius:1rem;
+    box-shadow:0 14px 32px rgba(15,23,42,.06);
+    padding:1rem;
+  }
+  .operation-card-head{
+    display:flex;
+    justify-content:space-between;
+    gap:1rem;
+    align-items:flex-start;
+    flex-wrap:wrap;
+    margin-bottom:1rem;
+  }
+  .operation-kicker{
+    display:inline-flex;
+    align-items:center;
+    padding:.25rem .65rem;
+    border-radius:999px;
+    background:#eaf2ff;
+    color:#1747a6;
+    font-size:.76rem;
+    font-weight:800;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+  }
+  .operation-title{
+    margin:.55rem 0 .2rem;
+    color:var(--ds-text);
+    font-size:1.15rem;
+    font-weight:900;
+  }
+  .operation-copy{
+    margin:0;
+    color:var(--ds-muted);
+  }
+  .summary-badge-row{
+    display:flex;
+    gap:.55rem;
+    flex-wrap:wrap;
+  }
+  .summary-badge{
+    display:inline-flex;
+    align-items:center;
+    padding:.3rem .72rem;
+    border-radius:999px;
+    background:#f3f7fc;
+    border:1px solid #d7e0eb;
+    color:#173761;
+    font-size:.82rem;
+    font-weight:800;
+  }
+  .sticky-review{
+    position:sticky;
+    top:1rem;
+  }
+  .review-stats{
+    display:grid;
+    gap:.75rem;
+    margin-top:.9rem;
+  }
+  .review-stat{
+    padding:.8rem .9rem;
+    border-radius:.95rem;
+    background:#f8fafc;
+    border:1px solid #e2e8f0;
+  }
+  .review-stat.highlight{
+    background:linear-gradient(180deg,#fff,#edf4ff);
+    border-color:#c9daf6;
+  }
+  .review-label{
+    display:block;
+    color:var(--ds-muted);
+    font-size:.78rem;
+    font-weight:900;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+  }
+  .review-stat strong,
+  .review-modal-value{
+    display:block;
+    color:var(--ds-text);
+    font-size:1.02rem;
+    font-weight:900;
+    margin-top:.2rem;
+  }
+  .guardrail-panel{
+    margin-top:1rem;
+    padding:.9rem;
+    border-radius:1rem;
+    background:#fff9eb;
+    border:1px solid #f1d6a8;
+  }
+  .guardrail-title{
+    color:#8a5a08;
+    font-weight:900;
+    margin-bottom:.55rem;
+  }
+  .guardrail-list{
+    margin:0;
+    padding-left:1.1rem;
+    color:#6b4c11;
+  }
+  .guardrail-list li + li{
+    margin-top:.38rem;
+  }
+  .review-modal-grid{
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0,1fr));
+    gap:.8rem;
+  }
+  .review-modal-card{
+    padding:.9rem;
+    border-radius:.95rem;
+    background:#f8fafc;
+    border:1px solid #e2e8f0;
+  }
+  .review-line-items{
+    display:grid;
+    gap:.7rem;
+  }
+  .review-line-item{
+    display:flex;
+    justify-content:space-between;
+    gap:1rem;
+    align-items:flex-start;
+    padding:.85rem .95rem;
+    border-radius:.95rem;
+    background:#fbfdff;
+    border:1px solid #dce7f3;
+  }
+  .review-line-item strong{
+    color:var(--ds-text);
+    font-weight:900;
+  }
+  .review-line-meta{
+    color:var(--ds-muted);
+    font-size:.88rem;
+    margin-top:.18rem;
+  }
+  #cart-table tbody tr.row-warning{
+    background:#fffaf0;
+  }
+  #cart-table tbody tr.row-danger{
+    background:#fff5f5;
+  }
+  .line-flags{
+    display:flex;
+    gap:.35rem;
+    flex-wrap:wrap;
+    margin-top:.35rem;
+  }
+  .line-flag{
+    display:inline-flex;
+    align-items:center;
+    padding:.18rem .55rem;
+    border-radius:999px;
+    font-size:.72rem;
+    font-weight:800;
+  }
+  .line-flag.warn{
+    background:#fff3db;
+    color:var(--ds-warn);
+  }
+  .line-flag.danger{
+    background:#feecec;
+    color:var(--ds-danger);
+  }
+
+  h2{ font-weight:800; letter-spacing:.2px; color:var(--ds-text); }
+  .alert{ border-radius:.75rem; border:1px solid var(--ds-border); }
+  .alert-success{ background: #ecfdf5; border-color:#bbf7d0; }
+  .alert-danger{  background: #fef2f2; border-color:#fecaca; }
+
+  #scan-form .form-label{ font-weight:700; color:var(--ds-text); }
+  #barcode{
+    border-radius:.7rem; border:1px solid var(--ds-border);
+    padding:.65rem .9rem; box-shadow: 0 1px 0 rgba(0,0,0,.02) inset;
+  }
+  #barcode:focus{ border-color: var(--ds-accent); box-shadow: 0 0 0 .2rem rgba(59,130,246,.12); }
+
+  #autocomplete-list{
+    top: calc(100% + .35rem);
+    border-radius:.7rem; overflow:hidden; background:#fff; border:1px solid var(--ds-border);
+  }
+  #autocomplete-list .list-group-item{
+    padding:.6rem .85rem; font-size:.95rem;
+  }
+  #autocomplete-list .list-group-item:hover,
+  #autocomplete-list .list-group-item:focus{
+    background: #f1f5ff;
+  }
+  .product-suggest-item{
+    display:grid;
+    grid-template-columns: 52px minmax(0, 1fr) auto;
+    gap:.75rem;
+    align-items:center;
+  }
+  .product-suggest-media{
+    width:48px;
+    height:48px;
+    border-radius:.75rem;
+    overflow:hidden;
+    border:1px solid var(--ds-border);
+    background:#f8fafc;
+    display:grid;
+    place-items:center;
+    flex:0 0 48px;
+    cursor:zoom-in;
+  }
+  .product-suggest-media.no-image{
+    cursor:default;
+    color:var(--ds-muted);
+    font-size:.7rem;
+    font-weight:700;
+    text-align:center;
+    line-height:1.1;
+    padding:.25rem;
+  }
+  .product-suggest-thumb{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    display:block;
+  }
+  .product-suggest-main{
+    min-width:0;
+  }
+  .product-suggest-title{
+    font-weight:700;
+    color:var(--ds-text);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .product-suggest-sub{
+    color:var(--ds-muted);
+    font-size:.82rem;
+  }
+  .product-suggest-zoom{
+    border-radius:.6rem;
+    white-space:nowrap;
+  }
+  .product-image-preview{
+    position:fixed;
+    z-index:1105;
+    width:240px;
+    padding:.7rem;
+    border-radius:1rem;
+    background:#fff;
+    border:1px solid var(--ds-border);
+    box-shadow:0 18px 40px rgba(15,23,42,.18);
+    display:none;
+    pointer-events:none;
+  }
+  .product-image-preview.show{
+    display:block;
+  }
+  .product-image-preview img{
+    width:100%;
+    aspect-ratio:1/1;
+    object-fit:cover;
+    display:block;
+    border-radius:.8rem;
+    background:#f8fafc;
+  }
+  .product-image-preview-title{
+    margin-top:.6rem;
+    font-size:.85rem;
+    font-weight:700;
+    color:var(--ds-text);
+    line-height:1.3;
+  }
+  #productPreviewModal .modal-content{
+    border-radius:1rem;
+    border:1px solid var(--ds-border);
+  }
+  #productPreviewModal .modal-body{
+    background:#f8fafc;
+  }
+  @media (max-width: 991.98px){
+    .product-image-preview{
+      display:none !important;
+    }
+  }
+
+  #inbound-form.card{
+    border-radius: var(--ds-radius);
+    border-color: var(--ds-border);
+    background: var(--ds-card-bg);
+  }
+
+  #cart-table{ border:1px solid var(--ds-border); border-radius:.8rem; background:#fff; }
+  #cart-table thead th{ background:#f8fafc; }
+  #cart-table th, #cart-table td{ padding:.6rem .75rem; }
+  #cart-table td:nth-child(3), #cart-table td:nth-child(4){ text-align:right; }
+  #cart-table tfoot th{ background:#fafafa; }
+  .cart-product{
+    display:grid;
+    grid-template-columns:56px minmax(0,1fr);
+    gap:.8rem;
+    align-items:center;
+  }
+  .cart-product-thumb-wrap,
+  .cart-product-thumb-empty{
+    width:56px;
+    height:56px;
+    border-radius:.9rem;
+    border:1px solid var(--ds-border);
+    background:#f8fafc;
+  }
+  .cart-product-thumb-wrap{
+    padding:0;
+    overflow:hidden;
+    display:block;
+    cursor:zoom-in;
+  }
+  .cart-product-thumb{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    display:block;
+  }
+  .cart-product-thumb-empty{
+    display:grid;
+    place-items:center;
+    color:var(--ds-muted);
+    font-size:.72rem;
+    font-weight:700;
+    text-align:center;
+    padding:.25rem;
+  }
+  .cart-product-main{
+    min-width:0;
+  }
+
+  #submitBtn{ margin-top:.75rem; border-radius:.7rem; font-weight:700; padding:.65rem 1rem; }
+
+  @media (max-width: 1199.98px){
+    .operation-layout{
+      grid-template-columns:1fr;
+    }
+    .sticky-review{
+      position:static;
+    }
+  }
+
+  @media (max-width: 576px){
+    .operation-layout,
+    .review-modal-grid{
+      grid-template-columns:1fr;
+    }
+  }
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const barcodeInput = document.getElementById('barcode');
+  const listBox = document.getElementById('autocomplete-list');
+  const info = document.getElementById('scan-info');
+  const cartBody = document.querySelector('#cart-table tbody');
+  const grandTotal = document.getElementById('grand_total');
+  const submitBtn = document.getElementById('submitBtn');
+  const itemsJson = document.getElementById('items_json');
+  const previewBox = document.getElementById('product-image-preview');
+  const previewImg = document.getElementById('product-image-preview-img');
+  const previewTitle = document.getElementById('product-image-preview-title');
+  const previewModalEl = document.getElementById('productPreviewModal');
+  const previewModalImg = document.getElementById('productPreviewModalImg');
+  const previewModalTitle = document.getElementById('productPreviewModalTitle');
+  const supplierSelect = document.getElementById('supplier');
+  const invoiceNoInput = document.getElementById('invoice-no');
+  const invoiceDateInput = document.getElementById('invoice-date');
+  const reviewModalEl = document.getElementById('inboundReviewModal');
+  const reviewSupplier = document.getElementById('review-supplier');
+  const reviewQty = document.getElementById('review-qty');
+  const reviewInvoice = document.getElementById('review-invoice');
+  const reviewTotal = document.getElementById('review-total');
+  const reviewWarningList = document.getElementById('review-warning-list');
+  const reviewLineItems = document.getElementById('review-line-items');
+  const confirmInboundBtn = document.getElementById('confirmInboundBtn');
+  const summarySupplier = document.getElementById('summary-supplier');
+  const summaryTotalQty = document.getElementById('summary-total-qty');
+  const summaryInvoice = document.getElementById('summary-invoice');
+  const summaryTotalAmount = document.getElementById('summary-total-amount');
+  const summaryLineCount = document.getElementById('summary-line-count');
+  const summaryWarningBadge = document.getElementById('summary-warning-badge');
+  const summaryWarningList = document.getElementById('summary-warning-list');
+
+  function hidePreview() {
+    previewBox.classList.remove('show');
+    previewImg.removeAttribute('src');
+    previewImg.alt = '';
+    previewTitle.textContent = '';
+  }
+
+  function openPreviewModal(imageUrl, title) {
+    if (!imageUrl) return;
+    previewModalImg.src = imageUrl;
+    previewModalImg.alt = title;
+    previewModalTitle.textContent = title;
+    bootstrap.Modal.getOrCreateInstance(previewModalEl).show();
+  }
+
+  function showPreview(imageUrl, title, anchorEl) {
+    if (!imageUrl || window.innerWidth < 992 || !anchorEl) {
+      hidePreview();
+      return;
+    }
+
+    previewImg.src = imageUrl;
+    previewImg.alt = title;
+    previewTitle.textContent = title;
+    previewBox.classList.add('show');
+
+    const rect = anchorEl.getBoundingClientRect();
+    const previewWidth = previewBox.offsetWidth || 240;
+    const previewHeight = previewBox.offsetHeight || 280;
+    const gap = 14;
+    const top = Math.min(
+      Math.max(12, rect.top),
+      Math.max(12, window.innerHeight - previewHeight - 12)
+    );
+    let left = rect.right + gap;
+    if (left + previewWidth > window.innerWidth - 12) {
+      left = rect.left - previewWidth - gap;
+    }
+    left = Math.max(12, left);
+
+    previewBox.style.top = `${top}px`;
+    previewBox.style.left = `${left}px`;
+  }
+
+  function createSuggestionItem(product, onSelect) {
+    const line = product.display_name || `${product.brand}${product.model ? ' - ' + product.model : ''} ${product.name}`.trim();
+    const item = document.createElement('div');
+    item.className = 'list-group-item list-group-item-action product-suggest-item';
+    item.tabIndex = 0;
+
+    const media = document.createElement('div');
+    media.className = 'product-suggest-media';
+    if (product.image_url) {
+      const img = document.createElement('img');
+      img.src = product.image_url;
+      img.alt = line;
+      img.className = 'product-suggest-thumb';
+      media.appendChild(img);
+      media.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openPreviewModal(product.image_url, line);
+      });
+    } else {
+      media.classList.add('no-image');
+      media.textContent = 'No image';
+    }
+
+    const main = document.createElement('div');
+    main.className = 'product-suggest-main';
+    const title = document.createElement('div');
+    title.className = 'product-suggest-title';
+    title.textContent = line;
+    const sub = document.createElement('div');
+    sub.className = 'product-suggest-sub';
+    sub.textContent = product.barcode;
+    main.appendChild(title);
+    main.appendChild(sub);
+
+    const actions = document.createElement('div');
+    if (product.image_url) {
+      const zoomBtn = document.createElement('button');
+      zoomBtn.type = 'button';
+      zoomBtn.className = 'btn btn-sm btn-outline-secondary product-suggest-zoom';
+      zoomBtn.textContent = 'Zoom';
+      zoomBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openPreviewModal(product.image_url, line);
+      });
+      actions.appendChild(zoomBtn);
+    }
+
+    item.appendChild(media);
+    item.appendChild(main);
+    item.appendChild(actions);
+
+    item.addEventListener('click', () => onSelect(product, line));
+    item.addEventListener('mouseenter', () => showPreview(product.image_url, line, item));
+    item.addEventListener('mouseleave', hidePreview);
+    item.addEventListener('focus', () => showPreview(product.image_url, line, item));
+    item.addEventListener('blur', hidePreview);
+    item.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onSelect(product, line);
+      }
+    });
+
+    return item;
+  }
+
+  function parseMoney(v) {
+    if (v == null) return NaN;
+    const n = parseFloat(String(v).replace(',', '.'));
+    return isFinite(n) ? n : NaN;
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function formatMoney(value) {
+    return `EUR ${Number(value || 0).toFixed(2)}`;
+  }
+
+  function uniqueWarnings(list) {
+    return [...new Set(list.filter(Boolean))];
+  }
+
+  function getSupplierLabel() {
+    const option = supplierSelect.options[supplierSelect.selectedIndex];
+    return option && option.value ? option.textContent : 'Ungrouped inbound';
+  }
+
+  function getInvoiceLabel() {
+    const invoiceNo = invoiceNoInput.value.trim();
+    const invoiceDate = invoiceDateInput.value.trim();
+    if (!invoiceNo && !invoiceDate) return 'No invoice linked';
+    if (invoiceNo && invoiceDate) return `${invoiceNo} / ${invoiceDate}`;
+    if (invoiceNo) return `${invoiceNo} / missing date`;
+    return `Date ${invoiceDate} / missing number`;
+  }
+
+  function evaluateCartRow(tr) {
+    const qty = Number(tr.querySelector('.qty').value || 0);
+    const cost = parseMoney(tr.querySelector('.cost').value);
+    const lastCost = parseMoney(tr.dataset.lastCost);
+    const warnings = [];
+    let severity = '';
+
+    if (qty >= 100) {
+      warnings.push('Large quantity entry');
+      severity = severity || 'warn';
+    }
+    if (isFinite(lastCost) && lastCost > 0 && isFinite(cost)) {
+      const ratio = cost / lastCost;
+      if (ratio < 0.7 || ratio > 1.3) {
+        warnings.push('More than 30% away from last cost');
+        severity = 'danger';
+      } else if (ratio < 0.85 || ratio > 1.15) {
+        warnings.push('More than 15% away from last cost');
+        severity = severity || 'warn';
+      }
+    }
+
+    tr.classList.remove('row-warning', 'row-danger');
+    if (severity === 'danger') tr.classList.add('row-danger');
+    if (severity === 'warn') tr.classList.add('row-warning');
+
+    const flags = tr.querySelector('.line-flags');
+    if (flags) {
+      flags.innerHTML = warnings.map((warning) => {
+        const tone = warning.toLowerCase().includes('30%') ? 'danger' : 'warn';
+        return `<span class="line-flag ${tone}">${escapeHtml(warning)}</span>`;
+      }).join('');
+    }
+
+    return {warnings, severity};
+  }
+
+  function buildInboundWarnings() {
+    const warnings = [];
+    let totalQty = 0;
+    let total = 0;
+    cartBody.querySelectorAll('tr').forEach((tr) => {
+      const rowWarnings = evaluateCartRow(tr).warnings;
+      warnings.push(...rowWarnings.map((item) => `${tr.dataset.title || tr.dataset.barcode}: ${item}`));
+      totalQty += Number(tr.querySelector('.qty').value || 0);
+      total += Number(parseMoney(tr.querySelector('.cost').value) || 0) * Number(tr.querySelector('.qty').value || 0);
+    });
+
+    const invoiceNo = invoiceNoInput.value.trim();
+    const invoiceDate = invoiceDateInput.value.trim();
+    if ((invoiceNo && !invoiceDate) || (!invoiceNo && invoiceDate)) {
+      warnings.push('Invoice number and invoice date should usually be filled together.');
+    }
+    if (!supplierSelect.value) {
+      warnings.push('No supplier selected. This inbound will be saved without grouping.');
+    }
+    if (!cartBody.children.length) {
+      warnings.push('Cart is empty.');
+    }
+
+    return {
+      warnings: uniqueWarnings(warnings),
+      totalQty,
+      total,
+      lineCount: cartBody.querySelectorAll('tr').length,
+    };
+  }
+
+  function renderSummary() {
+    const state = buildInboundWarnings();
+    summarySupplier.textContent = getSupplierLabel();
+    summaryTotalQty.textContent = `${state.totalQty} pcs`;
+    summaryInvoice.textContent = getInvoiceLabel();
+    summaryTotalAmount.textContent = formatMoney(state.total);
+    summaryLineCount.textContent = `${state.lineCount} ${state.lineCount === 1 ? 'line' : 'lines'}`;
+    summaryWarningBadge.textContent = `${state.warnings.length} ${state.warnings.length === 1 ? 'warning' : 'warnings'}`;
+    summaryWarningList.innerHTML = state.warnings.length
+      ? state.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join('')
+      : '<li>No warnings. Supplier, invoice and costs look consistent.</li>';
+    return state;
+  }
+
+  function openInboundReview() {
+    const state = renderSummary();
+    reviewSupplier.textContent = summarySupplier.textContent;
+    reviewQty.textContent = `${state.totalQty} pcs`;
+    reviewInvoice.textContent = summaryInvoice.textContent;
+    reviewTotal.textContent = formatMoney(state.total);
+    reviewWarningList.innerHTML = state.warnings.length
+      ? state.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join('')
+      : '<li>No warnings. You are ready to confirm this inbound.</li>';
+    reviewLineItems.innerHTML = Array.from(cartBody.querySelectorAll('tr')).map((tr) => `
+      <div class="review-line-item">
+        <div>
+          <strong>${escapeHtml(tr.dataset.title || tr.dataset.barcode)}</strong>
+          <div class="review-line-meta">${escapeHtml(tr.dataset.barcode)} / Qty ${Number(tr.querySelector('.qty').value || 0)}</div>
+        </div>
+        <div class="text-end">
+          <strong>${formatMoney((parseMoney(tr.querySelector('.cost').value) || 0) * Number(tr.querySelector('.qty').value || 0))}</strong>
+          <div class="review-line-meta">Unit ${formatMoney(parseMoney(tr.querySelector('.cost').value) || 0)}</div>
+        </div>
+      </div>
+    `).join('');
+    bootstrap.Modal.getOrCreateInstance(reviewModalEl).show();
+  }
+
+  function setInfo(type, html) {
+    info.classList.remove('d-none','alert-info','alert-warning','alert-danger');
+    info.classList.add('alert-' + type);
+    info.innerHTML = html;
+  }
+
+  function recalcAndSave() {
+    let total = 0, ok = cartBody.children.length>0;
+    cartBody.querySelectorAll('tr').forEach(tr=>{
+      const qty  = Number(tr.querySelector('.qty').value || 0);
+      const cost = parseMoney(tr.querySelector('.cost').value);
+      const sub  = isFinite(cost) ? qty * cost : NaN;
+      tr.querySelector('.subtotal').textContent = '€' + (isFinite(sub) ? sub.toFixed(2) : '0.00');
+      total += isFinite(sub) ? sub : 0;
+      evaluateCartRow(tr);
+      if (!(qty>=1 && qty<=100000 && isFinite(cost) && cost>0 && cost<=10000)) ok = false;
+    });
+    grandTotal.textContent = '€' + total.toFixed(2);
+    submitBtn.disabled = !ok;
+    const items = [];
+    cartBody.querySelectorAll('tr').forEach(tr=>{
+      items.push({
+        barcode: tr.dataset.barcode,
+        qty: Number(tr.querySelector('.qty').value || 0),
+        cost_price: parseMoney(tr.querySelector('.cost').value) || 0
+      });
+    });
+    itemsJson.value = JSON.stringify(items);
+    renderSummary();
+  }
+
+  function addToCart(displayName, barcode, lastCost=null, imageUrl='') {
+    const existed = cartBody.querySelector(`tr[data-barcode="${barcode}"]`);
+    if (existed) {
+      const q = existed.querySelector('.qty');
+      q.value = Number(q.value || 1) + 1;
+      recalcAndSave();
+      return;
+    }
+    const tr = document.createElement('tr');
+    tr.dataset.barcode = barcode;
+    tr.dataset.lastCost = lastCost != null ? lastCost : '';
+    const safeTitle = displayName || barcode;
+    tr.dataset.title = safeTitle;
+    const imageBlock = imageUrl
+      ? `
+        <button type="button" class="cart-product-thumb-wrap js-preview-product" data-image-url="${escapeHtml(imageUrl)}" data-title="${escapeHtml(safeTitle)}">
+          <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(safeTitle)}" class="cart-product-thumb">
+        </button>
+      `
+      : '<div class="cart-product-thumb-empty">No image</div>';
+    tr.innerHTML = `
+      <td>
+        <div class="cart-product">
+          ${imageBlock}
+          <div class="cart-product-main">
+            <div class="fw-semibold">${escapeHtml(safeTitle)}</div>
+            <div class="text-muted small">${escapeHtml(barcode)}</div>
+            <div class="line-flags"></div>
+          </div>
+        </div>
+      </td>
+      <td><input type="number" min="1" class="form-control form-control-sm qty" value="1"></td>
+      <td><input type="text" class="form-control form-control-sm cost" placeholder="0.00" value="${lastCost!=null ? Number(lastCost).toFixed(2) : ''}"></td>
+      <td class="subtotal">€0.00</td>
+      <td><button type="button" class="btn btn-sm btn-outline-secondary remove">✖</button></td>
+    `;
+    cartBody.appendChild(tr);
+    tr.querySelector('.qty').addEventListener('input', () => {
+      let v = Number(tr.querySelector('.qty').value || 1);
+      if (v < 1) v = 1;
+      tr.querySelector('.qty').value = v;
+      recalcAndSave();
+    });
+    tr.querySelector('.cost').addEventListener('input', () => {
+      const costInput = tr.querySelector('.cost');
+      costInput.value = costInput.value.replace(/[^\d.,]/g, '');
+      recalcAndSave();
+    });
+    tr.querySelector('.cost').addEventListener('blur', () => {
+      const costInput = tr.querySelector('.cost');
+      let v = parseMoney(costInput.value);
+      if (!isFinite(v) || v <= 0) { costInput.value = ''; recalcAndSave(); return; }
+      if (v > 10000) v = 10000;
+      costInput.value = v.toFixed(2);
+      recalcAndSave();
+    });
+    tr.querySelector('.remove').addEventListener('click', ()=>{ tr.remove(); recalcAndSave(); });
+    tr.querySelector('.js-preview-product')?.addEventListener('click', () => {
+      openPreviewModal(imageUrl, safeTitle);
+    });
+    recalcAndSave();
+  }
+
+  // === Barcode enter ===
+  barcodeInput.addEventListener('keydown', (e)=>{
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const value = barcodeInput.value.trim();
+    if (!value) return;
+
+    if (!/^\d+$/.test(value)) {
+      const first = listBox.querySelector('.product-suggest-item');
+      if (first) first.click();
+      return;
+    }
+
+    fetch(`/check_barcode/?barcode=${encodeURIComponent(value)}`)
+      .then(r=>r.json())
+      .then(d=>{
+        if (!d.exists) { setInfo('warning', '❌ Product not found.'); return; }
+        const line = d.display_name || d.name || `${d.brand}${d.model ? ' - ' + d.model : ''} ${d.product_name || ''}`.trim();
+        addToCart(line, value, d.last_cost ?? null, d.image_url || '');
+        setInfo('info', `✅ Added: <strong>${line}</strong>${d.last_cost!=null ? ' | Last cost: €'+Number(d.last_cost).toFixed(2) : ''}`);
+      })
+      .finally(()=>{
+        barcodeInput.value='';
+        listBox.classList.add('d-none');
+        hidePreview();
+        barcodeInput.focus();
+      });
+  });
+
+  // === Autocomplete (same logic as outbound) ===
+  function debounce(fn, delay=220){ let timer; return (...args)=>{ clearTimeout(timer); timer=setTimeout(()=>fn(...args), delay); }; }
+  const onInput = debounce(function () {
+    const q = barcodeInput.value.trim();
+    if (!q) { listBox.classList.add('d-none'); hidePreview(); return; }
+    if (/^\d{6,}$/.test(q)) { listBox.classList.add('d-none'); hidePreview(); return; }
+    fetch(`/api/products_autocomplete/?q=${encodeURIComponent(q)}`)
+      .then(r=>r.json())
+      .then(data=>{
+        listBox.innerHTML = '';
+        const results = (data && data.results) || [];
+        if (!results.length) { listBox.classList.add('d-none'); hidePreview(); return; }
+        results.forEach((p) => {
+          const item = createSuggestionItem(p, (product, line) => {
+            fetch(`/check_barcode/?barcode=${encodeURIComponent(product.barcode)}`)
+              .then(r=>r.json())
+              .then(d=>{
+                addToCart(line, product.barcode, d && d.last_cost!=null ? d.last_cost : null, (d && d.image_url) || product.image_url || '');
+                setInfo('info', `✅ Added: <strong>${line}</strong>${(d && d.last_cost!=null) ? ' | Last cost: €'+Number(d.last_cost).toFixed(2) : ''}`);
+              });
+            listBox.classList.add('d-none');
+            hidePreview();
+            barcodeInput.value = '';
+            barcodeInput.focus();
+          });
+          listBox.appendChild(item);
+        });
+        listBox.classList.remove('d-none');
+      })
+      .catch(()=>{
+        listBox.classList.add('d-none');
+        hidePreview();
+      });
+  }, 220);
+  barcodeInput.addEventListener('input', onInput);
+  supplierSelect.addEventListener('change', renderSummary);
+  invoiceNoInput.addEventListener('input', renderSummary);
+  invoiceDateInput.addEventListener('input', renderSummary);
+  document.addEventListener('click', (e)=>{
+    if (!listBox.contains(e.target) && e.target !== barcodeInput) {
+      listBox.classList.add('d-none');
+      hidePreview();
+    }
+  });
+
+  // === Submit ===
+  const inboundForm = document.getElementById('inbound-form');
+  const idempKey = document.getElementById('idemp_key');
+  idempKey.value = Date.now() + '-' + Math.random();
+  inboundForm.addEventListener('submit', (e)=>{
+    if (inboundForm.dataset.submitted === '1') { e.preventDefault(); return; }
+    recalcAndSave();
+    if (!itemsJson.value || itemsJson.value==='[]'){ e.preventDefault(); alert('Cart is empty.'); return; }
+    if (inboundForm.dataset.confirmed !== '1') {
+      e.preventDefault();
+      openInboundReview();
+      return;
+    }
+    inboundForm.dataset.submitted = '1';
+    submitBtn.disabled = true; submitBtn.textContent = 'Processing...';
+  });
+  confirmInboundBtn?.addEventListener('click', () => {
+    inboundForm.dataset.confirmed = '1';
+    bootstrap.Modal.getOrCreateInstance(reviewModalEl).hide();
+    inboundForm.requestSubmit();
+  });
+  renderSummary();
+});
+</script>
+
+{% endblock %}

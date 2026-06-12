@@ -1,0 +1,685 @@
+{% extends 'stock/base.html' %}
+{% block title %}{% if is_create %}Add Historical Order{% else %}Correct Order #{{ order.id }}{% endif %}{% endblock %}
+
+{% block content %}
+<style>
+  .edit-page{display:grid;gap:1.2rem}
+  .edit-card{background:#fff;border:1px solid #d9e2ee;border-radius:1rem;box-shadow:0 14px 34px rgba(15,23,42,.06)}
+  .edit-pad{padding:1.1rem}
+  .page-head,.panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap}
+  .page-title{margin:0;font-size:2rem;font-weight:900;color:#0f172a}
+  .page-sub,.mini{color:#526071}
+  .eyebrow,.pill{display:inline-flex;align-items:center;padding:.28rem .68rem;border-radius:999px;font-weight:800}
+  .eyebrow{background:#eaf2ff;color:#1747a6;font-size:.78rem;letter-spacing:.05em;text-transform:uppercase}
+  .pill{background:#edf4ff;border:1px solid #d3e0f2;color:#173761;font-size:.84rem}
+  .line-item{padding:1rem;border:1px solid #d9e2ee;border-radius:1rem;background:#fbfdff}
+  .line-item.is-deleted{display:none}
+  .log-list{display:grid;gap:.8rem}
+  .log-item{padding:.9rem;border:1px solid #d9e2ee;border-radius:1rem;background:#f9fbff}
+  .warn-box{padding:.95rem 1rem;border:1px solid #f0d9aa;border-radius:1rem;background:#fff8e8;color:#7b5310}
+  .product-picker{position:relative}
+  .product-picker-search{
+    min-height:42px;
+    border-radius:.85rem;
+    border:1px solid #cfd8e4;
+    box-shadow:0 1px 2px rgba(15,23,42,.04);
+  }
+  .product-picker-results{
+    position:absolute;
+    inset:calc(100% + .4rem) 0 auto 0;
+    z-index:20;
+    max-height:280px;
+    overflow:auto;
+    border:1px solid #d6e1ee;
+    border-radius:1rem;
+    background:#fff;
+    box-shadow:0 20px 40px rgba(15,23,42,.12);
+  }
+  .product-picker-results .list-group-item{
+    border:0;
+    border-bottom:1px solid #eef3f8;
+  }
+  .product-picker-results .list-group-item:last-child{
+    border-bottom:0;
+  }
+  .picker-item{
+    display:grid;
+    grid-template-columns:56px minmax(0,1fr) auto;
+    gap:.8rem;
+    align-items:center;
+  }
+  .picker-thumb-wrap,
+  .picker-thumb-empty,
+  .picker-selected-thumb-wrap,
+  .picker-selected-thumb-empty{
+    width:56px;
+    height:56px;
+    border-radius:.95rem;
+    border:1px solid #d8e3ef;
+    background:#f8fbff;
+  }
+  .picker-thumb-wrap,
+  .picker-selected-thumb-wrap{
+    padding:0;
+    overflow:hidden;
+    display:block;
+    cursor:zoom-in;
+  }
+  .picker-thumb,
+  .picker-selected-thumb{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    display:block;
+  }
+  .picker-thumb-empty,
+  .picker-selected-thumb-empty{
+    display:grid;
+    place-items:center;
+    color:#5b6b7f;
+    font-size:.7rem;
+    font-weight:800;
+    text-align:center;
+    padding:.25rem;
+  }
+  .picker-main{
+    min-width:0;
+  }
+  .picker-title{
+    color:#0f172a;
+    font-weight:800;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .picker-sub{
+    margin-top:.15rem;
+    color:#526071;
+    font-size:.82rem;
+  }
+  .product-picker-selected{
+    margin-top:.7rem;
+    padding:.85rem;
+    border:1px solid #d6e1ee;
+    border-radius:1rem;
+    background:#ffffff;
+    display:grid;
+    grid-template-columns:56px minmax(0,1fr) auto;
+    gap:.85rem;
+    align-items:center;
+  }
+  .product-picker-selected.d-none{
+    display:none !important;
+  }
+  .selected-title{
+    color:#0f172a;
+    font-weight:900;
+  }
+  .selected-sub{
+    margin-top:.15rem;
+    color:#526071;
+    font-size:.82rem;
+  }
+  .selected-price{
+    margin-top:.3rem;
+    color:#1747a6;
+    font-size:.8rem;
+    font-weight:800;
+  }
+  .selected-actions{
+    display:flex;
+    gap:.45rem;
+    flex-wrap:wrap;
+    justify-content:flex-end;
+  }
+  @media (max-width: 767.98px){
+    .product-picker-selected,
+    .picker-item{
+      grid-template-columns:56px minmax(0,1fr);
+    }
+    .selected-actions{
+      grid-column:1/-1;
+      justify-content:flex-start;
+    }
+  }
+</style>
+
+<div class="edit-page">
+  <div class="page-head">
+    <div>
+      <span class="eyebrow">Admin only</span>
+      <h1 class="page-title">{% if is_create %}Add Missing Historical Order{% else %}Correct Order #{{ order.id }}{% endif %}</h1>
+      <p class="page-sub">
+        {% if is_create %}
+          Use this page when an employee forgot to input an order on the original date.
+        {% else %}
+          Change customer, timestamp, prices, products, or delete the whole order without opening Django admin.
+        {% endif %}
+      </p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+      <a class="btn btn-outline-secondary" href="{% url 'sale_order_correction_center' %}">Back to correction center</a>
+      {% if order %}
+        <a class="btn btn-outline-dark" href="{% url 'sale_order_detail' order.id %}">Print</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="warn-box">
+    Historical corrections now adjust current inventory incrementally instead of replaying every old sale. A missed old order will reduce today's stock only if current stock is available, so you can fix history without breaking the whole inventory timeline.
+  </div>
+
+  <div class="row g-4">
+    <div class="col-xl-8">
+      <form method="post" class="edit-card edit-pad" id="order-correction-form">
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+          <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+        {% endif %}
+        {% if formset.non_form_errors %}
+          <div class="alert alert-danger">{{ formset.non_form_errors }}</div>
+        {% endif %}
+
+        <div class="panel-head mb-3">
+          <div>
+            <h2 class="h4 mb-1">Order header</h2>
+            <p class="mini mb-0">Customer, historical timestamp, internal note, and the reason for this correction.</p>
+          </div>
+          {% if order %}
+            <span class="pill">Current order #{{ order.id }}</span>
+          {% endif %}
+        </div>
+
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label fw-bold" for="{{ form.customer.id_for_label }}">Customer</label>
+            {{ form.customer }}
+            {% if form.customer.errors %}<div class="text-danger small mt-1">{{ form.customer.errors|join:', ' }}</div>{% endif %}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-bold" for="{{ form.order_datetime.id_for_label }}">Order datetime</label>
+            {{ form.order_datetime }}
+            {% if form.order_datetime.errors %}<div class="text-danger small mt-1">{{ form.order_datetime.errors|join:', ' }}</div>{% endif %}
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-bold" for="{{ form.note.id_for_label }}">Internal note</label>
+            {{ form.note }}
+            {% if form.note.errors %}<div class="text-danger small mt-1">{{ form.note.errors|join:', ' }}</div>{% endif %}
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-bold" for="{{ form.reason.id_for_label }}">Why are you changing this order?</label>
+            {{ form.reason }}
+            {% if form.reason.errors %}<div class="text-danger small mt-1">{{ form.reason.errors|join:', ' }}</div>{% endif %}
+          </div>
+        </div>
+
+        <hr class="my-4">
+
+        <div class="panel-head mb-3">
+          <div>
+            <h2 class="h4 mb-1">Order lines</h2>
+            <p class="mini mb-0">You can add missing products, correct wrong quantity or amount, and remove accidental lines.</p>
+          </div>
+          <button type="button" class="btn btn-outline-primary" id="add-line-btn">Add line</button>
+        </div>
+
+        {{ formset.management_form }}
+        <div id="line-formset" class="d-grid gap-3">
+          {% for line_form in formset %}
+            <div class="line-item" data-line-form>
+              {{ line_form.DELETE.as_hidden }}
+              <div class="row g-3 align-items-end">
+                <div class="col-lg-5">
+                  <label class="form-label fw-bold">Product</label>
+                  <div class="product-picker" data-product-picker>
+                    {{ line_form.product }}
+                    <input
+                      type="text"
+                      class="form-control product-picker-search js-product-search"
+                      placeholder="Search product by barcode / brand / model / name"
+                      autocomplete="off"
+                    >
+                    <div class="list-group product-picker-results d-none js-product-results"></div>
+                    <div class="product-picker-selected d-none js-product-selected">
+                      <div class="js-selected-media"></div>
+                      <div>
+                        <div class="selected-title js-selected-title"></div>
+                        <div class="selected-sub js-selected-sub"></div>
+                        <div class="selected-price js-selected-price"></div>
+                      </div>
+                      <div class="selected-actions">
+                        <button type="button" class="btn btn-sm btn-outline-secondary js-preview-selected d-none">Zoom</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger js-clear-product">Change</button>
+                      </div>
+                    </div>
+                  </div>
+                  {% if line_form.product.errors %}<div class="text-danger small mt-1">{{ line_form.product.errors|join:', ' }}</div>{% endif %}
+                </div>
+                <div class="col-sm-3 col-lg-2">
+                  <label class="form-label fw-bold">Qty</label>
+                  {{ line_form.quantity }}
+                  {% if line_form.quantity.errors %}<div class="text-danger small mt-1">{{ line_form.quantity.errors|join:', ' }}</div>{% endif %}
+                </div>
+                <div class="col-sm-4 col-lg-2">
+                  <label class="form-label fw-bold">Unit price</label>
+                  {{ line_form.unit_price }}
+                  {% if line_form.unit_price.errors %}<div class="text-danger small mt-1">{{ line_form.unit_price.errors|join:', ' }}</div>{% endif %}
+                </div>
+                <div class="col-lg-2">
+                  <label class="form-label fw-bold">Payment</label>
+                  {{ line_form.payment_method }}
+                  {% if line_form.payment_method.errors %}<div class="text-danger small mt-1">{{ line_form.payment_method.errors|join:', ' }}</div>{% endif %}
+                </div>
+                <div class="col-lg-1 d-grid">
+                  <button type="button" class="btn btn-outline-danger js-remove-line">Remove</button>
+                </div>
+              </div>
+              {% if line_form.non_field_errors %}
+                <div class="text-danger small mt-2">{{ line_form.non_field_errors|join:', ' }}</div>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+
+        <div class="d-flex gap-2 flex-wrap mt-4">
+          <button type="submit" class="btn btn-primary">{% if is_create %}Create historical order{% else %}Save correction{% endif %}</button>
+          <a href="{% url 'sale_order_correction_center' %}" class="btn btn-outline-secondary">Cancel</a>
+          {% if order %}
+            <button type="submit" name="delete_order" value="1" class="btn btn-outline-danger" onclick="return confirm('Delete this order and restore its quantity back to current stock?')">Delete entire order</button>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+
+    <div class="col-xl-4">
+      <div class="edit-card edit-pad">
+        <div class="panel-head mb-3">
+          <div>
+            <h2 class="h4 mb-1">{% if order %}Recent changes for this order{% else %}How this works{% endif %}</h2>
+            <p class="mini mb-0">
+              {% if order %}
+                The latest corrections are shown here so you can review who changed what and why.
+              {% else %}
+                New historical orders also create a log entry with your reason.
+              {% endif %}
+            </p>
+          </div>
+        </div>
+
+        {% if order %}
+          <div class="log-list">
+            {% for log in change_logs %}
+              <div class="log-item">
+                <div class="d-flex justify-content-between gap-2">
+                  <span class="pill">{{ log.action|title }}</span>
+                  <span class="mini">{{ log.created_at|date:"Y-m-d H:i" }}</span>
+                </div>
+                <div class="mt-2 fw-bold">By {% if log.changed_by %}{{ log.changed_by.username }}{% else %}Unknown{% endif %}</div>
+                {% if log.reason %}<div class="mt-2">{{ log.reason }}</div>{% endif %}
+                {% if log.before_data.total_amount %}
+                  <div class="mini mt-2">Before: EUR {{ log.before_data.total_amount }} · {{ log.before_data.total_qty }} items</div>
+                {% endif %}
+                {% if log.after_data.total_amount %}
+                  <div class="mini">After: EUR {{ log.after_data.total_amount }} · {{ log.after_data.total_qty }} items</div>
+                {% endif %}
+              </div>
+            {% empty %}
+              <div class="mini">No corrections have been logged for this order yet.</div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="log-list">
+            <div class="log-item">
+              <div class="fw-bold">1. Enter the original order time</div>
+              <div class="mini mt-1">This is the key part for backfilling a missed order correctly.</div>
+            </div>
+            <div class="log-item">
+              <div class="fw-bold">2. Add all product lines</div>
+              <div class="mini mt-1">Each line needs product, quantity, unit price, and payment method.</div>
+            </div>
+            <div class="log-item">
+              <div class="fw-bold">3. Write the correction reason</div>
+              <div class="mini mt-1">Every historical adjustment leaves an audit trail for future review.</div>
+            </div>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<template id="empty-line-template">
+  <div class="line-item" data-line-form>
+    __DELETE_FIELD__
+    <div class="row g-3 align-items-end">
+      <div class="col-lg-5">
+        <label class="form-label fw-bold">Product</label>
+        __PRODUCT_PICKER__
+      </div>
+      <div class="col-sm-3 col-lg-2">
+        <label class="form-label fw-bold">Qty</label>
+        __QTY_FIELD__
+      </div>
+      <div class="col-sm-4 col-lg-2">
+        <label class="form-label fw-bold">Unit price</label>
+        __PRICE_FIELD__
+      </div>
+      <div class="col-lg-2">
+        <label class="form-label fw-bold">Payment</label>
+        __PAYMENT_FIELD__
+      </div>
+      <div class="col-lg-1 d-grid">
+        <button type="button" class="btn btn-outline-danger js-remove-line">Remove</button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<div class="modal fade" id="correctionProductPreviewModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="correctionProductPreviewTitle">Product image</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-3">
+        <img id="correctionProductPreviewImg" src="" alt="" class="img-fluid w-100 rounded-4">
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const addLineBtn = document.getElementById('add-line-btn');
+    const container = document.getElementById('line-formset');
+    const totalForms = document.getElementById('id_lines-TOTAL_FORMS');
+    const emptyTemplate = document.getElementById('empty-line-template');
+    const autocompleteUrl = "{% url 'products_autocomplete' %}";
+    const previewModalEl = document.getElementById('correctionProductPreviewModal');
+    const previewModalImg = document.getElementById('correctionProductPreviewImg');
+    const previewModalTitle = document.getElementById('correctionProductPreviewTitle');
+    const emptyFormHtml = `
+      {{ formset.empty_form.DELETE.as_hidden|escapejs }}
+    `;
+
+    const emptyProductHtml = `{{ formset.empty_form.product|escapejs }}`;
+    const emptyQtyHtml = `{{ formset.empty_form.quantity|escapejs }}`;
+    const emptyPriceHtml = `{{ formset.empty_form.unit_price|escapejs }}`;
+    const emptyPaymentHtml = `{{ formset.empty_form.payment_method|escapejs }}`;
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function openPreviewModal(imageUrl, title) {
+      if (!imageUrl) return;
+      previewModalImg.src = imageUrl;
+      previewModalImg.alt = title || 'Product image';
+      previewModalTitle.textContent = title || 'Product image';
+      bootstrap.Modal.getOrCreateInstance(previewModalEl).show();
+    }
+
+    function buildSelectedMedia(product) {
+      if (product?.image_url) {
+        return `
+          <button
+            type="button"
+            class="picker-selected-thumb-wrap js-selected-thumb"
+            data-image-url="${escapeHtml(product.image_url)}"
+            data-title="${escapeHtml(product.display_name || product.name || 'Product')}"
+          >
+            <img src="${escapeHtml(product.image_url)}" alt="${escapeHtml(product.display_name || product.name || 'Product')}" class="picker-selected-thumb">
+          </button>
+        `;
+      }
+      return '<div class="picker-selected-thumb-empty">No image</div>';
+    }
+
+    function buildSuggestionItem(product) {
+      const title = product.display_name || product.name || 'Product';
+      const priceText = product.retail_price != null ? `Retail EUR ${Number(product.retail_price).toFixed(2)}` : 'No retail price';
+      const imageBlock = product.image_url
+        ? `
+          <button
+            type="button"
+            class="picker-thumb-wrap js-result-preview"
+            data-image-url="${escapeHtml(product.image_url)}"
+            data-title="${escapeHtml(title)}"
+          >
+            <img src="${escapeHtml(product.image_url)}" alt="${escapeHtml(title)}" class="picker-thumb">
+          </button>
+        `
+        : '<div class="picker-thumb-empty">No image</div>';
+
+      return `
+        <div class="list-group-item list-group-item-action js-product-option" data-product-id="${product.id}" tabindex="0" role="button">
+          <div class="picker-item">
+            ${imageBlock}
+            <div class="picker-main">
+              <div class="picker-title">${escapeHtml(title)}</div>
+              <div class="picker-sub">${escapeHtml(product.barcode || '')}</div>
+              <div class="picker-sub">${escapeHtml(priceText)}</div>
+            </div>
+            ${product.image_url ? '<span class="btn btn-sm btn-outline-secondary">Zoom</span>' : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderSelectedProduct(picker, product) {
+      const hiddenInput = picker.querySelector('.js-product-id');
+      const searchInput = picker.querySelector('.js-product-search');
+      const selectedBox = picker.querySelector('.js-product-selected');
+      const mediaBox = picker.querySelector('.js-selected-media');
+      const titleBox = picker.querySelector('.js-selected-title');
+      const subBox = picker.querySelector('.js-selected-sub');
+      const priceBox = picker.querySelector('.js-selected-price');
+      const previewBtn = picker.querySelector('.js-preview-selected');
+
+      hiddenInput.value = product.id || '';
+      searchInput.value = product.display_name || product.name || '';
+      mediaBox.innerHTML = buildSelectedMedia(product);
+      titleBox.textContent = product.display_name || product.name || '';
+      subBox.textContent = [product.barcode, product.spec, product.color].filter(Boolean).join(' · ');
+      priceBox.textContent = product.retail_price != null ? `Retail EUR ${Number(product.retail_price).toFixed(2)}` : 'Retail price not set';
+      mediaBox.querySelector('.js-selected-thumb')?.addEventListener('click', () => {
+        openPreviewModal(product.image_url, product.display_name || product.name || 'Product image');
+      });
+
+      if (product.image_url) {
+        previewBtn.classList.remove('d-none');
+        previewBtn.dataset.imageUrl = product.image_url;
+        previewBtn.dataset.title = product.display_name || product.name || 'Product image';
+      } else {
+        previewBtn.classList.add('d-none');
+        delete previewBtn.dataset.imageUrl;
+        delete previewBtn.dataset.title;
+      }
+      selectedBox.classList.remove('d-none');
+    }
+
+    function clearSelectedProduct(picker) {
+      const hiddenInput = picker.querySelector('.js-product-id');
+      const searchInput = picker.querySelector('.js-product-search');
+      const selectedBox = picker.querySelector('.js-product-selected');
+      const resultsBox = picker.querySelector('.js-product-results');
+      hiddenInput.value = '';
+      searchInput.value = '';
+      selectedBox.classList.add('d-none');
+      resultsBox.classList.add('d-none');
+      resultsBox.innerHTML = '';
+      searchInput.focus();
+    }
+
+    function bindProductPicker(row) {
+      row.querySelectorAll('[data-product-picker]').forEach((picker) => {
+        if (picker.dataset.bound === '1') return;
+        picker.dataset.bound = '1';
+
+        const hiddenInput = picker.querySelector('.js-product-id');
+        const searchInput = picker.querySelector('.js-product-search');
+        const resultsBox = picker.querySelector('.js-product-results');
+        const previewBtn = picker.querySelector('.js-preview-selected');
+        const clearBtn = picker.querySelector('.js-clear-product');
+        let debounceTimer = null;
+
+        function closeResults() {
+          resultsBox.classList.add('d-none');
+          resultsBox.innerHTML = '';
+        }
+
+        function chooseProduct(product) {
+          renderSelectedProduct(picker, product);
+          closeResults();
+        }
+
+        function fetchAndShowResults(query) {
+          if (!query || query.length < 2) {
+            closeResults();
+            return;
+          }
+
+          fetch(`${autocompleteUrl}?q=${encodeURIComponent(query)}`)
+            .then((response) => response.json())
+            .then((data) => {
+              const results = data.results || [];
+              if (!results.length) {
+                resultsBox.innerHTML = '<div class="list-group-item text-muted small">No matching products found.</div>';
+                resultsBox.classList.remove('d-none');
+                return;
+              }
+
+              resultsBox.innerHTML = results.map(buildSuggestionItem).join('');
+              resultsBox.classList.remove('d-none');
+              resultsBox.querySelectorAll('.js-product-option').forEach((button, index) => {
+                const product = results[index];
+                button.addEventListener('click', () => chooseProduct(product));
+              });
+              resultsBox.querySelectorAll('.js-result-preview').forEach((button) => {
+                button.addEventListener('click', (event) => {
+                  event.stopPropagation();
+                  openPreviewModal(button.dataset.imageUrl, button.dataset.title);
+                });
+              });
+            })
+            .catch(() => {
+              resultsBox.innerHTML = '<div class="list-group-item text-danger small">Search failed. Please try again.</div>';
+              resultsBox.classList.remove('d-none');
+            });
+        }
+
+        searchInput.addEventListener('input', () => {
+          hiddenInput.value = '';
+          picker.querySelector('.js-product-selected')?.classList.add('d-none');
+          clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => fetchAndShowResults(searchInput.value.trim()), 220);
+        });
+
+        searchInput.addEventListener('focus', () => {
+          if (searchInput.value.trim().length >= 2 && hiddenInput.value === '') {
+            fetchAndShowResults(searchInput.value.trim());
+          }
+        });
+
+        searchInput.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            const firstResult = resultsBox.querySelector('.js-product-option');
+            if (firstResult) {
+              event.preventDefault();
+              firstResult.click();
+            }
+          }
+        });
+
+        clearBtn?.addEventListener('click', () => clearSelectedProduct(picker));
+        previewBtn?.addEventListener('click', () => openPreviewModal(previewBtn.dataset.imageUrl, previewBtn.dataset.title));
+
+        if (hiddenInput.value) {
+          fetch(`${autocompleteUrl}?product_id=${encodeURIComponent(hiddenInput.value)}`)
+            .then((response) => response.json())
+            .then((data) => {
+              if (data.results && data.results.length) {
+                renderSelectedProduct(picker, data.results[0]);
+              }
+            });
+        }
+      });
+    }
+
+    function bindRemoveButtons(scope) {
+      scope.querySelectorAll('.js-remove-line').forEach((btn) => {
+        if (btn.dataset.bound === '1') return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', () => {
+          const row = btn.closest('[data-line-form]');
+          const deleteField = row.querySelector('[name$="-DELETE"]');
+          if (deleteField) {
+            deleteField.checked = true;
+          }
+          row.classList.add('is-deleted');
+        });
+      });
+    }
+
+    document.addEventListener('click', (event) => {
+      document.querySelectorAll('.js-product-results').forEach((resultsBox) => {
+        const picker = resultsBox.closest('[data-product-picker]');
+        if (picker && !picker.contains(event.target)) {
+          resultsBox.classList.add('d-none');
+        }
+      });
+    });
+
+    addLineBtn?.addEventListener('click', () => {
+      const index = parseInt(totalForms.value, 10);
+      let html = emptyTemplate.innerHTML;
+      html = html.replace('__DELETE_FIELD__', emptyFormHtml.replaceAll('__prefix__', index));
+      html = html.replace('__PRODUCT_PICKER__', `
+        <div class="product-picker" data-product-picker>
+          ${emptyProductHtml.replaceAll('__prefix__', index)}
+          <input
+            type="text"
+            class="form-control product-picker-search js-product-search"
+            placeholder="Search product by barcode / brand / model / name"
+            autocomplete="off"
+          >
+          <div class="list-group product-picker-results d-none js-product-results"></div>
+          <div class="product-picker-selected d-none js-product-selected">
+            <div class="js-selected-media"></div>
+            <div>
+              <div class="selected-title js-selected-title"></div>
+              <div class="selected-sub js-selected-sub"></div>
+              <div class="selected-price js-selected-price"></div>
+            </div>
+            <div class="selected-actions">
+              <button type="button" class="btn btn-sm btn-outline-secondary js-preview-selected d-none">Zoom</button>
+              <button type="button" class="btn btn-sm btn-outline-danger js-clear-product">Change</button>
+            </div>
+          </div>
+        </div>
+      `);
+      html = html.replace('__QTY_FIELD__', emptyQtyHtml.replaceAll('__prefix__', index));
+      html = html.replace('__PRICE_FIELD__', emptyPriceHtml.replaceAll('__prefix__', index));
+      html = html.replace('__PAYMENT_FIELD__', emptyPaymentHtml.replaceAll('__prefix__', index));
+
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = html.trim();
+      const row = wrapper.firstElementChild;
+      container.appendChild(row);
+      totalForms.value = index + 1;
+      bindRemoveButtons(row);
+      bindProductPicker(row);
+    });
+
+    bindRemoveButtons(document);
+    bindProductPicker(document);
+  }());
+</script>
+{% endblock %}

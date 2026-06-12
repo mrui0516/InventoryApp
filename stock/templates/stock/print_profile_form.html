@@ -1,0 +1,83 @@
+{% extends 'stock/base.html' %}
+{% block title %}Print Header Settings{% endblock %}
+
+{% block content %}
+<style>
+  .profile-shell{max-width:960px;margin:0 auto;display:grid;gap:1rem}
+  .profile-card{background:#fff;border:1px solid #d9e2ee;border-radius:1.1rem;box-shadow:0 18px 40px rgba(15,23,42,.06)}
+  .profile-head{padding:1.25rem 1.35rem}
+  .profile-head h1{margin:0;font-size:2rem;font-weight:900;color:#10213a}
+  .profile-sub{margin:.35rem 0 0;color:#5a6b81}
+  .preview-card{padding:1.15rem 1.25rem;background:linear-gradient(180deg,#fbfdff,#f3f7fd)}
+  .preview-title{font-size:1.2rem;font-weight:900;color:#10213a}
+  .preview-meta{color:#4f6075;line-height:1.6}
+</style>
+
+<div class="profile-shell">
+  <section class="profile-card profile-head">
+    <div class="d-flex justify-content-between gap-3 flex-wrap align-items-start">
+      <div>
+        <h1>Print Header Settings</h1>
+        <p class="profile-sub">Edit the store information that appears on A4 and POS order printouts. This page only changes receipt header details.</p>
+      </div>
+      <a href="{{ next_url }}" class="btn btn-outline-secondary">Back</a>
+    </div>
+  </section>
+
+  <form method="post" class="profile-card p-4">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ next_url }}">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label fw-bold" for="{{ form.name.id_for_label }}">Store name</label>
+        {{ form.name }}
+        {% if form.name.errors %}<div class="text-danger small mt-1">{{ form.name.errors|join:', ' }}</div>{% endif %}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label fw-bold" for="{{ form.nif.id_for_label }}">NIF / Tax ID</label>
+        {{ form.nif }}
+        {% if form.nif.errors %}<div class="text-danger small mt-1">{{ form.nif.errors|join:', ' }}</div>{% endif %}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label fw-bold" for="{{ form.phone.id_for_label }}">Phone</label>
+        {{ form.phone }}
+        {% if form.phone.errors %}<div class="text-danger small mt-1">{{ form.phone.errors|join:', ' }}</div>{% endif %}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label fw-bold" for="{{ form.email.id_for_label }}">Email</label>
+        {{ form.email }}
+        {% if form.email.errors %}<div class="text-danger small mt-1">{{ form.email.errors|join:', ' }}</div>{% endif %}
+      </div>
+      <div class="col-12">
+        <label class="form-label fw-bold" for="{{ form.address.id_for_label }}">Address</label>
+        {{ form.address }}
+        {% if form.address.errors %}<div class="text-danger small mt-1">{{ form.address.errors|join:', ' }}</div>{% endif %}
+      </div>
+      <div class="col-12">
+        <label class="form-label fw-bold" for="{{ form.footer_note.id_for_label }}">Footer note</label>
+        {{ form.footer_note }}
+        {% if form.footer_note.errors %}<div class="text-danger small mt-1">{{ form.footer_note.errors|join:', ' }}</div>{% endif %}
+      </div>
+    </div>
+
+    <div class="d-flex gap-2 flex-wrap mt-4">
+      <button type="submit" class="btn btn-primary">Save Print Header</button>
+      <a href="{{ next_url }}" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+  </form>
+
+  <section class="profile-card preview-card">
+    <div class="preview-title">{{ form.instance.name|default:"Store name" }}</div>
+    <div class="preview-meta mt-2">
+      {% if form.instance.address %}<div>{{ form.instance.address }}</div>{% endif %}
+      <div>
+        {% if form.instance.phone %}{{ form.instance.phone }}{% endif %}
+        {% if form.instance.phone and form.instance.email %} / {% endif %}
+        {% if form.instance.email %}{{ form.instance.email }}{% endif %}
+      </div>
+      {% if form.instance.nif %}<div>NIF: {{ form.instance.nif }}</div>{% endif %}
+      {% if form.instance.footer_note %}<div class="mt-2">{{ form.instance.footer_note }}</div>{% endif %}
+    </div>
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,1407 @@
+﻿{% extends 'stock/base.html' %}
+{% load static %}
+{% block title %}Outbound{% endblock %}
+
+{% block content %}
+<h2 class="mb-4">🚚 Outbound - Sell Products</h2>
+
+{% if error %}<div class="alert alert-danger mt-3">{{ error }}</div>{% endif %}
+{% if success %}<div class="alert alert-success mt-3">{{ success }}</div>{% endif %}
+
+<!-- 扫码 / 模糊搜索 -->
+<form id="scan-form" class="mb-3 position-relative">
+  <label for="barcode" class="form-label">Scan barcode or search product</label>
+  <input
+    type="text"
+    id="barcode"
+    class="form-control"
+    placeholder="Enter barcode / name / brand / model"
+    autofocus
+    autocomplete="off"
+  >
+  <div id="product-suggest"
+       class="list-group position-absolute w-100 shadow-sm d-none"
+       style="z-index:1000; max-height: 320px; overflow:auto;"></div>
+</form>
+
+<div id="product-image-preview" class="product-image-preview" aria-hidden="true">
+  <img id="product-image-preview-img" src="" alt="">
+  <div class="product-image-preview-title" id="product-image-preview-title"></div>
+</div>
+
+<div id="scan-info" class="alert d-none"></div>
+
+<form id="checkout-form" method="post" class="checkout-shell">
+  {% csrf_token %}
+  <input type="hidden" name="items_json" id="items_json">
+  <input type="hidden" name="idemp_key" id="idemp_key">
+
+  <div class="operation-layout">
+    <div class="operation-main">
+      <section class="operation-card">
+        <div class="operation-card-head">
+          <div>
+            <span class="operation-kicker">Step 1</span>
+            <h3 class="operation-title">Customer and sale context</h3>
+            <p class="operation-copy">Pick the customer if there is one. If not, we keep the sale as walk-in and flag it in the final review.</p>
+          </div>
+          <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#addCustomerModal">Add New Customer</button>
+        </div>
+
+        <div class="row g-3 align-items-end">
+          <div class="col-md-8 position-relative">
+            <label class="form-label">Customer (Name or NIF)</label>
+            <input type="text" id="customer-search" class="form-control" placeholder="Type name or NIF">
+            <input type="hidden" name="customer_id" id="customer-id">
+            <div id="customer-suggestions" class="list-group position-absolute w-100 shadow-sm d-none" style="z-index:1000;"></div>
+          </div>
+          <div class="col-md-4">
+            <div class="guardrail-note">
+              If the typed customer is not selected from the list, this sale will stay as walk-in.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="operation-card">
+        <div class="operation-card-head">
+          <div>
+            <span class="operation-kicker">Step 2</span>
+            <h3 class="operation-title">Cart review</h3>
+            <p class="operation-copy">Check quantities, price and payment per line. Guardrails below will highlight risky values before you submit.</p>
+          </div>
+          <div class="summary-badge-row">
+            <span class="summary-badge" id="summary-line-count">0 lines</span>
+            <span class="summary-badge" id="summary-warning-badge">0 warnings</span>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-sm align-middle" id="cart-table">
+            <thead class="table-light">
+              <tr>
+                <th style="width: 40%">Product</th>
+                <th style="width: 110px">Qty</th>
+                <th style="width: 150px">Unit Price (&euro;)</th>
+                <th style="width: 180px">Payment</th>
+                <th style="width: 140px">Subtotal (&euro;)</th>
+                <th style="width: 60px"></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+            <tfoot>
+              <tr>
+                <th colspan="4" class="text-end">Total:</th>
+                <th id="grand_total">&euro;0.00</th>
+                <th></th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <aside class="operation-side">
+      <div class="operation-card sticky-review">
+        <span class="operation-kicker">Step 3</span>
+        <h3 class="operation-title">Final review</h3>
+        <p class="operation-copy">We summarize the order here before the second confirmation.</p>
+
+        <div class="review-stats">
+          <div class="review-stat">
+            <span class="review-label">Customer</span>
+            <strong id="summary-customer">Walk-in / no customer</strong>
+          </div>
+          <div class="review-stat">
+            <span class="review-label">Items</span>
+            <strong id="summary-total-qty">0 pcs</strong>
+          </div>
+          <div class="review-stat">
+            <span class="review-label">Payments</span>
+            <strong id="summary-payment-mix">-</strong>
+          </div>
+          <div class="review-stat highlight">
+            <span class="review-label">Total</span>
+            <strong id="summary-total-amount">EUR 0.00</strong>
+          </div>
+        </div>
+
+        <div class="guardrail-panel">
+          <div class="guardrail-title">Guardrails</div>
+          <ul class="guardrail-list" id="summary-warning-list">
+            <li>No warnings yet. Add products to review this sale.</li>
+          </ul>
+        </div>
+
+        <button type="submit" id="submitBtn" class="btn btn-danger w-100" disabled>Review and Confirm Sale</button>
+      </div>
+    </aside>
+  </div>
+</form>
+
+<div class="modal fade" id="checkoutReviewModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Final Sale Review</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="review-modal-grid">
+          <div class="review-modal-card">
+            <div class="review-label">Customer</div>
+            <div class="review-modal-value" id="review-customer">Walk-in / no customer</div>
+          </div>
+          <div class="review-modal-card">
+            <div class="review-label">Items</div>
+            <div class="review-modal-value" id="review-qty">0 pcs</div>
+          </div>
+          <div class="review-modal-card">
+            <div class="review-label">Payment mix</div>
+            <div class="review-modal-value" id="review-payment">-</div>
+          </div>
+          <div class="review-modal-card">
+            <div class="review-label">Total</div>
+            <div class="review-modal-value" id="review-total">EUR 0.00</div>
+          </div>
+        </div>
+
+        <div class="guardrail-panel mt-3">
+          <div class="guardrail-title">Please double-check</div>
+          <ul class="guardrail-list" id="review-warning-list"></ul>
+        </div>
+
+        <div class="review-line-items mt-3" id="review-line-items"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Back to edit</button>
+        <button type="button" class="btn btn-danger" id="confirmCheckoutBtn">Confirm Sale Now</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="productPreviewModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="productPreviewModalTitle">Product Image</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-3">
+        <img id="productPreviewModalImg" src="" alt="" class="img-fluid w-100 rounded-4">
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add Customer Modal -->
+<div class="modal fade" id="addCustomerModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <form id="addCustomerForm" class="modal-content">
+      {% csrf_token %}
+      <div class="modal-header">
+        <h5 class="modal-title">Add New Customer</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-2">
+          <label class="form-label">NIF</label>
+          <input type="text" name="nif" class="form-control" maxlength="9" required>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Name</label>
+          <input type="text" name="name" class="form-control" required>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Phone</label>
+          <input type="text" name="phone" class="form-control">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Email</label>
+          <input type="email" name="email" class="form-control">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-control" rows="2"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="submit" class="btn btn-success">💾 Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+  :root{
+    --ds-border: rgba(0,0,0,.08);
+    --ds-card-bg:#fff;
+    --ds-muted:#6b7280;
+    --ds-text:#1f2937;
+    --ds-accent:#3b82f6;
+    --ds-good:#0f766e;
+    --ds-warn:#b45309;
+    --ds-danger:#b91c1c;
+    --ds-radius:.8rem;
+  }
+
+  .checkout-shell{
+    display:block;
+  }
+  .operation-layout{
+    display:grid;
+    grid-template-columns:minmax(0,1.75fr) minmax(320px, .95fr);
+    gap:1rem;
+    align-items:start;
+  }
+  .operation-main,
+  .operation-side{
+    display:grid;
+    gap:1rem;
+  }
+  .operation-card{
+    background:#fff;
+    border:1px solid var(--ds-border);
+    border-radius:1rem;
+    box-shadow:0 14px 32px rgba(15,23,42,.06);
+    padding:1rem;
+  }
+  .operation-card-head{
+    display:flex;
+    justify-content:space-between;
+    gap:1rem;
+    align-items:flex-start;
+    flex-wrap:wrap;
+    margin-bottom:1rem;
+  }
+  .operation-kicker{
+    display:inline-flex;
+    align-items:center;
+    padding:.25rem .65rem;
+    border-radius:999px;
+    background:#eaf2ff;
+    color:#1747a6;
+    font-size:.76rem;
+    font-weight:800;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+  }
+  .operation-title{
+    margin:.55rem 0 .2rem;
+    color:var(--ds-text);
+    font-size:1.15rem;
+    font-weight:900;
+  }
+  .operation-copy{
+    margin:0;
+    color:var(--ds-muted);
+  }
+  .summary-badge-row{
+    display:flex;
+    gap:.55rem;
+    flex-wrap:wrap;
+  }
+  .summary-badge{
+    display:inline-flex;
+    align-items:center;
+    padding:.3rem .72rem;
+    border-radius:999px;
+    background:#f3f7fc;
+    border:1px solid #d7e0eb;
+    color:#173761;
+    font-size:.82rem;
+    font-weight:800;
+  }
+  .guardrail-note{
+    padding:.75rem .85rem;
+    border-radius:.9rem;
+    background:#f8fafc;
+    border:1px dashed #d6e1ee;
+    color:#526071;
+    font-size:.88rem;
+    font-weight:700;
+  }
+  .sticky-review{
+    position:sticky;
+    top:1rem;
+  }
+  .review-stats{
+    display:grid;
+    gap:.75rem;
+    margin-top:.9rem;
+  }
+  .review-stat{
+    padding:.8rem .9rem;
+    border-radius:.95rem;
+    background:#f8fafc;
+    border:1px solid #e2e8f0;
+  }
+  .review-stat.highlight{
+    background:linear-gradient(180deg,#fff,#edf4ff);
+    border-color:#c9daf6;
+  }
+  .review-label{
+    display:block;
+    color:var(--ds-muted);
+    font-size:.78rem;
+    font-weight:900;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+  }
+  .review-stat strong,
+  .review-modal-value{
+    display:block;
+    color:var(--ds-text);
+    font-size:1.02rem;
+    font-weight:900;
+    margin-top:.2rem;
+  }
+  .guardrail-panel{
+    margin-top:1rem;
+    padding:.9rem;
+    border-radius:1rem;
+    background:#fff9eb;
+    border:1px solid #f1d6a8;
+  }
+  .guardrail-title{
+    color:#8a5a08;
+    font-weight:900;
+    margin-bottom:.55rem;
+  }
+  .guardrail-list{
+    margin:0;
+    padding-left:1.1rem;
+    color:#6b4c11;
+  }
+  .guardrail-list li + li{
+    margin-top:.38rem;
+  }
+  .review-modal-grid{
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0,1fr));
+    gap:.8rem;
+  }
+  .review-modal-card{
+    padding:.9rem;
+    border-radius:.95rem;
+    background:#f8fafc;
+    border:1px solid #e2e8f0;
+  }
+  .review-line-items{
+    display:grid;
+    gap:.7rem;
+  }
+  .review-line-item{
+    display:flex;
+    justify-content:space-between;
+    gap:1rem;
+    align-items:flex-start;
+    padding:.85rem .95rem;
+    border-radius:.95rem;
+    background:#fbfdff;
+    border:1px solid #dce7f3;
+  }
+  .review-line-item strong{
+    color:var(--ds-text);
+    font-weight:900;
+  }
+  .review-line-meta{
+    color:var(--ds-muted);
+    font-size:.88rem;
+    margin-top:.18rem;
+  }
+  #cart-table tbody tr.row-warning{
+    background:#fffaf0;
+  }
+  #cart-table tbody tr.row-danger{
+    background:#fff5f5;
+  }
+  .line-flags{
+    display:flex;
+    gap:.35rem;
+    flex-wrap:wrap;
+    margin-top:.35rem;
+  }
+  .line-flag{
+    display:inline-flex;
+    align-items:center;
+    padding:.18rem .55rem;
+    border-radius:999px;
+    font-size:.72rem;
+    font-weight:800;
+  }
+  .line-flag.warn{
+    background:#fff3db;
+    color:var(--ds-warn);
+  }
+  .line-flag.danger{
+    background:#feecec;
+    color:var(--ds-danger);
+  }
+
+  /* 标题与提示 */
+  h2{ font-weight:800; letter-spacing:.2px; color:var(--ds-text); }
+  .alert{ border-radius:.75rem; border:1px solid var(--ds-border); }
+  .alert-success{ background:#ecfdf5; border-color:#bbf7d0; }
+  .alert-danger{  background:#fef2f2; border-color:#fecaca; }
+  .alert-info{    background:#eff6ff; border-color:#bfdbfe; }
+
+  /* 顶部扫码/搜索 */
+  #scan-form .form-label{ font-weight:700; color:var(--ds-text); }
+  #barcode{
+    border-radius:.7rem; border:1px solid var(--ds-border);
+    padding:.65rem .9rem; box-shadow: 0 1px 0 rgba(0,0,0,.02) inset;
+  }
+  #barcode:focus{ border-color: color-mix(in oklab, var(--ds-accent) 50%, #7aa2ff 50%); box-shadow: 0 0 0 .2rem rgba(59,130,246,.12); }
+
+  /* 产品建议下拉 */
+  #product-suggest{
+    top: calc(100% + .35rem);
+    border-radius:.7rem; overflow:hidden; background:#fff; border:1px solid var(--ds-border);
+  }
+  #product-suggest .list-group-item{
+    padding:.6rem .85rem; font-size:.95rem;
+  }
+  #product-suggest .list-group-item:hover,
+  #product-suggest .list-group-item:focus{
+    background: color-mix(in oklab, #ffffff 85%, var(--ds-accent) 15%);
+  }
+  .product-suggest-item{
+    display:grid;
+    grid-template-columns: 52px minmax(0, 1fr) auto;
+    gap:.75rem;
+    align-items:center;
+  }
+  .product-suggest-media{
+    width:48px;
+    height:48px;
+    border-radius:.75rem;
+    overflow:hidden;
+    border:1px solid var(--ds-border);
+    background:#f8fafc;
+    display:grid;
+    place-items:center;
+    flex:0 0 48px;
+    cursor:zoom-in;
+  }
+  .product-suggest-media.no-image{
+    cursor:default;
+    color:var(--ds-muted);
+    font-size:.7rem;
+    font-weight:700;
+    text-align:center;
+    line-height:1.1;
+    padding:.25rem;
+  }
+  .product-suggest-thumb{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    display:block;
+  }
+  .product-suggest-main{
+    min-width:0;
+  }
+  .product-suggest-title{
+    font-weight:700;
+    color:var(--ds-text);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .product-suggest-sub{
+    color:var(--ds-muted);
+    font-size:.82rem;
+  }
+  .product-suggest-zoom{
+    border-radius:.6rem;
+    white-space:nowrap;
+  }
+  .product-image-preview{
+    position:fixed;
+    z-index:1105;
+    width:240px;
+    padding:.7rem;
+    border-radius:1rem;
+    background:#fff;
+    border:1px solid var(--ds-border);
+    box-shadow:0 18px 40px rgba(15,23,42,.18);
+    display:none;
+    pointer-events:none;
+  }
+  .product-image-preview.show{
+    display:block;
+  }
+  .product-image-preview img{
+    width:100%;
+    aspect-ratio:1/1;
+    object-fit:cover;
+    display:block;
+    border-radius:.8rem;
+    background:#f8fafc;
+  }
+  .product-image-preview-title{
+    margin-top:.6rem;
+    font-size:.85rem;
+    font-weight:700;
+    color:var(--ds-text);
+    line-height:1.3;
+  }
+  #productPreviewModal .modal-content{
+    border-radius:1rem;
+    border:1px solid var(--ds-border);
+  }
+  #productPreviewModal .modal-body{
+    background:#f8fafc;
+  }
+  @media (max-width: 991.98px){
+    .product-image-preview{
+      display:none !important;
+    }
+  }
+
+  /* 顶部提示框 */
+  #scan-info{ margin-top:.75rem; border-radius:.6rem; }
+
+  /* 结账表单卡片 */
+  #checkout-form.card{
+    border-radius: var(--ds-radius);
+    border-color: var(--ds-border);
+    background: var(--ds-card-bg);
+  }
+  #checkout-form .form-label{ font-weight:600; color:var(--ds-text); }
+  #checkout-form .form-control, #checkout-form .form-select{
+    border-radius:.6rem; border:1px solid var(--ds-border);
+  }
+  #checkout-form .form-control:focus, #checkout-form .form-select:focus{
+    border-color: color-mix(in oklab, var(--ds-accent) 50%, #7aa2ff 50%);
+    box-shadow: 0 0 0 .2rem rgba(59,130,246,.12);
+  }
+  #checkout-form hr{ opacity:.6; }
+
+  /* 客户建议下拉 */
+  #customer-suggestions{
+    top: calc(100% + .35rem);
+    border-radius:.7rem; overflow:hidden; background:#fff; border:1px solid var(--ds-border);
+    max-height: 320px; overflow:auto;
+  }
+  #customer-suggestions .list-group-item{ padding:.6rem .85rem; font-size:.95rem; }
+  #customer-suggestions .list-group-item:hover{ background: color-mix(in oklab, #ffffff 85%, var(--ds-accent) 15%); }
+
+  /* 购物车表格 */
+  #cart-table{
+    border:1px solid var(--ds-border);
+    border-radius: .8rem;
+    overflow:hidden;
+    background: var(--ds-card-bg);
+  }
+  #cart-table thead th{
+    position: sticky; top: 0; z-index: 1;
+    background: #f8fafc;
+  }
+  #cart-table th, #cart-table td{ padding:.6rem .75rem; }
+  #cart-table td:nth-child(2), #cart-table td:nth-child(3), #cart-table td:nth-child(4){ white-space:nowrap; }
+  #cart-table td:nth-child(3), #cart-table td:nth-child(5){ text-align:right; }
+  #cart-table tfoot th{ background:#fafafa; }
+  #cart-table .form-control-sm, #cart-table .form-select-sm{ border-radius:.5rem; }
+  #cart-table .qty{ min-width:90px; text-align:right; }
+  #cart-table .price{ min-width:120px; text-align:right; }
+  #cart-table .subtotal{ font-weight:700; }
+  #cart-table .remove{ border-radius:.5rem; }
+  .cart-product{
+    display:grid;
+    grid-template-columns:56px minmax(0,1fr);
+    gap:.8rem;
+    align-items:center;
+  }
+  .cart-product-thumb-wrap,
+  .cart-product-thumb-empty{
+    width:56px;
+    height:56px;
+    border-radius:.9rem;
+    border:1px solid var(--ds-border);
+    background:#f8fafc;
+  }
+  .cart-product-thumb-wrap{
+    padding:0;
+    overflow:hidden;
+    display:block;
+    cursor:zoom-in;
+  }
+  .cart-product-thumb{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    display:block;
+  }
+  .cart-product-thumb-empty{
+    display:grid;
+    place-items:center;
+    color:var(--ds-muted);
+    font-size:.72rem;
+    font-weight:700;
+    text-align:center;
+    padding:.25rem;
+  }
+  .cart-product-main{
+    min-width:0;
+  }
+
+  /* 提交按钮 */
+  #submitBtn{
+    margin-top:.75rem;
+    border-radius:.7rem;
+    font-weight:700;
+    padding:.65rem 1rem;
+  }
+
+  /* Modal 样式统一 */
+  .modal-content{ border-radius:.9rem; border:1px solid var(--ds-border); }
+  .modal-header{ background:#f8fafc; }
+  .modal-title{ font-weight:700; }
+
+  @media (max-width: 1199.98px){
+    .operation-layout{
+      grid-template-columns:1fr;
+    }
+    .sticky-review{
+      position:static;
+    }
+  }
+
+  /* ============ 移动端 <576px：卡片化表格 ============ */
+  @media (max-width: 576px){
+    .operation-layout,
+    .review-modal-grid{
+      grid-template-columns:1fr;
+    }
+    #checkout-form .form-control, #checkout-form .form-select{
+      padding:.8rem .95rem; font-size:1rem;
+    }
+    .sticky-review{
+      position:static;
+    }
+    #product-suggest, #customer-suggestions{ border-radius:.6rem; }
+    #cart-table thead{ display:none; }
+    #cart-table tbody tr{
+      display:block; margin:.6rem 0; border:1px solid var(--ds-border);
+      border-radius:.8rem; background:#fff; box-shadow:0 1px 6px rgba(0,0,0,.06); overflow:hidden;
+    }
+    #cart-table tbody td{
+      display:grid; grid-template-columns: 8rem 1fr;
+      align-items:center; gap:.6rem;
+      padding:.85rem 1rem !important; border:0 !important; font-size:1.02rem;
+      text-align:right; word-break:break-word; overflow-wrap:anywhere;
+    }
+    #cart-table tbody td:nth-child(1)::before{ content:'Product'; font-weight:600; color:var(--ds-muted); text-align:left; }
+    #cart-table tbody td:nth-child(2)::before{ content:'Qty'; font-weight:600; color:var(--ds-muted); text-align:left; }
+    #cart-table tbody td:nth-child(3)::before{ content:'Unit Price (EUR)'; font-weight:600; color:var(--ds-muted); text-align:left; }
+    #cart-table tbody td:nth-child(4)::before{ content:'Payment'; font-weight:600; color:var(--ds-muted); text-align:left; }
+    #cart-table tbody td:nth-child(5)::before{ content:'Subtotal (EUR)'; font-weight:600; color:var(--ds-muted); text-align:left; }
+    #cart-table tbody td:nth-child(6)::before{ content:'Actions'; font-weight:600; color:var(--ds-muted); text-align:left; }
+    #cart-table tbody td:nth-child(1){ text-align:left; }
+    #cart-table .qty, #cart-table .price, #cart-table .pay{ width:100%; min-width:0; }
+    #cart-table tfoot{ display:block; }
+    #cart-table tfoot tr{
+      display:block; margin:.6rem 0 0; border:1px solid var(--ds-border);
+      border-radius:.8rem; background:#fff; overflow:hidden;
+    }
+    #cart-table tfoot th{
+      display:grid; grid-template-columns: 1fr auto; gap:.6rem;
+      padding:.9rem 1rem !important; text-align:right; border:0 !important;
+    }
+    #submitBtn{
+      position: sticky;
+      bottom: .5rem;
+      width: 100%;
+      box-shadow: 0 8px 20px rgba(16,24,40,.12);
+      z-index: 5;
+    }
+  }
+</style>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const barcodeInput = document.getElementById('barcode');
+  const prodSuggest = document.getElementById('product-suggest');
+  const info = document.getElementById('scan-info');
+  const cartBody = document.querySelector('#cart-table tbody');
+  const grandTotal = document.getElementById('grand_total');
+  const submitBtn = document.getElementById('submitBtn');
+  const itemsJson = document.getElementById('items_json');
+  const previewBox = document.getElementById('product-image-preview');
+  const previewImg = document.getElementById('product-image-preview-img');
+  const previewTitle = document.getElementById('product-image-preview-title');
+  const previewModalEl = document.getElementById('productPreviewModal');
+  const previewModalImg = document.getElementById('productPreviewModalImg');
+  const previewModalTitle = document.getElementById('productPreviewModalTitle');
+  const reviewModalEl = document.getElementById('checkoutReviewModal');
+  const reviewCustomer = document.getElementById('review-customer');
+  const reviewQty = document.getElementById('review-qty');
+  const reviewPayment = document.getElementById('review-payment');
+  const reviewTotal = document.getElementById('review-total');
+  const reviewWarningList = document.getElementById('review-warning-list');
+  const reviewLineItems = document.getElementById('review-line-items');
+  const confirmCheckoutBtn = document.getElementById('confirmCheckoutBtn');
+  const summaryCustomer = document.getElementById('summary-customer');
+  const summaryTotalQty = document.getElementById('summary-total-qty');
+  const summaryPaymentMix = document.getElementById('summary-payment-mix');
+  const summaryTotalAmount = document.getElementById('summary-total-amount');
+  const summaryLineCount = document.getElementById('summary-line-count');
+  const summaryWarningBadge = document.getElementById('summary-warning-badge');
+  const summaryWarningList = document.getElementById('summary-warning-list');
+
+  function hidePreview() {
+    previewBox.classList.remove('show');
+    previewImg.removeAttribute('src');
+    previewImg.alt = '';
+    previewTitle.textContent = '';
+  }
+
+  function openPreviewModal(imageUrl, title) {
+    if (!imageUrl) return;
+    previewModalImg.src = imageUrl;
+    previewModalImg.alt = title;
+    previewModalTitle.textContent = title;
+    bootstrap.Modal.getOrCreateInstance(previewModalEl).show();
+  }
+
+  function showPreview(imageUrl, title, anchorEl) {
+    if (!imageUrl || window.innerWidth < 992 || !anchorEl) {
+      hidePreview();
+      return;
+    }
+
+    previewImg.src = imageUrl;
+    previewImg.alt = title;
+    previewTitle.textContent = title;
+    previewBox.classList.add('show');
+
+    const rect = anchorEl.getBoundingClientRect();
+    const previewWidth = previewBox.offsetWidth || 240;
+    const previewHeight = previewBox.offsetHeight || 280;
+    const gap = 14;
+    const top = Math.min(
+      Math.max(12, rect.top),
+      Math.max(12, window.innerHeight - previewHeight - 12)
+    );
+    let left = rect.right + gap;
+    if (left + previewWidth > window.innerWidth - 12) {
+      left = rect.left - previewWidth - gap;
+    }
+    left = Math.max(12, left);
+
+    previewBox.style.top = `${top}px`;
+    previewBox.style.left = `${left}px`;
+  }
+
+  function createSuggestionItem(product, onSelect) {
+    const line = product.display_name || `${product.brand}${product.model ? ' - ' + product.model : ''} ${product.name}`.trim();
+    const item = document.createElement('div');
+    item.className = 'list-group-item list-group-item-action product-suggest-item';
+    item.tabIndex = 0;
+
+    const media = document.createElement('div');
+    media.className = 'product-suggest-media';
+    if (product.image_url) {
+      const img = document.createElement('img');
+      img.src = product.image_url;
+      img.alt = line;
+      img.className = 'product-suggest-thumb';
+      media.appendChild(img);
+      media.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openPreviewModal(product.image_url, line);
+      });
+    } else {
+      media.classList.add('no-image');
+      media.textContent = 'No image';
+    }
+
+    const main = document.createElement('div');
+    main.className = 'product-suggest-main';
+    const title = document.createElement('div');
+    title.className = 'product-suggest-title';
+    title.textContent = line;
+    const sub = document.createElement('div');
+    sub.className = 'product-suggest-sub';
+    sub.textContent = product.barcode;
+    main.appendChild(title);
+    main.appendChild(sub);
+
+    const actions = document.createElement('div');
+    if (product.image_url) {
+      const zoomBtn = document.createElement('button');
+      zoomBtn.type = 'button';
+      zoomBtn.className = 'btn btn-sm btn-outline-secondary product-suggest-zoom';
+      zoomBtn.textContent = 'Zoom';
+      zoomBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openPreviewModal(product.image_url, line);
+      });
+      actions.appendChild(zoomBtn);
+    }
+
+    item.appendChild(media);
+    item.appendChild(main);
+    item.appendChild(actions);
+
+    item.addEventListener('click', () => onSelect(product, line));
+    item.addEventListener('mouseenter', () => showPreview(product.image_url, line, item));
+    item.addEventListener('mouseleave', hidePreview);
+    item.addEventListener('focus', () => showPreview(product.image_url, line, item));
+    item.addEventListener('blur', hidePreview);
+    item.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onSelect(product, line);
+      }
+    });
+
+    return item;
+  }
+
+  // ===== 扫描防护（仅在“超快连续数字”时拦截作为扫码输入） =====
+  (function setupScanGuard(){
+    const barcodeInput = document.getElementById('barcode');
+    const prodSuggest = document.getElementById('product-suggest');
+
+    let fastCount = 0;
+    let lastTs = 0;
+    let buf = '';
+    let clearTimer = null;
+
+    function resetFast() { fastCount = 0; buf=''; }
+    function scheduleClear() { clearTimeout(clearTimer); clearTimer = setTimeout(resetFast, 300); }
+
+    document.addEventListener('keydown', (e)=>{
+      const t = e.target;
+      if (!(t instanceof HTMLInputElement)) return;
+      if (!t.classList.contains('price') && !t.classList.contains('qty')) return;
+
+      const now = performance.now();
+
+      if (!/^\d$/.test(e.key) || e.ctrlKey || e.altKey || e.metaKey){
+        resetFast();
+        return;
+      }
+
+      if (now - lastTs < 35) fastCount++; else fastCount = 1;
+      lastTs = now; scheduleClear();
+
+      if (fastCount >= 6){
+        e.preventDefault();
+        buf += e.key;
+        barcodeInput.focus();
+        barcodeInput.value = buf.slice(0, 13);
+        prodSuggest.classList.add('d-none');
+      }
+    });
+
+    document.addEventListener('keydown', (e)=>{
+      const t = e.target;
+      if (!(t instanceof HTMLInputElement)) return;
+      if (!t.classList.contains('price') && !t.classList.contains('qty')) return;
+      if (e.key !== 'Enter') return;
+
+      if (fastCount >= 6){
+        e.preventDefault();
+        barcodeInput.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter'}));
+        resetFast();
+      }
+    });
+  })();
+
+
+  // ===== 金额解析 =====
+  function parseMoney(v) {
+    if (v == null) return NaN;
+    const n = parseFloat(String(v).replace(',', '.'));
+    return isFinite(n) ? n : NaN;
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function formatMoney(value) {
+    return `EUR ${Number(value || 0).toFixed(2)}`;
+  }
+
+  function paymentLabel(code) {
+    return ({cash: 'Cash', card: 'Card', mbway: 'MBWay'})[code] || code || '-';
+  }
+
+  function uniqueWarnings(list) {
+    return [...new Set(list.filter(Boolean))];
+  }
+
+  function evaluateCartRow(tr) {
+    const qty = Number(tr.querySelector('.qty').value || 0);
+    const price = parseMoney(tr.querySelector('.price').value);
+    const stockMax = Number(tr.dataset.stock || 0);
+    const lastCost = parseMoney(tr.dataset.lastCost);
+    const retailPrice = parseMoney(tr.dataset.retailPrice);
+    const wholesalePrice = parseMoney(tr.dataset.wholesalePrice);
+    const warnings = [];
+    let severity = '';
+
+    if (stockMax > 0 && qty === stockMax) {
+      warnings.push('Uses all remaining stock');
+      severity = severity || 'warn';
+    }
+    if (isFinite(lastCost) && isFinite(price) && price < lastCost) {
+      warnings.push('Selling below cost');
+      severity = 'danger';
+    } else if (isFinite(wholesalePrice) && isFinite(price) && price < wholesalePrice) {
+      warnings.push('Selling below wholesale price');
+      severity = severity || 'warn';
+    }
+    if (isFinite(retailPrice) && isFinite(price) && retailPrice > 0) {
+      const ratio = price / retailPrice;
+      if (ratio < 0.75) {
+        warnings.push('More than 25% below retail price');
+        severity = severity || 'warn';
+      } else if (ratio > 1.35) {
+        warnings.push('More than 35% above retail price');
+        severity = severity || 'warn';
+      }
+    }
+
+    tr.classList.remove('row-warning', 'row-danger');
+    if (severity === 'danger') tr.classList.add('row-danger');
+    if (severity === 'warn') tr.classList.add('row-warning');
+
+    const flags = tr.querySelector('.line-flags');
+    if (flags) {
+      flags.innerHTML = warnings.map((warning) => {
+        const tone = warning.toLowerCase().includes('below cost') ? 'danger' : 'warn';
+        return `<span class="line-flag ${tone}">${escapeHtml(warning)}</span>`;
+      }).join('');
+    }
+
+    return {warnings, severity};
+  }
+
+  function buildCheckoutWarnings() {
+    const warnings = [];
+    const paymentSet = new Set();
+    let totalQty = 0;
+    let total = 0;
+
+    cartBody.querySelectorAll('tr').forEach((tr) => {
+      const rowWarnings = evaluateCartRow(tr).warnings;
+      warnings.push(...rowWarnings.map((item) => `${tr.dataset.title || tr.dataset.barcode}: ${item}`));
+      totalQty += Number(tr.querySelector('.qty').value || 0);
+      total += Number(parseMoney(tr.querySelector('.price').value) || 0) * Number(tr.querySelector('.qty').value || 0);
+      const pay = tr.querySelector('.pay').value;
+      if (pay) paymentSet.add(paymentLabel(pay));
+    });
+
+    if (customerSearch.value.trim() && !customerIdInput.value) {
+      warnings.push('Typed customer was not selected. Sale will remain walk-in.');
+    }
+    if (!cartBody.children.length) {
+      warnings.push('Cart is empty.');
+    }
+
+    return {
+      warnings: uniqueWarnings(warnings),
+      totalQty,
+      total,
+      paymentMix: paymentSet.size ? Array.from(paymentSet).join(', ') : '-',
+      lineCount: cartBody.querySelectorAll('tr').length,
+    };
+  }
+
+  function renderSummary() {
+    const state = buildCheckoutWarnings();
+    summaryCustomer.textContent = customerIdInput.value ? customerSearch.value : 'Walk-in / no customer';
+    summaryTotalQty.textContent = `${state.totalQty} pcs`;
+    summaryPaymentMix.textContent = state.paymentMix;
+    summaryTotalAmount.textContent = formatMoney(state.total);
+    summaryLineCount.textContent = `${state.lineCount} ${state.lineCount === 1 ? 'line' : 'lines'}`;
+    summaryWarningBadge.textContent = `${state.warnings.length} ${state.warnings.length === 1 ? 'warning' : 'warnings'}`;
+    summaryWarningList.innerHTML = state.warnings.length
+      ? state.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join('')
+      : '<li>No warnings. Prices and quantities look within the expected range.</li>';
+    return state;
+  }
+
+  function openCheckoutReview() {
+    const state = renderSummary();
+    reviewCustomer.textContent = summaryCustomer.textContent;
+    reviewQty.textContent = `${state.totalQty} pcs`;
+    reviewPayment.textContent = state.paymentMix;
+    reviewTotal.textContent = formatMoney(state.total);
+    reviewWarningList.innerHTML = state.warnings.length
+      ? state.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join('')
+      : '<li>No warnings. You are ready to confirm this sale.</li>';
+    reviewLineItems.innerHTML = Array.from(cartBody.querySelectorAll('tr')).map((tr) => `
+      <div class="review-line-item">
+        <div>
+          <strong>${escapeHtml(tr.dataset.title || tr.dataset.barcode)}</strong>
+          <div class="review-line-meta">
+            ${escapeHtml(tr.dataset.barcode)} / Qty ${Number(tr.querySelector('.qty').value || 0)} / ${escapeHtml(paymentLabel(tr.querySelector('.pay').value || ''))}
+          </div>
+        </div>
+        <div class="text-end">
+          <strong>${formatMoney((parseMoney(tr.querySelector('.price').value) || 0) * Number(tr.querySelector('.qty').value || 0))}</strong>
+          <div class="review-line-meta">Unit ${formatMoney(parseMoney(tr.querySelector('.price').value) || 0)}</div>
+        </div>
+      </div>
+    `).join('');
+    bootstrap.Modal.getOrCreateInstance(reviewModalEl).show();
+  }
+
+  // ===== 客户自动完成（保持原有逻辑不变） =====
+  const customerSearch = document.getElementById('customer-search');
+  const customerIdInput = document.getElementById('customer-id');
+  const suggestionsBox = document.getElementById('customer-suggestions');
+
+  customerSearch.addEventListener('input', function () {
+    const q = this.value.trim();
+    customerIdInput.value = '';
+    renderSummary();
+    if (q.length < 2) return suggestionsBox.classList.add('d-none');
+    fetch(`/api/customers_autocomplete/?q=${encodeURIComponent(q)}`)
+      .then(r=>r.json()).then(d=>{
+        suggestionsBox.innerHTML = '';
+        (d.results||[]).forEach(c=>{
+          const btn = document.createElement('button');
+          btn.type='button';
+          btn.className='list-group-item list-group-item-action';
+          btn.textContent=`${c.name} (${c.nif})`;
+          btn.onclick=()=>{
+            customerSearch.value=btn.textContent;
+            customerIdInput.value=c.id;
+            suggestionsBox.classList.add('d-none');
+            renderSummary();
+          };
+          suggestionsBox.appendChild(btn);
+        });
+        suggestionsBox.classList.toggle('d-none', (d.results||[]).length===0);
+      });
+  });
+  document.addEventListener('click', e=>{
+    if (!suggestionsBox.contains(e.target) && e.target!==customerSearch) suggestionsBox.classList.add('d-none');
+  });
+
+  // ===== 消息提示 =====
+  function toastInfo(html){
+    info.classList.remove('d-none','alert-warning','alert-danger');
+    info.classList.add('alert-info');
+    info.innerHTML = html;
+    setTimeout(()=>{ info.classList.add('d-none'); }, 1200);
+  }
+  function toastWarn(html){
+    info.classList.remove('d-none','alert-info','alert-danger');
+    info.classList.add('alert-warning');
+    info.innerHTML = html;
+  }
+  function toastError(html){
+    info.classList.remove('d-none','alert-info','alert-warning');
+    info.classList.add('alert-danger');
+    info.innerHTML = html;
+  }
+
+  // ===== 计算 & 序列化 =====
+  function recalcAndSave() {
+    let total = 0, ok = cartBody.children.length>0;
+    cartBody.querySelectorAll('tr').forEach(tr=>{
+      const qtyEl = tr.querySelector('.qty');
+      const priceEl = tr.querySelector('.price');
+      const qty = Number(qtyEl.value || 0);
+      const price = parseMoney(priceEl.value);
+      const stockMax = Number(tr.dataset.stock);
+      const qtyMax = Math.min(stockMax || 0, 1000);
+      const pay = tr.querySelector('.pay').value;
+
+      const sub = isFinite(price) ? qty * price : NaN;
+      tr.querySelector('.subtotal').textContent = '€ ' + (isFinite(sub) ? sub.toFixed(2) : '0.00');
+      total += isFinite(sub) ? sub : 0;
+      evaluateCartRow(tr);
+
+      if (!(qty>=1 && qty<=qtyMax && isFinite(price) && price>0 && price<=10000 && pay)) ok = false;
+    });
+    grandTotal.textContent = '€ ' + total.toFixed(2);
+
+    const items = [];
+    cartBody.querySelectorAll('tr').forEach(tr=>{
+      items.push({
+        barcode: tr.dataset.barcode,
+        qty: Number(tr.querySelector('.qty').value || 0),
+        price: parseMoney(tr.querySelector('.price').value) || 0,
+        payment: tr.querySelector('.pay').value
+      });
+    });
+    itemsJson.value = JSON.stringify(items);
+
+    submitBtn.disabled = !ok;
+    renderSummary();
+  }
+
+  // ===== 添加到购物车 =====
+  function addToCart(d, usedBarcode){
+    const existed = cartBody.querySelector(`tr[data-barcode="${usedBarcode}"]`);
+    if (existed){
+      const q = existed.querySelector('.qty');
+      const max = Math.min(Number(existed.dataset.stock)||0, 1000);
+      const before = Number(q.value||1);
+      q.value = Math.min(before + 1, max);
+      if (Number(q.value) === before) toastWarn('⚠️ Stock limit');
+      recalcAndSave();
+      barcodeInput.focus(); barcodeInput.select();
+      return;
+    }
+
+    const tr = document.createElement('tr');
+    tr.dataset.barcode = usedBarcode;
+    tr.dataset.stock = d.stock;
+    tr.dataset.lastCost = d.last_cost != null ? d.last_cost : '';
+    tr.dataset.retailPrice = d.retail_price != null ? d.retail_price : '';
+    tr.dataset.wholesalePrice = d.wholesale_price != null ? d.wholesale_price : '';
+    const title = d.display_name || d.name || usedBarcode;
+    tr.dataset.title = title;
+    const imageBlock = d.image_url
+      ? `
+        <button type="button" class="cart-product-thumb-wrap js-preview-product" data-image-url="${escapeHtml(d.image_url)}" data-title="${escapeHtml(title)}">
+          <img src="${escapeHtml(d.image_url)}" alt="${escapeHtml(title)}" class="cart-product-thumb">
+        </button>
+      `
+      : '<div class="cart-product-thumb-empty">No image</div>';
+
+    tr.innerHTML = `
+    <td>
+      <div class="cart-product">
+        ${imageBlock}
+        <div class="cart-product-main">
+          <div class="fw-semibold">${escapeHtml(title)}</div>
+          <div class="small text-muted">${escapeHtml(usedBarcode)}</div>
+          <div class="line-flags"></div>
+        </div>
+      </div>
+    </td>
+
+      <td><input type="number" min="1" max="1000" class="form-control form-control-sm qty" value="1" style="min-width:90px;"></td>
+      <td>
+        <input type="text" inputmode="decimal" pattern="[0-9]+([.,][0-9]{0,2})?" 
+               class="form-control form-control-sm price" placeholder="0.00" value="${d.retail_price != null ? Number(d.retail_price).toFixed(2) : ''}">
+      </td>
+      <td>
+        <select class="form-select form-select-sm pay">
+          <option value="cash">Cash</option>
+          <option value="card">Card</option>
+          <option value="mbway">MBWay</option>
+        </select>
+      </td>
+      <td class="subtotal">€0.00</td>
+      <td><button type="button" class="btn btn-sm btn-outline-danger remove">✕</button></td>
+    `;
+    cartBody.appendChild(tr);
+
+    const qtyInput = tr.querySelector('.qty');
+    const priceInput = tr.querySelector('.price');
+
+    qtyInput.addEventListener('input', ()=>{
+      const stockMax = Number(tr.dataset.stock)||0;
+      const limit = Math.min(stockMax, 1000);
+      let v = Number(qtyInput.value||1);
+      if (v < 1) v = 1;
+      if (v > limit) { v = limit; toastWarn('Stock limit'); }
+      qtyInput.value = v;
+      recalcAndSave();
+    });
+
+    priceInput.addEventListener('input', ()=>{
+      priceInput.value = priceInput.value.replace(/[^\d.,]/g, '');
+      recalcAndSave();
+    });
+    priceInput.addEventListener('blur', ()=>{
+      let v = parseMoney(priceInput.value);
+      if (!isFinite(v) || v <= 0) { priceInput.value = ''; recalcAndSave(); return; }
+      if (v > 10000) v = 10000;
+      priceInput.value = v.toFixed(2);
+      recalcAndSave();
+    });
+
+    tr.querySelector('.pay').addEventListener('change', recalcAndSave);
+    tr.querySelector('.remove').addEventListener('click', ()=>{ tr.remove(); recalcAndSave(); });
+    tr.querySelector('.js-preview-product')?.addEventListener('click', () => {
+      openPreviewModal(d.image_url, title);
+    });
+
+    recalcAndSave();
+    // ✅ 添加后返回条码框
+    barcodeInput.focus(); barcodeInput.select();
+  }
+
+  // ===== 条码/模糊搜索切换 =====
+  barcodeInput.addEventListener('input', ()=>{
+    const v = barcodeInput.value;
+    if (/^\d*$/.test(v)) {          // 全数字 → 认为是条码
+      barcodeInput.value = v.slice(0, 13);
+      prodSuggest.classList.add('d-none');
+      hidePreview();
+    } else {
+      triggerProductSuggest();
+    }
+  });
+
+  // ===== 模糊搜索 =====
+  let debounceTimer = null;
+  function debounce(fn, delay=220){ return (...args)=>{ clearTimeout(debounceTimer); debounceTimer=setTimeout(()=>fn(...args), delay); }; }
+
+  const triggerProductSuggest = debounce(function(){
+    const q = barcodeInput.value.trim();
+    if (!q || /^\d+$/.test(q)) {
+      prodSuggest.classList.add('d-none');
+      hidePreview();
+      return;
+    }
+
+    fetch(`/api/products_autocomplete/?q=${encodeURIComponent(q)}`)
+      .then(r=>r.json())
+      .then(data=>{
+        prodSuggest.innerHTML = '';
+        const results = data.results || [];
+        if (!results.length) { prodSuggest.classList.add('d-none'); hidePreview(); return; }
+        results.forEach((p) => {
+          const item = createSuggestionItem(p, (product, line) => {
+            fetch(`/check_barcode/?barcode=${encodeURIComponent(product.barcode)}`)
+              .then(r=>r.json())
+              .then(d=>{
+                if (!d.exists){ toastWarn('Product not found.'); return; }
+                if (d.stock > 0) {
+                  addToCart(d, product.barcode);
+                  toastInfo(`Added: <strong>${line}</strong>`);
+                } else {
+                  toastError(`${line} No Stock`);
+                }
+              });
+            prodSuggest.classList.add('d-none');
+            hidePreview();
+            barcodeInput.value = '';
+            barcodeInput.focus(); barcodeInput.select();
+          });
+          prodSuggest.appendChild(item);
+        });
+        prodSuggest.classList.remove('d-none');
+      })
+      .catch(()=>{
+        prodSuggest.classList.add('d-none');
+        hidePreview();
+      });
+  }, 220);
+
+  document.addEventListener('click', (e)=>{
+    if (!prodSuggest.contains(e.target) && e.target !== barcodeInput) {
+      prodSuggest.classList.add('d-none');
+      hidePreview();
+    }
+  });
+
+  // ===== 回车：条码优先搜索 =====
+  barcodeInput.addEventListener('keydown', (e)=>{
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const q = barcodeInput.value.trim();
+    if (!q) return;
+
+    if (/^\d+$/.test(q)) {
+      const code = q;
+      fetch(`/check_barcode/?barcode=${encodeURIComponent(code)}`)
+        .then(r=>r.json())
+        .then(d=>{
+          if (!d.exists){ toastWarn('Product not found.'); return; }
+          if (d.stock>0) {
+            addToCart(d, code);
+            toastInfo(`✅ Added: <strong>${d.name}</strong>`);
+          } else {
+            toastError(`${d.name} ❌ No Stock`);
+          }
+        })
+        .finally(()=>{
+          barcodeInput.value='';
+          prodSuggest.classList.add('d-none');
+          hidePreview();
+          barcodeInput.focus(); barcodeInput.select();
+        });
+      return;
+    }
+
+    const first = prodSuggest.querySelector('.list-group-item');
+    if (first) first.click();
+  });
+
+  // ===== 提交 =====
+  const checkoutForm = document.getElementById('checkout-form');
+  const idemKeyOut = document.getElementById('idemp_key');
+  try { idemKeyOut.value = (crypto.randomUUID ? crypto.randomUUID() : (Date.now()+Math.random())); } catch(e){ idemKeyOut.value = Date.now(); }
+  checkoutForm.addEventListener('submit', (e)=>{
+    if (checkoutForm.dataset.submitted === '1') { e.preventDefault(); return; }
+    recalcAndSave();
+    if (!itemsJson.value || itemsJson.value==='[]'){
+      e.preventDefault();
+      alert('Cart is empty.');
+      return;
+    }
+    if (checkoutForm.dataset.confirmed !== '1') {
+      e.preventDefault();
+      openCheckoutReview();
+      return;
+    }
+    checkoutForm.dataset.submitted = '1';
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Processing...';
+  });
+
+  confirmCheckoutBtn?.addEventListener('click', () => {
+    checkoutForm.dataset.confirmed = '1';
+    bootstrap.Modal.getOrCreateInstance(reviewModalEl).hide();
+    checkoutForm.requestSubmit();
+  });
+
+  // ===== 新增客户（AJAX） =====
+  const addCustomerForm = document.getElementById('addCustomerForm');
+  if (addCustomerForm) {
+    addCustomerForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(addCustomerForm);
+      try {
+        const resp = await fetch('/add_customer_ajax/', {
+          method: 'POST',
+          body: fd,
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await resp.json();
+        if (data && data.success) {
+          document.getElementById('customer-id').value = data.id;
+          document.getElementById('customer-search').value = data.name;
+          const modalEl = document.getElementById('addCustomerModal');
+          const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+          modal.hide();
+          renderSummary();
+        } else {
+          alert(data && data.error ? data.error : 'Failed to add customer.');
+        }
+      } catch (err) {
+        alert('Network error adding customer.');
+      }
+    });
+  }
+  renderSummary();
+});
+</script>
+
+
+
+{% endblock %}
+

@@ -1,0 +1,231 @@
+{% extends 'stock/base.html' %}
+{% block title %}New IOU / AR{% endblock %}
+
+{% block content %}
+<h2 class="mb-3">🧾 Create New IOU</h2>
+
+<form id="ar-form" method="post" class="card p-3 shadow-sm">
+  {% csrf_token %}
+
+  <!-- 客户选择 -->
+  <div class="row g-3 align-items-end">
+    <div class="col-md-6 position-relative">
+      <label class="form-label fw-bold">Customer <span class="text-danger">*</span></label>
+      <input type="hidden" name="customer" id="customer-id" required
+       value="{{ pre_customer.id|default:'' }}">
+      <input type="text" id="customer-search" class="form-control"
+       placeholder="Search by NIF or name" autocomplete="off"
+       value="{% if pre_customer %}{{ pre_customer.name }} ({{ pre_customer.nif }}){% endif %}">
+      <div id="customer-suggestions"
+           class="list-group position-absolute w-100 shadow-sm d-none"
+           style="z-index:1000; max-height:280px; overflow:auto;"></div>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label fw-bold">Due Date <span class="text-danger">*</span></label>
+      {{ form.due_date }}
+    </div>
+    <div class="col-12">
+      <label class="form-label fw-bold">Note</label>
+      {{ form.note }}
+    </div>
+  </div>
+
+  <hr class="my-3">
+
+  <!-- 行项目 -->
+  <h5 class="mb-2">🧾 Items</h5>
+  <div class="table-responsive">
+    <table class="table table-bordered align-middle mb-2" id="item-table">
+      <thead class="table-light text-center">
+        <tr>
+          <th>Product<span class="text-danger">*</span></th>
+          <th style="width:110px">Qty <span class="text-danger">*</span></th>
+          <th style="width:140px">Unit (€) <span class="text-danger">*</span></th>
+          <th style="width:140px">Subtotal</th>
+          <th style="width:48px"></th>
+        </tr>
+      </thead>
+      <tbody id="items-body">
+        <tr>
+          <td><input type="text" name="product_name" class="form-control" required></td>
+          <td><input type="number" name="quantity" class="form-control text-end" value="1" min="1" step="1" required></td>
+          <td><input type="number" name="unit_price" class="form-control text-end" step="0.01" min="0.01" required></td>
+          <td class="subtotal text-end">€0.00</td>
+          <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger remove-row">✕</button></td>
+        </tr>
+      </tbody>
+      <tfoot>
+        <tr class="fw-bold">
+          <td class="text-end">Totals:</td>
+          <td id="total_qty" class="text-end">0</td>
+          <td class="text-end">—</td>
+          <td id="grand_total" class="text-end">€0.00</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <div class="d-flex gap-2">
+    <button type="button" class="btn btn-outline-secondary" id="add-row">＋ Add Row</button>
+    <button type="submit" class="btn btn-primary">💾 Save IOU</button>
+  </div>
+</form>
+
+<script>
+(function(){
+  function getCookie(name){
+    const m = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+    return m ? m.pop() : '';
+  }
+
+  // 自动合计
+  const tbody = document.getElementById('items-body');
+  const addBtn = document.getElementById('add-row');
+  const totalEl = document.getElementById('grand_total');
+  const qtyEl = document.getElementById('total_qty');
+
+  function recalc(){
+    let total = 0, totalQty = 0;
+    tbody.querySelectorAll('tr').forEach(tr=>{
+      const qty = parseFloat(tr.querySelector('[name="quantity"]').value || 0);
+      const price = parseFloat(tr.querySelector('[name="unit_price"]').value || 0);
+      const sub = (isFinite(qty) && isFinite(price)) ? (qty * price) : 0;
+      tr.querySelector('.subtotal').textContent = '€' + sub.toFixed(2);
+      total += sub;
+      totalQty += (isFinite(qty) ? qty : 0);
+    });
+    totalEl.textContent = '€' + total.toFixed(2);
+    qtyEl.textContent = totalQty;
+  }
+
+  function addRow(){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input type="text" name="product_name" class="form-control" required></td>
+      <td><input type="number" name="quantity" class="form-control text-end" value="1" min="1" step="1" required></td>
+      <td><input type="number" name="unit_price" class="form-control text-end" step="0.01" min="0.01" required></td>
+      <td class="subtotal text-end">€0.00</td>
+      <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger remove-row">✕</button></td>`;
+    tbody.appendChild(tr);
+    recalc();
+  }
+
+  addBtn.addEventListener('click', addRow);
+  tbody.addEventListener('input', recalc);
+  tbody.addEventListener('click', e=>{
+    if (e.target.closest('.remove-row')){
+      e.target.closest('tr').remove();
+      recalc();
+    }
+  });
+  recalc();
+
+  // 客户自动完成
+  const search = document.getElementById('customer-search');
+  const customerHidden = document.getElementById('customer-id');
+  const box = document.getElementById('customer-suggestions');
+  let activeIndex = -1, items = [], timer = null;
+
+  function renderSuggestions(list){
+    box.innerHTML = '';
+    activeIndex = -1;
+    items = list;
+    list.forEach((c, idx)=>{
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'list-group-item list-group-item-action';
+      btn.textContent = `${c.name} (${c.nif})`;
+      btn.addEventListener('click', ()=> chooseCustomer(idx));
+      box.appendChild(btn);
+    });
+    box.classList.toggle('d-none', list.length === 0);
+  }
+
+  function chooseCustomer(idx){
+    const c = items[idx];
+    if (!c) return;
+    search.value = `${c.name} (${c.nif})`;
+    customerHidden.value = c.id;
+    box.classList.add('d-none');
+  }
+
+  search.addEventListener('input', function(){
+    const q = this.value.trim();
+    customerHidden.value = '';
+    if (timer) clearTimeout(timer);
+    if (q.length < 2){ box.classList.add('d-none'); return; }
+    timer = setTimeout(()=>{
+      fetch(`/api/customers_autocomplete/?q=${encodeURIComponent(q)}`)
+        .then(r=>r.json())
+        .then(d=>{
+          const res = d.results || [];
+          const ql = q.toLowerCase();
+          res.sort((a,b)=>{
+            const aN = a.name.toLowerCase(), bN = b.name.toLowerCase();
+            const aP = aN.startsWith(ql) ? 0 : aN.includes(ql) ? 1 : 2;
+            const bP = bN.startsWith(ql) ? 0 : bN.includes(ql) ? 1 : 2;
+            return aP !== bP ? aP - bP : aN.localeCompare(bN);
+          });
+          renderSuggestions(res);
+        });
+    }, 200);
+  });
+
+  search.addEventListener('keydown', e=>{
+    const buttons = Array.from(box.querySelectorAll('.list-group-item'));
+    if (e.key === 'ArrowDown'){
+      if (!buttons.length) return;
+      activeIndex = (activeIndex + 1) % buttons.length;
+      buttons[activeIndex].focus();
+      e.preventDefault();
+    } else if (e.key === 'ArrowUp'){
+      if (!buttons.length) return;
+      activeIndex = (activeIndex - 1 + buttons.length) % buttons.length;
+      buttons[activeIndex].focus();
+      e.preventDefault();
+    } else if (e.key === 'Enter' && activeIndex >= 0){
+      chooseCustomer(activeIndex);
+      e.preventDefault();
+    }
+  });
+
+  document.addEventListener('click', e=>{
+    if (!box.contains(e.target) && e.target !== search){
+      box.classList.add('d-none');
+    }
+  });
+
+  // 提交校验
+  const mainForm = document.getElementById('ar-form');
+  mainForm.addEventListener('submit', function(e){
+    const custId = customerHidden.value.trim();
+    const due = mainForm.querySelector('[name="{{ form.due_date.name }}"]');
+    if (!custId){
+      e.preventDefault();
+      alert('Please select a customer from suggestions.');
+      search.focus();
+      return;
+    }
+    if (!due || !due.value){
+      e.preventDefault();
+      alert('Please choose a due date.');
+      due && due.focus();
+      return;
+    }
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    const validLines = rows.filter(tr=>{
+      const name = tr.querySelector('[name="product_name"]').value.trim();
+      const qty  = parseFloat(tr.querySelector('[name="quantity"]').value || 0);
+      const price= parseFloat(tr.querySelector('[name="unit_price"]').value || 0);
+      return name && qty > 0 && price > 0;
+    });
+    if (!validLines.length){
+      e.preventDefault();
+      alert('Please add at least one valid item line.');
+      return;
+    }
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,315 @@
+{% extends 'stock/base.html' %}
+{% block title %}AR #{{ invoice.id }}{% endblock %}
+
+{% block content %}
+<div class="container my-4 iou-ui">
+  <style>
+    .iou-ui{
+      --border:rgba(15,23,42,.10);
+      --card:#fff;
+      --radius:14px;
+      --muted:#64748b;
+      --shadow:0 10px 22px rgba(15,23,42,.06);
+      --ok:#10b981;
+      --danger:#ef4444;
+      --accent:#3b82f6;
+    }
+    h2{font-weight:800}
+    .card{border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);background:var(--card)}
+    .pill{display:inline-block;padding:.25rem .6rem;border-radius:999px;border:1px solid var(--border);background:#f8fafc;font-weight:800}
+    .status-paid{background:#ecfdf5;border-color:#bbf7d0;color:#065f46}
+    .status-partial{background:#fff7ed;border-color:#fed7aa;color:#7c2d12}
+    .status-unpaid{background:#fee2e2;border-color:#fecaca;color:#7f1d1d}
+    .money{font-variant-numeric:tabular-nums}
+    .bar{height:10px;background:#eef2ff;border-radius:999px;overflow:hidden}
+    .bar > span{display:block;height:100%;background:linear-gradient(90deg,#3b82f6,#60a5fa);width:0%}
+    .table thead th{background:#f8fafc;font-weight:800}
+    .table td,.table th{padding:.6rem .7rem;vertical-align:middle}
+    .btn{border-radius:10px}
+    .timeline{position:relative;padding-left:1.4rem}
+    .timeline::before{content:"";position:absolute;left:.55rem;top:.25rem;bottom:.25rem;width:2px;background:rgba(15,23,42,.12);border-radius:2px}
+    .t-item{position:relative;margin-bottom:.9rem;padding:.35rem .5rem .35rem .8rem;border-radius:.6rem;background:#fff;border:1px solid rgba(15,23,42,.06)}
+    .t-item:last-child{margin-bottom:0}
+    .t-item::before{content:"";position:absolute;left:-.05rem;top:.7rem;width:.55rem;height:.55rem;background:#3b82f6;border-radius:999px;box-shadow:0 0 0 3px rgba(59,130,246,.15)}
+    .t-head{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
+    .t-amt{font-weight:900;color:#065f46}
+    .t-meta{color:var(--muted);font-weight:600}
+    @media (max-width:576px){
+      .table thead{display:none}
+      .table tbody tr{display:block;margin:.6rem 0;border:1px solid var(--border);border-radius:12px;background:#fff;box-shadow:var(--shadow)}
+      .table tbody td{display:grid;grid-template-columns:42% 1fr;gap:.45rem;padding:.75rem .85rem !important;border:0 !important;text-align:right}
+      .table tbody td::before{content:attr(data-label);color:#64748b;font-weight:700;text-align:left}
+    }
+  </style>
+
+  <h2 class="mb-3">IOU #{{ invoice.id }} - {{ invoice.customer.name }}</h2>
+
+  {% if show_sensitive %}
+    <div class="row g-3 mb-3">
+      <div class="col-md-4">
+        <div class="card p-3" id="summaryCard"
+             data-total="{{ invoice.total_amount|floatformat:2 }}"
+             data-paid="{{ invoice.amount_paid|floatformat:2 }}">
+          <div class="d-flex justify-content-between">
+            <span class="text-muted">Total</span>
+            <strong class="money">EUR {{ invoice.total_amount|floatformat:2 }}</strong>
+          </div>
+          <div class="d-flex justify-content-between mt-1">
+            <span class="text-muted">Paid</span>
+            <strong class="money text-success">EUR {{ invoice.amount_paid|floatformat:2 }}</strong>
+          </div>
+          <div class="d-flex justify-content-between mt-1">
+            <span class="text-muted">Balance</span>
+            <strong class="money {% if invoice.balance > 0 %}text-danger{% else %}text-success{% endif %}">EUR {{ invoice.balance|floatformat:2 }}</strong>
+          </div>
+
+          <div class="bar mt-2"><span id="progressBar"></span></div>
+
+          <div class="mt-3 small text-muted">
+            <div><strong>Status:</strong>
+              <span class="pill {% if invoice.status == 'paid' %}status-paid{% elif invoice.status == 'partial' %}status-partial{% else %}status-unpaid{% endif %}">
+                {{ invoice.status|capfirst }}
+              </span>
+            </div>
+            <div class="mt-1"><strong>Due date:</strong> {% if invoice.due_date %}{{ invoice.due_date|date:"Y-m-d" }}{% else %}-{% endif %}</div>
+            <div class="mt-1"><strong>Note:</strong> {{ invoice.note|default:"-" }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-8">
+        <form id="itemsForm" action="{% url 'ar_add_items' invoice.id %}" method="post">
+          {% csrf_token %}
+          <div class="table-responsive card p-0">
+            <table class="table table-sm mb-0" id="itemsTable">
+              <thead class="table-light">
+                <tr>
+                  <th>Product</th>
+                  <th class="text-center" style="width:100px">Qty</th>
+                  <th class="text-end" style="width:140px">Unit (EUR)</th>
+                  <th class="text-end" style="width:140px">Subtotal (EUR)</th>
+                  <th style="width:40px"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for it in items %}
+                  <tr>
+                    <td data-label="Product">{{ it.product_name }}</td>
+                    <td class="text-center" data-label="Qty">{{ it.quantity }}</td>
+                    <td class="text-end money" data-label="Unit (EUR)">EUR {{ it.unit_price|floatformat:2 }}</td>
+                    <td class="text-end money" data-label="Subtotal (EUR)">EUR {{ it.line_total|floatformat:2 }}</td>
+                    <td></td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <div class="mt-2 d-flex gap-2">
+            <button type="button" id="addRowBtn" class="btn btn-sm btn-outline-primary">Add Row</button>
+            <button type="submit" class="btn btn-sm btn-success">Save Items</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    {% with payment_list=payments|default:invoice.payments.all %}
+      <div class="row g-3">
+        <div class="col-md-6">
+          <div class="card p-3">
+            <h5 class="mb-2">Payment History</h5>
+            {% if payment_list %}
+              <div class="timeline">
+                {% for p in payment_list %}
+                  <div class="t-item">
+                    <div class="t-head">
+                      <span class="t-amt">EUR {{ p.amount|floatformat:2 }}</span>
+                      <span class="t-meta">{{ p.method|capfirst }}</span>
+                      <span>{{ p.created_at|date:"Y-m-d" }}</span>
+                    </div>
+                    {% if p.note %}
+                      <div class="small" style="color:var(--muted)">{{ p.note }}</div>
+                    {% endif %}
+                  </div>
+                {% endfor %}
+              </div>
+            {% else %}
+              <div class="text-muted">No payments yet.</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="col-md-6">
+          <div class="card p-3">
+            <h5 class="mb-2">Record a Payment</h5>
+            <form id="payForm" class="row g-2" action="{% url 'ar_add_payment' invoice.id %}" method="post">
+              {% csrf_token %}
+              <div class="col-md-4">
+                {{ pay_form.amount.label_tag }} {{ pay_form.amount }}
+              </div>
+              <div class="col-md-4">
+                {{ pay_form.method.label_tag }} {{ pay_form.method }}
+              </div>
+              <div class="col-md-4 d-grid align-items-end">
+                <button id="paySubmit" class="btn btn-primary mt-4">Add</button>
+              </div>
+              <div class="col-12">
+                {{ pay_form.note.label_tag }} {{ pay_form.note }}
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    {% endwith %}
+  {% else %}
+    <div class="card p-4">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <div class="small text-muted">Invoice</div>
+          <div class="fw-bold">#{{ invoice.id }}</div>
+        </div>
+        <div class="col-md-4">
+          <div class="small text-muted">Customer</div>
+          <div class="fw-bold">{{ invoice.customer.name }}</div>
+        </div>
+        <div class="col-md-4">
+          <div class="small text-muted">Status</div>
+          <span class="pill {% if invoice.status == 'paid' %}status-paid{% elif invoice.status == 'partial' %}status-partial{% else %}status-unpaid{% endif %}">
+            {{ invoice.status|capfirst }}
+          </span>
+        </div>
+      </div>
+
+      <div class="table-responsive mt-4">
+        <table class="table table-sm mb-0">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th class="text-center">Qty</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for it in items %}
+              <tr>
+                <td data-label="Product">{{ it.product_name }}</td>
+                <td class="text-center" data-label="Qty">{{ it.quantity }}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="2" class="text-center text-muted py-3">No items recorded.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+{% if show_sensitive %}
+  <script>
+  document.addEventListener('DOMContentLoaded', function(){
+    (function(){
+      const wrap = document.getElementById('summaryCard');
+      const prog = document.getElementById('progressBar');
+      if (!wrap || !prog) return;
+      const total = parseFloat(wrap.dataset.total || 0);
+      const paid  = parseFloat(wrap.dataset.paid || 0);
+      prog.style.width = total > 0 ? Math.min(100, (paid / total) * 100).toFixed(2) + '%' : '0%';
+    })();
+
+    (function(){
+      const tableBody = document.querySelector('#itemsTable tbody');
+      const addRowBtn = document.getElementById('addRowBtn');
+      if (!tableBody || !addRowBtn) return;
+
+      function sanitizeMoney(v){
+        if (v == null) return '';
+        return String(v).replace(/[^\d.,]/g,'');
+      }
+      function parseMoney(v){
+        const n = parseFloat(String(v).replace(',', '.'));
+        return isFinite(n) ? n : 0;
+      }
+      function formatMoney(n){
+        return 'EUR ' + (isFinite(n) ? Number(n).toFixed(2) : '0.00');
+      }
+      function recalcRow(tr, focusPrice){
+        const qtyInput = tr.querySelector('[name="quantity"]');
+        const priceInput = tr.querySelector('[name="unit_price"]');
+        const subCell = tr.querySelector('.subtotal');
+
+        const update = function(){
+          priceInput.value = sanitizeMoney(priceInput.value);
+          const qty = Math.max(1, parseInt(qtyInput.value || 1, 10));
+          const price = parseMoney(priceInput.value);
+          qtyInput.value = qty;
+          subCell.textContent = formatMoney(qty * price);
+        };
+
+        qtyInput.addEventListener('input', update);
+        priceInput.addEventListener('input', update);
+        priceInput.addEventListener('blur', function(){
+          const n = parseMoney(priceInput.value);
+          priceInput.value = n > 0 ? n.toFixed(2) : '';
+          update();
+        });
+        update();
+        if (focusPrice) priceInput.focus();
+      }
+
+      addRowBtn.addEventListener('click', function(){
+        const tr = document.createElement('tr');
+        tr.innerHTML = [
+          '<td><input type="text" name="product_name" class="form-control form-control-sm" placeholder="Product name" required></td>',
+          '<td><input type="number" name="quantity" class="form-control form-control-sm text-center" min="1" step="1" value="1" required></td>',
+          '<td><input type="text" name="unit_price" class="form-control form-control-sm text-end" inputmode="decimal" placeholder="0.00" required></td>',
+          '<td class="text-end money subtotal">EUR 0.00</td>',
+          '<td><button type="button" class="btn btn-sm btn-outline-danger removeRow">X</button></td>'
+        ].join('');
+        tableBody.appendChild(tr);
+        recalcRow(tr, true);
+      });
+
+      tableBody.addEventListener('click', function(e){
+        const btn = e.target.closest('.removeRow');
+        if (!btn) return;
+        const tr = btn.closest('tr');
+        if (tr) tr.remove();
+      });
+    })();
+
+    (function(){
+      const form = document.getElementById('payForm');
+      if (!form) return;
+      const amountInput = form.querySelector('input[name="{{ pay_form.amount.name }}"]') || form.querySelector('input[type="number"]');
+      const submitBtn = document.getElementById('paySubmit');
+      const maxBalance = parseFloat('{{ invoice.balance|floatformat:2|default:"0" }}');
+      if (!amountInput || !submitBtn) return;
+
+      amountInput.setAttribute('min','0.01');
+      amountInput.setAttribute('step','0.01');
+      amountInput.setAttribute('max', String(maxBalance));
+
+      const validate = function(){
+        let v = parseFloat(String(amountInput.value || '').replace(',', '.'));
+        if (!isFinite(v)) v = 0;
+        submitBtn.disabled = !(v > 0 && v <= maxBalance + 1e-6);
+      };
+      amountInput.addEventListener('input', validate);
+      validate();
+
+      form.addEventListener('submit', function(e){
+        let v = parseFloat(String(amountInput.value || '').replace(',', '.'));
+        if (!isFinite(v) || v <= 0){
+          e.preventDefault();
+          alert('Please enter a valid amount.');
+          return;
+        }
+        if (v - maxBalance > 1e-6){
+          e.preventDefault();
+          alert('Amount exceeds remaining balance (max EUR ' + maxBalance.toFixed(2) + ').');
+        }
+      });
+    })();
+  });
+  </script>
+{% endif %}
+{% endblock %}

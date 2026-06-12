@@ -1,0 +1,129 @@
+{% extends 'stock/base.html' %}
+{% block title %}Team Management{% endblock %}
+
+{% block content %}
+<style>
+  .panel{background:#fff;border:1px solid #dbe5f0;border-radius:1.1rem;box-shadow:0 18px 40px rgba(15,23,42,.06)}
+  .hero{padding:1.35rem}
+  .hero h1{margin:0;font-size:2rem;font-weight:900;color:#10213a}
+  .sub{color:#5a6b81}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem}
+  .stat{padding:1rem 1.1rem;border-radius:1rem;background:linear-gradient(180deg,#f7fbff,#eef4fb);border:1px solid #d5e2f0}
+  .stat-k{font-size:.78rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#52719a}
+  .stat-v{font-size:1.8rem;font-weight:900;color:#10213a}
+  .status-pill{display:inline-flex;align-items:center;padding:.3rem .65rem;border-radius:999px;font-size:.78rem;font-weight:800}
+  .status-pill.active{background:#ebfff2;color:#0b7a38}
+  .status-pill.paused{background:#fff4e8;color:#9b4d09}
+  .status-pill.open{background:#edf3ff;color:#1747a6}
+</style>
+
+<div class="d-grid gap-4">
+  <section class="panel hero">
+    <div class="d-flex justify-content-between gap-3 flex-wrap align-items-start">
+      <div>
+        <h1>Employee Accounts</h1>
+        <p class="sub mb-0">Create staff logins, control who has manager access, and keep an eye on who is currently clocked in.</p>
+      </div>
+      <a href="{% url 'employee_create' %}" class="btn btn-primary">Add employee</a>
+    </div>
+  </section>
+
+  <section class="stats">
+    <div class="stat">
+      <div class="stat-k">Active Accounts</div>
+      <div class="stat-v">{{ active_count }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-k">Managers</div>
+      <div class="stat-v">{{ manager_count }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-k">Currently Checked In</div>
+      <div class="stat-v">{{ checked_in_count }}</div>
+    </div>
+  </section>
+
+  <section class="panel p-3">
+    <form method="get" class="row g-3 align-items-end">
+      <div class="col-md-9">
+        <label class="form-label fw-bold">Search team</label>
+        <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Search by username, name, or email">
+      </div>
+      <div class="col-md-3 d-grid">
+        <button class="btn btn-outline-primary">Search accounts</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel p-0 overflow-hidden">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th class="ps-3">Employee</th>
+            <th>Role</th>
+            <th>Status</th>
+            <th>Last Login</th>
+            <th>Attendance</th>
+            <th class="text-end pe-3">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for employee in employees %}
+            <tr>
+              <td class="ps-3">
+                <div class="fw-bold">{{ employee.username }}</div>
+                <div class="text-muted small">
+                  {% if employee.get_full_name %}{{ employee.get_full_name }}{% else %}No full name{% endif %}
+                  {% if employee.email %} · {{ employee.email }}{% endif %}
+                </div>
+              </td>
+              <td>{{ employee.role_label }}</td>
+              <td>
+                <span class="status-pill {% if employee.is_active %}active{% else %}paused{% endif %}">
+                  {% if employee.is_active %}Active{% else %}Paused{% endif %}
+                </span>
+              </td>
+              <td>
+                {% if employee.last_login %}
+                  {{ employee.last_login|date:"Y-m-d H:i" }}
+                {% else %}
+                  Never
+                {% endif %}
+              </td>
+              <td>
+                {% if employee.open_shift %}
+                  <span class="status-pill open">Checked in since {{ employee.open_shift.clock_in_at|date:"H:i" }}</span>
+                {% elif employee.last_clock_in_at %}
+                  <span class="text-muted small">Last shift {{ employee.last_clock_in_at|date:"Y-m-d H:i" }}</span>
+                {% else %}
+                  <span class="text-muted small">No attendance yet</span>
+                {% endif %}
+              </td>
+              <td class="text-end pe-3">
+                <div class="d-flex justify-content-end gap-2 flex-wrap">
+                  <a href="{% url 'employee_edit' employee.id %}" class="btn btn-outline-primary btn-sm">Edit</a>
+                  <form method="post" action="{% url 'employee_toggle_active' employee.id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-outline-secondary btn-sm">
+                      {% if employee.is_active %}Pause{% else %}Activate{% endif %}
+                    </button>
+                  </form>
+                  <form method="post" action="{% url 'employee_delete' employee.id %}" onsubmit="return confirm('Delete employee account {{ employee.username }}? This will also remove attendance records for this account.');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="6" class="text-center py-5 text-muted">No employee accounts found.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}

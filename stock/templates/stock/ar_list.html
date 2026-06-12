@@ -1,0 +1,145 @@
+{% extends 'stock/base.html' %}
+{% block title %}Customer IOUs{% endblock %}
+
+{% block content %}
+<div class="container my-4 iou-ui">
+  <style>
+    .iou-ui{
+      --card:#fff;
+      --text:#0f172a;
+      --muted:#64748b;
+      --border:rgba(15,23,42,.10);
+      --radius:14px;
+      --ok:#10b981;
+      --danger:#ef4444;
+      --shadow:0 10px 22px rgba(15,23,42,.06);
+    }
+    .iou-ui h2{font-weight:800;color:var(--text)}
+    .kpi{border:1px solid var(--border);border-radius:var(--radius);background:linear-gradient(180deg,#f8fbff,#fff);box-shadow:var(--shadow);padding:1rem 1.1rem}
+    .kpi .label{color:var(--muted);font-weight:700}
+    .kpi .value{font-size:1.35rem;font-weight:900}
+    .kpi.ok .value{color:var(--ok)}
+    .kpi.danger .value{color:var(--danger)}
+    .filter-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:.85rem}
+    .filter-card .form-control,.filter-card .form-select{border:1px solid var(--border);border-radius:10px}
+    .filter-card .btn{border-radius:10px}
+    .table-wrap{border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow)}
+    .table thead th{background:#f8fafc;font-weight:800}
+    .table.table-sm th,.table.table-sm td{padding:.6rem .7rem;vertical-align:middle}
+    .status-badge{font-weight:800;border-radius:999px;padding:.25rem .6rem}
+    .status-paid{background:#ecfdf5;border:1px solid #bbf7d0;color:#065f46}
+    .status-partial{background:#fff7ed;border:1px solid #fed7aa;color:#7c2d12}
+    .status-unpaid{background:#fee2e2;border:1px solid #fecaca;color:#7f1d1d}
+    .money-rt{text-align:right;font-variant-numeric:tabular-nums}
+    .balance-danger{color:var(--danger);font-weight:800}
+    .balance-ok{color:var(--ok);font-weight:800}
+    @media (max-width:576px){
+      .kpi{margin-bottom:.6rem}
+      .table-wrap{border:none;box-shadow:none}
+      .table thead{display:none}
+      .table tbody tr{
+        display:block;margin:.65rem 0;border:1px solid var(--border);border-radius:12px;background:var(--card);box-shadow:var(--shadow);overflow:hidden
+      }
+      .table tbody td{
+        display:grid;grid-template-columns:42% 1fr;gap:.4rem;padding:.75rem .85rem !important;border:0 !important;text-align:right
+      }
+      .table tbody td::before{content:attr(data-label);color:var(--muted);font-weight:700;text-align:left}
+      .money-rt{text-align:right}
+    }
+  </style>
+
+  <h2 class="mb-3">Customer IOUs</h2>
+
+  {% if show_sensitive %}
+    <div class="row g-3 mb-3">
+      <div class="col-12 col-md-4">
+        <div class="kpi danger">
+          <div class="label">Total Balance</div>
+          <div class="value">EUR {{ totals.balance|floatformat:2 }}</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-4">
+        <div class="kpi">
+          <div class="label">Total Due</div>
+          <div class="value">EUR {{ totals.total_amount|floatformat:2 }}</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-4">
+        <div class="kpi ok">
+          <div class="label">Total Paid</div>
+          <div class="value">EUR {{ totals.total_paid|floatformat:2 }}</div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <form method="get" class="row g-2 mb-3 filter-card">
+    <div class="col-md-3"><input type="text" name="q" value="{{ q }}" class="form-control" placeholder="Search customer name"></div>
+    <div class="col-md-2">
+      <select name="status" class="form-select">
+        <option value="">All Status</option>
+        <option value="unpaid" {% if status == 'unpaid' %}selected{% endif %}>Unpaid</option>
+        <option value="partial" {% if status == 'partial' %}selected{% endif %}>Partial</option>
+        <option value="paid" {% if status == 'paid' %}selected{% endif %}>Paid</option>
+      </select>
+    </div>
+    <div class="col-md-3">
+      <select name="sort" class="form-select">
+        <option value="-id" {% if sort == '-id' %}selected{% endif %}>Newest</option>
+        <option value="date" {% if sort == 'date' %}selected{% endif %}>Oldest</option>
+      </select>
+    </div>
+    <div class="col-md-2 d-grid"><button class="btn btn-primary">Search</button></div>
+    {% if show_sensitive %}
+      <div class="col-md-2 d-grid"><a href="{% url 'ar_new' %}" class="btn btn-success">New IOU</a></div>
+    {% endif %}
+  </form>
+
+  <div class="table-responsive table-wrap">
+    <table class="table table-sm table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>ID</th>
+          <th>Customer</th>
+          <th>Date</th>
+          {% if show_sensitive %}
+            <th>Due</th>
+            <th class="text-end">Total (EUR)</th>
+            <th class="text-end">Paid (EUR)</th>
+            <th class="text-end">Balance (EUR)</th>
+          {% endif %}
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for inv in invoices %}
+          <tr>
+            <td data-label="ID">#{{ inv.id }}</td>
+            <td data-label="Customer">{{ inv.customer.name }}</td>
+            <td data-label="Date">{{ inv.date|date:"Y-m-d" }}</td>
+            {% if show_sensitive %}
+              <td data-label="Due">{% if inv.due_date %}{{ inv.due_date|date:"Y-m-d" }}{% else %}-{% endif %}</td>
+              <td class="money-rt" data-label="Total">EUR {{ inv.total_amount|floatformat:2 }}</td>
+              <td class="money-rt" data-label="Paid">EUR {{ inv.amount_paid|floatformat:2 }}</td>
+              <td class="money-rt" data-label="Balance">
+                <span class="{% if inv.balance > 0 %}balance-danger{% else %}balance-ok{% endif %}">EUR {{ inv.balance|floatformat:2 }}</span>
+              </td>
+            {% endif %}
+            <td data-label="Status">
+              <span class="status-badge {% if inv.status == 'paid' %}status-paid{% elif inv.status == 'partial' %}status-partial{% else %}status-unpaid{% endif %}">
+                {{ inv.status|capfirst }}
+              </span>
+            </td>
+            <td data-label=" ">
+              <a href="{% url 'ar_detail' inv.id %}" class="btn btn-sm btn-outline-primary">View</a>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="{% if show_sensitive %}9{% else %}5{% endif %}" class="text-center text-muted py-3">No records found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

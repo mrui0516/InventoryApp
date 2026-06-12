@@ -1,0 +1,342 @@
+{% extends 'stock/base.html' %}
+{% load widget_tweaks %}
+{% block title %}Add Product{% endblock %}
+
+{% block content %}
+<style>
+  :root{
+    --ds-border: rgba(0,0,0,.08);
+    --ds-card:#fff;
+    --ds-text:#1f2937;
+    --ds-muted:#6b7280;
+    --ds-accent:#3b82f6;
+    --ds-radius:.9rem;
+  }
+  h2{ font-weight:800; letter-spacing:.2px; color:var(--ds-text); }
+  .muted{ color:var(--ds-muted); }
+  .ds-card{
+    border:1px solid var(--ds-border);
+    border-radius: var(--ds-radius);
+    background: var(--ds-card);
+    box-shadow: 0 2px 10px rgba(0,0,0,.04);
+  }
+  .form-label{ font-weight:700; color:var(--ds-text); }
+  .form-control, .form-select, textarea{
+    border-radius:.65rem; border:1px solid var(--ds-border);
+  }
+  .form-control:focus, .form-select:focus, textarea:focus{
+    border-color: color-mix(in oklab, var(--ds-accent) 55%, #7aa2ff 45%);
+    box-shadow: 0 0 0 .2rem rgba(59,130,246,.14);
+  }
+  .preview-card{
+    border:1px solid var(--ds-border);
+    border-radius:.9rem;
+    background:linear-gradient(180deg,#f8fbff,#fff);
+    padding:1rem 1.05rem;
+  }
+  .preview-label{
+    color:var(--ds-muted);
+    font-size:.82rem;
+    text-transform:uppercase;
+    font-weight:800;
+    letter-spacing:.04em;
+  }
+  .preview-title{
+    margin-top:.5rem;
+    font-size:1.25rem;
+    font-weight:800;
+    color:var(--ds-text);
+    line-height:1.3;
+  }
+  .preview-meta{
+    margin-top:.65rem;
+    display:flex;
+    flex-wrap:wrap;
+    gap:.45rem;
+  }
+  .meta-chip{
+    display:inline-flex;
+    align-items:center;
+    padding:.26rem .6rem;
+    border-radius:999px;
+    border:1px solid var(--ds-border);
+    background:#fff;
+    color:var(--ds-text);
+    font-weight:700;
+    font-size:.82rem;
+  }
+  .preview-grid{
+    display:grid; grid-template-columns: repeat(6, 1fr); gap:.6rem;
+  }
+  .preview{
+    position:relative; border:1px solid var(--ds-border); border-radius:.6rem; overflow:hidden;
+    aspect-ratio:1/1; background:#f8fafc;
+  }
+  .preview img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .preview .rm{
+    position:absolute; top:.35rem; right:.35rem; border:none; border-radius:.5rem;
+    background:rgba(0,0,0,.55); color:#fff; width:28px; height:28px; line-height:28px; text-align:center; cursor:pointer;
+  }
+  .btn{ border-radius:.65rem; }
+  @media (max-width: 576px){
+    .preview-grid{ grid-template-columns: repeat(3, 1fr); }
+    .sticky-actions{
+      position: sticky; bottom:.5rem; z-index:5; display:flex; gap:.6rem; background:transparent;
+    }
+    .sticky-actions .btn{ flex:1 1 auto; }
+  }
+</style>
+
+<h2 class="mb-4">Add New Product</h2>
+
+<form id="product-form" method="post" enctype="multipart/form-data" class="card p-4 shadow-sm border ds-card">
+  {% csrf_token %}
+
+  <div class="row g-3">
+    <div class="col-lg-8">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Barcode</label>
+          {% render_field form.barcode class="form-control" inputmode="numeric" pattern="[0-9]{0,13}" maxlength="13" placeholder="e.g. 5601234567890" %}
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Category</label>
+          {% render_field form.category class="form-select" %}
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Brand</label>
+          {% render_field form.brand_master class="form-select" %}
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">New Brand</label>
+          {% render_field form.new_brand_name class="form-control" placeholder="Add brand if not listed" %}
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Series / Model</label>
+          {% render_field form.series_master class="form-select" %}
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">New Series / Model</label>
+          {% render_field form.new_series_name class="form-control" placeholder="Add series/model if needed" %}
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Product Name</label>
+          {% render_field form.name class="form-control" placeholder="e.g. EDP / Clear Case / Charger" %}
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label">Specification</label>
+          {% render_field form.spec class="form-control" placeholder="Optional, e.g. 100ml / 20W / MagSafe" %}
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label">Color</label>
+          {% render_field form.color class="form-control" placeholder="Optional" %}
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Retail Price (€)</label>
+          {% render_field form.default_price class="form-control js-money" type="text" inputmode="decimal" step="0.01" placeholder="0.00" %}
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Wholesale Price (€)</label>
+          {% render_field form.wholesale_price class="form-control js-money" type="text" inputmode="decimal" step="0.01" placeholder="0.00" %}
+        </div>
+
+        <div class="col-12">
+          <label class="form-label">Description</label>
+          {% render_field form.description class="form-control" rows="3" placeholder="Short description (optional)" %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="preview-card h-100">
+        <div class="preview-label">Display Preview</div>
+        <div class="preview-title" id="product-name-preview">Brand - Series - Product Name</div>
+        <div class="preview-meta" id="product-meta-preview"></div>
+        <p class="small muted mt-3 mb-0">
+          The system will build the final product name from brand, series/model, name, specification, and color.
+        </p>
+      </div>
+    </div>
+
+    <div class="col-12">
+      <label class="form-label">Upload Product Images</label>
+      <input id="image-input" type="file" name="images" multiple class="form-control" accept="image/*">
+      <div class="form-text muted mb-2">You can select multiple images. JPG/PNG/WebP recommended.</div>
+      <div id="preview-grid" class="preview-grid"></div>
+    </div>
+  </div>
+
+  <div class="mt-3 d-flex gap-2 sticky-actions">
+    <button type="submit" class="btn btn-primary">Add Product</button>
+    <a href="{% url 'product_list' %}" class="btn btn-secondary">Cancel</a>
+  </div>
+</form>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const brandCatalog = JSON.parse('{{ brand_catalog_json|escapejs }}');
+  const brandMap = JSON.parse('{{ brand_series_map_json|escapejs }}');
+  const form = document.getElementById('product-form');
+  const categorySelect = form.querySelector('[name="category"]');
+  const brandSelect = form.querySelector('[name="brand_master"]');
+  const newBrandInput = form.querySelector('[name="new_brand_name"]');
+  const seriesSelect = form.querySelector('[name="series_master"]');
+  const newSeriesInput = form.querySelector('[name="new_series_name"]');
+  const nameInput = form.querySelector('[name="name"]');
+  const specInput = form.querySelector('[name="spec"]');
+  const colorInput = form.querySelector('[name="color"]');
+  const previewTitle = document.getElementById('product-name-preview');
+  const previewMeta = document.getElementById('product-meta-preview');
+
+  function parseMoney(value) {
+    const normalized = String(value || '').replace(',', '.');
+    const parsed = parseFloat(normalized);
+    return Number.isFinite(parsed) ? parsed : NaN;
+  }
+
+  function formatMoneyInputs() {
+    form.querySelectorAll('.js-money').forEach((input) => {
+      input.addEventListener('input', () => {
+        input.value = input.value.replace(/[^\d.,]/g, '');
+      });
+      input.addEventListener('blur', () => {
+        const parsed = parseMoney(input.value);
+        input.value = Number.isFinite(parsed) && parsed >= 0 ? parsed.toFixed(2) : '';
+      });
+    });
+  }
+
+  function syncBrandOptions() {
+    const selectedCategoryId = categorySelect.value;
+    const currentValue = brandSelect.dataset.currentValue || brandSelect.value;
+    let options = brandCatalog;
+    if (selectedCategoryId) {
+      options = brandCatalog.filter((brand) => brand.category_ids.includes(String(selectedCategoryId)));
+      const selectedBrand = brandCatalog.find((brand) => String(brand.id) === String(currentValue));
+      if (selectedBrand && !options.some((brand) => String(brand.id) === String(selectedBrand.id))) {
+        options = [selectedBrand, ...options];
+      }
+    }
+
+    brandSelect.innerHTML = '<option value="">Select brand</option>';
+    options.forEach((option) => {
+      const node = document.createElement('option');
+      node.value = option.id;
+      node.textContent = option.name;
+      if (String(option.id) === String(currentValue)) {
+        node.selected = true;
+      }
+      brandSelect.appendChild(node);
+    });
+    brandSelect.dataset.currentValue = brandSelect.value;
+  }
+
+  function syncSeriesOptions() {
+    const selectedBrandId = brandSelect.value;
+    const options = brandMap[selectedBrandId] || [];
+    const currentValue = seriesSelect.value;
+    seriesSelect.innerHTML = '<option value="">Select series / model</option>';
+    options.forEach((option) => {
+      const node = document.createElement('option');
+      node.value = option.id;
+      node.textContent = option.name;
+      if (String(option.id) === String(currentValue)) {
+        node.selected = true;
+      }
+      seriesSelect.appendChild(node);
+    });
+  }
+
+  function selectedLabel(selectEl) {
+    return selectEl.options[selectEl.selectedIndex]?.textContent?.trim() || '';
+  }
+
+  function refreshPreview() {
+    const brandName = (newBrandInput.value || '').trim() || selectedLabel(brandSelect);
+    const seriesName = (newSeriesInput.value || '').trim() || selectedLabel(seriesSelect);
+    const name = (nameInput.value || '').trim();
+    const spec = (specInput.value || '').trim();
+    const color = (colorInput.value || '').trim();
+
+    const core = [brandName, seriesName, name].filter(Boolean).join(' - ');
+    const tail = [spec, color].filter(Boolean).join(' ');
+    previewTitle.textContent = (core + (tail ? ' ' + tail : '')).trim() || 'Brand - Series - Product Name';
+
+    previewMeta.innerHTML = '';
+    [spec, color].filter(Boolean).forEach((value) => {
+      const chip = document.createElement('span');
+      chip.className = 'meta-chip';
+      chip.textContent = value;
+      previewMeta.appendChild(chip);
+    });
+  }
+
+  (function setupImagePreview() {
+    const input = document.getElementById('image-input');
+    const grid = document.getElementById('preview-grid');
+
+    function render(files) {
+      grid.innerHTML = '';
+      Array.from(files).forEach((file, idx) => {
+        if (!file.type.startsWith('image/')) return;
+        const url = URL.createObjectURL(file);
+        const item = document.createElement('div');
+        item.className = 'preview';
+        item.innerHTML = `<img src="${url}" alt=""><button type="button" class="rm" title="Remove">×</button>`;
+        item.querySelector('.rm').addEventListener('click', () => {
+          const dt = new DataTransfer();
+          Array.from(input.files).forEach((f, i) => { if (i !== idx) dt.items.add(f); });
+          input.files = dt.files;
+          render(input.files);
+        });
+        grid.appendChild(item);
+      });
+    }
+
+    input.addEventListener('change', () => render(input.files));
+  })();
+
+  categorySelect.addEventListener('change', () => {
+    const previousBrand = brandSelect.value;
+    const previousSeries = seriesSelect.value;
+    brandSelect.dataset.currentValue = previousBrand;
+    seriesSelect.dataset.currentValue = previousSeries;
+    syncBrandOptions();
+    if (brandSelect.value !== previousBrand) {
+      seriesSelect.dataset.currentValue = '';
+    }
+    syncSeriesOptions();
+    refreshPreview();
+  });
+
+  brandSelect.addEventListener('change', () => {
+    brandSelect.dataset.currentValue = brandSelect.value;
+    syncSeriesOptions();
+    refreshPreview();
+  });
+  [newBrandInput, seriesSelect, newSeriesInput, nameInput, specInput, colorInput].forEach((input) => {
+    input.addEventListener('input', refreshPreview);
+    input.addEventListener('change', refreshPreview);
+  });
+
+  form.querySelector('[name="barcode"]').addEventListener('input', (e) => {
+    e.target.value = e.target.value.replace(/\D/g, '').slice(0, 13);
+  });
+
+  formatMoneyInputs();
+  syncBrandOptions();
+  syncSeriesOptions();
+  refreshPreview();
+});
+</script>
+{% endblock %}

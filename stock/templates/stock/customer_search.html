@@ -1,0 +1,671 @@
+{% extends 'stock/base.html' %}
+{% block title %}Customer Management{% endblock %}
+
+{% block content %}
+<div class="container my-4 customer-page">
+  <style>
+    .customer-page{
+      --page-bg:#f4f6fb;
+      --card:#ffffff;
+      --text:#0f172a;
+      --muted:#64748b;
+      --border:rgba(15,23,42,.09);
+      --primary:#1d4ed8;
+      --primary-soft:#e8efff;
+      --success:#047857;
+      --success-soft:#ecfdf5;
+      --warning:#b45309;
+      --warning-soft:#fff7ed;
+      --shadow:0 16px 34px rgba(15,23,42,.08);
+      --radius:22px;
+    }
+    .customer-shell{
+      display:grid;
+      gap:1rem;
+    }
+    .hero-card,
+    .toolbar-card,
+    .metric-card,
+    .customer-card,
+    .empty-card,
+    .pagination-card{
+      background:var(--card);
+      border:1px solid var(--border);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+    }
+    .hero-card{
+      padding:1.35rem;
+      display:flex;
+      justify-content:space-between;
+      gap:1rem;
+      align-items:flex-start;
+    }
+    .hero-title{
+      margin:0;
+      color:var(--text);
+      font-size:2rem;
+      font-weight:900;
+      letter-spacing:-.03em;
+    }
+    .hero-copy{
+      margin:.45rem 0 0;
+      color:var(--muted);
+      max-width:48rem;
+      font-size:1rem;
+      line-height:1.6;
+      font-weight:600;
+    }
+    .hero-tools{
+      display:flex;
+      gap:.7rem;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+    .hero-tools .btn,
+    .toolbar-card .btn,
+    .customer-actions .btn,
+    .pagination .page-link{
+      border-radius:14px;
+      font-weight:800;
+    }
+    .metric-grid{
+      display:grid;
+      grid-template-columns:repeat(4, minmax(0, 1fr));
+      gap:1rem;
+    }
+    .metric-card{
+      padding:1rem 1.1rem;
+    }
+    .metric-label{
+      color:var(--muted);
+      font-size:.84rem;
+      text-transform:uppercase;
+      letter-spacing:.06em;
+      font-weight:900;
+    }
+    .metric-value{
+      margin-top:.35rem;
+      color:var(--text);
+      font-size:1.65rem;
+      line-height:1.05;
+      font-weight:900;
+    }
+    .metric-sub{
+      margin-top:.35rem;
+      color:var(--muted);
+      font-size:.9rem;
+      font-weight:700;
+    }
+    .toolbar-card{
+      padding:1rem;
+      position:sticky;
+      top:.75rem;
+      z-index:3;
+    }
+    .toolbar-grid{
+      display:grid;
+      grid-template-columns:minmax(0, 1fr) auto;
+      gap:1rem;
+      align-items:end;
+    }
+    .toolbar-label{
+      color:var(--muted);
+      font-size:.84rem;
+      text-transform:uppercase;
+      letter-spacing:.06em;
+      font-weight:900;
+      margin-bottom:.5rem;
+    }
+    .search-row{
+      display:flex;
+      gap:.8rem;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+    .search-row .form-control{
+      min-height:52px;
+      border-radius:16px;
+      border:1px solid var(--border);
+      padding:.85rem 1rem;
+      box-shadow:none;
+    }
+    .search-row .form-control:focus{
+      border-color:#93c5fd;
+      box-shadow:0 0 0 .25rem rgba(59,130,246,.14);
+    }
+    .results-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:1rem;
+      margin-top:.2rem;
+    }
+    .results-title{
+      margin:0;
+      color:var(--text);
+      font-size:1.1rem;
+      font-weight:900;
+    }
+    .results-note{
+      color:var(--muted);
+      font-size:.92rem;
+      font-weight:700;
+    }
+    .customer-grid{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0, 1fr));
+      gap:1rem;
+    }
+    .customer-card{
+      padding:1.05rem;
+      display:grid;
+      gap:.95rem;
+    }
+    .customer-head{
+      display:flex;
+      justify-content:space-between;
+      gap:1rem;
+      align-items:flex-start;
+    }
+    .customer-main{
+      display:flex;
+      gap:.9rem;
+      min-width:0;
+    }
+    .customer-avatar{
+      width:54px;
+      height:54px;
+      border-radius:18px;
+      display:grid;
+      place-items:center;
+      flex:0 0 54px;
+      background:linear-gradient(180deg,#dbeafe,#eff6ff);
+      border:1px solid #bfdbfe;
+      color:#0f172a;
+      font-size:1.15rem;
+      font-weight:900;
+    }
+    .customer-name{
+      margin:0;
+      color:var(--text);
+      font-size:1.1rem;
+      font-weight:900;
+      line-height:1.25;
+    }
+    .customer-line{
+      margin:.35rem 0 0;
+      color:var(--muted);
+      font-size:.92rem;
+      font-weight:700;
+      line-height:1.45;
+    }
+    .status-pill{
+      display:inline-flex;
+      align-items:center;
+      padding:.35rem .78rem;
+      border-radius:999px;
+      font-size:.8rem;
+      font-weight:900;
+      white-space:nowrap;
+    }
+    .status-pill.success{
+      background:var(--success-soft);
+      color:var(--success);
+      border:1px solid #a7f3d0;
+    }
+    .status-pill.warning{
+      background:var(--warning-soft);
+      color:var(--warning);
+      border:1px solid #fdba74;
+    }
+    .status-pill.neutral{
+      background:#f8fafc;
+      color:#475569;
+      border:1px solid #cbd5e1;
+    }
+    .customer-metrics{
+      display:grid;
+      grid-template-columns:repeat(4, minmax(0, 1fr));
+      gap:.75rem;
+    }
+    .customer-metric{
+      padding:.78rem .85rem;
+      border-radius:16px;
+      background:#f8fafc;
+      border:1px solid rgba(148,163,184,.16);
+    }
+    .customer-metric .label{
+      color:var(--muted);
+      font-size:.76rem;
+      text-transform:uppercase;
+      letter-spacing:.05em;
+      font-weight:900;
+    }
+    .customer-metric .value{
+      margin-top:.25rem;
+      color:var(--text);
+      font-size:1rem;
+      font-weight:900;
+      line-height:1.2;
+      word-break:break-word;
+    }
+    .customer-metric.balance .value{
+      color:#b45309;
+    }
+    .customer-actions{
+      display:flex;
+      gap:.65rem;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+    .empty-card{
+      padding:1.6rem;
+      text-align:center;
+    }
+    .empty-card h3{
+      margin:0;
+      color:var(--text);
+      font-size:1.2rem;
+      font-weight:900;
+    }
+    .empty-card p{
+      margin:.6rem auto 0;
+      max-width:32rem;
+      color:var(--muted);
+      font-weight:700;
+      line-height:1.6;
+    }
+    .pagination-card{
+      padding:1rem;
+    }
+    .pagination{
+      margin:0;
+      justify-content:center;
+      gap:.35rem;
+    }
+    .pagination .page-link{
+      border:1px solid var(--border);
+      color:var(--text);
+      min-width:42px;
+      text-align:center;
+    }
+    .pagination .active .page-link{
+      background:var(--primary);
+      border-color:var(--primary);
+      color:#fff;
+    }
+    .modal-content{
+      border-radius:22px;
+      border:1px solid var(--border);
+    }
+    .modal-header,
+    .modal-footer{
+      border-color:var(--border);
+    }
+    .form-label{
+      color:var(--text);
+      font-weight:800;
+    }
+    .form-control{
+      border-radius:14px;
+      border:1px solid var(--border);
+      min-height:46px;
+    }
+    .form-control:focus{
+      border-color:#93c5fd;
+      box-shadow:0 0 0 .25rem rgba(59,130,246,.14);
+    }
+    .help-inline{
+      font-size:.87rem;
+    }
+    .text-error{
+      color:#b91c1c;
+    }
+
+    @media (max-width: 1199.98px){
+      .metric-grid,
+      .customer-metrics{
+        grid-template-columns:repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 991.98px){
+      .hero-card,
+      .toolbar-grid,
+      .customer-head{
+        grid-template-columns:1fr;
+        display:grid;
+      }
+      .hero-tools,
+      .customer-actions{
+        justify-content:flex-start;
+      }
+      .customer-grid{
+        grid-template-columns:1fr;
+      }
+    }
+    @media (max-width: 575.98px){
+      .metric-grid,
+      .customer-metrics{
+        grid-template-columns:1fr;
+      }
+      .hero-title{
+        font-size:1.65rem;
+      }
+      .search-row{
+        flex-direction:column;
+        align-items:stretch;
+      }
+      .search-row .btn{
+        width:100%;
+      }
+    }
+  </style>
+
+  <div class="customer-shell">
+    <section class="hero-card">
+      <div>
+        <h1 class="hero-title">Customer Management</h1>
+        <p class="hero-copy">
+          Search by name, NIF, phone, or email, then open a customer profile to review order history,
+          payment follow-up, and relationship notes in one place.
+        </p>
+      </div>
+      <div class="hero-tools">
+        {% if query %}
+          <a href="{% url 'customer_search' %}" class="btn btn-outline-secondary">Clear Search</a>
+        {% endif %}
+        {% if show_sensitive %}
+          <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addCustomerModal">Add Customer</button>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="metric-grid">
+      <article class="metric-card">
+        <div class="metric-label">Visible Customers</div>
+        <div class="metric-value">{{ customer_summary.customer_count }}</div>
+        <div class="metric-sub">{% if query %}Matching this search{% else %}In the current directory{% endif %}</div>
+      </article>
+      <article class="metric-card">
+        <div class="metric-label">Active in 60 Days</div>
+        <div class="metric-value">{{ customer_summary.active_count }}</div>
+        <div class="metric-sub">Recent customers worth following up with</div>
+      </article>
+      <article class="metric-card">
+        <div class="metric-label">No Orders Yet</div>
+        <div class="metric-value">{{ customer_summary.new_count }}</div>
+        <div class="metric-sub">New or not-yet-converted customer records</div>
+      </article>
+      <article class="metric-card">
+        {% if show_sensitive %}
+          <div class="metric-label">Open Balance</div>
+          <div class="metric-value">EUR {{ customer_summary.open_balance_total|floatformat:2 }}</div>
+          <div class="metric-sub">{{ customer_summary.open_balance_count }} customers currently have open AR</div>
+        {% else %}
+          <div class="metric-label">Returning Customers</div>
+          <div class="metric-value">{{ customer_summary.with_orders_count }}</div>
+          <div class="metric-sub">Customers with at least one completed order</div>
+        {% endif %}
+      </article>
+    </section>
+
+    <section class="toolbar-card">
+      <form method="get" role="search">
+        <div class="toolbar-grid">
+          <div>
+            <div class="toolbar-label">Customer Search</div>
+            <div class="search-row">
+              <input
+                type="text"
+                name="q"
+                class="form-control flex-grow-1"
+                placeholder="Search by name, NIF, phone, or email"
+                value="{{ query }}"
+                autofocus
+              >
+              <button type="submit" class="btn btn-primary px-4">Search</button>
+            </div>
+          </div>
+          {% if query %}
+            <div class="results-note">Showing results for “{{ query }}”</div>
+          {% else %}
+            <div class="results-note">Showing recent and active customers by default</div>
+          {% endif %}
+        </div>
+      </form>
+    </section>
+
+    <div class="results-head">
+      <div>
+        <h2 class="results-title">{% if query %}Matching Customers{% else %}Customer Directory{% endif %}</h2>
+        <div class="results-note">{{ page_obj.paginator.count }} customer{{ page_obj.paginator.count|pluralize }} found</div>
+      </div>
+      {% if page_obj.paginator.num_pages > 1 %}
+        <div class="results-note">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</div>
+      {% endif %}
+    </div>
+
+    {% if customers %}
+      <section class="customer-grid">
+        {% for customer in customers %}
+          <article class="customer-card">
+            <div class="customer-head">
+              <div class="customer-main">
+                <div class="customer-avatar">{{ customer.name|default:"?"|first|upper }}</div>
+                <div>
+                  <h3 class="customer-name">{{ customer.name }}</h3>
+                  {% if show_sensitive %}
+                    <p class="customer-line">
+                      NIF {{ customer.nif }}
+                      {% if customer.phone %} · {{ customer.phone }}{% endif %}
+                      {% if customer.email %} · {{ customer.email }}{% endif %}
+                    </p>
+                  {% else %}
+                    <p class="customer-line">
+                      {% if customer.last_order_at %}
+                        Last order {{ customer.last_order_at|date:"Y-m-d H:i" }}
+                      {% else %}
+                        No order history yet
+                      {% endif %}
+                    </p>
+                  {% endif %}
+                </div>
+              </div>
+              <span class="status-pill {{ customer.activity_class }}">{{ customer.activity_label }}</span>
+            </div>
+
+            <div class="customer-metrics">
+              <div class="customer-metric">
+                <div class="label">Orders</div>
+                <div class="value">{{ customer.total_orders }}</div>
+              </div>
+              <div class="customer-metric">
+                <div class="label">Last Order</div>
+                <div class="value">
+                  {% if customer.last_order_at %}
+                    {{ customer.last_order_at|date:"Y-m-d" }}
+                  {% else %}
+                    -
+                  {% endif %}
+                </div>
+              </div>
+              {% if show_sales_sensitive %}
+                <div class="customer-metric">
+                  <div class="label">Total Spent</div>
+                  <div class="value">EUR {{ customer.total_spent|floatformat:2 }}</div>
+                </div>
+              {% else %}
+                <div class="customer-metric">
+                  <div class="label">Status</div>
+                  <div class="value">{{ customer.activity_label }}</div>
+                </div>
+              {% endif %}
+              {% if show_sensitive %}
+                <div class="customer-metric balance">
+                  <div class="label">Open Balance</div>
+                  <div class="value">EUR {{ customer.balance_due|floatformat:2 }}</div>
+                </div>
+              {% else %}
+                <div class="customer-metric">
+                  <div class="label">Record</div>
+                  <div class="value">{% if customer.phone or customer.email %}Complete{% else %}Basic{% endif %}</div>
+                </div>
+              {% endif %}
+            </div>
+
+            <div class="customer-actions">
+              <a href="{% url 'customer_detail' customer.id %}" class="btn btn-outline-primary">Open Profile</a>
+              {% if show_sensitive %}
+                <a href="{% url 'ar_new' %}?customer={{ customer.id }}" class="btn btn-outline-success">New IOU</a>
+              {% endif %}
+            </div>
+          </article>
+        {% endfor %}
+      </section>
+    {% else %}
+      <section class="empty-card">
+        <h3>{% if query %}No customer matched this search{% else %}No customers yet{% endif %}</h3>
+        <p>
+          {% if query %}
+            Try a different name, NIF, phone number, or email address. You can also clear the search and browse the full directory.
+          {% else %}
+            Start by adding your first customer record so order history and follow-up stay organized in one place.
+          {% endif %}
+        </p>
+      </section>
+    {% endif %}
+
+    {% if page_obj.paginator.num_pages > 1 %}
+      <section class="pagination-card">
+        <nav aria-label="Customer pagination">
+          <ul class="pagination">
+            {% if page_obj.has_previous %}
+              <li class="page-item">
+                <a class="page-link" href="?{% if query %}q={{ query|urlencode }}&amp;{% endif %}page={{ page_obj.previous_page_number }}">Previous</a>
+              </li>
+            {% endif %}
+            {% for page_num in page_obj.paginator.page_range %}
+              {% if page_num == page_obj.number %}
+                <li class="page-item active"><span class="page-link">{{ page_num }}</span></li>
+              {% elif page_num >= page_obj.number|add:"-2" and page_num <= page_obj.number|add:"2" %}
+                <li class="page-item">
+                  <a class="page-link" href="?{% if query %}q={{ query|urlencode }}&amp;{% endif %}page={{ page_num }}">{{ page_num }}</a>
+                </li>
+              {% endif %}
+            {% endfor %}
+            {% if page_obj.has_next %}
+              <li class="page-item">
+                <a class="page-link" href="?{% if query %}q={{ query|urlencode }}&amp;{% endif %}page={{ page_obj.next_page_number }}">Next</a>
+              </li>
+            {% endif %}
+          </ul>
+        </nav>
+      </section>
+    {% endif %}
+  </div>
+
+  {% if show_sensitive %}
+    <div class="modal fade" id="addCustomerModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog">
+        <form id="addCustomerForm" class="modal-content">
+          {% csrf_token %}
+          <div class="modal-header">
+            <h5 class="modal-title">Add New Customer</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label">NIF</label>
+              <input type="text" name="nif" class="form-control" maxlength="9" inputmode="numeric" pattern="\d{9}" required>
+              <div class="help-inline text-error d-none" id="nifHelp">NIF must be exactly 9 digits.</div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Name</label>
+              <input type="text" name="name" class="form-control" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Phone</label>
+              <input type="text" name="phone" class="form-control" inputmode="tel">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Email</label>
+              <input type="email" name="email" class="form-control" inputmode="email">
+            </div>
+            <div>
+              <label class="form-label">Notes</label>
+              <textarea name="notes" class="form-control" rows="3"></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <span id="add-result" class="me-auto text-muted"></span>
+            <button type="submit" id="saveBtn" class="btn btn-primary" disabled>Save Customer</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+{% if show_sensitive %}
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const modalEl = document.getElementById('addCustomerModal');
+      const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+      const form = document.getElementById('addCustomerForm');
+      const saveBtn = document.getElementById('saveBtn');
+      const result = document.getElementById('add-result');
+      const nifInput = form.querySelector('input[name="nif"]');
+      const nameInput = form.querySelector('input[name="name"]');
+      const nifHelp = document.getElementById('nifHelp');
+
+      function validate() {
+        const nifOk = /^\d{9}$/.test(nifInput.value.trim());
+        const nameOk = nameInput.value.trim().length > 0;
+        nifHelp.classList.toggle('d-none', nifOk);
+        saveBtn.disabled = !(nifOk && nameOk);
+      }
+
+      nifInput.addEventListener('input', () => {
+        nifInput.value = nifInput.value.replace(/\D/g, '').slice(0, 9);
+        validate();
+      });
+      nameInput.addEventListener('input', validate);
+      modalEl.addEventListener('shown.bs.modal', () => setTimeout(() => nifInput.focus(), 120));
+      validate();
+
+      form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        result.className = 'me-auto text-muted';
+        result.textContent = 'Saving...';
+        saveBtn.disabled = true;
+
+        fetch('/add_customer_ajax/', {
+          method: 'POST',
+          body: new FormData(form)
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.success) {
+              result.className = 'me-auto text-success';
+              result.textContent = 'Created: ' + (data.name || '');
+              setTimeout(() => {
+                modal.hide();
+                window.location.reload();
+              }, 900);
+              return;
+            }
+            result.className = 'me-auto text-error';
+            result.textContent = data.error || 'Unable to create the customer.';
+            saveBtn.disabled = false;
+          })
+          .catch(() => {
+            result.className = 'me-auto text-error';
+            result.textContent = 'Network error. Please try again.';
+            saveBtn.disabled = false;
+          });
+      });
+    });
+  </script>
+{% endif %}
+{% endblock %}

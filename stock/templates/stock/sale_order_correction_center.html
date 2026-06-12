@@ -1,0 +1,151 @@
+{% extends 'stock/base.html' %}
+{% block title %}Order Correction Center{% endblock %}
+
+{% block content %}
+<style>
+  .correction-page{display:grid;gap:1.2rem}
+  .correction-card{background:#fff;border:1px solid #d9e2ee;border-radius:1rem;box-shadow:0 14px 34px rgba(15,23,42,.06)}
+  .correction-pad{padding:1.1rem}
+  .eyebrow{display:inline-flex;align-items:center;padding:.3rem .7rem;border-radius:999px;background:#eaf2ff;color:#1747a6;font-size:.78rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase}
+  .page-head,.row-head{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap}
+  .page-title{margin:0;font-size:2rem;font-weight:900;color:#0f172a}
+  .page-sub{margin:.35rem 0 0;color:#526071;max-width:62rem}
+  .mini{color:#526071;font-size:.88rem}
+  .table-shell{overflow:auto;border:1px solid #d9e2ee;border-radius:1rem}
+  .table thead th{background:#eef4fb;color:#243549;font-size:.79rem;font-weight:900;letter-spacing:.05em;text-transform:uppercase;border-bottom:1px solid #d9e2ee}
+  .log-list{display:grid;gap:.8rem}
+  .log-item{padding:.9rem;border:1px solid #d9e2ee;border-radius:1rem;background:#f9fbff}
+  .pill{display:inline-flex;align-items:center;padding:.24rem .55rem;border-radius:999px;background:#edf4ff;border:1px solid #d3e0f2;color:#173761;font-weight:800;font-size:.82rem}
+</style>
+
+<div class="correction-page">
+  <div class="page-head">
+    <div>
+      <span class="eyebrow">Admin only</span>
+      <h1 class="page-title">Order Correction Center</h1>
+      <p class="page-sub">Find historical orders, fix wrong prices or dates, and add missing backdated orders without opening Django admin.</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+      <a class="btn btn-primary" href="{% url 'sale_order_correction_create' %}">Add missing historical order</a>
+      <a class="btn btn-outline-secondary" href="{% url 'sales_records' %}">Back to history</a>
+    </div>
+  </div>
+
+  <form method="get" class="correction-card correction-pad">
+    <div class="row g-3 align-items-end">
+      <div class="col-lg-5">
+        <label class="form-label fw-bold">Search</label>
+        <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Order #, customer name, NIF, or note">
+      </div>
+      <div class="col-md-3 col-lg-2">
+        <label class="form-label fw-bold">From</label>
+        <input type="date" name="start_date" value="{{ start_date }}" class="form-control">
+      </div>
+      <div class="col-md-3 col-lg-2">
+        <label class="form-label fw-bold">To</label>
+        <input type="date" name="end_date" value="{{ end_date }}" class="form-control">
+      </div>
+      <div class="col-md-6 col-lg-3 d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Apply</button>
+        <a href="{% url 'sale_order_correction_center' %}" class="btn btn-outline-dark">Reset</a>
+      </div>
+    </div>
+  </form>
+
+  <div class="row g-4">
+    <div class="col-xl-8">
+      <div class="correction-card correction-pad">
+        <div class="row-head mb-3">
+          <div>
+            <h2 class="h4 mb-1">Historical orders</h2>
+            <p class="mini mb-0">Pick any order to correct customer, timestamp, products, prices, or payment method.</p>
+          </div>
+          <span class="pill">{{ page_obj.paginator.count }} order{{ page_obj.paginator.count|pluralize }}</span>
+        </div>
+
+        <div class="table-shell">
+          <table class="table table-hover mb-0">
+            <thead>
+              <tr>
+                <th>Order</th>
+                <th>Customer</th>
+                <th>Time</th>
+                <th class="text-center">Qty</th>
+                <th class="text-end">Amount</th>
+                <th class="text-end">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for order in page_obj %}
+                <tr>
+                  <td>
+                    <div class="fw-bold">#{{ order.id }}</div>
+                    {% if order.note %}<div class="mini">{{ order.note }}</div>{% endif %}
+                  </td>
+                  <td>{% if order.customer %}{{ order.customer.name }}{% else %}<span class="text-muted">Walk-in / no customer</span>{% endif %}</td>
+                  <td>{{ order.created_at|date:"Y-m-d H:i" }}</td>
+                  <td class="text-center">{{ order.view_total_qty }}</td>
+                  <td class="text-end fw-bold">EUR {{ order.view_total_amount|floatformat:2 }}</td>
+                  <td class="text-end">
+                    <div class="d-flex justify-content-end gap-2">
+                      <a class="btn btn-sm btn-outline-secondary" href="{% url 'sale_order_detail' order.id %}">Print</a>
+                      <a class="btn btn-sm btn-primary" href="{% url 'sale_order_correction_edit' order.id %}">Correct</a>
+                    </div>
+                  </td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="6" class="text-center py-4 text-muted">No matching orders found.</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        {% if page_obj.paginator.num_pages > 1 %}
+          <div class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
+            <div class="mini">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</div>
+            <div class="d-flex gap-2">
+              {% if page_obj.has_previous %}
+                <a class="btn btn-sm btn-outline-secondary" href="?q={{ query|urlencode }}&start_date={{ start_date|urlencode }}&end_date={{ end_date|urlencode }}&page={{ page_obj.previous_page_number }}">Previous</a>
+              {% endif %}
+              {% if page_obj.has_next %}
+                <a class="btn btn-sm btn-outline-secondary" href="?q={{ query|urlencode }}&start_date={{ start_date|urlencode }}&end_date={{ end_date|urlencode }}&page={{ page_obj.next_page_number }}">Next</a>
+              {% endif %}
+            </div>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="col-xl-4">
+      <div class="correction-card correction-pad">
+        <div class="row-head mb-3">
+          <div>
+            <h2 class="h4 mb-1">Recent correction log</h2>
+            <p class="mini mb-0">Every historical change keeps a reason and before/after snapshot.</p>
+          </div>
+        </div>
+        <div class="log-list">
+          {% for log in recent_logs %}
+            <div class="log-item">
+              <div class="d-flex justify-content-between gap-2">
+                <span class="pill">{{ log.action|title }}</span>
+                <span class="mini">{{ log.created_at|date:"Y-m-d H:i" }}</span>
+              </div>
+              <div class="mt-2 fw-bold">Order #{{ log.order_id_snapshot }}</div>
+              <div class="mini">By {% if log.changed_by %}{{ log.changed_by.username }}{% else %}Unknown{% endif %}</div>
+              {% if log.reason %}<div class="mt-2">{{ log.reason }}</div>{% endif %}
+              {% if log.order %}
+                <div class="mt-2"><a href="{% url 'sale_order_correction_edit' log.order.id %}">Open corrected order</a></div>
+              {% endif %}
+            </div>
+          {% empty %}
+            <div class="mini">No correction logs yet.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

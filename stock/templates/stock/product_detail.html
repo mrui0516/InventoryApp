@@ -1,0 +1,474 @@
+{% extends 'stock/base.html' %}
+{% load math_extras %}
+{% block title %}{{ product.display_name }}{% endblock %}
+
+{% block content %}
+<style>
+  .product-detail-page{
+    --page-bg:#f4f7fb;
+    --card-bg:#ffffff;
+    --border:#d7e0ea;
+    --text:#102033;
+    --muted:#64748b;
+    --accent:#0f766e;
+    --accent-soft:#e6fffb;
+    --shadow:0 14px 30px rgba(15, 23, 42, .08);
+  }
+  .product-detail-page .hero{
+    display:flex;
+    justify-content:space-between;
+    gap:1rem;
+    align-items:flex-start;
+    flex-wrap:wrap;
+    margin-bottom:1.25rem;
+  }
+  .product-detail-page .eyebrow{
+    display:inline-flex;
+    align-items:center;
+    gap:.45rem;
+    padding:.3rem .7rem;
+    border-radius:999px;
+    background:#0f172a;
+    color:#fff;
+    font-size:.78rem;
+    font-weight:700;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+  }
+  .product-detail-page h1{
+    margin:.55rem 0 .25rem;
+    color:var(--text);
+    font-size:clamp(1.7rem, 2.3vw, 2.35rem);
+    font-weight:900;
+    line-height:1.06;
+  }
+  .product-detail-page .subline{
+    color:var(--muted);
+    font-size:1rem;
+    max-width:60rem;
+  }
+  .product-detail-page .card-shell{
+    background:var(--card-bg);
+    border:1px solid var(--border);
+    border-radius:1.15rem;
+    box-shadow:var(--shadow);
+  }
+  .product-detail-page .summary-grid{
+    display:grid;
+    grid-template-columns:repeat(4, minmax(0, 1fr));
+    gap:1rem;
+    margin-bottom:1rem;
+  }
+  .product-detail-page .summary-card{
+    padding:1rem 1.05rem;
+  }
+  .product-detail-page .summary-label{
+    color:var(--muted);
+    font-size:.86rem;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.05em;
+  }
+  .product-detail-page .summary-value{
+    color:var(--text);
+    font-size:1.55rem;
+    font-weight:900;
+    line-height:1.05;
+    margin-top:.42rem;
+  }
+  .product-detail-page .summary-note{
+    color:var(--muted);
+    font-size:.86rem;
+    margin-top:.3rem;
+  }
+  .product-detail-page .stock-badge{
+    display:inline-flex;
+    align-items:center;
+    gap:.35rem;
+    padding:.35rem .68rem;
+    border-radius:999px;
+    font-size:.85rem;
+    font-weight:800;
+  }
+  .product-detail-page .stock-ok{ background:#dcfce7; color:#166534; }
+  .product-detail-page .stock-low{ background:#fef3c7; color:#92400e; }
+  .product-detail-page .stock-out{ background:#fee2e2; color:#991b1b; }
+  .product-detail-page .gallery-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(155px, 1fr));
+    gap:.9rem;
+  }
+  .product-detail-page .gallery-item{
+    border:1px solid var(--border);
+    border-radius:1rem;
+    overflow:hidden;
+    background:#f8fafc;
+  }
+  .product-detail-page .gallery-item img{
+    width:100%;
+    aspect-ratio:1 / 1;
+    object-fit:cover;
+    display:block;
+    cursor:zoom-in;
+  }
+  .product-detail-page .gallery-empty{
+    border:1px dashed var(--border);
+    border-radius:1rem;
+    background:#f8fafc;
+    padding:2rem 1rem;
+    text-align:center;
+    color:var(--muted);
+    font-weight:600;
+  }
+  .product-detail-page .panel-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:1rem;
+    flex-wrap:wrap;
+    margin-bottom:1rem;
+  }
+  .product-detail-page .panel-head h2,
+  .product-detail-page .panel-head h3{
+    margin:0;
+    color:var(--text);
+    font-size:1.15rem;
+    font-weight:850;
+  }
+  .product-detail-page .panel-head p{
+    margin:.28rem 0 0;
+    color:var(--muted);
+  }
+  .product-detail-page .detail-table{
+    width:100%;
+    border-collapse:separate;
+    border-spacing:0;
+  }
+  .product-detail-page .detail-table th,
+  .product-detail-page .detail-table td{
+    padding:.88rem 1rem;
+    border-top:1px solid var(--border);
+    vertical-align:top;
+  }
+  .product-detail-page .detail-table tr:first-child th,
+  .product-detail-page .detail-table tr:first-child td{
+    border-top:0;
+  }
+  .product-detail-page .detail-table th{
+    width:190px;
+    color:var(--muted);
+    font-size:.84rem;
+    font-weight:800;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+    background:#f8fbff;
+  }
+  .product-detail-page .detail-table td{
+    color:var(--text);
+    font-weight:600;
+  }
+  .product-detail-page .pill-row{
+    display:flex;
+    flex-wrap:wrap;
+    gap:.5rem;
+  }
+  .product-detail-page .meta-pill{
+    display:inline-flex;
+    align-items:center;
+    padding:.35rem .75rem;
+    border-radius:999px;
+    background:#eef6ff;
+    color:#0f3768;
+    font-weight:700;
+    border:1px solid #cfe0f8;
+  }
+  .product-detail-page .table-shell{
+    overflow:auto;
+  }
+  .product-detail-page .table-shell table{
+    margin:0;
+  }
+  .product-detail-page .table-shell thead th{
+    position:sticky;
+    top:0;
+    z-index:1;
+    background:#f8fbff;
+  }
+  .product-detail-page .table-shell td,
+  .product-detail-page .table-shell th{
+    white-space:nowrap;
+  }
+  .product-detail-page .muted{
+    color:var(--muted);
+  }
+  @media (max-width: 991px){
+    .product-detail-page .summary-grid{
+      grid-template-columns:repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 575px){
+    .product-detail-page .summary-grid{
+      grid-template-columns:1fr;
+    }
+    .product-detail-page .detail-table th,
+    .product-detail-page .detail-table td{
+      display:block;
+      width:100%;
+    }
+    .product-detail-page .detail-table th{
+      border-bottom:0;
+      padding-bottom:.3rem;
+    }
+    .product-detail-page .detail-table td{
+      padding-top:.1rem;
+    }
+  }
+</style>
+
+<div class="container-fluid product-detail-page">
+  <div class="hero">
+    <div>
+      <span class="eyebrow">{{ product.category.name|default:"Uncategorized" }}</span>
+      <h1>{{ product.display_name }}</h1>
+      <div class="subline">
+        Barcode {{ product.barcode }}
+        {% if product.variant_label %}
+          <span class="mx-2">·</span>{{ product.variant_label }}
+        {% endif %}
+      </div>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      <a href="{% url 'product_list' %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="btn btn-outline-secondary">Back</a>
+      {% if show_sensitive %}
+        <a href="{% url 'edit_product' product.id %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="btn btn-primary">Edit product</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="summary-grid">
+    <div class="card-shell summary-card">
+      <div class="summary-label">Retail Price</div>
+      <div class="summary-value">
+        {% if product.default_price %}EUR {{ product.default_price|floatformat:2 }}{% else %}-{% endif %}
+      </div>
+      <div class="summary-note">Default selling price</div>
+    </div>
+    <div class="card-shell summary-card">
+      <div class="summary-label">Wholesale Price</div>
+      <div class="summary-value">
+        {% if product.wholesale_price %}EUR {{ product.wholesale_price|floatformat:2 }}{% else %}-{% endif %}
+      </div>
+      <div class="summary-note">Reference bulk price</div>
+    </div>
+    {% if show_sensitive %}
+      <div class="card-shell summary-card">
+        <div class="summary-label">Current FIFO Cost</div>
+        <div class="summary-value">
+          {% if fifo_price %}EUR {{ fifo_price|floatformat:2 }}{% else %}-{% endif %}
+        </div>
+        <div class="summary-note">Current oldest in-stock layer</div>
+      </div>
+    {% endif %}
+    <div class="card-shell summary-card">
+      <div class="summary-label">Total Stock</div>
+      <div class="summary-value">
+        {% if total_stock > 5 %}
+          <span class="stock-badge stock-ok">{{ total_stock }} in stock</span>
+        {% elif total_stock > 0 %}
+          <span class="stock-badge stock-low">{{ total_stock }} low stock</span>
+        {% else %}
+          <span class="stock-badge stock-out">Out of stock</span>
+        {% endif %}
+      </div>
+      <div class="summary-note">Across all active purchase batches</div>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-xl-7">
+      <div class="card-shell p-4 mb-4">
+        <div class="panel-head">
+          <div>
+            <h2>Product Profile</h2>
+            <p>Structured fields for a cleaner product master.</p>
+          </div>
+        </div>
+        <table class="detail-table">
+          <tr>
+            <th>Display Name</th>
+            <td>{{ product.display_name }}</td>
+          </tr>
+          <tr>
+            <th>Brand</th>
+            <td>{{ product.brand|default:"-" }}</td>
+          </tr>
+          <tr>
+            <th>Series / Model</th>
+            <td>{{ product.model|default:"-" }}</td>
+          </tr>
+          <tr>
+            <th>Name</th>
+            <td>{{ product.name }}</td>
+          </tr>
+          <tr>
+            <th>Category</th>
+            <td>{{ product.category|default:"-" }}</td>
+          </tr>
+          <tr>
+            <th>Variant Details</th>
+            <td>
+              <div class="pill-row">
+                {% if product.spec %}<span class="meta-pill">Spec: {{ product.spec }}</span>{% endif %}
+                {% if product.color %}<span class="meta-pill">Color: {{ product.color }}</span>{% endif %}
+                {% if not product.spec and not product.color %}<span class="muted">No optional variant details.</span>{% endif %}
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <th>Barcode</th>
+            <td>{{ product.barcode }}</td>
+          </tr>
+          <tr>
+            <th>Created At</th>
+            <td>{{ product.created_at|date:"Y-m-d H:i" }}</td>
+          </tr>
+          {% if product.description %}
+            <tr>
+              <th>Description</th>
+              <td>{{ product.description|linebreaksbr }}</td>
+            </tr>
+          {% endif %}
+        </table>
+      </div>
+
+      <div class="card-shell p-4">
+        <div class="panel-head">
+          <div>
+            <h2>Product Gallery</h2>
+            <p>Tap any image to inspect it in full size.</p>
+          </div>
+        </div>
+        {% if product.images.all %}
+          <div class="gallery-grid">
+            {% for image in product.images.all %}
+              <div class="gallery-item">
+                <img src="{{ image.image.url }}" alt="{{ product.display_name }}" class="js-product-zoom" data-src="{{ image.image.url }}">
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="gallery-empty">No product photos yet.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="col-xl-5">
+      {% if show_sensitive %}
+        <div class="card-shell p-4 mb-4">
+          <div class="panel-head">
+            <div>
+              <h3>Purchase History</h3>
+              <p>Latest inbound layers and remaining stock.</p>
+            </div>
+          </div>
+          <div class="table-shell">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Qty</th>
+                  <th>Remain</th>
+                  <th>Cost</th>
+                  <th>Supplier</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for p in purchases %}
+                  <tr>
+                    <td>{{ p.date|date:"Y-m-d H:i" }}</td>
+                    <td>{{ p.quantity }}</td>
+                    <td>
+                      {% if p.remaining > 0 %}
+                        <span class="stock-badge {% if p.remaining > 5 %}stock-ok{% else %}stock-low{% endif %}">{{ p.remaining }}</span>
+                      {% else %}
+                        <span class="muted">0</span>
+                      {% endif %}
+                    </td>
+                    <td>EUR {{ p.cost_price|floatformat:2 }}</td>
+                    <td>{% if p.supplier %}{{ p.supplier.name }}{% else %}<span class="muted">No supplier linked</span>{% endif %}</td>
+                  </tr>
+                {% empty %}
+                  <tr>
+                    <td colspan="5" class="text-center py-4 muted">No purchase history.</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      {% endif %}
+
+      {% if show_sales_sensitive %}
+        <div class="card-shell p-4">
+          <div class="panel-head">
+            <div>
+              <h3>Sales History</h3>
+              <p>Recent sales for this product.</p>
+            </div>
+          </div>
+          <div class="table-shell">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Customer</th>
+                  <th>Qty</th>
+                  <th>Unit</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for s in sales %}
+                  <tr>
+                    <td>{{ s.date|date:"Y-m-d H:i" }}</td>
+                    <td>{% if s.customer %}{{ s.customer.name }}{% else %}<span class="muted">Walk-in</span>{% endif %}</td>
+                    <td>{{ s.quantity }}</td>
+                    <td>EUR {{ s.unit_price|floatformat:2 }}</td>
+                    <td>EUR {{ s.unit_price|mul:s.quantity|floatformat:2 }}</td>
+                  </tr>
+                {% empty %}
+                  <tr>
+                    <td colspan="5" class="text-center py-4 muted">No sales yet.</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="productImageModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content border-0 bg-dark">
+      <img id="productImageModalTarget" class="img-fluid rounded" alt="{{ product.display_name }}" style="max-height:85vh; object-fit:contain;">
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const modalEl = document.getElementById('productImageModal');
+  const modalTarget = document.getElementById('productImageModalTarget');
+  document.querySelectorAll('.js-product-zoom').forEach((img) => {
+    img.addEventListener('click', () => {
+      modalTarget.src = img.dataset.src || img.src;
+      modalTarget.alt = img.alt || '{{ product.display_name|escapejs }}';
+      bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    });
+  });
+});
+</script>
+{% endblock %}

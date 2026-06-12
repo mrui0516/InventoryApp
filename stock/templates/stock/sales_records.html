@@ -1,0 +1,1330 @@
+{% extends 'stock/base.html' %}
+{% block title %}Sales & Purchase Records{% endblock %}
+
+{% block content %}
+<div class="container my-4 records-page">
+  <style>
+    .records-page{
+      --bg:#f6f7fb;
+      --card:#ffffff;
+      --text:#0f172a;
+      --muted:#64748b;
+      --border:rgba(15,23,42,.1);
+      --accent:#2563eb;
+      --accent-soft:#e8f0ff;
+      --success:#047857;
+      --success-soft:#ecfdf5;
+      --warning:#b45309;
+      --warning-soft:#fff7ed;
+      --shadow:0 12px 30px rgba(15,23,42,.08);
+      --radius:18px;
+    }
+
+    .page-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:1rem;
+      margin-bottom:1rem;
+    }
+    .page-head h2{
+      margin:0;
+      font-size:1.9rem;
+      font-weight:900;
+      color:var(--text);
+      letter-spacing:-.02em;
+    }
+    .page-sub{
+      margin:.25rem 0 0;
+      color:var(--muted);
+      font-weight:600;
+    }
+    .page-actions{
+      display:flex;
+      gap:.65rem;
+      flex-wrap:wrap;
+    }
+
+    .filter-card,
+    .summary-card,
+    .day-panel,
+    .empty-card{
+      background:var(--card);
+      border:1px solid var(--border);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+    }
+
+    .filter-card{
+      padding:1rem;
+      margin-bottom:1rem;
+    }
+    .filter-grid{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0, 220px)) 1fr;
+      gap:1rem;
+      align-items:end;
+    }
+    .filter-card .form-label{
+      margin-bottom:.35rem;
+      color:var(--text);
+      font-weight:700;
+    }
+    .filter-card .form-control{
+      border-radius:12px;
+      border:1px solid var(--border);
+      padding:.7rem .85rem;
+    }
+    .filter-card .form-control:focus{
+      border-color:var(--accent);
+      box-shadow:0 0 0 .2rem rgba(37,99,235,.12);
+    }
+    .filter-actions{
+      display:flex;
+      justify-content:flex-end;
+      gap:.6rem;
+      flex-wrap:wrap;
+    }
+    .quick-ranges{
+      display:flex;
+      flex-wrap:wrap;
+      gap:.5rem;
+      margin-top:.9rem;
+      padding-top:.9rem;
+      border-top:1px dashed var(--border);
+    }
+    .quick-ranges .btn{
+      border-radius:999px;
+    }
+
+    .history-wrap{
+      margin-top:.9rem;
+      padding-top:.9rem;
+      border-top:1px dashed var(--border);
+    }
+    .history-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:.75rem;
+      margin-bottom:.6rem;
+    }
+    .history-title{
+      margin:0;
+      font-size:.95rem;
+      font-weight:800;
+      color:var(--text);
+    }
+    .history-list{
+      display:flex;
+      flex-wrap:wrap;
+      gap:.55rem;
+    }
+    .history-chip{
+      display:inline-flex;
+      flex-direction:column;
+      align-items:flex-start;
+      gap:.15rem;
+      min-width:170px;
+      padding:.6rem .9rem;
+      border-radius:16px;
+      border:1px solid #cbd5e1;
+      background:#fff;
+      color:var(--text);
+      font-weight:700;
+      font-size:.88rem;
+      text-align:left;
+    }
+    .history-chip:hover{
+      background:var(--accent-soft);
+      border-color:#bfdbfe;
+      color:#1d4ed8;
+    }
+    .history-chip.is-active{
+      background:#dbeafe;
+      border-color:#60a5fa;
+      box-shadow:0 8px 20px rgba(37,99,235,.14);
+    }
+    .history-chip-main{
+      font-size:.9rem;
+      font-weight:900;
+      color:var(--text);
+      line-height:1.2;
+    }
+    .history-chip-sub{
+      font-size:.76rem;
+      color:#475569;
+      font-weight:700;
+      line-height:1.2;
+    }
+    .history-empty{
+      color:var(--muted);
+      font-size:.92rem;
+    }
+
+    .summary-grid{
+      display:grid;
+      grid-template-columns:repeat(4, minmax(0, 1fr));
+      gap:1rem;
+      margin-bottom:1.2rem;
+    }
+    .summary-card{
+      padding:1rem 1.05rem;
+    }
+    .summary-label{
+      color:var(--muted);
+      font-weight:700;
+      font-size:.9rem;
+    }
+    .summary-value{
+      margin-top:.35rem;
+      color:var(--text);
+      font-size:1.5rem;
+      font-weight:900;
+      line-height:1.1;
+    }
+    .summary-sub{
+      margin-top:.3rem;
+      color:var(--muted);
+      font-size:.88rem;
+      font-weight:600;
+    }
+    .summary-card.payments{
+      grid-column:span 2;
+    }
+    .payment-grid{
+      display:flex;
+      flex-wrap:wrap;
+      gap:.55rem;
+      margin-top:.75rem;
+    }
+    .payment-total{
+      display:flex;
+      align-items:center;
+      gap:.45rem;
+      padding:.45rem .75rem;
+      border-radius:999px;
+      background:#f8fafc;
+      border:1px solid var(--border);
+      font-size:.88rem;
+      font-weight:700;
+      color:var(--text);
+    }
+
+    .section-title{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:.75rem;
+      margin:1.4rem 0 .8rem;
+    }
+    .section-title h3{
+      margin:0;
+      color:var(--text);
+      font-size:1.2rem;
+      font-weight:900;
+    }
+    .section-title .muted-note{
+      color:var(--muted);
+      font-weight:700;
+      font-size:.92rem;
+    }
+
+    .day-panel{
+      overflow:hidden;
+      margin-bottom:1rem;
+    }
+    .day-toggle{
+      width:100%;
+      border:0;
+      background:linear-gradient(180deg,#f8fbff,#ffffff);
+      padding:1rem 1.1rem;
+      text-align:left;
+      display:flex;
+      justify-content:space-between;
+      gap:1rem;
+      align-items:center;
+      border-bottom:1px solid rgba(148,163,184,.18);
+    }
+    .day-toggle:hover{
+      background:linear-gradient(180deg,#eff6ff,#ffffff);
+    }
+    .day-main{
+      min-width:0;
+    }
+    .day-toggle-meta{
+      display:flex;
+      align-items:center;
+      gap:1rem;
+    }
+    .day-date{
+      font-size:1.05rem;
+      font-weight:900;
+      color:var(--text);
+    }
+    .day-meta{
+      margin-top:.25rem;
+      color:var(--muted);
+      font-weight:700;
+      font-size:.9rem;
+    }
+    .day-side{
+      text-align:right;
+    }
+    .day-amount{
+      color:var(--success);
+      font-size:1.1rem;
+      font-weight:900;
+    }
+    .day-payments{
+      display:flex;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+      gap:.4rem;
+      margin-top:.45rem;
+    }
+    .day-pill,
+    .pay-pill{
+      display:inline-flex;
+      align-items:center;
+      gap:.35rem;
+      padding:.24rem .6rem;
+      border-radius:999px;
+      font-size:.78rem;
+      font-weight:800;
+      background:#eff6ff;
+      color:#1d4ed8;
+      border:1px solid #bfdbfe;
+    }
+    .pay-pill.purchase{
+      background:var(--warning-soft);
+      color:var(--warning);
+      border-color:#fed7aa;
+    }
+
+    .orders-wrap{
+      padding:0 1rem 1rem;
+    }
+    .order-entry{
+      margin-top:.9rem;
+      border:1px solid var(--border);
+      border-radius:16px;
+      background:#fff;
+      overflow:hidden;
+    }
+    .order-entry[open]{
+      border-color:#bfdbfe;
+      box-shadow:0 16px 32px rgba(37,99,235,.08);
+    }
+    .order-entry:first-child{
+      margin-top:1rem;
+    }
+    .order-entry summary{
+      list-style:none;
+      cursor:pointer;
+    }
+    .order-entry summary::-webkit-details-marker{
+      display:none;
+    }
+    .order-summary{
+      display:grid;
+      grid-template-columns:minmax(0, 1fr) auto;
+      gap:1rem;
+      align-items:center;
+      padding:1rem 1rem .9rem;
+      background:linear-gradient(180deg,#ffffff,#fbfdff);
+    }
+    .order-summary:hover{
+      background:linear-gradient(180deg,#ffffff,#f8fbff);
+    }
+    .order-summary-main{
+      display:flex;
+      gap:1rem;
+      align-items:center;
+      min-width:0;
+    }
+    .order-summary-text{
+      min-width:0;
+      flex:1;
+    }
+    .order-summary-end{
+      display:flex;
+      align-items:center;
+      gap:1rem;
+    }
+    .order-top{
+      display:flex;
+      flex-wrap:wrap;
+      gap:.45rem .65rem;
+      align-items:center;
+      margin-bottom:.45rem;
+    }
+    .order-identity{
+      display:flex;
+      flex-direction:column;
+      gap:.2rem;
+      margin-bottom:.45rem;
+    }
+    .identity-label{
+      color:#1d4ed8;
+      font-size:.75rem;
+      font-weight:900;
+      letter-spacing:.05em;
+      text-transform:uppercase;
+    }
+    .identity-label.warning{
+      color:#b45309;
+    }
+    .order-badge{
+      display:inline-flex;
+      align-items:center;
+      padding:.24rem .65rem;
+      border-radius:999px;
+      background:var(--accent-soft);
+      color:#1d4ed8;
+      font-weight:900;
+      font-size:.8rem;
+    }
+    .order-customer,
+    .order-time{
+      color:var(--muted);
+      font-size:.88rem;
+      font-weight:700;
+    }
+    .order-customer-main{
+      color:#0f172a;
+      font-size:1.18rem;
+      font-weight:900;
+      line-height:1.15;
+      text-decoration:none;
+    }
+    .order-customer-main.missing{
+      color:#9a3412;
+    }
+    a.order-customer-main:hover{
+      color:#1d4ed8;
+    }
+    .order-meta{
+      display:flex;
+      flex-wrap:wrap;
+      gap:.45rem;
+      margin-top:.6rem;
+    }
+    .meta-chip{
+      display:inline-flex;
+      align-items:center;
+      padding:.26rem .6rem;
+      border-radius:999px;
+      background:#f8fafc;
+      color:#334155;
+      border:1px solid var(--border);
+      font-size:.8rem;
+      font-weight:800;
+    }
+    .order-side{
+      text-align:right;
+      min-width:220px;
+    }
+    .order-total{
+      color:var(--success);
+      font-size:1.3rem;
+      font-weight:900;
+      line-height:1.1;
+    }
+    .profit-note{
+      margin-top:.35rem;
+      color:#065f46;
+      font-size:.8rem;
+      font-weight:900;
+      line-height:1.2;
+    }
+    .profit-note.negative{
+      color:#b91c1c;
+    }
+    .order-payments{
+      display:flex;
+      justify-content:flex-end;
+      flex-wrap:wrap;
+      gap:.4rem;
+      margin-top:.55rem;
+    }
+    .expand-control{
+      display:flex;
+      align-items:center;
+      gap:.6rem;
+      color:#0f172a;
+      font-size:.82rem;
+      font-weight:900;
+      white-space:nowrap;
+    }
+    .expand-label{
+      color:#334155;
+      letter-spacing:.02em;
+      text-transform:uppercase;
+    }
+    .toggle-arrow,
+    .order-arrow{
+      width:12px;
+      height:12px;
+      border-right:3px solid #0f172a;
+      border-bottom:3px solid #0f172a;
+      transform:rotate(45deg);
+      transition:transform .2s ease, border-color .2s ease;
+      flex:0 0 auto;
+    }
+    .day-toggle[aria-expanded="true"] .toggle-arrow,
+    .order-entry[open] .order-arrow{
+      transform:rotate(225deg);
+      border-color:#1d4ed8;
+    }
+    .order-body{
+      padding:0 1rem 1rem;
+      border-top:1px solid var(--border);
+    }
+    .order-tools{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:.75rem;
+      padding:.8rem 0;
+    }
+    .order-tools .hint{
+      color:var(--muted);
+      font-size:.88rem;
+      font-weight:700;
+    }
+    .item-table{
+      margin:0;
+    }
+    .item-table thead th{
+      background:#f8fafc;
+      color:#475569;
+      font-size:.78rem;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+      border-bottom:1px solid var(--border);
+    }
+    .item-table td{
+      vertical-align:middle;
+      border-color:#eef2f7;
+    }
+    .item-name{
+      font-weight:800;
+      color:var(--text);
+    }
+    .item-photo-cell{
+      width:108px;
+    }
+    .item-photo-btn{
+      width:74px;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      gap:.3rem;
+      border:1px solid rgba(148,163,184,.28);
+      border-radius:14px;
+      background:#fff;
+      padding:.45rem;
+      transition:border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+    }
+    .item-photo-btn:hover{
+      border-color:#60a5fa;
+      box-shadow:0 10px 18px rgba(37,99,235,.12);
+      transform:translateY(-1px);
+    }
+    .item-photo-btn img{
+      width:100%;
+      aspect-ratio:1;
+      object-fit:cover;
+      border-radius:10px;
+      display:block;
+      background:#f8fafc;
+    }
+    .zoom-label{
+      color:#1d4ed8;
+      font-size:.72rem;
+      font-weight:900;
+      letter-spacing:.03em;
+      text-transform:uppercase;
+      line-height:1;
+    }
+    .item-photo-placeholder{
+      width:74px;
+      aspect-ratio:1;
+      display:grid;
+      place-items:center;
+      border-radius:14px;
+      background:#f8fafc;
+      border:1px dashed rgba(148,163,184,.5);
+      color:#64748b;
+      font-size:.72rem;
+      font-weight:800;
+      text-align:center;
+      padding:.35rem;
+    }
+    .item-name a{
+      color:inherit;
+      text-decoration:none;
+    }
+    .item-name a:hover{
+      color:#1d4ed8;
+    }
+    .item-code{
+      color:var(--muted);
+      font-size:.82rem;
+      margin-top:.2rem;
+    }
+    .num{
+      font-variant-numeric:tabular-nums;
+      font-weight:800;
+    }
+    .image-modal{
+      position:fixed;
+      inset:0;
+      z-index:1080;
+      display:grid;
+      place-items:center;
+      padding:1rem;
+    }
+    .image-modal[hidden]{
+      display:none;
+    }
+    .image-modal-backdrop{
+      position:absolute;
+      inset:0;
+      background:rgba(15,23,42,.72);
+    }
+    .image-modal-dialog{
+      position:relative;
+      z-index:1;
+      width:min(92vw, 760px);
+      max-height:90vh;
+      background:#fff;
+      border-radius:22px;
+      overflow:hidden;
+      box-shadow:0 28px 60px rgba(15,23,42,.28);
+    }
+    .image-modal-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:1rem;
+      padding:1rem 1.1rem;
+      border-bottom:1px solid rgba(148,163,184,.22);
+    }
+    .image-modal-title{
+      color:#0f172a;
+      font-size:1rem;
+      font-weight:900;
+      line-height:1.25;
+    }
+    .image-modal-close{
+      width:40px;
+      height:40px;
+      border:0;
+      border-radius:999px;
+      background:#eff6ff;
+      color:#1d4ed8;
+      font-size:1.5rem;
+      line-height:1;
+      font-weight:900;
+    }
+    .image-modal-close:hover{
+      background:#dbeafe;
+    }
+    .image-modal-body{
+      padding:1rem;
+      background:#f8fafc;
+    }
+    .image-modal-body img{
+      width:100%;
+      max-height:70vh;
+      object-fit:contain;
+      display:block;
+      border-radius:16px;
+      background:#fff;
+    }
+
+    .empty-card{
+      padding:1.1rem 1.2rem;
+      color:var(--muted);
+      font-weight:700;
+      margin-top:1rem;
+    }
+
+    @media (max-width: 991.98px){
+      .filter-grid{
+        grid-template-columns:1fr 1fr;
+      }
+      .filter-actions{
+        grid-column:1 / -1;
+        justify-content:flex-start;
+      }
+      .summary-grid{
+        grid-template-columns:repeat(2, minmax(0, 1fr));
+      }
+      .summary-card.payments{
+        grid-column:1 / -1;
+      }
+      .day-toggle,
+      .order-summary{
+        grid-template-columns:1fr;
+      }
+      .day-toggle-meta,
+      .order-summary-end,
+      .order-summary-main{
+        width:100%;
+      }
+      .day-side,
+      .order-side{
+        text-align:left;
+        min-width:0;
+      }
+      .day-payments,
+      .order-payments{
+        justify-content:flex-start;
+      }
+      .page-head{
+        flex-direction:column;
+      }
+    }
+
+    @media (max-width: 575.98px){
+      .filter-grid{
+        grid-template-columns:1fr;
+      }
+      .summary-grid{
+        grid-template-columns:1fr;
+      }
+      .history-head,
+      .order-tools{
+        flex-direction:column;
+        align-items:flex-start;
+      }
+      .history-chip{
+        width:100%;
+        min-width:0;
+      }
+      .day-toggle-meta,
+      .order-summary-main,
+      .order-summary-end{
+        flex-direction:column;
+        align-items:flex-start;
+      }
+      .item-table thead{
+        display:none;
+      }
+      .item-table,
+      .item-table tbody,
+      .item-table tr,
+      .item-table td{
+        display:block;
+        width:100%;
+      }
+      .item-table tr{
+        border-top:1px solid #eef2f7;
+        padding:.75rem 0;
+      }
+      .item-table td{
+        border:0;
+        padding:.2rem 0;
+      }
+      .item-table td::before{
+        content:attr(data-label);
+        display:block;
+        color:var(--muted);
+        font-size:.76rem;
+        font-weight:800;
+        text-transform:uppercase;
+        letter-spacing:.03em;
+        margin-bottom:.1rem;
+      }
+    }
+  </style>
+
+  <div class="page-head">
+    <div>
+      <h2>Sales & Purchase Records</h2>
+      <p class="page-sub">
+        {% if date_filter %}
+          Showing records for {{ date_filter }}
+        {% else %}
+          Pick a date range to review orders and purchases.
+        {% endif %}
+      </p>
+    </div>
+    <div class="page-actions">
+      {% if show_sales_sensitive %}
+        {% if start_date or end_date %}
+          <a href="{% url 'export_sales_purchases_pdf' %}?start_date={{ start_date }}&end_date={{ end_date }}" class="btn btn-dark">Export PDF</a>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+  <form method="get" class="filter-card" id="records-filter-form">
+    <div class="filter-grid">
+      <div>
+        <label class="form-label" for="id_start_date">Start Date</label>
+        <input id="id_start_date" type="date" name="start_date" value="{{ start_date }}" class="form-control">
+      </div>
+      <div>
+        <label class="form-label" for="id_end_date">End Date</label>
+        <input id="id_end_date" type="date" name="end_date" value="{{ end_date }}" class="form-control">
+      </div>
+      <div class="filter-actions">
+        <button class="btn btn-primary" type="submit">Search</button>
+        <a class="btn btn-outline-secondary" href="{% url 'sales_records' %}">Reset</a>
+      </div>
+    </div>
+
+    <div class="quick-ranges">
+      <button type="button" class="btn btn-sm btn-outline-primary" data-quick-range="today">Today</button>
+      <button type="button" class="btn btn-sm btn-outline-primary" data-quick-range="last7">Last 7 Days</button>
+      <button type="button" class="btn btn-sm btn-outline-primary" data-quick-range="thisMonth">This Month</button>
+    </div>
+
+    <div class="history-wrap">
+      <div class="history-head">
+        <p class="history-title">Recent Searches</p>
+        <button type="button" id="clear-search-history" class="btn btn-sm btn-outline-secondary">Clear History</button>
+      </div>
+      <div id="search-history-list" class="history-list"></div>
+      <div id="search-history-empty" class="history-empty">Your recent date ranges will appear here.</div>
+    </div>
+  </form>
+
+  {% if day_blocks or purchase_day_blocks %}
+    <div class="summary-grid">
+      {% if show_order_financials %}
+        <div class="summary-card">
+          <div class="summary-label">Sales Amount</div>
+          <div class="summary-value">EUR {{ total_sales_amount|floatformat:2 }}</div>
+          <div class="summary-sub">{{ total_sales_orders }} orders</div>
+        </div>
+      {% else %}
+        <div class="summary-card">
+          <div class="summary-label">Orders Found</div>
+          <div class="summary-value">{{ total_sales_orders }}</div>
+          <div class="summary-sub">Across the selected range</div>
+        </div>
+      {% endif %}
+      <div class="summary-card">
+        <div class="summary-label">Items Sold</div>
+        <div class="summary-value">{{ total_sales_qty }}</div>
+        <div class="summary-sub">Across the selected range</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">{% if show_order_financials %}Average Per Order{% else %}Days Covered{% endif %}</div>
+        <div class="summary-value">{% if show_order_financials %}EUR {{ avg_order_amount|floatformat:2 }}{% else %}{{ day_blocks|length }}{% endif %}</div>
+        <div class="summary-sub">{% if show_order_financials %}Based on {{ total_sales_orders }} orders{% else %}Active dates in this range{% endif %}</div>
+      </div>
+      {% if show_profit %}
+        <div class="summary-card">
+          <div class="summary-label">Net Profit</div>
+          <div class="summary-value">EUR {{ total_sales_profit|floatformat:2 }}</div>
+          <div class="summary-sub">Admin only</div>
+        </div>
+      {% endif %}
+      {% if show_purchases %}
+        <div class="summary-card">
+          <div class="summary-label">Purchase Cost</div>
+          <div class="summary-value">EUR {{ total_purchase_amount|floatformat:2 }}</div>
+          <div class="summary-sub">{{ total_purchase_orders }} purchase groups</div>
+        </div>
+      {% endif %}
+      {% if show_order_financials %}
+        <div class="summary-card payments">
+          <div class="summary-label">Payment Split</div>
+          <div class="payment-grid">
+            {% for key, value in payment_totals.items %}
+              <div class="payment-total">
+                <span>{{ key|capfirst }}</span>
+                <span>EUR {{ value|floatformat:2 }}</span>
+              </div>
+            {% empty %}
+              <div class="history-empty">No payment data in this range.</div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if day_blocks %}
+    <div class="section-title">
+      <h3>Sales Orders</h3>
+      <span class="muted-note">{{ total_sales_orders }} orders in this range</span>
+    </div>
+
+    {% for day in day_blocks %}
+      <section class="day-panel">
+        <button class="day-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#sales-day-{{ forloop.counter }}" aria-expanded="{% if forloop.first %}true{% else %}false{% endif %}">
+          <div class="day-main">
+            <div class="day-date">{{ day.date }}</div>
+            <div class="day-meta">
+              {% if show_order_financials %}
+                {{ day.order_count }} orders, {{ day.totals.qty }} items, average EUR {{ day.avg_order_amount|floatformat:2 }} per order
+              {% else %}
+                {{ day.order_count }} orders, {{ day.totals.qty }} items
+              {% endif %}
+            </div>
+          </div>
+          <div class="day-toggle-meta">
+            {% if show_order_financials %}
+              <div class="day-side">
+                <div class="day-amount">EUR {{ day.totals.amount|floatformat:2 }}</div>
+                {% if show_profit %}
+                  <div class="profit-note {% if day.totals.profit < 0 %}negative{% endif %}">Profit EUR {{ day.totals.profit|floatformat:2 }}</div>
+                {% endif %}
+                <div class="day-payments">
+                  {% for pay in day.pay_break_display %}
+                    <span class="day-pill">{{ pay.label }} EUR {{ pay.amount|floatformat:2 }}</span>
+                  {% empty %}
+                    <span class="day-pill">No payment split</span>
+                  {% endfor %}
+                </div>
+              </div>
+            {% endif %}
+            <span class="toggle-arrow" aria-hidden="true"></span>
+          </div>
+        </button>
+
+        <div id="sales-day-{{ forloop.counter }}" class="collapse {% if forloop.first %}show{% endif %}">
+          <div class="orders-wrap">
+            {% for row in day.orders %}
+              <details class="order-entry" id="{{ row.detail_id }}">
+                <summary class="order-summary">
+                  <div class="order-summary-main">
+                    <div class="order-summary-text">
+                      <div class="order-identity">
+                        <span class="identity-label">Customer</span>
+                        {% if row.customer_detail_url %}
+                          <a href="{{ row.customer_detail_url }}" class="order-customer-main">{{ row.customer_name }}</a>
+                        {% else %}
+                          <span class="order-customer-main">{{ row.customer_name }}</span>
+                        {% endif %}
+                      </div>
+                      <div class="order-top">
+                        <span class="order-badge">
+                          {% if row.order_id %}Order #{{ row.order_id }}{% else %}Legacy Sale{% endif %}
+                        </span>
+                        <span class="order-time">{{ row.created_at|date:"Y-m-d H:i" }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="order-summary-end">
+                    {% if show_order_financials %}
+                      <div class="order-side">
+                        <div class="order-total">EUR {{ row.total_amount|floatformat:2 }}</div>
+                        {% if show_profit %}
+                          <div class="profit-note {% if row.total_profit < 0 %}negative{% endif %}">Profit EUR {{ row.total_profit|floatformat:2 }}</div>
+                        {% endif %}
+                      </div>
+                    {% endif %}
+                    <div class="expand-control">
+                      <span class="expand-label">Details</span>
+                      <span class="order-arrow" aria-hidden="true"></span>
+                    </div>
+                  </div>
+                </summary>
+
+                <div class="order-body">
+                  <div class="order-tools">
+                      <span class="hint">
+                        {% if show_order_financials %}
+                        Expand each order to inspect products, quantities, payment method, and subtotals.
+                        {% else %}
+                        Expand each order to inspect products and quantities.
+                        {% endif %}
+                      </span>
+                    {% if row.detail_url %}
+                      <a href="{{ row.detail_url }}" class="btn btn-sm btn-outline-secondary">Print</a>
+                    {% endif %}
+                  </div>
+                  <div class="table-responsive">
+                    <table class="table item-table">
+                      <thead>
+                        <tr>
+                          <th>Image</th>
+                          <th>Product</th>
+                          <th>Barcode</th>
+                          <th>Qty</th>
+                          {% if show_order_financials %}
+                            <th>Unit Price</th>
+                            <th>Payment</th>
+                            <th>Subtotal</th>
+                            <th>Action</th>
+                          {% endif %}
+                          {% if show_profit %}
+                            <th>Net Profit</th>
+                          {% endif %}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for item in row.items_today %}
+                          <tr>
+                            <td data-label="Image" class="item-photo-cell">
+                              {% if item.image_url %}
+                                <button type="button" class="item-photo-btn js-open-image-modal" data-image-url="{{ item.image_url }}" data-image-label="{{ item.display_name }}">
+                                  <img src="{{ item.image_url }}" alt="{{ item.display_name }}">
+                                  <span class="zoom-label">Zoom</span>
+                                </button>
+                              {% else %}
+                                <div class="item-photo-placeholder">No image</div>
+                              {% endif %}
+                            </td>
+                            <td data-label="Product">
+                              <div class="item-name">
+                                {% if item.product %}
+                                  <a href="{% url 'product_detail' item.product.id %}">{{ item.display_name }}</a>
+                                {% else %}
+                                  {{ item.display_name }}
+                                {% endif %}
+                              </div>
+                            </td>
+                            <td data-label="Barcode">
+                              <div class="item-code">{% if item.product %}{{ item.product.barcode }}{% else %}-{% endif %}</div>
+                            </td>
+                            <td data-label="Qty"><span class="num">{{ item.quantity }}</span></td>
+                            {% if show_order_financials %}
+                              <td data-label="Unit Price"><span class="num">EUR {{ item.unit_price|floatformat:2 }}</span></td>
+                              <td data-label="Payment"><span class="pay-pill">{{ item.payment_label }}</span></td>
+                              <td data-label="Subtotal"><span class="num">EUR {{ item.line_total|floatformat:2 }}</span></td>
+                            {% endif %}
+                            {% if show_profit %}
+                              <td data-label="Net Profit">
+                                <span class="num {% if item.line_profit < 0 %}text-danger{% endif %}">EUR {{ item.line_profit|floatformat:2 }}</span>
+                              </td>
+                            {% endif %}
+                          </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </details>
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+    {% endfor %}
+  {% elif start_date or end_date %}
+    <div class="empty-card">No sales records found in the selected range.</div>
+  {% endif %}
+
+  {% if show_purchases %}
+    <div class="section-title">
+      <h3>Inbound Purchases</h3>
+      <span class="muted-note">{{ total_purchase_orders }} purchase groups in this range</span>
+    </div>
+
+    {% if purchase_day_blocks %}
+      {% for day in purchase_day_blocks %}
+        <section class="day-panel">
+          <button class="day-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#purchase-day-{{ forloop.counter }}" aria-expanded="false">
+            <div class="day-main">
+              <div class="day-date">{{ day.date }}</div>
+              <div class="day-meta">{{ day.purchase_count }} purchase groups, {{ day.totals.qty }} items</div>
+            </div>
+            <div class="day-toggle-meta">
+              <div class="day-side">
+                <div class="day-amount">€{{ day.totals.amount|floatformat:2 }}</div>
+              </div>
+              <span class="toggle-arrow" aria-hidden="true"></span>
+            </div>
+          </button>
+
+          <div id="purchase-day-{{ forloop.counter }}" class="collapse">
+            <div class="orders-wrap">
+              {% for row in day.purchases %}
+                <details class="order-entry" id="{{ row.detail_id }}">
+                  <summary class="order-summary">
+                    <div class="order-summary-main">
+                      <div class="order-summary-text">
+                        <div class="order-identity">
+                          <span class="identity-label {% if not row.has_supplier %}warning{% endif %}">{{ row.identity_label }}</span>
+                          <span class="order-customer-main {% if not row.has_supplier %}missing{% endif %}">{{ row.supplier_name }}</span>
+                        </div>
+                        <div class="order-top">
+                          <span class="order-badge">{{ row.header_badge }}</span>
+                          <span class="order-time">{{ row.created_at|date:"Y-m-d H:i" }}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="order-summary-end">
+                      <div class="order-side">
+                        <div class="order-total">€{{ row.total_cost|floatformat:2 }}</div>
+                      </div>
+                      <div class="expand-control">
+                        <span class="expand-label">Details</span>
+                        <span class="order-arrow" aria-hidden="true"></span>
+                      </div>
+                    </div>
+                  </summary>
+
+                  <div class="order-body">
+                    <div class="order-tools">
+                      <span class="hint">Review the purchase lines below to verify quantity and cost per batch.</span>
+                      {% if row.edit_url %}
+                        <a href="{{ row.edit_url }}" class="btn btn-sm btn-outline-primary">Adjust record</a>
+                      {% endif %}
+                    </div>
+                    <div class="table-responsive">
+                      <table class="table item-table">
+                        <thead>
+                          <tr>
+                            <th>Image</th>
+                            <th>Product</th>
+                            <th>Barcode</th>
+                            <th>Qty</th>
+                            <th>Unit Cost</th>
+                            <th>Subtotal</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {% for item in row.items %}
+                            <tr>
+                              <td data-label="Image" class="item-photo-cell">
+                                {% if item.image_url %}
+                                  <button type="button" class="item-photo-btn js-open-image-modal" data-image-url="{{ item.image_url }}" data-image-label="{{ item.display_name }}">
+                                    <img src="{{ item.image_url }}" alt="{{ item.display_name }}">
+                                    <span class="zoom-label">Zoom</span>
+                                  </button>
+                                {% else %}
+                                  <div class="item-photo-placeholder">No image</div>
+                                {% endif %}
+                              </td>
+                              <td data-label="Product">
+                                <div class="item-name">
+                                  {% if item.product %}
+                                    <a href="{% url 'product_detail' item.product.id %}">{{ item.display_name }}</a>
+                                  {% else %}
+                                    {{ item.display_name }}
+                                  {% endif %}
+                                </div>
+                              </td>
+                              <td data-label="Barcode">
+                                <div class="item-code">{% if item.product %}{{ item.product.barcode }}{% else %}-{% endif %}</div>
+                              </td>
+                              <td data-label="Qty"><span class="num">{{ item.quantity }}</span></td>
+                              <td data-label="Unit Cost"><span class="num">€{{ item.cost_price|floatformat:2 }}</span></td>
+                              <td data-label="Subtotal"><span class="num">€{{ item.line_total|floatformat:2 }}</span></td>
+                              <td data-label="Action">
+                                {% if item.edit_url %}
+                                  <a href="{{ item.edit_url }}" class="btn btn-sm btn-outline-secondary">Adjust</a>
+                                {% else %}
+                                  <span class="muted-note">Header</span>
+                                {% endif %}
+                              </td>
+                            </tr>
+                          {% endfor %}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </details>
+              {% endfor %}
+            </div>
+          </div>
+        </section>
+      {% endfor %}
+    {% elif start_date or end_date %}
+      <div class="empty-card">No purchase records found in the selected range.</div>
+    {% endif %}
+  {% endif %}
+</div>
+
+<div id="records-image-modal" class="image-modal" hidden>
+  <div class="image-modal-backdrop" data-image-close="true"></div>
+  <div class="image-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="records-image-modal-title">
+    <div class="image-modal-head">
+      <div id="records-image-modal-title" class="image-modal-title">Product Preview</div>
+      <button type="button" id="records-image-modal-close" class="image-modal-close" aria-label="Close preview">&times;</button>
+    </div>
+    <div class="image-modal-body">
+      <img id="records-image-modal-image" src="" alt="">
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const form = document.getElementById('records-filter-form');
+  const startInput = document.getElementById('id_start_date');
+  const endInput = document.getElementById('id_end_date');
+  const historyList = document.getElementById('search-history-list');
+  const historyEmpty = document.getElementById('search-history-empty');
+  const clearHistoryBtn = document.getElementById('clear-search-history');
+  const imageModal = document.getElementById('records-image-modal');
+  const imageModalImage = document.getElementById('records-image-modal-image');
+  const imageModalTitle = document.getElementById('records-image-modal-title');
+  const imageModalClose = document.getElementById('records-image-modal-close');
+  const storageKey = 'sales-records-history-v2';
+
+  function loadHistory() {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      const items = raw ? JSON.parse(raw) : [];
+      return Array.isArray(items) ? items : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  function saveHistory(items) {
+    localStorage.setItem(storageKey, JSON.stringify(items.slice(0, 8)));
+  }
+
+  function rangeLabel(item) {
+    return item.start === item.end ? item.start : `${item.start} to ${item.end}`;
+  }
+
+  function currentRange() {
+    return {
+      start: startInput.value,
+      end: endInput.value || startInput.value,
+    };
+  }
+
+  function isCurrentRange(item) {
+    const active = currentRange();
+    return item.start === active.start && item.end === active.end;
+  }
+
+  function historyMetaLabel(item) {
+    if (isCurrentRange(item)) return 'Current range';
+    if (!item.savedAt) return 'Tap to reuse';
+
+    const savedAt = new Date(item.savedAt);
+    if (Number.isNaN(savedAt.getTime())) return 'Tap to reuse';
+
+    return `Saved ${savedAt.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${savedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  }
+
+  function renderHistory() {
+    const items = loadHistory();
+    historyList.innerHTML = '';
+    historyEmpty.style.display = items.length ? 'none' : 'block';
+
+    items.forEach((item) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'history-chip';
+      if (isCurrentRange(item)) {
+        button.classList.add('is-active');
+      }
+
+      const main = document.createElement('span');
+      main.className = 'history-chip-main';
+      main.textContent = rangeLabel(item);
+
+      const sub = document.createElement('span');
+      sub.className = 'history-chip-sub';
+      sub.textContent = historyMetaLabel(item);
+
+      button.append(main, sub);
+      button.addEventListener('click', () => {
+        startInput.value = item.start;
+        endInput.value = item.end;
+        form.submit();
+      });
+      historyList.appendChild(button);
+    });
+  }
+
+  function rememberCurrentRange() {
+    const start = startInput.value;
+    const end = endInput.value || start;
+    if (!start || !end) return;
+
+    const nextItem = {
+      start,
+      end,
+      savedAt: new Date().toISOString(),
+    };
+    const items = loadHistory().filter((item) => !(item.start === nextItem.start && item.end === nextItem.end));
+    items.unshift(nextItem);
+    saveHistory(items);
+  }
+
+  function openImageModal(imageUrl, imageLabel) {
+    if (!imageUrl || !imageModal) return;
+    imageModalImage.src = imageUrl;
+    imageModalImage.alt = imageLabel || 'Product preview';
+    imageModalTitle.textContent = imageLabel || 'Product Preview';
+    imageModal.hidden = false;
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeImageModal() {
+    if (!imageModal) return;
+    imageModal.hidden = true;
+    imageModalImage.src = '';
+    imageModalImage.alt = '';
+    document.body.style.overflow = '';
+  }
+
+  if (startInput.value || endInput.value) {
+    rememberCurrentRange();
+  }
+  renderHistory();
+
+  form.addEventListener('submit', () => {
+    rememberCurrentRange();
+  });
+
+  clearHistoryBtn.addEventListener('click', () => {
+    localStorage.removeItem(storageKey);
+    renderHistory();
+  });
+
+  document.querySelectorAll('.js-open-image-modal').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openImageModal(button.dataset.imageUrl, button.dataset.imageLabel);
+    });
+  });
+
+  imageModalClose?.addEventListener('click', closeImageModal);
+  imageModal?.addEventListener('click', (event) => {
+    if (event.target.dataset.imageClose === 'true') {
+      closeImageModal();
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && imageModal && !imageModal.hidden) {
+      closeImageModal();
+    }
+  });
+
+  function formatDate(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  document.querySelectorAll('[data-quick-range]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const today = new Date();
+      const quickRange = button.getAttribute('data-quick-range');
+      let start = new Date(today);
+      let end = new Date(today);
+
+      if (quickRange === 'last7') {
+        start.setDate(today.getDate() - 6);
+      } else if (quickRange === 'thisMonth') {
+        start = new Date(today.getFullYear(), today.getMonth(), 1);
+      }
+
+      startInput.value = formatDate(start);
+      endInput.value = formatDate(end);
+      form.submit();
+    });
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,61 @@
+{% extends 'stock/base.html' %}
+{% block title %}{% if is_create %}Add Supplier{% else %}Edit Supplier{% endif %}{% endblock %}
+
+{% block content %}
+<style>
+  .shell{max-width:920px;margin:0 auto}
+  .cardx{background:#fff;border:1px solid #dbe5f0;border-radius:1.1rem;box-shadow:0 18px 40px rgba(15,23,42,.06)}
+  .head{padding:1.35rem}
+  .head h1{margin:0;font-size:2rem;font-weight:900;color:#10213a}
+  .sub{color:#5a6b81}
+</style>
+
+<div class="shell d-grid gap-4">
+  <section class="cardx head">
+    <div class="d-flex justify-content-between gap-3 flex-wrap">
+      <div>
+        <h1>{% if is_create %}Add Supplier{% else %}Edit Supplier{% endif %}</h1>
+        <p class="sub mb-0">Keep supplier contact details and supplied categories clean so inbound records stay useful.</p>
+      </div>
+      <a href="{% url 'supplier_list' %}" class="btn btn-outline-secondary">Back to suppliers</a>
+    </div>
+  </section>
+
+  <form method="post" class="cardx p-4">
+    {% csrf_token %}
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label fw-bold" for="{{ form.name.id_for_label }}">Supplier name</label>
+        {{ form.name }}
+        {% if form.name.errors %}<div class="text-danger small mt-1">{{ form.name.errors|join:', ' }}</div>{% endif %}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label fw-bold" for="{{ form.phone.id_for_label }}">Phone / WhatsApp</label>
+        {{ form.phone }}
+        {% if form.phone.errors %}<div class="text-danger small mt-1">{{ form.phone.errors|join:', ' }}</div>{% endif %}
+      </div>
+      <div class="col-md-4">
+        <label class="form-label fw-bold" for="{{ form.country.id_for_label }}">Country</label>
+        {{ form.country }}
+        {% if form.country.errors %}<div class="text-danger small mt-1">{{ form.country.errors|join:', ' }}</div>{% endif %}
+      </div>
+      <div class="col-md-8">
+        <label class="form-label fw-bold" for="{{ form.address.id_for_label }}">Address</label>
+        {{ form.address }}
+        {% if form.address.errors %}<div class="text-danger small mt-1">{{ form.address.errors|join:', ' }}</div>{% endif %}
+      </div>
+      <div class="col-12">
+        <label class="form-label fw-bold" for="{{ form.product_types.id_for_label }}">Supplied categories</label>
+        {{ form.product_types }}
+        <div class="form-text">Hold Ctrl or Cmd to select multiple categories.</div>
+        {% if form.product_types.errors %}<div class="text-danger small mt-1">{{ form.product_types.errors|join:', ' }}</div>{% endif %}
+      </div>
+    </div>
+
+    <div class="d-flex gap-2 flex-wrap mt-4">
+      <button type="submit" class="btn btn-primary">{% if is_create %}Create supplier{% else %}Save changes{% endif %}</button>
+      <a href="{% url 'supplier_list' %}" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

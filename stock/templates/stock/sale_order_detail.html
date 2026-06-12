@@ -1,0 +1,390 @@
+{% extends 'stock/base.html' %}
+{% load math_extras %}
+{% block title %}Receipt #{{ order.id }}{% endblock %}
+
+{% block content %}
+<div class="invoice container my-4">
+  <style>
+    .receipt-actions{
+      display:flex;
+      gap:.65rem;
+      flex-wrap:wrap;
+    }
+    .a4-receipt{
+      max-width:980px;
+      margin:0 auto;
+      background:#fff;
+      border:1px solid rgba(15,23,42,.08);
+      border-radius:1.25rem;
+      box-shadow:0 20px 48px rgba(15,23,42,.08);
+      overflow:hidden;
+    }
+    .a4-head{
+      display:grid;
+      grid-template-columns:minmax(0,1.45fr) minmax(260px,.75fr);
+      gap:1.25rem;
+      padding:1.6rem 1.7rem 1.2rem;
+      background:linear-gradient(180deg,#fbfdff,#f2f7fd);
+      border-bottom:1px solid rgba(15,23,42,.08);
+    }
+    .a4-brand{
+      font-size:1.8rem;
+      font-weight:900;
+      color:#10213a;
+      line-height:1.05;
+    }
+    .a4-meta{
+      margin-top:.55rem;
+      color:#556579;
+      line-height:1.7;
+    }
+    .a4-head-box{
+      border:1px solid rgba(15,23,42,.1);
+      border-radius:1rem;
+      background:#fff;
+      padding:1rem 1.05rem;
+    }
+    .a4-head-label{
+      font-size:.78rem;
+      font-weight:900;
+      letter-spacing:.06em;
+      text-transform:uppercase;
+      color:#64748b;
+    }
+    .a4-head-value{
+      margin-top:.45rem;
+      color:#10213a;
+      font-size:1.2rem;
+      font-weight:900;
+    }
+    .a4-body{
+      padding:1.35rem 1.7rem 1.7rem;
+      display:grid;
+      gap:1rem;
+    }
+    .a4-info-grid{
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:1rem;
+    }
+    .a4-info-card{
+      border:1px solid rgba(15,23,42,.08);
+      border-radius:1rem;
+      background:#fff;
+      padding:1rem 1.05rem;
+    }
+    .a4-info-title{
+      font-size:.78rem;
+      font-weight:900;
+      letter-spacing:.06em;
+      text-transform:uppercase;
+      color:#64748b;
+      margin-bottom:.55rem;
+    }
+    .a4-items{
+      border:1px solid rgba(15,23,42,.08);
+      border-radius:1rem;
+      overflow:hidden;
+      background:#fff;
+    }
+    .a4-items table{margin-bottom:0}
+    .a4-items thead th{
+      background:#f4f7fb;
+      color:#223246;
+      font-size:.8rem;
+      font-weight:900;
+      letter-spacing:.05em;
+      text-transform:uppercase;
+      border-bottom:1px solid rgba(15,23,42,.08);
+    }
+    .a4-items td,.a4-items th{padding:.85rem .9rem;vertical-align:top}
+    .a4-item-name{font-weight:800;color:#10213a}
+    .a4-item-meta{margin-top:.18rem;font-size:.84rem;color:#64748b}
+    .a4-payments{
+      display:flex;
+      gap:.5rem;
+      flex-wrap:wrap;
+    }
+    .a4-pay-pill{
+      display:inline-flex;
+      align-items:center;
+      padding:.35rem .65rem;
+      border-radius:999px;
+      background:#eff4ff;
+      border:1px solid #d7e2f5;
+      color:#173761;
+      font-weight:800;
+      font-size:.84rem;
+    }
+    .a4-note{
+      border:1px solid rgba(15,23,42,.08);
+      border-radius:1rem;
+      padding:1rem 1.05rem;
+      background:#fff;
+    }
+    .a4-foot{
+      padding-top:.25rem;
+      color:#64748b;
+      font-size:.9rem;
+      text-align:center;
+    }
+    .pos-wrap{
+      width:48mm;
+      font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;
+      font-size:13.5px;
+      line-height:1.35;
+      color:#000;
+      margin:0 auto;
+    }
+    .pos-title{font-weight:700;font-size:14.5px;margin-bottom:2px;}
+    .pos-sub{font-size:12.5px;color:#333;}
+    .pos-center{text-align:center;}
+    .pos-sep{margin:4px 0;}
+    .pos-row{margin-bottom:6px;}
+    .pos-name{font-weight:700;word-break:break-word;}
+    .pos-meta{font-size:12.5px;color:#444;word-break:break-word;}
+    .pos-grid{
+      display:grid;
+      grid-template-columns:1fr auto;
+      align-items:baseline;
+      gap:6px;
+      margin-bottom:4px;
+    }
+    .pos-amt{
+      text-align:right;
+      white-space:nowrap;
+      font-variant-numeric:tabular-nums;
+    }
+    .pos-total{font-weight:700;margin-top:8px;font-size:14.5px;}
+    .pos-note{white-space:pre-wrap;}
+    {% if print_mode and print_layout == 'a4' %}
+    @page{size:A4;margin:10mm;}
+    body{background:#fff !important;}
+    .invoice.container{
+      max-width:none;
+      margin:0 auto;
+      padding:0;
+    }
+    .a4-receipt{
+      max-width:none;
+      border:0;
+      border-radius:0;
+      box-shadow:none;
+    }
+    {% endif %}
+    {% if print_mode and print_layout == 'pos' %}
+    @page{size:48mm auto;margin:2mm;}
+    .invoice.container{
+      max-width:52mm;
+      margin:0 auto;
+      padding:0;
+    }
+    {% endif %}
+  </style>
+
+  {% if not print_mode %}
+    <div class="d-print-none mb-3 receipt-actions">
+      {% if can_print_receipt %}
+        <a href="{{ print_a4_url }}" target="_blank" rel="noopener" class="btn btn-primary">Print A4</a>
+        <a href="{{ print_pos_url }}" target="_blank" rel="noopener" class="btn btn-secondary">Print POS (48mm)</a>
+      {% endif %}
+      {% if can_admin_correct %}
+        <a href="{{ edit_print_profile_url }}" class="btn btn-warning">Edit Header Info</a>
+      {% endif %}
+      <a href="javascript:history.back()" class="btn btn-outline-secondary">Back</a>
+    </div>
+  {% endif %}
+
+  {% if print_layout == 'a4' %}
+    <div id="a4-receipt" class="a4-receipt">
+      <div class="a4-head">
+        <div>
+          <div class="a4-brand">{{ shop.name|default:"A Sua Loja" }}</div>
+          <div class="a4-meta">
+            {% if shop.address %}<div>{{ shop.address }}</div>{% endif %}
+            {% if shop.phone or shop.email %}
+              <div>
+                {% if shop.phone %}{{ shop.phone }}{% endif %}
+                {% if shop.phone and shop.email %} / {% endif %}
+                {% if shop.email %}{{ shop.email }}{% endif %}
+              </div>
+            {% endif %}
+            {% if show_sensitive and shop.nif %}<div>NIF: {{ shop.nif }}</div>{% endif %}
+          </div>
+        </div>
+        <div class="a4-head-box">
+          <div class="a4-head-label">Receipt</div>
+          <div class="a4-head-value">#{{ order.id }}</div>
+          <div class="small text-muted mt-2">Printed {{ order.created_at|date:"d/m/Y H:i" }}</div>
+        </div>
+      </div>
+
+      <div class="a4-body">
+        <div class="a4-info-grid">
+          <div class="a4-info-card">
+            <div class="a4-info-title">Customer</div>
+            {% if order.customer %}
+              <div><strong>{{ order.customer.name }}</strong></div>
+              {% if show_sensitive %}
+                {% if order.customer.nif %}<div class="text-muted mt-1">NIF: {{ order.customer.nif }}</div>{% endif %}
+                {% if order.customer.phone %}<div class="text-muted">Phone: {{ order.customer.phone }}</div>{% endif %}
+                {% if order.customer.email %}<div class="text-muted">Email: {{ order.customer.email }}</div>{% endif %}
+              {% endif %}
+            {% else %}
+              <div class="text-muted"><em>No customer linked</em></div>
+            {% endif %}
+          </div>
+          <div class="a4-info-card">
+            <div class="a4-info-title">Summary</div>
+            <div class="d-flex justify-content-between align-items-center mb-2"><span class="text-muted">Items</span><strong>{{ total_qty }}</strong></div>
+            {% if show_order_financials %}
+              <div class="d-flex justify-content-between align-items-center mb-2"><span class="text-muted">Payments</span><strong>{{ pay_break|length }}</strong></div>
+              <div class="d-flex justify-content-between align-items-center"><span class="text-muted">Grand Total</span><strong>EUR {{ total_amount|floatformat:2 }}</strong></div>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="a4-items">
+          <table class="table table-sm">
+            <thead>
+              <tr>
+                <th style="width:46%">Product</th>
+                <th style="width:10%" class="text-end">Qty</th>
+                {% if show_order_financials %}
+                  <th style="width:14%" class="text-end">Unit</th>
+                  <th style="width:16%">Payment</th>
+                  <th style="width:14%" class="text-end">Subtotal</th>
+                {% endif %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for it in items %}
+                <tr>
+                  <td>
+                    <div class="a4-item-name">{{ it.display_name }}</div>
+                    <div class="a4-item-meta">Barcode: {{ it.product.barcode }}</div>
+                  </td>
+                  <td class="text-end">{{ it.quantity }}</td>
+                  {% if show_order_financials %}
+                    <td class="text-end">EUR {{ it.unit_price|floatformat:2 }}</td>
+                    <td>
+                      {% if it.payment_method == 'cash' %}Cash
+                      {% elif it.payment_method == 'card' %}Card
+                      {% elif it.payment_method == 'mbway' %}MB Way
+                      {% else %}{{ it.payment_method|capfirst }}{% endif %}
+                    </td>
+                    <td class="text-end fw-bold">EUR {{ it.unit_price|mul:it.quantity|floatformat:2 }}</td>
+                  {% endif %}
+                </tr>
+              {% empty %}
+                <tr><td colspan="{% if show_order_financials %}5{% else %}2{% endif %}" class="text-center py-4">No items.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        {% if show_order_financials and pay_break %}
+          <div class="a4-info-card">
+            <div class="a4-info-title">Payment split</div>
+            <div class="a4-payments">
+              {% for k,v in pay_break.items %}
+                <span class="a4-pay-pill">
+                  {% if k == 'cash' %}Cash{% elif k == 'card' %}Card{% elif k == 'mbway' %}MB Way{% else %}{{ k|capfirst }}{% endif %}: EUR {{ v|floatformat:2 }}
+                </span>
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
+
+        {% if order.note %}
+          <div class="a4-note">
+            <div class="a4-info-title">Notes</div>
+            <div>{{ order.note }}</div>
+          </div>
+        {% endif %}
+
+        <div class="a4-foot">{{ shop.footer_note|default:"Thank you for your purchase." }}</div>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if print_layout == 'pos' and show_receipt_amounts %}
+    <div id="pos-receipt">
+      <div class="pos-wrap">
+        <div class="pos-center pos-title">{{ shop.name|default:"A Sua Loja" }}</div>
+        <div class="pos-center pos-sub">{{ shop.address|default:"Address" }}</div>
+        <div class="pos-center pos-sub">{{ shop.phone|default:"(+351) 000 000 000" }}</div>
+        <div class="pos-center pos-sep">------------------------------</div>
+
+        <div class="pos-row"><div>Receipt</div></div>
+        <div class="pos-row"><div>No.: #{{ order.id }}</div></div>
+        <div class="pos-row"><div>Date: {{ order.created_at|date:"d/m/Y H:i" }}</div></div>
+        {% if order.customer %}
+          <div class="pos-row"><div>Customer: {{ order.customer.name }}</div></div>
+          {% if show_sensitive %}
+            <div class="pos-row"><div>ID: {{ order.customer.nif }}</div></div>
+          {% endif %}
+        {% endif %}
+        <div class="pos-center pos-sep">------------------------------</div>
+
+        {% for it in items %}
+          <div class="pos-row">
+            <div class="pos-name">{{ it.display_name }}</div>
+          </div>
+          {% if it.product.brand %}
+            <div class="pos-row">
+              <div class="pos-meta">{{ it.product.brand }}</div>
+            </div>
+          {% endif %}
+          <div class="pos-grid">
+            <div class="pos-meta">Qty {{ it.quantity }} x EUR {{ it.unit_price|floatformat:2 }}</div>
+            <div class="pos-amt">EUR {{ it.unit_price|mul:it.quantity|floatformat:2 }}</div>
+          </div>
+        {% empty %}
+          <div class="pos-row"><div>No items.</div></div>
+        {% endfor %}
+
+        <div class="pos-center pos-sep">------------------------------</div>
+
+        {% if pay_break %}
+          {% for k,v in pay_break.items %}
+            <div class="pos-grid">
+              <div class="pos-name">
+                {% if k == 'cash' %}Payment (Cash)
+                {% elif k == 'card' %}Payment (Card)
+                {% elif k == 'mbway' %}Payment (MB Way)
+                {% else %}Payment ({{ k|capfirst }})
+                {% endif %}
+              </div>
+              <div class="pos-amt">EUR {{ v|floatformat:2 }}</div>
+            </div>
+          {% endfor %}
+        {% endif %}
+
+        <div class="pos-total pos-grid">
+          <div>Total</div>
+          <div class="pos-amt">EUR {{ total_amount|floatformat:2 }}</div>
+        </div>
+
+        {% if order.note %}
+          <div class="pos-center pos-sep">------------------------------</div>
+          <div class="pos-row"><div class="pos-note">Note: {{ order.note }}</div></div>
+        {% endif %}
+
+        <div class="pos-center pos-sep">------------------------------</div>
+        <div class="pos-center">{{ shop.footer_note|default:"Thank you for your purchase." }}</div>
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+<script>
+  {% if print_mode %}
+    window.addEventListener('load', function () {
+      setTimeout(function () {
+        window.print();
+      }, 150);
+    });
+  {% endif %}
+</script>
+{% endblock %}
