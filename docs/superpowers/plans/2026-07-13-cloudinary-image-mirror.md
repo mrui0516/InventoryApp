@@ -292,7 +292,7 @@ git commit -m "feat: add Cloudinary client wrapper and settings"
 **Interfaces:**
 - Consumes: `CloudinaryClient` (Task 2), settings `CLOUDINARY_FOLDER`.
 - Produces:
-  - Result codes: `UPLOADED='uploaded'`, `DELETED='deleted'`, `SKIP_NO_BARCODE='no_barcode'`, `SKIP_NO_IMAGE='no_image_file'`, `ERROR='error'` (note: `SKIP_NO_IMAGE` is reserved for future use; delete path uses `DELETED`).
+  - Result codes: `UPLOADED='uploaded'`, `DELETED='deleted'`, `SKIP_NO_BARCODE='no_barcode'`, `ERROR='error'`.
   - `sync_product_primary_image(product, client=None, *, dry_run=False) -> (code, detail)`.
 
 - [ ] **Step 1: Write the failing test**
@@ -402,7 +402,6 @@ logger = logging.getLogger(__name__)
 UPLOADED = 'uploaded'
 DELETED = 'deleted'
 SKIP_NO_BARCODE = 'no_barcode'
-SKIP_NO_IMAGE = 'no_image_file'
 ERROR = 'error'
 
 
