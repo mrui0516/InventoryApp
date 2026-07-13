@@ -52,7 +52,7 @@ InventoryApp/
 │   ├── admin.py                       # Django Admin 自定义（270 行）
 │   ├── urls.py                        # 路由表（70+ 条 path）
 │   ├── permissions.py                 # 角色判定 + 装饰器
-│   ├── signals.py                     # Sale 模型信号 → 触发每日汇总重算
+│   ├── signals.py                     # Sale 信号→每日汇总重算；ProductImage 信号→镜像图片到 Cloudinary/Shopify（门控）
 │   ├── apps.py                        # AppConfig，ready() 中注册 signals
 │   ├── tests.py                       # 52 个测试用例（约 1560 行）
 │   │
@@ -62,11 +62,15 @@ InventoryApp/
 │   │   ├── order_corrections.py        # 历史订单修正/审计核心逻辑
 │   │   ├── stock_ops.py                # FIFO 库存原子条件更新：consume_stock_fifo / restore_stock_fifo
 │   │   ├── summaries.py                # DailySalesSummary 重算逻辑
-│   │   └── inventory.py                # build_inventory_snapshot（库存快照）
+│   │   ├── inventory.py                # build_inventory_snapshot（库存快照）
+│   │   ├── shopify_client.py / shopify_sync.py       # Shopify Admin API：按 barcode=SKU 挂图/建品
+│   │   └── cloudinary_client.py / cloudinary_sync.py # 产品主图镜像到 Cloudinary（public_id=条码, asset_folder=product_images/<品牌>）
 │   │
 │   ├── management/commands/
 │   │   ├── rebuild_dailysummary.py     # 正式 management command：重建每日汇总
-│   │   └── import_notino_perfume_images.py  # 一次性图片导入脚本
+│   │   ├── import_notino_perfume_images.py  # 一次性图片导入脚本
+│   │   ├── sync_shopify_images.py / sync_shopify_products.py  # 同步图片/建品到 Shopify（默认 dry-run）
+│   │   └── sync_cloudinary_images.py   # 镜像产品主图到 Cloudinary（默认 dry-run）
 │   │
 │   ├── migrations/                     # 27 个迁移文件（0001 ~ 0027）
 │   ├── templates/stock/                # 26 个页面模板（base.html 为公共布局）
