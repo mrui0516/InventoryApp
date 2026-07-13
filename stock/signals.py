@@ -70,3 +70,33 @@ def push_product_image_to_shopify(sender, instance, created, **kwargs):
             logger.exception('Shopify sync crashed for %s', getattr(product, 'barcode', '?'))
 
     transaction.on_commit(_push)
+
+
+def _mirror_to_cloudinary(product):
+    if not product:
+        return
+    if not getattr(settings, 'CLOUDINARY_AUTO_SYNC', False):
+        return
+
+    def _sync():
+        try:
+            from .services import cloudinary_sync
+            code, detail = cloudinary_sync.sync_product_primary_image(product)
+            logger.info('Cloudinary mirror %s for %s (%s)', code, getattr(product, 'barcode', '?'), detail)
+        except Exception:  # never let a mirror problem break the local save/delete
+            logger.exception('Cloudinary mirror crashed for %s', getattr(product, 'barcode', '?'))
+
+    transaction.on_commit(_sync)
+
+
+@receiver(post_save, sender=ProductImage)
+def mirror_product_image_on_save(sender, instance, **kwargs):
+    """Mirror the product's primary image to Cloudinary on create or replace."""
+    _mirror_to_cloudinary(instance.product)
+
+
+@receiver(post_delete, sender=ProductImage)
+def mirror_product_image_on_delete(sender, instance, **kwargs):
+    """Re-sync Cloudinary after an image is removed (upload new primary, or
+    delete the asset when none remain)."""
+    _mirror_to_cloudinary(instance.product)

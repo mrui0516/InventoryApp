@@ -2589,3 +2589,33 @@ class CloudinarySyncTests(TestCase):
         code, _ = cloudinary_sync.sync_product_primary_image(p, client=client, dry_run=True)
         self.assertEqual(code, cloudinary_sync.UPLOADED)
         client.upload_image.assert_not_called()
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class CloudinarySignalTests(TestCase):
+    @override_settings(CLOUDINARY_AUTO_SYNC=True)
+    def test_save_triggers_sync_when_enabled(self):
+        from stock.models import ProductImage
+        p = _make_product(barcode="666")
+        with mock.patch("stock.services.cloudinary_sync.sync_product_primary_image") as sync:
+            with self.captureOnCommitCallbacks(execute=True):
+                ProductImage.objects.create(product=p, image=_tiny_png())
+        sync.assert_called()
+
+    @override_settings(CLOUDINARY_AUTO_SYNC=True)
+    def test_delete_triggers_sync_when_enabled(self):
+        from stock.models import ProductImage
+        p = _make_product(barcode="777")
+        img = ProductImage.objects.create(product=p, image=_tiny_png())
+        with mock.patch("stock.services.cloudinary_sync.sync_product_primary_image") as sync:
+            with self.captureOnCommitCallbacks(execute=True):
+                img.delete()
+        sync.assert_called()
+
+    def test_disabled_by_default_no_sync(self):
+        from stock.models import ProductImage
+        p = _make_product(barcode="888")
+        with mock.patch("stock.services.cloudinary_sync.sync_product_primary_image") as sync:
+            with self.captureOnCommitCallbacks(execute=True):
+                ProductImage.objects.create(product=p, image=_tiny_png())
+        sync.assert_not_called()
