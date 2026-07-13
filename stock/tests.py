@@ -2621,3 +2621,22 @@ class CloudinarySignalTests(TestCase):
             with self.captureOnCommitCallbacks(execute=True):
                 ProductImage.objects.create(product=p, image=_tiny_png())
         sync.assert_not_called()
+
+
+from django.core.management import call_command
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class CloudinaryCommandTests(TestCase):
+    def test_dry_run_makes_no_client_calls(self):
+        from stock.models import ProductImage
+        p = _make_product(barcode="999")
+        ProductImage.objects.create(product=p, image=_tiny_png())
+        with mock.patch("stock.services.cloudinary_sync.sync_product_primary_image",
+                        return_value=("uploaded", "999")) as sync:
+            out = StringIO()
+            call_command("sync_cloudinary_images", stdout=out)
+        # dry-run passes dry_run=True through
+        _, kwargs = sync.call_args
+        self.assertTrue(kwargs.get("dry_run"))
+        self.assertIn("999", out.getvalue())
