@@ -12,6 +12,7 @@ urlpatterns = [
     path('logout/', auth_views.LogoutView.as_view(next_page='login'), name='logout'),
 
     path('dashboard/', views.dashboard_view, name='dashboard'),
+    path('sales-trend/', views.yearly_sales_view, name='sales_trend'),
     path('inbound/', views.inbound_view, name='inbound'),
     path('outbound/', views.outbound_view, name='outbound'),
     path('products/', views.product_list_view, name='product_list'),
@@ -25,6 +26,12 @@ urlpatterns = [
 
     path('export-sales-purchases-pdf/', views.export_sales_purchases_pdf, name='export_sales_purchases_pdf'),
     path('sales-records/', views.record_view, name='sales_records'),
+    path('today/', views.daily_summary_view, name='daily_summary'),
+    path('stores/switch/', views.set_active_store, name='set_active_store'),
+    path('stores/', views.store_list_view, name='store_list'),
+    path('stores/new/', views.store_create_view, name='store_create'),
+    path('stores/<int:store_id>/edit/', views.store_edit_view, name='store_edit'),
+    path('stores/<int:store_id>/delete/', views.store_delete_view, name='store_delete'),
     path('product/image/delete/<int:image_id>/', views.delete_product_image, name='delete_product_image'),
 
     path('check_customer/', views.check_customer, name='check_customer'),
@@ -40,6 +47,8 @@ urlpatterns = [
     path('suppliers/<int:supplier_id>/', views.supplier_detail_view, name='supplier_detail'),
     path('suppliers/<int:supplier_id>/edit/', views.supplier_edit_view, name='supplier_edit'),
     path('suppliers/<int:supplier_id>/delete/', views.supplier_delete_view, name='supplier_delete'),
+    path('inbound/<int:order_id>/receive/', views.inbound_receive_view, name='inbound_receive'),
+    path('api/suppliers_autocomplete/', views.suppliers_autocomplete, name='suppliers_autocomplete'),
     path('inbound-records/<int:order_id>/edit/', views.inbound_order_edit_view, name='inbound_order_edit'),
     path('direct-purchases/<int:purchase_id>/edit/', views.direct_purchase_edit_view, name='direct_purchase_edit'),
     path('api/products_autocomplete/', views.products_autocomplete, name='products_autocomplete'),

@@ -3,10 +3,10 @@
 {% block title %}Outbound{% endblock %}
 
 {% block content %}
-<h2 class="mb-4">🚚 Outbound - Sell Products</h2>
+<h1 class="pos-title mb-4">Outbound &mdash; Sell products</h1>
 
-{% if error %}<div class="alert alert-danger mt-3">{{ error }}</div>{% endif %}
-{% if success %}<div class="alert alert-success mt-3">{{ success }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger mt-3" role="alert">{{ error }}</div>{% endif %}
+{% if success %}<div class="alert alert-success mt-3" role="alert">{{ success }}</div>{% endif %}
 
 <!-- 扫码 / 模糊搜索 -->
 <form id="scan-form" class="mb-3 position-relative">
@@ -21,6 +21,7 @@
   >
   <div id="product-suggest"
        class="list-group position-absolute w-100 shadow-sm d-none"
+       role="listbox" aria-label="Product suggestions"
        style="z-index:1000; max-height: 320px; overflow:auto;"></div>
 </form>
 
@@ -29,83 +30,63 @@
   <div class="product-image-preview-title" id="product-image-preview-title"></div>
 </div>
 
-<div id="scan-info" class="alert d-none"></div>
+<div id="scan-info" class="alert d-none" role="status" aria-live="polite"></div>
 
 <form id="checkout-form" method="post" class="checkout-shell">
   {% csrf_token %}
   <input type="hidden" name="items_json" id="items_json">
-  <input type="hidden" name="idemp_key" id="idemp_key">
+  <input type="hidden" name="payments_json" id="payments_json">
 
   <div class="operation-layout">
     <div class="operation-main">
       <section class="operation-card">
         <div class="operation-card-head">
           <div>
-            <span class="operation-kicker">Step 1</span>
-            <h3 class="operation-title">Customer and sale context</h3>
-            <p class="operation-copy">Pick the customer if there is one. If not, we keep the sale as walk-in and flag it in the final review.</p>
+            <h3 class="operation-title">Customer</h3>
           </div>
           <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#addCustomerModal">Add New Customer</button>
         </div>
 
-        <div class="row g-3 align-items-end">
-          <div class="col-md-8 position-relative">
-            <label class="form-label">Customer (Name or NIF)</label>
-            <input type="text" id="customer-search" class="form-control" placeholder="Type name or NIF">
-            <input type="hidden" name="customer_id" id="customer-id">
-            <div id="customer-suggestions" class="list-group position-absolute w-100 shadow-sm d-none" style="z-index:1000;"></div>
-          </div>
-          <div class="col-md-4">
-            <div class="guardrail-note">
-              If the typed customer is not selected from the list, this sale will stay as walk-in.
-            </div>
-          </div>
+        <div class="position-relative">
+          <label for="customer-search" class="form-label">Customer (Name or NIF) &mdash; leave empty for walk-in</label>
+          <input type="text" id="customer-search" class="form-control" placeholder="Type name or NIF">
+          <input type="hidden" name="customer_id" id="customer-id">
+          <div id="customer-suggestions" class="list-group position-absolute w-100 shadow-sm d-none" role="listbox" aria-label="Customer suggestions" style="z-index:1000;"></div>
         </div>
       </section>
 
       <section class="operation-card">
         <div class="operation-card-head">
           <div>
-            <span class="operation-kicker">Step 2</span>
-            <h3 class="operation-title">Cart review</h3>
-            <p class="operation-copy">Check quantities, price and payment per line. Guardrails below will highlight risky values before you submit.</p>
+            <h3 class="operation-title">Cart</h3>
           </div>
-          <div class="summary-badge-row">
-            <span class="summary-badge" id="summary-line-count">0 lines</span>
-            <span class="summary-badge" id="summary-warning-badge">0 warnings</span>
-          </div>
+          <span class="summary-badge" id="summary-line-count">0 lines</span>
         </div>
 
         <div class="table-responsive">
-          <table class="table table-sm align-middle" id="cart-table">
+          <table class="table align-middle cart-table" id="cart-table">
             <thead class="table-light">
               <tr>
-                <th style="width: 40%">Product</th>
-                <th style="width: 110px">Qty</th>
-                <th style="width: 150px">Unit Price (&euro;)</th>
-                <th style="width: 180px">Payment</th>
-                <th style="width: 140px">Subtotal (&euro;)</th>
-                <th style="width: 60px"></th>
+                <th>Product</th>
+                <th class="text-center">Qty</th>
+                <th class="text-end">Unit (&euro;)</th>
+                <th class="text-end">Disc (&euro;)</th>
+                <th class="text-center">Pay</th>
+                <th class="text-end">Subtotal (&euro;)</th>
+                <th class="text-end">Actions</th>
               </tr>
             </thead>
             <tbody></tbody>
-            <tfoot>
-              <tr>
-                <th colspan="4" class="text-end">Total:</th>
-                <th id="grand_total">&euro;0.00</th>
-                <th></th>
-              </tr>
-            </tfoot>
           </table>
         </div>
+        <div class="cart-empty" id="cart-empty">Search a product above to start the sale.</div>
       </section>
+
     </div>
 
     <aside class="operation-side">
       <div class="operation-card sticky-review">
-        <span class="operation-kicker">Step 3</span>
-        <h3 class="operation-title">Final review</h3>
-        <p class="operation-copy">We summarize the order here before the second confirmation.</p>
+        <h3 class="operation-title">Review &amp; confirm</h3>
 
         <div class="review-stats">
           <div class="review-stat">
@@ -117,8 +98,12 @@
             <strong id="summary-total-qty">0 pcs</strong>
           </div>
           <div class="review-stat">
+            <span class="review-label">Discount</span>
+            <strong id="summary-discount">EUR 0.00</strong>
+          </div>
+          <div class="review-stat review-stat--stack">
             <span class="review-label">Payments</span>
-            <strong id="summary-payment-mix">-</strong>
+            <div class="pay-summary" id="summary-payment-mix"><span class="text-muted">No payment yet</span></div>
           </div>
           <div class="review-stat highlight">
             <span class="review-label">Total</span>
@@ -126,14 +111,14 @@
           </div>
         </div>
 
-        <div class="guardrail-panel">
-          <div class="guardrail-title">Guardrails</div>
-          <ul class="guardrail-list" id="summary-warning-list">
-            <li>No warnings yet. Add products to review this sale.</li>
+        <div class="guardrail-panel" id="summary-warning-wrap">
+          <div class="guardrail-title">Before you confirm</div>
+          <ul class="guardrail-list" id="summary-warning-list" aria-live="polite">
+            <li>Add products and choose payment to enable the sale.</li>
           </ul>
         </div>
 
-        <button type="submit" id="submitBtn" class="btn btn-danger w-100" disabled>Review and Confirm Sale</button>
+        <button type="submit" id="submitBtn" class="btn btn-primary w-100" disabled>Review and confirm sale</button>
       </div>
     </aside>
   </div>
@@ -144,7 +129,7 @@
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title">Final Sale Review</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
         <div class="review-modal-grid">
@@ -157,8 +142,8 @@
             <div class="review-modal-value" id="review-qty">0 pcs</div>
           </div>
           <div class="review-modal-card">
-            <div class="review-label">Payment mix</div>
-            <div class="review-modal-value" id="review-payment">-</div>
+            <div class="review-label">Discount</div>
+            <div class="review-modal-value" id="review-discount">EUR 0.00</div>
           </div>
           <div class="review-modal-card">
             <div class="review-label">Total</div>
@@ -166,7 +151,12 @@
           </div>
         </div>
 
-        <div class="guardrail-panel mt-3">
+        <div class="review-modal-card mt-3">
+          <div class="review-label">Payments</div>
+          <div class="pay-summary" id="review-payment"><span class="text-muted">-</span></div>
+        </div>
+
+        <div class="guardrail-panel mt-3" id="review-warning-wrap">
           <div class="guardrail-title">Please double-check</div>
           <ul class="guardrail-list" id="review-warning-list"></ul>
         </div>
@@ -175,7 +165,88 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Back to edit</button>
-        <button type="button" class="btn btn-danger" id="confirmCheckoutBtn">Confirm Sale Now</button>
+        <button type="button" class="btn btn-primary" id="confirmCheckoutBtn">Confirm sale now</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add / edit cart line modal -->
+<div class="modal fade" id="lineItemModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="lineItemModalTitle">Add product</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="line-modal-product">
+          <div class="fw-semibold" id="line-modal-name">Product</div>
+          <div class="small text-muted" id="line-modal-barcode"></div>
+          <div class="small text-muted" id="line-modal-stock"></div>
+        </div>
+
+        <div class="mb-3">
+          <label for="line-modal-qty" class="form-label">Quantity</label>
+          <input type="number" min="1" step="1" class="form-control" id="line-modal-qty" value="1">
+        </div>
+
+        <div class="mb-2">
+          <label for="line-modal-base" class="form-label">Price</label>
+          <div class="price-toggle" id="line-modal-price-toggle">
+            <button type="button" class="price-opt active" data-kind="retail">Retail <span id="line-modal-retail">€0.00</span></button>
+            <button type="button" class="price-opt" data-kind="wholesale">Wholesale <span id="line-modal-wholesale">€0.00</span></button>
+          </div>
+          <div class="input-group input-group-sm mt-2">
+            <span class="input-group-text">€</span>
+            <input type="text" inputmode="decimal" class="form-control" id="line-modal-base" placeholder="0.00">
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label for="line-modal-discount" class="form-label">Discount (&euro; off per unit)</label>
+          <div class="input-group input-group-sm">
+            <span class="input-group-text">&minus;€</span>
+            <input type="text" inputmode="decimal" class="form-control" id="line-modal-discount" placeholder="0.00" value="0">
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <div class="d-flex justify-content-between align-items-center">
+            <label class="form-label mb-0">Payment method</label>
+            <label class="split-toggle"><input type="checkbox" id="line-modal-split-toggle"> Split this line</label>
+          </div>
+          <div class="pay-balls mt-2" id="line-modal-pay">
+            <button type="button" class="pay-ball" data-method="cash"><span class="pay-ball-dot" aria-hidden="true">€</span>Cash</button>
+            <button type="button" class="pay-ball" data-method="card"><span class="pay-ball-dot" aria-hidden="true">▭</span>Card</button>
+            <button type="button" class="pay-ball" data-method="mbway"><span class="pay-ball-dot" aria-hidden="true">↗</span>MBWay</button>
+          </div>
+          <div class="pay-split d-none mt-2" id="line-modal-split">
+            <div class="pay-split-row" data-method="cash">
+              <span class="pay-split-label">Cash</span>
+              <div class="input-group input-group-sm pay-split-input"><span class="input-group-text">€</span><input type="text" inputmode="decimal" class="form-control line-pay-amount" data-method="cash" placeholder="0.00"></div>
+            </div>
+            <div class="pay-split-row" data-method="card">
+              <span class="pay-split-label">Card</span>
+              <div class="input-group input-group-sm pay-split-input"><span class="input-group-text">€</span><input type="text" inputmode="decimal" class="form-control line-pay-amount" data-method="card" placeholder="0.00"></div>
+            </div>
+            <div class="pay-split-row" data-method="mbway">
+              <span class="pay-split-label">MBWay</span>
+              <div class="input-group input-group-sm pay-split-input"><span class="input-group-text">€</span><input type="text" inputmode="decimal" class="form-control line-pay-amount" data-method="mbway" placeholder="0.00"></div>
+            </div>
+            <div class="pay-remaining" id="line-modal-pay-remaining">Remaining: EUR 0.00</div>
+          </div>
+        </div>
+
+        <div class="line-modal-preview">
+          <div><span class="review-label">Final unit</span><strong id="line-modal-final">EUR 0.00</strong></div>
+          <div><span class="review-label">Line total</span><strong id="line-modal-linetotal">EUR 0.00</strong></div>
+        </div>
+        <div class="text-danger small mt-2 d-none" id="line-modal-error"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="line-modal-save">Add to cart</button>
       </div>
     </div>
   </div>
@@ -186,7 +257,7 @@
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title" id="productPreviewModalTitle">Product Image</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body p-3">
         <img id="productPreviewModalImg" src="" alt="" class="img-fluid w-100 rounded-4">
@@ -202,56 +273,51 @@
       {% csrf_token %}
       <div class="modal-header">
         <h5 class="modal-title">Add New Customer</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
         <div class="mb-2">
-          <label class="form-label">NIF</label>
-          <input type="text" name="nif" class="form-control" maxlength="9" required>
+          <label for="ac-nif" class="form-label">NIF</label>
+          <input type="text" id="ac-nif" name="nif" class="form-control" maxlength="9" required>
         </div>
         <div class="mb-2">
-          <label class="form-label">Name</label>
-          <input type="text" name="name" class="form-control" required>
+          <label for="ac-name" class="form-label">Name</label>
+          <input type="text" id="ac-name" name="name" class="form-control" required>
         </div>
         <div class="mb-2">
-          <label class="form-label">Phone</label>
-          <input type="text" name="phone" class="form-control">
+          <label for="ac-phone" class="form-label">Phone</label>
+          <input type="text" id="ac-phone" name="phone" class="form-control">
         </div>
         <div class="mb-2">
-          <label class="form-label">Email</label>
-          <input type="email" name="email" class="form-control">
+          <label for="ac-email" class="form-label">Email</label>
+          <input type="email" id="ac-email" name="email" class="form-control">
         </div>
         <div class="mb-2">
-          <label class="form-label">Notes</label>
-          <textarea name="notes" class="form-control" rows="2"></textarea>
+          <label for="ac-notes" class="form-label">Notes</label>
+          <textarea id="ac-notes" name="notes" class="form-control" rows="2"></textarea>
         </div>
       </div>
       <div class="modal-footer">
-        <button type="submit" class="btn btn-success">💾 Save</button>
+        <button type="submit" class="btn btn-primary">Save customer</button>
       </div>
     </form>
   </div>
 </div>
 
 <style>
-  :root{
-    --ds-border: rgba(0,0,0,.08);
-    --ds-card-bg:#fff;
-    --ds-muted:#6b7280;
-    --ds-text:#1f2937;
-    --ds-accent:#3b82f6;
-    --ds-good:#0f766e;
-    --ds-warn:#b45309;
-    --ds-danger:#b91c1c;
-    --ds-radius:.8rem;
-  }
+  /* --ds-* design tokens inherited from app.css (canonical dense-flat) */
 
-  .checkout-shell{
-    display:block;
+  .pos-title{
+    font-family:var(--font-display);
+    font-size:1.75rem;
+    font-weight:700;
+    letter-spacing:-.01em;
+    color:var(--app-text);
   }
+  .checkout-shell{ display:block; }
   .operation-layout{
     display:grid;
-    grid-template-columns:minmax(0,1.75fr) minmax(320px, .95fr);
+    grid-template-columns:minmax(0,1.75fr) minmax(320px,.95fr);
     gap:1rem;
     align-items:start;
   }
@@ -259,164 +325,161 @@
   .operation-side{
     display:grid;
     gap:1rem;
+    min-width:0;            /* allow the column to shrink so wide tables scroll, not overflow */
   }
   .operation-card{
-    background:#fff;
-    border:1px solid var(--ds-border);
-    border-radius:1rem;
-    box-shadow:0 14px 32px rgba(15,23,42,.06);
-    padding:1rem;
+    background:var(--app-surface);
+    border:1px solid var(--app-border);
+    border-radius:var(--app-radius);
+    box-shadow:var(--app-shadow);
+    padding:1.1rem 1.15rem;
+    min-width:0;            /* grid item: prevent min-content (the cart table) from forcing width */
   }
+  .operation-card .table-responsive{ overflow-x:auto; }
   .operation-card-head{
     display:flex;
     justify-content:space-between;
     gap:1rem;
-    align-items:flex-start;
-    flex-wrap:wrap;
-    margin-bottom:1rem;
-  }
-  .operation-kicker{
-    display:inline-flex;
     align-items:center;
-    padding:.25rem .65rem;
-    border-radius:999px;
-    background:#eaf2ff;
-    color:#1747a6;
-    font-size:.76rem;
-    font-weight:800;
-    letter-spacing:.04em;
-    text-transform:uppercase;
+    flex-wrap:wrap;
+    margin-bottom:.9rem;
   }
   .operation-title{
-    margin:.55rem 0 .2rem;
-    color:var(--ds-text);
-    font-size:1.15rem;
-    font-weight:900;
-  }
-  .operation-copy{
     margin:0;
-    color:var(--ds-muted);
+    color:var(--app-text);
+    font-size:1.05rem;
+    font-weight:700;
+    letter-spacing:-.01em;
   }
-  .summary-badge-row{
-    display:flex;
-    gap:.55rem;
-    flex-wrap:wrap;
-  }
+  .operation-copy{ margin:0; color:var(--app-muted); }
+  .summary-badge-row{ display:flex; gap:.55rem; flex-wrap:wrap; }
   .summary-badge{
     display:inline-flex;
     align-items:center;
-    padding:.3rem .72rem;
+    padding:.24rem .66rem;
     border-radius:999px;
-    background:#f3f7fc;
-    border:1px solid #d7e0eb;
-    color:#173761;
-    font-size:.82rem;
-    font-weight:800;
+    background:var(--app-surface-2);
+    border:1px solid var(--app-border);
+    color:var(--app-muted);
+    font-size:.8rem;
+    font-weight:700;
+    font-variant-numeric:tabular-nums;
   }
   .guardrail-note{
     padding:.75rem .85rem;
-    border-radius:.9rem;
-    background:#f8fafc;
-    border:1px dashed #d6e1ee;
-    color:#526071;
+    border-radius:var(--app-radius-sm);
+    background:var(--app-surface-2);
+    border:1px dashed var(--app-border-strong);
+    color:var(--app-muted);
     font-size:.88rem;
-    font-weight:700;
+    font-weight:600;
   }
-  .sticky-review{
-    position:sticky;
-    top:1rem;
-  }
+  .sticky-review{ position:sticky; top:1rem; }
   .review-stats{
     display:grid;
-    gap:.75rem;
+    gap:0;
     margin-top:.9rem;
   }
   .review-stat{
-    padding:.8rem .9rem;
-    border-radius:.95rem;
-    background:#f8fafc;
-    border:1px solid #e2e8f0;
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    gap:1rem;
+    padding:.55rem .15rem;
+    border:0;
+    border-bottom:1px solid var(--app-border);
+    background:transparent;
   }
   .review-stat.highlight{
-    background:linear-gradient(180deg,#fff,#edf4ff);
-    border-color:#c9daf6;
+    background:var(--app-accent-soft);
+    border:1px solid var(--app-accent-line);
+    border-radius:var(--app-radius-sm);
+    padding:.7rem .8rem;
+    margin-top:.7rem;
   }
+  .review-stat--stack{
+    flex-direction:column;
+    align-items:stretch;
+    gap:.4rem;
+  }
+  .review-stat--stack .pay-summary{ justify-content:flex-start; }
   .review-label{
     display:block;
-    color:var(--ds-muted);
-    font-size:.78rem;
-    font-weight:900;
-    letter-spacing:.04em;
+    color:var(--app-muted);
+    font-size:.72rem;
+    font-weight:600;
+    letter-spacing:.05em;
     text-transform:uppercase;
   }
   .review-stat strong,
   .review-modal-value{
     display:block;
-    color:var(--ds-text);
-    font-size:1.02rem;
-    font-weight:900;
-    margin-top:.2rem;
+    color:var(--app-text);
+    font-size:.98rem;
+    font-weight:700;
+    text-align:right;
+    font-variant-numeric:tabular-nums;
   }
+  .review-stat.highlight strong{
+    font-size:1.35rem;
+    color:var(--app-accent-ink);
+  }
+  .review-modal-card .review-modal-value{ text-align:left; margin-top:.2rem; }
   .guardrail-panel{
     margin-top:1rem;
-    padding:.9rem;
-    border-radius:1rem;
-    background:#fff9eb;
+    padding:.85rem .9rem;
+    border-radius:var(--app-radius-sm);
+    background:var(--app-warn-soft);
     border:1px solid #f1d6a8;
   }
   .guardrail-title{
-    color:#8a5a08;
-    font-weight:900;
-    margin-bottom:.55rem;
+    color:var(--app-warn);
+    font-size:.72rem;
+    font-weight:700;
+    letter-spacing:.05em;
+    text-transform:uppercase;
+    margin-bottom:.5rem;
   }
   .guardrail-list{
     margin:0;
     padding-left:1.1rem;
     color:#6b4c11;
+    font-size:.86rem;
   }
-  .guardrail-list li + li{
-    margin-top:.38rem;
-  }
+  .guardrail-list li + li{ margin-top:.35rem; }
   .review-modal-grid{
     display:grid;
     grid-template-columns:repeat(2, minmax(0,1fr));
-    gap:.8rem;
+    gap:.6rem;
   }
   .review-modal-card{
-    padding:.9rem;
-    border-radius:.95rem;
-    background:#f8fafc;
-    border:1px solid #e2e8f0;
+    padding:.7rem .85rem;
+    border-radius:var(--app-radius-sm);
+    background:var(--app-surface-2);
+    border:1px solid var(--app-border);
   }
-  .review-line-items{
-    display:grid;
-    gap:.7rem;
-  }
+  .review-line-items{ display:grid; gap:.5rem; }
   .review-line-item{
     display:flex;
     justify-content:space-between;
     gap:1rem;
     align-items:flex-start;
-    padding:.85rem .95rem;
-    border-radius:.95rem;
-    background:#fbfdff;
-    border:1px solid #dce7f3;
+    padding:.7rem .85rem;
+    border-radius:var(--app-radius-sm);
+    background:var(--app-surface);
+    border:1px solid var(--app-border);
   }
-  .review-line-item strong{
-    color:var(--ds-text);
-    font-weight:900;
-  }
+  .review-line-item strong{ color:var(--app-text); font-weight:700; }
   .review-line-meta{
-    color:var(--ds-muted);
-    font-size:.88rem;
-    margin-top:.18rem;
+    color:var(--app-muted);
+    font-size:.84rem;
+    margin-top:.15rem;
+    font-variant-numeric:tabular-nums;
   }
-  #cart-table tbody tr.row-warning{
-    background:#fffaf0;
-  }
-  #cart-table tbody tr.row-danger{
-    background:#fff5f5;
-  }
+  #cart-table tbody tr.row-warning{ background:var(--app-warn-soft); }
+  #cart-table tbody tr.row-danger{ background:var(--app-danger-soft); }
+  #cart-table tbody tr.row-warning:hover{ background:var(--app-warn-soft); }
+  #cart-table tbody tr.row-danger:hover{ background:var(--app-danger-soft); }
   .line-flags{
     display:flex;
     gap:.35rem;
@@ -426,46 +489,39 @@
   .line-flag{
     display:inline-flex;
     align-items:center;
-    padding:.18rem .55rem;
-    border-radius:999px;
-    font-size:.72rem;
-    font-weight:800;
+    padding:.14rem .5rem;
+    border-radius:var(--app-radius-xs);
+    font-size:.7rem;
+    font-weight:700;
   }
-  .line-flag.warn{
-    background:#fff3db;
-    color:var(--ds-warn);
-  }
-  .line-flag.danger{
-    background:#feecec;
-    color:var(--ds-danger);
-  }
+  .line-flag.warn{ background:var(--app-warn-soft); color:var(--app-warn); }
+  .line-flag.danger{ background:var(--app-danger-soft); color:var(--app-danger); }
 
-  /* 标题与提示 */
-  h2{ font-weight:800; letter-spacing:.2px; color:var(--ds-text); }
-  .alert{ border-radius:.75rem; border:1px solid var(--ds-border); }
+  /* 提示 */
+  .alert{ border-radius:var(--app-radius-sm); border:1px solid var(--app-border); }
   .alert-success{ background:#ecfdf5; border-color:#bbf7d0; }
   .alert-danger{  background:#fef2f2; border-color:#fecaca; }
   .alert-info{    background:#eff6ff; border-color:#bfdbfe; }
 
   /* 顶部扫码/搜索 */
-  #scan-form .form-label{ font-weight:700; color:var(--ds-text); }
+  #scan-form .form-label{ font-weight:600; color:var(--app-text); }
   #barcode{
-    border-radius:.7rem; border:1px solid var(--ds-border);
-    padding:.65rem .9rem; box-shadow: 0 1px 0 rgba(0,0,0,.02) inset;
+    border-radius:var(--app-radius-sm); border:1px solid var(--app-border-strong);
+    padding:.7rem .95rem; font-size:1rem;
   }
-  #barcode:focus{ border-color: color-mix(in oklab, var(--ds-accent) 50%, #7aa2ff 50%); box-shadow: 0 0 0 .2rem rgba(59,130,246,.12); }
+  #barcode:focus{ border-color:var(--app-accent); box-shadow:0 0 0 .2rem rgba(37,99,235,.14); }
 
   /* 产品建议下拉 */
   #product-suggest{
     top: calc(100% + .35rem);
-    border-radius:.7rem; overflow:hidden; background:#fff; border:1px solid var(--ds-border);
+    border-radius:var(--app-radius-sm); overflow:hidden; background:var(--app-surface); border:1px solid var(--app-border);
   }
   #product-suggest .list-group-item{
     padding:.6rem .85rem; font-size:.95rem;
   }
   #product-suggest .list-group-item:hover,
   #product-suggest .list-group-item:focus{
-    background: color-mix(in oklab, #ffffff 85%, var(--ds-accent) 15%);
+    background: var(--app-accent-soft);
   }
   .product-suggest-item{
     display:grid;
@@ -479,7 +535,7 @@
     border-radius:.75rem;
     overflow:hidden;
     border:1px solid var(--ds-border);
-    background:#f8fafc;
+    background:var(--app-surface-2);
     display:grid;
     place-items:center;
     flex:0 0 48px;
@@ -523,10 +579,10 @@
     z-index:1105;
     width:240px;
     padding:.7rem;
-    border-radius:1rem;
-    background:#fff;
-    border:1px solid var(--ds-border);
-    box-shadow:0 18px 40px rgba(15,23,42,.18);
+    border-radius:var(--app-radius);
+    background:var(--app-surface);
+    border:1px solid var(--app-border);
+    box-shadow:var(--app-shadow-md);
     display:none;
     pointer-events:none;
   }
@@ -538,8 +594,8 @@
     aspect-ratio:1/1;
     object-fit:cover;
     display:block;
-    border-radius:.8rem;
-    background:#f8fafc;
+    border-radius:var(--app-radius-sm);
+    background:var(--app-surface-2);
   }
   .product-image-preview-title{
     margin-top:.6rem;
@@ -549,11 +605,11 @@
     line-height:1.3;
   }
   #productPreviewModal .modal-content{
-    border-radius:1rem;
-    border:1px solid var(--ds-border);
+    border-radius:var(--app-radius);
+    border:1px solid var(--app-border);
   }
   #productPreviewModal .modal-body{
-    background:#f8fafc;
+    background:var(--app-surface-2);
   }
   @media (max-width: 991.98px){
     .product-image-preview{
@@ -575,40 +631,46 @@
     border-radius:.6rem; border:1px solid var(--ds-border);
   }
   #checkout-form .form-control:focus, #checkout-form .form-select:focus{
-    border-color: color-mix(in oklab, var(--ds-accent) 50%, #7aa2ff 50%);
-    box-shadow: 0 0 0 .2rem rgba(59,130,246,.12);
+    border-color: var(--app-accent);
+    box-shadow: 0 0 0 .2rem rgba(37,99,235,.14);
   }
   #checkout-form hr{ opacity:.6; }
 
   /* 客户建议下拉 */
   #customer-suggestions{
     top: calc(100% + .35rem);
-    border-radius:.7rem; overflow:hidden; background:#fff; border:1px solid var(--ds-border);
+    border-radius:var(--app-radius-sm); overflow:hidden; background:var(--app-surface); border:1px solid var(--app-border);
     max-height: 320px; overflow:auto;
   }
   #customer-suggestions .list-group-item{ padding:.6rem .85rem; font-size:.95rem; }
-  #customer-suggestions .list-group-item:hover{ background: color-mix(in oklab, #ffffff 85%, var(--ds-accent) 15%); }
+  #customer-suggestions .list-group-item:hover{ background: var(--app-accent-soft); }
 
   /* 购物车表格 */
   #cart-table{
-    border:1px solid var(--ds-border);
-    border-radius: .8rem;
+    border:1px solid var(--app-border);
+    border-radius:var(--app-radius-sm);
     overflow:hidden;
-    background: var(--ds-card-bg);
+    background:var(--app-surface);
   }
   #cart-table thead th{
-    position: sticky; top: 0; z-index: 1;
-    background: #f8fafc;
+    position:sticky; top:0; z-index:1;
+    background:var(--app-surface-2);
+    color:var(--app-muted);
+    font-size:.72rem;
+    font-weight:700;
+    letter-spacing:.05em;
+    text-transform:uppercase;
+    border-bottom:1px solid var(--app-border-strong);
   }
   #cart-table th, #cart-table td{ padding:.6rem .75rem; }
   #cart-table td:nth-child(2), #cart-table td:nth-child(3), #cart-table td:nth-child(4){ white-space:nowrap; }
   #cart-table td:nth-child(3), #cart-table td:nth-child(5){ text-align:right; }
-  #cart-table tfoot th{ background:#fafafa; }
-  #cart-table .form-control-sm, #cart-table .form-select-sm{ border-radius:.5rem; }
+  #cart-table tfoot th{ background:var(--app-surface-2); }
+  #cart-table .form-control-sm, #cart-table .form-select-sm{ border-radius:var(--app-radius-xs); }
   #cart-table .qty{ min-width:90px; text-align:right; }
   #cart-table .price{ min-width:120px; text-align:right; }
   #cart-table .subtotal{ font-weight:700; }
-  #cart-table .remove{ border-radius:.5rem; }
+  #cart-table .remove{ border-radius:var(--app-radius-xs); }
   .cart-product{
     display:grid;
     grid-template-columns:56px minmax(0,1fr);
@@ -619,9 +681,9 @@
   .cart-product-thumb-empty{
     width:56px;
     height:56px;
-    border-radius:.9rem;
-    border:1px solid var(--ds-border);
-    background:#f8fafc;
+    border-radius:var(--app-radius-sm);
+    border:1px solid var(--app-border);
+    background:var(--app-surface-2);
   }
   .cart-product-thumb-wrap{
     padding:0;
@@ -650,15 +712,15 @@
 
   /* 提交按钮 */
   #submitBtn{
-    margin-top:.75rem;
-    border-radius:.7rem;
+    margin-top:.9rem;
+    border-radius:var(--app-radius-sm);
     font-weight:700;
-    padding:.65rem 1rem;
+    padding:.7rem 1rem;
   }
 
   /* Modal 样式统一 */
-  .modal-content{ border-radius:.9rem; border:1px solid var(--ds-border); }
-  .modal-header{ background:#f8fafc; }
+  .modal-content{ border-radius:var(--app-radius); border:1px solid var(--app-border); }
+  .modal-header{ background:var(--app-surface-2); }
   .modal-title{ font-weight:700; }
 
   @media (max-width: 1199.98px){
@@ -686,7 +748,7 @@
     #cart-table thead{ display:none; }
     #cart-table tbody tr{
       display:block; margin:.6rem 0; border:1px solid var(--ds-border);
-      border-radius:.8rem; background:#fff; box-shadow:0 1px 6px rgba(0,0,0,.06); overflow:hidden;
+      border-radius:var(--app-radius-sm); background:var(--app-surface); box-shadow:0 1px 6px rgba(0,0,0,.06); overflow:hidden;
     }
     #cart-table tbody td{
       display:grid; grid-template-columns: 8rem 1fr;
@@ -702,10 +764,12 @@
     #cart-table tbody td:nth-child(6)::before{ content:'Actions'; font-weight:600; color:var(--ds-muted); text-align:left; }
     #cart-table tbody td:nth-child(1){ text-align:left; }
     #cart-table .qty, #cart-table .price, #cart-table .pay{ width:100%; min-width:0; }
+    #cart-table .js-edit, #cart-table .js-del{ min-height:44px; padding-inline:1rem; }
+    #cart-table .js-del{ min-width:44px; }
     #cart-table tfoot{ display:block; }
     #cart-table tfoot tr{
       display:block; margin:.6rem 0 0; border:1px solid var(--ds-border);
-      border-radius:.8rem; background:#fff; overflow:hidden;
+      border-radius:var(--app-radius-sm); background:var(--app-surface); overflow:hidden;
     }
     #cart-table tfoot th{
       display:grid; grid-template-columns: 1fr auto; gap:.6rem;
@@ -719,6 +783,66 @@
       z-index: 5;
     }
   }
+
+  /* ===== Cart table layout (prevent text clipping) ===== */
+  .cart-table{ width:100%; }
+  .cart-table th, .cart-table td{ white-space:nowrap; vertical-align:middle; }
+  .cart-table th:first-child, .cart-table td:first-child{ white-space:normal; min-width:200px; }
+  /* Long product names / barcodes break instead of stretching the row */
+  .cart-table .cart-product-main{ min-width:0; }
+  .cart-table .cart-product-main > *{ overflow-wrap:anywhere; word-break:break-word; }
+  .cart-empty{
+    padding:1rem; text-align:center; color:var(--app-muted);
+    border:1px dashed var(--app-border-strong); border-radius:var(--app-radius-sm); background:var(--app-surface-2);
+  }
+
+  /* ===== Payment balls + split ===== */
+  .split-toggle{ font-size:.84rem; font-weight:600; color:var(--app-muted); display:inline-flex; align-items:center; gap:.4rem; cursor:pointer; }
+  .pay-balls{ display:flex; gap:.6rem; flex-wrap:wrap; }
+  .pay-ball{
+    flex:1 1 110px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.35rem;
+    padding:.85rem .6rem; border-radius:var(--app-radius-sm); border:1px solid var(--app-border-strong); background:var(--app-surface);
+    color:var(--app-text); font-weight:700; cursor:pointer; transition:border-color .12s ease, background-color .12s ease, box-shadow .12s ease;
+  }
+  .pay-ball:hover{ border-color:var(--app-accent-line); background:var(--app-surface-2); }
+  .pay-ball.active{ border-color:var(--app-accent); background:var(--app-accent-soft); color:var(--app-accent-ink); box-shadow:0 0 0 1px var(--app-accent) inset; }
+  .pay-ball-dot{
+    width:2.1rem; height:2.1rem; border-radius:999px; display:grid; place-items:center;
+    background:var(--app-accent-soft); color:var(--app-accent-ink); font-size:1.05rem; font-weight:700;
+  }
+  .pay-ball.active .pay-ball-dot{ background:var(--app-accent-ink); color:#fff; }
+  .pay-split{ display:grid; gap:.6rem; }
+  .pay-split-row{ display:grid; grid-template-columns:90px 1fr; align-items:center; gap:.6rem; }
+  .pay-split-label{ font-weight:700; color:var(--app-text); }
+  .pay-remaining{ margin-top:.2rem; font-weight:700; font-size:.9rem; font-variant-numeric:tabular-nums; }
+  .pay-remaining.ok{ color:var(--app-good); }
+  .pay-remaining.bad{ color:var(--app-danger); }
+
+  .pay-summary{ display:flex; flex-wrap:wrap; gap:.4rem; margin-top:.2rem; }
+  .pay-pill{
+    display:inline-flex; align-items:center; padding:.2rem .58rem; border-radius:999px;
+    background:var(--app-accent-soft); border:1px solid var(--app-accent-line); color:var(--app-accent-ink);
+    font-size:.82rem; font-weight:700; font-variant-numeric:tabular-nums;
+  }
+  /* Split line: methods stack vertically in the Pay column */
+  .pay-stack{ display:inline-flex; flex-direction:column; gap:.25rem; align-items:stretch; }
+  .pay-stack .pay-pill{ justify-content:center; }
+
+  /* ===== Line item modal ===== */
+  .line-modal-product{ padding:.7rem .85rem; border-radius:var(--app-radius-sm); background:var(--app-surface-2); border:1px solid var(--app-border); margin-bottom:1rem; }
+  .price-toggle{ display:flex; gap:.5rem; }
+  .price-opt{
+    flex:1 1 0; padding:.55rem .6rem; border-radius:var(--app-radius-sm); border:1px solid var(--app-border-strong); background:var(--app-surface);
+    font-weight:600; font-size:.9rem; color:var(--app-text); cursor:pointer;
+  }
+  .price-opt span{ display:block; font-weight:700; color:var(--app-accent-ink); font-variant-numeric:tabular-nums; }
+  .price-opt.active{ border-color:var(--app-accent); background:var(--app-accent-soft); }
+  .price-opt:disabled{ opacity:.45; cursor:not-allowed; }
+  .line-modal-preview{
+    display:flex; justify-content:space-between; gap:1rem;
+    padding:.75rem .9rem; border-radius:var(--app-radius-sm); background:var(--app-good-soft); border:1px solid #cde7d6;
+  }
+  .line-modal-preview strong{ display:block; font-size:1.05rem; margin-top:.15rem; font-variant-numeric:tabular-nums; }
 </style>
 
 
@@ -728,9 +852,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const prodSuggest = document.getElementById('product-suggest');
   const info = document.getElementById('scan-info');
   const cartBody = document.querySelector('#cart-table tbody');
-  const grandTotal = document.getElementById('grand_total');
   const submitBtn = document.getElementById('submitBtn');
   const itemsJson = document.getElementById('items_json');
+  const paymentsJson = document.getElementById('payments_json');
+  const cartEmpty = document.getElementById('cart-empty');
+  const lineModalEl = document.getElementById('lineItemModal');
+  const lineModalPay = document.getElementById('line-modal-pay');
+  const lineModalSplitToggle = document.getElementById('line-modal-split-toggle');
+  const lineModalSplit = document.getElementById('line-modal-split');
+  const lineModalPayRemaining = document.getElementById('line-modal-pay-remaining');
   const previewBox = document.getElementById('product-image-preview');
   const previewImg = document.getElementById('product-image-preview-img');
   const previewTitle = document.getElementById('product-image-preview-title');
@@ -750,7 +880,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const summaryPaymentMix = document.getElementById('summary-payment-mix');
   const summaryTotalAmount = document.getElementById('summary-total-amount');
   const summaryLineCount = document.getElementById('summary-line-count');
-  const summaryWarningBadge = document.getElementById('summary-warning-badge');
   const summaryWarningList = document.getElementById('summary-warning-list');
 
   function hidePreview() {
@@ -802,6 +931,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const item = document.createElement('div');
     item.className = 'list-group-item list-group-item-action product-suggest-item';
     item.tabIndex = 0;
+    item.setAttribute('role', 'option');
 
     const media = document.createElement('div');
     media.className = 'product-suggest-media';
@@ -943,121 +1073,194 @@ document.addEventListener('DOMContentLoaded', () => {
     return [...new Set(list.filter(Boolean))];
   }
 
-  function evaluateCartRow(tr) {
-    const qty = Number(tr.querySelector('.qty').value || 0);
-    const price = parseMoney(tr.querySelector('.price').value);
-    const stockMax = Number(tr.dataset.stock || 0);
-    const lastCost = parseMoney(tr.dataset.lastCost);
-    const retailPrice = parseMoney(tr.dataset.retailPrice);
-    const wholesalePrice = parseMoney(tr.dataset.wholesalePrice);
-    const warnings = [];
-    let severity = '';
+  // ===== 购物车数据模型（每个产品单独一列，不合并） =====
+  const METHODS = ['cash', 'card', 'mbway'];
+  let cart = [];
+  let uidSeq = 1;
+  let editingUid = null;
+  let modalCtx = null;
+  let modalPayMethod = 'cash';   // single-method payment chosen in the line modal
+  let modalSplit = false;        // this line's payment is split across methods
+  let lastMethod = 'cash';       // sticky default for the next new line
 
-    if (stockMax > 0 && qty === stockMax) {
-      warnings.push('Uses all remaining stock');
-      severity = severity || 'warn';
-    }
-    if (isFinite(lastCost) && isFinite(price) && price < lastCost) {
-      warnings.push('Selling below cost');
-      severity = 'danger';
-    } else if (isFinite(wholesalePrice) && isFinite(price) && price < wholesalePrice) {
-      warnings.push('Selling below wholesale price');
-      severity = severity || 'warn';
-    }
-    if (isFinite(retailPrice) && isFinite(price) && retailPrice > 0) {
-      const ratio = price / retailPrice;
-      if (ratio < 0.75) {
-        warnings.push('More than 25% below retail price');
-        severity = severity || 'warn';
-      } else if (ratio > 1.35) {
-        warnings.push('More than 35% above retail price');
-        severity = severity || 'warn';
-      }
-    }
-
-    tr.classList.remove('row-warning', 'row-danger');
-    if (severity === 'danger') tr.classList.add('row-danger');
-    if (severity === 'warn') tr.classList.add('row-warning');
-
-    const flags = tr.querySelector('.line-flags');
-    if (flags) {
-      flags.innerHTML = warnings.map((warning) => {
-        const tone = warning.toLowerCase().includes('below cost') ? 'danger' : 'warn';
-        return `<span class="line-flag ${tone}">${escapeHtml(warning)}</span>`;
-      }).join('');
-    }
-
-    return {warnings, severity};
+  function lineFinalUnit(item) {
+    const f = (Number(item.base) || 0) - (Number(item.discount) || 0);
+    return f > 0 ? f : 0;
+  }
+  function lineSubtotal(item) { return lineFinalUnit(item) * (Number(item.qty) || 0); }
+  function cartTotal() { return cart.reduce((s, i) => s + lineSubtotal(i), 0); }
+  function cartDiscount() { return cart.reduce((s, i) => s + (Number(i.discount) || 0) * (Number(i.qty) || 0), 0); }
+  function cartQtyTotal() { return cart.reduce((s, i) => s + (Number(i.qty) || 0), 0); }
+  function barcodeQtyTotal(barcode) {
+    return cart.filter(i => i.barcode === barcode).reduce((s, i) => s + (Number(i.qty) || 0), 0);
   }
 
-  function buildCheckoutWarnings() {
-    const warnings = [];
-    const paymentSet = new Set();
-    let totalQty = 0;
-    let total = 0;
+  function lineValid(item) {
+    if (!((Number(item.qty) || 0) >= 1)) return false;
+    if (lineFinalUnit(item) <= 0) return false;
+    const stock = Number(item.stock) || 0;
+    if (stock > 0 && barcodeQtyTotal(item.barcode) > stock) return false;
+    return true;
+  }
 
-    cartBody.querySelectorAll('tr').forEach((tr) => {
-      const rowWarnings = evaluateCartRow(tr).warnings;
-      warnings.push(...rowWarnings.map((item) => `${tr.dataset.title || tr.dataset.barcode}: ${item}`));
-      totalQty += Number(tr.querySelector('.qty').value || 0);
-      total += Number(parseMoney(tr.querySelector('.price').value) || 0) * Number(tr.querySelector('.qty').value || 0);
-      const pay = tr.querySelector('.pay').value;
-      if (pay) paymentSet.add(paymentLabel(pay));
+  function lineWarnings(item) {
+    const w = [];
+    const finalUnit = lineFinalUnit(item);
+    const stock = Number(item.stock) || 0;
+    const usedQty = barcodeQtyTotal(item.barcode);
+    if (stock > 0 && usedQty > stock) w.push({ text: 'Exceeds available stock', tone: 'danger' });
+    else if (stock > 0 && usedQty === stock) w.push({ text: 'Uses all remaining stock', tone: 'warn' });
+    const lastCost = Number(item.lastCost);
+    const wholesale = Number(item.wholesale);
+    const retail = Number(item.retail);
+    if (isFinite(lastCost) && finalUnit < lastCost) w.push({ text: 'Selling below cost', tone: 'danger' });
+    else if (isFinite(wholesale) && wholesale > 0 && finalUnit < wholesale) w.push({ text: 'Below wholesale price', tone: 'warn' });
+    if (isFinite(retail) && retail > 0 && finalUnit / retail < 0.75) w.push({ text: 'More than 25% below retail', tone: 'warn' });
+    return w;
+  }
+
+  function renderCart() {
+    cartBody.innerHTML = '';
+    cart.forEach((item) => {
+      const finalUnit = lineFinalUnit(item);
+      const warns = lineWarnings(item);
+      const tr = document.createElement('tr');
+      if (warns.some(x => x.tone === 'danger')) tr.classList.add('row-danger');
+      else if (warns.length) tr.classList.add('row-warning');
+      const thumb = item.image_url
+        ? `<button type="button" class="cart-product-thumb-wrap js-preview" data-img="${escapeHtml(item.image_url)}"><img src="${escapeHtml(item.image_url)}" class="cart-product-thumb" alt=""></button>`
+        : '<div class="cart-product-thumb-empty">No image</div>';
+      const flags = warns.map(x => `<span class="line-flag ${x.tone}">${escapeHtml(x.text)}</span>`).join('');
+      const lineDisc = (Number(item.discount) || 0) * (Number(item.qty) || 0);
+      tr.innerHTML = `
+        <td>
+          <div class="cart-product">
+            ${thumb}
+            <div class="cart-product-main">
+              <div class="fw-semibold">${escapeHtml(item.title)}</div>
+              <div class="small text-muted">${escapeHtml(item.barcode)}</div>
+              <div class="line-flags">${flags}</div>
+            </div>
+          </div>
+        </td>
+        <td class="text-center">${item.qty}</td>
+        <td class="text-end">${finalUnit.toFixed(2)}</td>
+        <td class="text-end">${lineDisc > 0 ? '&minus;' + lineDisc.toFixed(2) : '&mdash;'}</td>
+        <td class="text-center">${payCellHtml(item)}</td>
+        <td class="text-end fw-semibold">${lineSubtotal(item).toFixed(2)}</td>
+        <td class="text-end">
+          <div class="d-flex gap-1 justify-content-end">
+            <button type="button" class="btn btn-sm btn-outline-secondary js-edit">Edit</button>
+            <button type="button" class="btn btn-sm btn-outline-danger js-del" title="Remove line">&times;</button>
+          </div>
+        </td>`;
+      tr.querySelector('.js-edit').addEventListener('click', () => openLineModal(item, item));
+      tr.querySelector('.js-del').addEventListener('click', () => { cart = cart.filter(x => x.uid !== item.uid); renderCart(); });
+      tr.querySelector('.js-preview')?.addEventListener('click', () => openPreviewModal(item.image_url, item.title));
+      cartBody.appendChild(tr);
     });
-
-    if (customerSearch.value.trim() && !customerIdInput.value) {
-      warnings.push('Typed customer was not selected. Sale will remain walk-in.');
-    }
-    if (!cartBody.children.length) {
-      warnings.push('Cart is empty.');
-    }
-
-    return {
-      warnings: uniqueWarnings(warnings),
-      totalQty,
-      total,
-      paymentMix: paymentSet.size ? Array.from(paymentSet).join(', ') : '-',
-      lineCount: cartBody.querySelectorAll('tr').length,
-    };
+    cartEmpty.classList.toggle('d-none', cart.length > 0);
+    recalc();
   }
 
-  function renderSummary() {
-    const state = buildCheckoutWarnings();
+  // ===== 支付：每行可单一方式或拆分多方式，按方式汇总订单总额 =====
+  function linePaymentMap(item) {
+    if (item.isSplit && item.paymentSplit) {
+      const o = {};
+      METHODS.forEach((m) => { const v = Number(item.paymentSplit[m]) || 0; if (v > 0) o[m] = v; });
+      return o;
+    }
+    if (METHODS.includes(item.payment)) return { [item.payment]: lineSubtotal(item) };
+    return {};
+  }
+  function linePayComplete(item) {
+    const map = linePaymentMap(item);
+    const sum = METHODS.reduce((s, m) => s + (map[m] || 0), 0);
+    return sum > 0 && Math.abs(sum - lineSubtotal(item)) <= 0.01;
+  }
+  function linePrimaryMethod(item) {
+    const map = linePaymentMap(item);
+    const keys = METHODS.filter((m) => map[m] > 0).sort((a, b) => map[b] - map[a]);
+    return keys[0] || item.payment || 'cash';
+  }
+  function linePayments() {
+    const out = {};
+    cart.forEach((i) => {
+      const map = linePaymentMap(i);
+      METHODS.forEach((m) => { if (map[m]) out[m] = (out[m] || 0) + map[m]; });
+    });
+    return out;
+  }
+  function payCellHtml(item) {
+    const map = linePaymentMap(item);
+    const keys = METHODS.filter((m) => map[m] > 0);
+    if (keys.length <= 1) return `<span class="pay-pill">${paymentLabel(keys[0] || item.payment || '')}</span>`;
+    // Split line: stack one method per row so the amounts read top-to-bottom.
+    const rows = keys.map((m) => `<span class="pay-pill">${paymentLabel(m)} €${map[m].toFixed(2)}</span>`).join('');
+    return `<div class="pay-stack">${rows}</div>`;
+  }
+  function paySummaryHtml(p) {
+    const parts = METHODS.filter(m => p[m] > 0).map(m => `<span class="pay-pill">${paymentLabel(m)} €${p[m].toFixed(2)}</span>`);
+    return parts.length ? parts.join('') : '<span class="text-muted">No payment yet</span>';
+  }
+
+  // ===== 重新计算 & 序列化 =====
+  function recalc() {
+    const total = cartTotal();
+    const disc = cartDiscount();
+    const qty = cartQtyTotal();
+    const payments = linePayments();
+    const allPaid = cart.every(linePayComplete);
+    const paymentsValid = total > 0 && allPaid;
+
+    const warnings = [];
+    cart.forEach(i => lineWarnings(i).forEach(w => warnings.push(`${i.title}: ${w.text}`)));
+    if (customerSearch.value.trim() && !customerIdInput.value) warnings.push('Typed customer not selected — sale stays walk-in.');
+    if (!cart.length) warnings.push('Cart is empty.');
+    if (cart.length && !allPaid) warnings.push('Each line needs a complete payment.');
+    const uniq = uniqueWarnings(warnings);
+
     summaryCustomer.textContent = customerIdInput.value ? customerSearch.value : 'Walk-in / no customer';
-    summaryTotalQty.textContent = `${state.totalQty} pcs`;
-    summaryPaymentMix.textContent = state.paymentMix;
-    summaryTotalAmount.textContent = formatMoney(state.total);
-    summaryLineCount.textContent = `${state.lineCount} ${state.lineCount === 1 ? 'line' : 'lines'}`;
-    summaryWarningBadge.textContent = `${state.warnings.length} ${state.warnings.length === 1 ? 'warning' : 'warnings'}`;
-    summaryWarningList.innerHTML = state.warnings.length
-      ? state.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join('')
-      : '<li>No warnings. Prices and quantities look within the expected range.</li>';
-    return state;
+    summaryTotalQty.textContent = `${qty} pcs`;
+    document.getElementById('summary-discount').textContent = formatMoney(disc);
+    summaryPaymentMix.innerHTML = paySummaryHtml(payments);
+    summaryTotalAmount.textContent = formatMoney(total);
+    summaryLineCount.textContent = `${cart.length} ${cart.length === 1 ? 'line' : 'lines'}`;
+    summaryWarningList.innerHTML = uniq.length
+      ? uniq.map(w => `<li>${escapeHtml(w)}</li>`).join('')
+      : '<li>Ready to confirm this sale.</li>';
+
+    itemsJson.value = JSON.stringify(cart.map(i => ({
+      barcode: i.barcode, qty: i.qty, price: lineFinalUnit(i).toFixed(2),
+      discount: (Number(i.discount) || 0).toFixed(2), payment: linePrimaryMethod(i),
+    })));
+    paymentsJson.value = JSON.stringify(METHODS.filter(m => payments[m] > 0).map(m => ({ method: m, amount: payments[m].toFixed(2) })));
+
+    submitBtn.disabled = !(cart.length > 0 && cart.every(lineValid) && paymentsValid);
+    return { total, disc, qty, paymentsHtml: paySummaryHtml(payments), warnings: uniq };
   }
 
   function openCheckoutReview() {
-    const state = renderSummary();
-    reviewCustomer.textContent = summaryCustomer.textContent;
-    reviewQty.textContent = `${state.totalQty} pcs`;
-    reviewPayment.textContent = state.paymentMix;
-    reviewTotal.textContent = formatMoney(state.total);
-    reviewWarningList.innerHTML = state.warnings.length
-      ? state.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join('')
-      : '<li>No warnings. You are ready to confirm this sale.</li>';
-    reviewLineItems.innerHTML = Array.from(cartBody.querySelectorAll('tr')).map((tr) => `
+    const s = recalc();
+    document.getElementById('review-customer').textContent = summaryCustomer.textContent;
+    document.getElementById('review-qty').textContent = `${s.qty} pcs`;
+    document.getElementById('review-discount').textContent = formatMoney(s.disc);
+    document.getElementById('review-total').textContent = formatMoney(s.total);
+    document.getElementById('review-payment').innerHTML = s.paymentsHtml;
+    reviewWarningList.innerHTML = s.warnings.length
+      ? s.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')
+      : '<li>Ready to confirm this sale.</li>';
+    reviewLineItems.innerHTML = cart.map(i => `
       <div class="review-line-item">
         <div>
-          <strong>${escapeHtml(tr.dataset.title || tr.dataset.barcode)}</strong>
-          <div class="review-line-meta">
-            ${escapeHtml(tr.dataset.barcode)} / Qty ${Number(tr.querySelector('.qty').value || 0)} / ${escapeHtml(paymentLabel(tr.querySelector('.pay').value || ''))}
-          </div>
+          <strong>${escapeHtml(i.title)}</strong>
+          <div class="review-line-meta">${escapeHtml(i.barcode)} / Qty ${i.qty}${(Number(i.discount) || 0) > 0 ? ` / &minus;€${((Number(i.discount) || 0) * i.qty).toFixed(2)} disc` : ''}</div>
         </div>
         <div class="text-end">
-          <strong>${formatMoney((parseMoney(tr.querySelector('.price').value) || 0) * Number(tr.querySelector('.qty').value || 0))}</strong>
-          <div class="review-line-meta">Unit ${formatMoney(parseMoney(tr.querySelector('.price').value) || 0)}</div>
+          <strong>${formatMoney(lineSubtotal(i))}</strong>
+          <div class="review-line-meta">Unit ${formatMoney(lineFinalUnit(i))}</div>
         </div>
-      </div>
-    `).join('');
+      </div>`).join('');
     bootstrap.Modal.getOrCreateInstance(reviewModalEl).show();
   }
 
@@ -1069,7 +1272,7 @@ document.addEventListener('DOMContentLoaded', () => {
   customerSearch.addEventListener('input', function () {
     const q = this.value.trim();
     customerIdInput.value = '';
-    renderSummary();
+    recalc();
     if (q.length < 2) return suggestionsBox.classList.add('d-none');
     fetch(`/api/customers_autocomplete/?q=${encodeURIComponent(q)}`)
       .then(r=>r.json()).then(d=>{
@@ -1078,12 +1281,13 @@ document.addEventListener('DOMContentLoaded', () => {
           const btn = document.createElement('button');
           btn.type='button';
           btn.className='list-group-item list-group-item-action';
+          btn.setAttribute('role','option');
           btn.textContent=`${c.name} (${c.nif})`;
           btn.onclick=()=>{
             customerSearch.value=btn.textContent;
             customerIdInput.value=c.id;
             suggestionsBox.classList.add('d-none');
-            renderSummary();
+            recalc();
           };
           suggestionsBox.appendChild(btn);
         });
@@ -1112,136 +1316,175 @@ document.addEventListener('DOMContentLoaded', () => {
     info.innerHTML = html;
   }
 
-  // ===== 计算 & 序列化 =====
-  function recalcAndSave() {
-    let total = 0, ok = cartBody.children.length>0;
-    cartBody.querySelectorAll('tr').forEach(tr=>{
-      const qtyEl = tr.querySelector('.qty');
-      const priceEl = tr.querySelector('.price');
-      const qty = Number(qtyEl.value || 0);
-      const price = parseMoney(priceEl.value);
-      const stockMax = Number(tr.dataset.stock);
-      const qtyMax = Math.min(stockMax || 0, 1000);
-      const pay = tr.querySelector('.pay').value;
-
-      const sub = isFinite(price) ? qty * price : NaN;
-      tr.querySelector('.subtotal').textContent = '€ ' + (isFinite(sub) ? sub.toFixed(2) : '0.00');
-      total += isFinite(sub) ? sub : 0;
-      evaluateCartRow(tr);
-
-      if (!(qty>=1 && qty<=qtyMax && isFinite(price) && price>0 && price<=10000 && pay)) ok = false;
-    });
-    grandTotal.textContent = '€ ' + total.toFixed(2);
-
-    const items = [];
-    cartBody.querySelectorAll('tr').forEach(tr=>{
-      items.push({
-        barcode: tr.dataset.barcode,
-        qty: Number(tr.querySelector('.qty').value || 0),
-        price: parseMoney(tr.querySelector('.price').value) || 0,
-        payment: tr.querySelector('.pay').value
-      });
-    });
-    itemsJson.value = JSON.stringify(items);
-
-    submitBtn.disabled = !ok;
-    renderSummary();
+  // ===== 选品后弹窗：数量 / 批发切换 / 折扣 =====
+  function ctxFromCheck(d, barcode) {
+    return {
+      barcode: barcode,
+      title: d.display_name || d.name || barcode,
+      stock: Number(d.stock) || 0,
+      retail: (d.retail_price != null && d.retail_price !== '') ? Number(d.retail_price) : null,
+      wholesale: (d.wholesale_price != null && d.wholesale_price !== '') ? Number(d.wholesale_price) : null,
+      lastCost: (d.last_cost != null && d.last_cost !== '') ? Number(d.last_cost) : null,
+      image_url: d.image_url || '',
+    };
   }
 
-  // ===== 添加到购物车 =====
-  function addToCart(d, usedBarcode){
-    const existed = cartBody.querySelector(`tr[data-barcode="${usedBarcode}"]`);
-    if (existed){
-      const q = existed.querySelector('.qty');
-      const max = Math.min(Number(existed.dataset.stock)||0, 1000);
-      const before = Number(q.value||1);
-      q.value = Math.min(before + 1, max);
-      if (Number(q.value) === before) toastWarn('⚠️ Stock limit');
-      recalcAndSave();
-      barcodeInput.focus(); barcodeInput.select();
-      return;
+  function setPriceToggle(kind) {
+    document.querySelectorAll('#line-modal-price-toggle .price-opt').forEach((b) => b.classList.toggle('active', b.dataset.kind === kind));
+  }
+  function lineModalTotal() {
+    const base = parseMoney(document.getElementById('line-modal-base').value) || 0;
+    const disc = parseMoney(document.getElementById('line-modal-discount').value) || 0;
+    const qty = Number(document.getElementById('line-modal-qty').value) || 0;
+    return Math.max(0, base - disc) * qty;
+  }
+  function readModalSplit() {
+    const o = {};
+    lineModalSplit.querySelectorAll('.line-pay-amount').forEach((inp) => {
+      const v = parseMoney(inp.value);
+      if (isFinite(v) && v > 0) o[inp.dataset.method] = (o[inp.dataset.method] || 0) + v;
+    });
+    return o;
+  }
+  function updateLineModalPayUI() {
+    lineModalPay.classList.toggle('d-none', modalSplit);
+    lineModalSplit.classList.toggle('d-none', !modalSplit);
+    if (modalSplit) {
+      const split = readModalSplit();
+      const paid = METHODS.reduce((s, m) => s + (split[m] || 0), 0);
+      const remaining = lineModalTotal() - paid;
+      const ok = Math.abs(remaining) <= 0.01;
+      lineModalPayRemaining.textContent = ok ? 'Balanced ✓'
+        : (remaining > 0 ? `Remaining: EUR ${remaining.toFixed(2)}` : `Over by EUR ${(-remaining).toFixed(2)}`);
+      lineModalPayRemaining.className = 'pay-remaining ' + (ok ? 'ok' : 'bad');
+    } else {
+      renderModalPay();
+    }
+  }
+  function updateLineModalPreview() {
+    const base = parseMoney(document.getElementById('line-modal-base').value) || 0;
+    const disc = parseMoney(document.getElementById('line-modal-discount').value) || 0;
+    const qty = Number(document.getElementById('line-modal-qty').value) || 0;
+    const finalUnit = Math.max(0, base - disc);
+    document.getElementById('line-modal-final').textContent = formatMoney(finalUnit);
+    document.getElementById('line-modal-linetotal').textContent = formatMoney(finalUnit * qty);
+    updateLineModalPayUI();
+  }
+  function openLineModal(ctx, item) {
+    modalCtx = ctx;
+    editingUid = item ? item.uid : null;
+    document.getElementById('lineItemModalTitle').textContent = item ? 'Edit line' : 'Add product';
+    document.getElementById('line-modal-save').textContent = item ? 'Save changes' : 'Add to cart';
+    document.getElementById('line-modal-name').textContent = ctx.title;
+    document.getElementById('line-modal-barcode').textContent = ctx.barcode;
+    document.getElementById('line-modal-stock').textContent = `In stock: ${ctx.stock}`;
+    const retail = (ctx.retail != null && isFinite(ctx.retail)) ? Number(ctx.retail) : null;
+    const wholesale = (ctx.wholesale != null && isFinite(ctx.wholesale)) ? Number(ctx.wholesale) : null;
+    document.getElementById('line-modal-retail').textContent = retail != null ? `€${retail.toFixed(2)}` : '€—';
+    document.getElementById('line-modal-wholesale').textContent = wholesale != null ? `€${wholesale.toFixed(2)}` : '€—';
+    document.querySelector('#line-modal-price-toggle .price-opt[data-kind="wholesale"]').disabled = (wholesale == null);
+    document.getElementById('line-modal-qty').value = item ? item.qty : 1;
+    const base = item ? item.base : (retail != null ? retail : '');
+    document.getElementById('line-modal-base').value = (base !== '' && base != null) ? Number(base).toFixed(2) : '';
+    document.getElementById('line-modal-discount').value = item ? (Number(item.discount) || 0).toFixed(2) : '0';
+    const isWholesale = item && wholesale != null && Math.abs(Number(item.base) - wholesale) < 0.001;
+    setPriceToggle(isWholesale ? 'wholesale' : 'retail');
+    modalSplit = !!(item && item.isSplit);
+    modalPayMethod = (item && !item.isSplit && METHODS.includes(item.payment)) ? item.payment : lastMethod;
+    lineModalSplitToggle.checked = modalSplit;
+    lineModalSplit.querySelectorAll('.line-pay-amount').forEach((inp) => {
+      const m = inp.dataset.method;
+      const v = (modalSplit && item && item.paymentSplit) ? Number(item.paymentSplit[m]) || 0 : 0;
+      inp.value = v > 0 ? v.toFixed(2) : '';
+    });
+    document.getElementById('line-modal-error').classList.add('d-none');
+    updateLineModalPreview();
+    bootstrap.Modal.getOrCreateInstance(lineModalEl).show();
+  }
+  function renderModalPay() {
+    lineModalPay.querySelectorAll('.pay-ball').forEach((b) => {
+      b.classList.toggle('active', b.dataset.method === modalPayMethod);
+    });
+  }
+  function saveLineModal() {
+    const err = document.getElementById('line-modal-error');
+    const fail = (msg) => { err.textContent = msg; err.classList.remove('d-none'); };
+    const qty = Math.floor(Number(document.getElementById('line-modal-qty').value) || 0);
+    const base = parseMoney(document.getElementById('line-modal-base').value);
+    const disc = parseMoney(document.getElementById('line-modal-discount').value) || 0;
+    if (!(qty >= 1)) return fail('Quantity must be at least 1.');
+    if (!isFinite(base) || base <= 0) return fail('Enter a valid price.');
+    if (disc < 0) return fail('Discount cannot be negative.');
+    if (base - disc <= 0) return fail('Discount cannot be equal to or above the price.');
+    const stock = Number(modalCtx.stock) || 0;
+    const otherQty = cart.filter(i => i.barcode === modalCtx.barcode && i.uid !== editingUid).reduce((s, i) => s + i.qty, 0);
+    if (stock > 0 && otherQty + qty > stock) return fail(`Only ${stock} in stock (${otherQty} already in cart).`);
+
+    const lineTotal = Math.max(0, base - disc) * qty;
+    let payment = modalPayMethod;
+    let paymentSplit = null;
+    if (modalSplit) {
+      const split = readModalSplit();
+      const sum = METHODS.reduce((s, m) => s + (split[m] || 0), 0);
+      if (sum <= 0) return fail('Enter the split amounts.');
+      if (Math.abs(sum - lineTotal) > 0.01) return fail(`Split must add up to the line total EUR ${lineTotal.toFixed(2)}.`);
+      paymentSplit = {};
+      METHODS.forEach((m) => { if (split[m] > 0) paymentSplit[m] = Number(split[m].toFixed(2)); });
+      payment = METHODS.filter(m => paymentSplit[m] > 0).sort((a, b) => paymentSplit[b] - paymentSplit[a])[0];
     }
 
-    const tr = document.createElement('tr');
-    tr.dataset.barcode = usedBarcode;
-    tr.dataset.stock = d.stock;
-    tr.dataset.lastCost = d.last_cost != null ? d.last_cost : '';
-    tr.dataset.retailPrice = d.retail_price != null ? d.retail_price : '';
-    tr.dataset.wholesalePrice = d.wholesale_price != null ? d.wholesale_price : '';
-    const title = d.display_name || d.name || usedBarcode;
-    tr.dataset.title = title;
-    const imageBlock = d.image_url
-      ? `
-        <button type="button" class="cart-product-thumb-wrap js-preview-product" data-image-url="${escapeHtml(d.image_url)}" data-title="${escapeHtml(title)}">
-          <img src="${escapeHtml(d.image_url)}" alt="${escapeHtml(title)}" class="cart-product-thumb">
-        </button>
-      `
-      : '<div class="cart-product-thumb-empty">No image</div>';
-
-    tr.innerHTML = `
-    <td>
-      <div class="cart-product">
-        ${imageBlock}
-        <div class="cart-product-main">
-          <div class="fw-semibold">${escapeHtml(title)}</div>
-          <div class="small text-muted">${escapeHtml(usedBarcode)}</div>
-          <div class="line-flags"></div>
-        </div>
-      </div>
-    </td>
-
-      <td><input type="number" min="1" max="1000" class="form-control form-control-sm qty" value="1" style="min-width:90px;"></td>
-      <td>
-        <input type="text" inputmode="decimal" pattern="[0-9]+([.,][0-9]{0,2})?" 
-               class="form-control form-control-sm price" placeholder="0.00" value="${d.retail_price != null ? Number(d.retail_price).toFixed(2) : ''}">
-      </td>
-      <td>
-        <select class="form-select form-select-sm pay">
-          <option value="cash">Cash</option>
-          <option value="card">Card</option>
-          <option value="mbway">MBWay</option>
-        </select>
-      </td>
-      <td class="subtotal">€0.00</td>
-      <td><button type="button" class="btn btn-sm btn-outline-danger remove">✕</button></td>
-    `;
-    cartBody.appendChild(tr);
-
-    const qtyInput = tr.querySelector('.qty');
-    const priceInput = tr.querySelector('.price');
-
-    qtyInput.addEventListener('input', ()=>{
-      const stockMax = Number(tr.dataset.stock)||0;
-      const limit = Math.min(stockMax, 1000);
-      let v = Number(qtyInput.value||1);
-      if (v < 1) v = 1;
-      if (v > limit) { v = limit; toastWarn('Stock limit'); }
-      qtyInput.value = v;
-      recalcAndSave();
-    });
-
-    priceInput.addEventListener('input', ()=>{
-      priceInput.value = priceInput.value.replace(/[^\d.,]/g, '');
-      recalcAndSave();
-    });
-    priceInput.addEventListener('blur', ()=>{
-      let v = parseMoney(priceInput.value);
-      if (!isFinite(v) || v <= 0) { priceInput.value = ''; recalcAndSave(); return; }
-      if (v > 10000) v = 10000;
-      priceInput.value = v.toFixed(2);
-      recalcAndSave();
-    });
-
-    tr.querySelector('.pay').addEventListener('change', recalcAndSave);
-    tr.querySelector('.remove').addEventListener('click', ()=>{ tr.remove(); recalcAndSave(); });
-    tr.querySelector('.js-preview-product')?.addEventListener('click', () => {
-      openPreviewModal(d.image_url, title);
-    });
-
-    recalcAndSave();
-    // ✅ 添加后返回条码框
-    barcodeInput.focus(); barcodeInput.select();
+    const fields = { qty, base, discount: disc, payment, isSplit: modalSplit, paymentSplit };
+    if (editingUid) {
+      Object.assign(cart.find(i => i.uid === editingUid), fields);
+    } else {
+      cart.push(Object.assign({
+        uid: uidSeq++, barcode: modalCtx.barcode, title: modalCtx.title, stock: modalCtx.stock,
+        retail: modalCtx.retail, wholesale: modalCtx.wholesale, lastCost: modalCtx.lastCost,
+        image_url: modalCtx.image_url,
+      }, fields));
+    }
+    lastMethod = payment;
+    bootstrap.Modal.getOrCreateInstance(lineModalEl).hide();
+    renderCart();
+    barcodeInput.focus();
   }
+
+  // 行弹窗事件
+  document.getElementById('line-modal-qty').addEventListener('input', updateLineModalPreview);
+  document.getElementById('line-modal-base').addEventListener('input', updateLineModalPreview);
+  document.getElementById('line-modal-discount').addEventListener('input', updateLineModalPreview);
+  document.querySelectorAll('#line-modal-price-toggle .price-opt').forEach((b) => {
+    b.addEventListener('click', () => {
+      if (b.disabled) return;
+      setPriceToggle(b.dataset.kind);
+      const v = b.dataset.kind === 'wholesale' ? Number(modalCtx.wholesale) : Number(modalCtx.retail);
+      if (isFinite(v)) document.getElementById('line-modal-base').value = v.toFixed(2);
+      updateLineModalPreview();
+    });
+  });
+  document.getElementById('line-modal-save').addEventListener('click', saveLineModal);
+
+  // 行弹窗：每行选择支付方式（单一方式 / 拆分多方式）
+  lineModalPay.querySelectorAll('.pay-ball').forEach((b) => {
+    b.addEventListener('click', () => { modalPayMethod = b.dataset.method; renderModalPay(); });
+  });
+  lineModalSplitToggle.addEventListener('change', () => {
+    modalSplit = lineModalSplitToggle.checked;
+    if (modalSplit) {
+      const total = lineModalTotal();
+      lineModalSplit.querySelectorAll('.line-pay-amount').forEach((inp) => {
+        inp.value = (inp.dataset.method === modalPayMethod && total > 0) ? total.toFixed(2) : '';
+      });
+    } else {
+      const split = readModalSplit();
+      const best = METHODS.filter(m => split[m] > 0).sort((a, b) => split[b] - split[a])[0];
+      if (best) modalPayMethod = best;
+    }
+    updateLineModalPayUI();
+  });
+  lineModalSplit.querySelectorAll('.line-pay-amount').forEach((inp) => {
+    inp.addEventListener('input', () => { inp.value = inp.value.replace(/[^\d.,]/g, ''); updateLineModalPayUI(); });
+  });
 
   // ===== 条码/模糊搜索切换 =====
   barcodeInput.addEventListener('input', ()=>{
@@ -1267,6 +1510,9 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    prodSuggest.innerHTML = '<div class="list-group-item text-muted small">Searching…</div>';
+    prodSuggest.classList.remove('d-none');
+
     fetch(`/api/products_autocomplete/?q=${encodeURIComponent(q)}`)
       .then(r=>r.json())
       .then(data=>{
@@ -1280,8 +1526,7 @@ document.addEventListener('DOMContentLoaded', () => {
               .then(d=>{
                 if (!d.exists){ toastWarn('Product not found.'); return; }
                 if (d.stock > 0) {
-                  addToCart(d, product.barcode);
-                  toastInfo(`Added: <strong>${line}</strong>`);
+                  openLineModal(ctxFromCheck(d, product.barcode), null);
                 } else {
                   toastError(`${line} No Stock`);
                 }
@@ -1322,10 +1567,9 @@ document.addEventListener('DOMContentLoaded', () => {
         .then(d=>{
           if (!d.exists){ toastWarn('Product not found.'); return; }
           if (d.stock>0) {
-            addToCart(d, code);
-            toastInfo(`✅ Added: <strong>${d.name}</strong>`);
+            openLineModal(ctxFromCheck(d, code), null);
           } else {
-            toastError(`${d.name} ❌ No Stock`);
+            toastError(`${d.name} — no stock`);
           }
         })
         .finally(()=>{
@@ -1343,16 +1587,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ===== 提交 =====
   const checkoutForm = document.getElementById('checkout-form');
-  const idemKeyOut = document.getElementById('idemp_key');
-  try { idemKeyOut.value = (crypto.randomUUID ? crypto.randomUUID() : (Date.now()+Math.random())); } catch(e){ idemKeyOut.value = Date.now(); }
   checkoutForm.addEventListener('submit', (e)=>{
     if (checkoutForm.dataset.submitted === '1') { e.preventDefault(); return; }
-    recalcAndSave();
-    if (!itemsJson.value || itemsJson.value==='[]'){
-      e.preventDefault();
-      alert('Cart is empty.');
-      return;
-    }
+    recalc();
+    if (!cart.length){ e.preventDefault(); alert('Cart is empty.'); return; }
+    if (submitBtn.disabled){ e.preventDefault(); openCheckoutReview(); return; }
     if (checkoutForm.dataset.confirmed !== '1') {
       e.preventDefault();
       openCheckoutReview();
@@ -1388,7 +1627,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const modalEl = document.getElementById('addCustomerModal');
           const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
           modal.hide();
-          renderSummary();
+          recalc();
         } else {
           alert(data && data.error ? data.error : 'Failed to add customer.');
         }
@@ -1397,7 +1636,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
-  renderSummary();
+  recalc();
 });
 </script>
 

@@ -4,12 +4,12 @@
 {% block content %}
 <style>
   .profile-shell{max-width:960px;margin:0 auto;display:grid;gap:1rem}
-  .profile-card{background:#fff;border:1px solid #d9e2ee;border-radius:1.1rem;box-shadow:0 18px 40px rgba(15,23,42,.06)}
+  .profile-card{background:#fff;border:1px solid var(--app-border);border-radius:var(--app-radius);box-shadow:var(--app-shadow)}
   .profile-head{padding:1.25rem 1.35rem}
-  .profile-head h1{margin:0;font-size:2rem;font-weight:900;color:#10213a}
-  .profile-sub{margin:.35rem 0 0;color:#5a6b81}
+  .profile-head h1{margin:0;font-size:2rem;font-weight:900;color:var(--app-text)}
+  .profile-sub{margin:.35rem 0 0;color:var(--app-muted)}
   .preview-card{padding:1.15rem 1.25rem;background:linear-gradient(180deg,#fbfdff,#f3f7fd)}
-  .preview-title{font-size:1.2rem;font-weight:900;color:#10213a}
+  .preview-title{font-size:1.2rem;font-weight:900;color:var(--app-text)}
   .preview-meta{color:#4f6075;line-height:1.6}
 </style>
 
@@ -18,7 +18,9 @@
     <div class="d-flex justify-content-between gap-3 flex-wrap align-items-start">
       <div>
         <h1>Print Header Settings</h1>
-        <p class="profile-sub">Edit the store information that appears on A4 and POS order printouts. This page only changes receipt header details.</p>
+        {% if target_store %}
+          <div class="profile-sub">Store: <strong>{{ target_store.name }}</strong>{% if store_is_all %} · switch the active store in the sidebar to edit another{% endif %}</div>
+        {% endif %}
       </div>
       <a href="{{ next_url }}" class="btn btn-outline-secondary">Back</a>
     </div>

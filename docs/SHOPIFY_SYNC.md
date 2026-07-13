@@ -1,0 +1,125 @@
+# Shopify image sync
+
+Push local product photos to the matching products in the Shopify store
+(**Scentory**, `www.scentory.pt`). Products are matched by **barcode = Shopify
+variant SKU**.
+
+Entry points, all driven by the same service:
+
+- **`python manage.py sync_shopify_images`** — attach photos to products that
+  already exist in Shopify (bulk backfill).
+- **`python manage.py sync_shopify_products`** — **create** missing products in
+  Shopify (variant / price / SKU / barcode / cost / inventory / SEO / image),
+  and attach images to ones that already exist.
+- **Auto-sync signal** — when a product photo is uploaded in the app, it is
+  synced to Shopify automatically (opt-in via `SHOPIFY_AUTO_SYNC`; with
+  `SHOPIFY_AUTO_CREATE` it also *creates* the product if it isn't there yet).
+
+Only the authenticated GraphQL calls use the Admin token; image bytes go to
+Shopify's own pre-signed upload URL. No third-party image host (Cloudinary etc.).
+
+---
+
+## 1. One-time setup — create a custom app token
+
+1. Shopify admin → **Settings → Apps and sales channels → Develop apps → Create an app**.
+2. Name it e.g. `Inventory Image Sync`.
+3. **Configuration → Admin API integration → Configure**, grant scopes:
+   - `read_products`, `write_products`
+   - `read_inventory`, `write_inventory`  (needed to create products with stock)
+   - `read_locations`
+4. **Install app**, then **API credentials → Admin API access token → Reveal** and copy it (`shpat_…`). You only see it once.
+
+## 2. Configure the environment (never commit the token)
+
+Set these before running the app / command:
+
+| Variable | Value | Required |
+|---|---|---|
+| `SHOPIFY_STORE_DOMAIN` | `66tcd5-su.myshopify.com` | default already set |
+| `SHOPIFY_ADMIN_TOKEN` | `shpat_…` (from step 1) | **yes** |
+| `SHOPIFY_API_VERSION` | e.g. `2025-01` | optional (default `2025-01`) |
+| `SHOPIFY_AUTO_SYNC` | `1` to auto-sync on upload | optional (default off) |
+| `SHOPIFY_AUTO_CREATE` | `1` to also *create* missing products on upload | optional (default off) |
+| `SHOPIFY_NEW_PRODUCT_STATUS` | `DRAFT` or `ACTIVE` for created products | optional (default `DRAFT`) |
+
+PowerShell (current session):
+```powershell
+$env:SHOPIFY_ADMIN_TOKEN = "shpat_xxxxxxxxxxxxxxxx"
+```
+
+## 3. Bulk backfill
+
+Always preview first (dry run — writes nothing):
+```powershell
+python manage.py sync_shopify_images --brand Lattafa
+```
+Then apply:
+```powershell
+python manage.py sync_shopify_images --brand Lattafa --apply
+```
+
+Options:
+
+| Flag | Effect |
+|---|---|
+| `--apply` | Actually upload (default is a dry run) |
+| `--overwrite` | Replace images even if the Shopify product already has one |
+| `--brand <text>` | Only products whose brand contains `<text>` |
+| `--barcode <code>` | Only the one product with this exact barcode |
+| `--in-stock` | Only products with stock > 0 |
+| `--limit <n>` | Process at most `n` products |
+
+The command prints a per-product line for uploads/errors and a summary. Result
+categories: `uploaded`, `already has image` (skipped), `not in Shopify`
+(skipped), `no local image`, `no barcode`, `ERROR`.
+
+## 4. Create missing products
+
+`sync_shopify_products` creates products that aren't in Shopify yet (and images
+existing ones). **Always test one first**, then a brand, then all:
+
+```powershell
+python manage.py sync_shopify_products --barcode 6290362349730          # preview one
+python manage.py sync_shopify_products --barcode 6290362349730 --apply  # create one
+python manage.py sync_shopify_products --brand Lattafa --apply          # then the brand
+```
+
+Each created product gets: clean title (from brand/model/name/size), vendor =
+brand, product type = category, tags, description, **SEO title + meta
+description**, a single variant with **price / SKU / barcode / unit cost /
+tracked inventory** set to current stock at your location, and the **product
+photo**. New products are created as **DRAFT** by default (review before
+publishing) — pass `--status active` to publish immediately.
+
+Extra flags on top of the shared ones: `--status active|draft`,
+`--overwrite-image`.
+
+## 5. Auto-sync on upload
+
+Set `SHOPIFY_AUTO_SYNC=1`. Then whenever a product photo is saved in the app, the
+product is synced to Shopify **after the DB commit**, in the background of the
+request (failures logged, never block the save):
+
+- product already in Shopify → its image is attached;
+- product not in Shopify **and** `SHOPIFY_AUTO_CREATE=1` → it is created
+  (as `SHOPIFY_NEW_PRODUCT_STATUS`, default DRAFT) with variant/inventory/SEO/image;
+- otherwise → logged and skipped.
+
+---
+
+## Behaviour & limitations
+
+- **Match key is barcode = SKU.** A product whose barcode doesn't match any
+  Shopify variant SKU is skipped (`not in Shopify`). Placeholder/fake barcodes
+  (e.g. `7777777777777`) won't match — fix the SKU in Shopify or the barcode in
+  the app, then re-run.
+- **Only fills missing images** by default (products with no image on Shopify).
+  Use `--overwrite` / `--overwrite-image` to replace.
+- **Single variant.** Created products get one default variant (matches this
+  catalog: one barcode = one variant). Multi-variant products aren't modelled.
+- **Created as DRAFT** by default so a mistake never goes live instantly —
+  publish from Shopify or use `--status active`. **Test with one product first**
+  (`--barcode … --apply`) before a bulk run.
+- **Idempotent:** re-running skips products that already exist with an image, so
+  it's safe to run repeatedly.

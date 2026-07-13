@@ -4,16 +4,8 @@
 {% block content %}
 <div class="container my-4 iou-ui">
   <style>
-    .iou-ui{
-      --card:#fff;
-      --text:#0f172a;
-      --muted:#64748b;
-      --border:rgba(15,23,42,.10);
-      --radius:14px;
-      --ok:#10b981;
-      --danger:#ef4444;
-      --shadow:0 10px 22px rgba(15,23,42,.06);
-    }
+    /* Tokens inherited from app.css; keep the page-local --ok alias */
+    .iou-ui{ --ok:var(--app-good); }
     .iou-ui h2{font-weight:800;color:var(--text)}
     .kpi{border:1px solid var(--border);border-radius:var(--radius);background:linear-gradient(180deg,#f8fbff,#fff);box-shadow:var(--shadow);padding:1rem 1.1rem}
     .kpi .label{color:var(--muted);font-weight:700}
@@ -48,7 +40,7 @@
     }
   </style>
 
-  <h2 class="mb-3">Customer IOUs</h2>
+  <h1 class="pos-title mb-3">Customer IOUs</h1>
 
   {% if show_sensitive %}
     <div class="row g-3 mb-3">

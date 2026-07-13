@@ -3,7 +3,7 @@ from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.db.models import Q
-from django.forms import formset_factory, inlineformset_factory
+from django.forms import inlineformset_factory
 from django.utils import timezone
 
 from .models import (
@@ -13,12 +13,14 @@ from .models import (
     Brand,
     Customer,
     InboundOrder,
+    InboundPendingItem,
     PrintProfile,
     Product,
     ProductSeries,
     Purchase,
     Sale,
     SaleOrder,
+    Store,
     Supplier,
 )
 
@@ -175,10 +177,14 @@ class ProductForm(forms.ModelForm):
 class SupplierForm(forms.ModelForm):
     class Meta:
         model = Supplier
-        fields = ['name', 'phone', 'country', 'address', 'product_types']
+        fields = ['name', 'contact_person', 'phone', 'email', 'website', 'nif', 'country', 'address', 'product_types']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Supplier name'}),
+            'contact_person': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Contact person'}),
             'phone': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Phone or WhatsApp'}),
+            'email': forms.EmailInput(attrs={'class': 'form-control', 'placeholder': 'email@example.com'}),
+            'website': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'https://…'}),
+            'nif': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Tax ID / NIF'}),
             'country': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Country'}),
             'address': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Address'}),
             'product_types': forms.SelectMultiple(attrs={'class': 'form-select', 'size': 8}),
@@ -239,6 +245,46 @@ InboundPurchaseFormSet = inlineformset_factory(
     InboundOrder,
     Purchase,
     form=InboundPurchaseLineForm,
+    extra=0,
+    can_delete=True,
+)
+
+
+class InboundReceiveForm(forms.ModelForm):
+    """Edit a pending inbound order before confirming receipt.
+
+    ``supplier`` is rendered as a hidden field driven by an autocomplete text
+    box in the template (fuzzy search instead of a long dropdown).
+    """
+    class Meta:
+        model = InboundOrder
+        fields = ['supplier', 'invoice_no', 'invoice_date', 'note']
+        widgets = {
+            'supplier': forms.HiddenInput(),
+            'invoice_no': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Invoice number'}),
+            'invoice_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
+            'note': forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'Optional note'}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['supplier'].required = True
+
+
+class InboundPendingLineForm(forms.ModelForm):
+    class Meta:
+        model = InboundPendingItem
+        fields = ['quantity', 'cost_price']
+        widgets = {
+            'quantity': forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'min': '1', 'max': '100000'}),
+            'cost_price': forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'min': '0.01', 'step': '0.01', 'max': '999999.99'}),
+        }
+
+
+InboundPendingFormSet = inlineformset_factory(
+    InboundOrder,
+    InboundPendingItem,
+    form=InboundPendingLineForm,
     extra=0,
     can_delete=True,
 )
@@ -366,11 +412,6 @@ class CustomerChoiceField(forms.ModelChoiceField):
         return f"{obj.name} ({obj.nif})"
 
 
-class ProductChoiceField(forms.ModelChoiceField):
-    def label_from_instance(self, obj):
-        return f"{obj.display_name} [{obj.barcode}]"
-
-
 class SaleOrderCorrectionForm(forms.ModelForm):
     customer = CustomerChoiceField(
         queryset=Customer.objects.order_by('name'),
@@ -402,61 +443,6 @@ class SaleOrderCorrectionForm(forms.ModelForm):
         self.fields['customer'].widget.attrs.setdefault('class', 'form-select')
         if self.instance and self.instance.pk and not self.initial.get('order_datetime'):
             self.initial['order_datetime'] = timezone.localtime(self.instance.created_at).strftime('%Y-%m-%dT%H:%M')
-
-
-class SaleCorrectionLineForm(forms.Form):
-    product = ProductChoiceField(
-        queryset=Product.objects.select_related('brand_master', 'series_master', 'category').order_by('brand', 'model', 'name'),
-        required=False,
-        widget=forms.HiddenInput(attrs={'class': 'js-product-id'}),
-    )
-    quantity = forms.IntegerField(
-        min_value=1,
-        required=False,
-        widget=forms.NumberInput(attrs={'class': 'form-control', 'min': '1'}),
-    )
-    unit_price = forms.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        min_value=0.01,
-        required=False,
-        widget=forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0.01'}),
-    )
-    payment_method = forms.ChoiceField(
-        choices=[('', 'Select payment')] + list(Sale.PAYMENT_METHOD_CHOICES),
-        required=False,
-        widget=forms.Select(attrs={'class': 'form-select'}),
-    )
-
-    def clean(self):
-        cleaned = super().clean()
-        if cleaned.get('DELETE'):
-            return cleaned
-
-        product = cleaned.get('product')
-        quantity = cleaned.get('quantity')
-        unit_price = cleaned.get('unit_price')
-        payment_method = cleaned.get('payment_method')
-
-        if not any([product, quantity, unit_price, payment_method]):
-            return cleaned
-        if payment_method and not any([product, quantity, unit_price]):
-            cleaned['payment_method'] = ''
-            return cleaned
-
-        values = {
-            'product': product,
-            'quantity': quantity,
-            'unit_price': unit_price,
-            'payment_method': payment_method,
-        }
-        missing = [label for label, value in values.items() if not value]
-        if missing:
-            raise forms.ValidationError('Each active line needs product, quantity, unit price, and payment method.')
-        return cleaned
-
-
-SaleCorrectionLineFormSet = formset_factory(SaleCorrectionLineForm, extra=1, can_delete=True)
 
 
 class PurchaseForm(forms.ModelForm):
@@ -532,3 +518,26 @@ class ARPaymentForm(forms.ModelForm):
             'method': forms.Select(attrs={'class': 'form-select'}),
             'note': forms.TextInput(attrs={'class': 'form-control'}),
         }
+
+
+class StoreForm(forms.ModelForm):
+    class Meta:
+        model = Store
+        fields = ['name', 'code', 'is_active', 'is_default']
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Amadora'}),
+            'code': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. AMD'}),
+            'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'is_default': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+        }
+
+    def clean_code(self):
+        code = (self.cleaned_data.get('code') or '').strip().upper()
+        if not code:
+            raise forms.ValidationError('A short code is required.')
+        clash = Store.objects.filter(code=code)
+        if self.instance.pk:
+            clash = clash.exclude(pk=self.instance.pk)
+        if clash.exists():
+            raise forms.ValidationError('This code is already used by another store.')
+        return code

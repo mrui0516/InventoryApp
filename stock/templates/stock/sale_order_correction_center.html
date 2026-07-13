@@ -23,7 +23,6 @@
     <div>
       <span class="eyebrow">Admin only</span>
       <h1 class="page-title">Order Correction Center</h1>
-      <p class="page-sub">Find historical orders, fix wrong prices or dates, and add missing backdated orders without opening Django admin.</p>
     </div>
     <div class="d-flex gap-2 flex-wrap">
       <a class="btn btn-primary" href="{% url 'sale_order_correction_create' %}">Add missing historical order</a>
@@ -58,7 +57,6 @@
         <div class="row-head mb-3">
           <div>
             <h2 class="h4 mb-1">Historical orders</h2>
-            <p class="mini mb-0">Pick any order to correct customer, timestamp, products, prices, or payment method.</p>
           </div>
           <span class="pill">{{ page_obj.paginator.count }} order{{ page_obj.paginator.count|pluralize }}</span>
         </div>
@@ -69,6 +67,7 @@
               <tr>
                 <th>Order</th>
                 <th>Customer</th>
+                {% if store_is_all %}<th>Store</th>{% endif %}
                 <th>Time</th>
                 <th class="text-center">Qty</th>
                 <th class="text-end">Amount</th>
@@ -76,26 +75,35 @@
               </tr>
             </thead>
             <tbody>
-              {% for order in page_obj %}
-                <tr>
-                  <td>
-                    <div class="fw-bold">#{{ order.id }}</div>
-                    {% if order.note %}<div class="mini">{{ order.note }}</div>{% endif %}
-                  </td>
-                  <td>{% if order.customer %}{{ order.customer.name }}{% else %}<span class="text-muted">Walk-in / no customer</span>{% endif %}</td>
-                  <td>{{ order.created_at|date:"Y-m-d H:i" }}</td>
-                  <td class="text-center">{{ order.view_total_qty }}</td>
-                  <td class="text-end fw-bold">EUR {{ order.view_total_amount|floatformat:2 }}</td>
-                  <td class="text-end">
-                    <div class="d-flex justify-content-end gap-2">
-                      <a class="btn btn-sm btn-outline-secondary" href="{% url 'sale_order_detail' order.id %}">Print</a>
-                      <a class="btn btn-sm btn-primary" href="{% url 'sale_order_correction_edit' order.id %}">Correct</a>
-                    </div>
-                  </td>
+              {% for group in order_date_groups %}
+                <tr class="table-light date-group-row">
+                  <th colspan="{% if store_is_all %}7{% else %}6{% endif %}" class="py-2">
+                    {{ group.date|date:"Y-m-d (D)" }}
+                    <span class="mini fw-normal ms-2">{{ group.count }} order{{ group.count|pluralize }} · EUR {{ group.amount|floatformat:2 }}</span>
+                  </th>
                 </tr>
+                {% for order in group.orders %}
+                  <tr>
+                    <td>
+                      <div class="fw-bold">#{{ order.id }}</div>
+                      {% if order.note %}<div class="mini">{{ order.note }}</div>{% endif %}
+                    </td>
+                    <td>{% if order.customer %}{{ order.customer.name }}{% else %}<span class="text-muted">Walk-in / no customer</span>{% endif %}</td>
+                    {% if store_is_all %}<td>{{ order.view_store }}</td>{% endif %}
+                    <td>{{ order.created_at|date:"H:i" }}</td>
+                    <td class="text-center">{{ order.view_total_qty }}</td>
+                    <td class="text-end fw-bold">EUR {{ order.view_total_amount|floatformat:2 }}</td>
+                    <td class="text-end">
+                      <div class="d-flex justify-content-end gap-2">
+                        <a class="btn btn-sm btn-outline-secondary" href="{% url 'sale_order_detail' order.id %}">Print</a>
+                        <a class="btn btn-sm btn-primary" href="{% url 'sale_order_correction_edit' order.id %}">Correct</a>
+                      </div>
+                    </td>
+                  </tr>
+                {% endfor %}
               {% empty %}
                 <tr>
-                  <td colspan="6" class="text-center py-4 text-muted">No matching orders found.</td>
+                  <td colspan="{% if store_is_all %}7{% else %}6{% endif %}" class="text-center py-4 text-muted">No matching orders found.</td>
                 </tr>
               {% endfor %}
             </tbody>
@@ -123,7 +131,6 @@
         <div class="row-head mb-3">
           <div>
             <h2 class="h4 mb-1">Recent correction log</h2>
-            <p class="mini mb-0">Every historical change keeps a reason and before/after snapshot.</p>
           </div>
         </div>
         <div class="log-list">

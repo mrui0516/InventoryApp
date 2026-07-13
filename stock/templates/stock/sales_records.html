@@ -4,21 +4,7 @@
 {% block content %}
 <div class="container my-4 records-page">
   <style>
-    .records-page{
-      --bg:#f6f7fb;
-      --card:#ffffff;
-      --text:#0f172a;
-      --muted:#64748b;
-      --border:rgba(15,23,42,.1);
-      --accent:#2563eb;
-      --accent-soft:#e8f0ff;
-      --success:#047857;
-      --success-soft:#ecfdf5;
-      --warning:#b45309;
-      --warning-soft:#fff7ed;
-      --shadow:0 12px 30px rgba(15,23,42,.08);
-      --radius:18px;
-    }
+    /* Design tokens inherited from app.css (dense-flat system) */
 
     .page-head{
       display:flex;
@@ -652,7 +638,96 @@
       margin-top:1rem;
     }
 
+    .viz-grid{
+      display:grid;
+      grid-template-columns:1.7fr 1fr;
+      gap:1rem;
+      margin-bottom:1.2rem;
+    }
+    .viz-card,
+    .top-card{
+      background:var(--card);
+      border:1px solid var(--border);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      padding:1rem 1.05rem;
+    }
+    .top-card{
+      margin-bottom:1.2rem;
+    }
+    .viz-card h3{
+      margin:0 0 .25rem;
+      font-size:1.05rem;
+      font-weight:900;
+      color:var(--text);
+    }
+    .viz-sub{
+      color:var(--muted);
+      font-size:.84rem;
+      font-weight:700;
+      margin-bottom:.6rem;
+    }
+    .chart-box{
+      position:relative;
+      height:260px;
+    }
+    .chart-box.donut{
+      height:215px;
+    }
+    .chart-legend{
+      display:flex;
+      flex-wrap:wrap;
+      gap:.4rem;
+      justify-content:center;
+      margin-top:.7rem;
+    }
+    .top-row{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) auto;
+      gap:.85rem;
+      align-items:center;
+      padding:.55rem 0;
+      border-top:1px solid #eef2f7;
+    }
+    .top-row:first-of-type{
+      border-top:0;
+    }
+    .top-name{
+      color:var(--text);
+      font-weight:800;
+      text-decoration:none;
+    }
+    .top-name:hover{
+      color:#1d4ed8;
+    }
+    .top-bar{
+      height:7px;
+      border-radius:999px;
+      background:#eef2f7;
+      margin-top:.35rem;
+      overflow:hidden;
+    }
+    .top-bar span{
+      display:block;
+      height:100%;
+      background:linear-gradient(90deg,#2563eb,#60a5fa);
+    }
+    .top-metric{
+      text-align:right;
+      white-space:nowrap;
+      font-weight:900;
+      color:var(--text);
+    }
+    .top-metric .sub{
+      color:var(--muted);
+      font-size:.82rem;
+      font-weight:700;
+    }
+
     @media (max-width: 991.98px){
+      .viz-grid{
+        grid-template-columns:1fr;
+      }
       .filter-grid{
         grid-template-columns:1fr 1fr;
       }
@@ -745,13 +820,7 @@
   <div class="page-head">
     <div>
       <h2>Sales & Purchase Records</h2>
-      <p class="page-sub">
-        {% if date_filter %}
-          Showing records for {{ date_filter }}
-        {% else %}
-          Pick a date range to review orders and purchases.
-        {% endif %}
-      </p>
+      {% if date_filter %}<div class="page-sub">Showing records for {{ date_filter }}</div>{% endif %}
     </div>
     <div class="page-actions">
       {% if show_sales_sensitive %}
@@ -794,6 +863,92 @@
     </div>
   </form>
 
+  {% if show_trend %}
+    <div class="section-title">
+      <h3>Sales Trend &middot; {{ year }}</h3>
+      <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-sm btn-outline-secondary" href="{{ year_nav.prev }}">&laquo; {{ prev_year }}</a>
+        {% if not is_current_year %}<a class="btn btn-sm btn-outline-secondary" href="{{ year_nav.current }}">This year</a>{% endif %}
+        {% if year_nav.next %}<a class="btn btn-sm btn-outline-secondary" href="{{ year_nav.next }}">{{ next_year }} &raquo;</a>{% endif %}
+      </div>
+    </div>
+
+    {% if show_order_financials %}
+      <div class="summary-grid">
+        <div class="summary-card">
+          <div class="summary-label">Year Sales</div>
+          <div class="summary-value">EUR {{ year_sales_amount|floatformat:2 }}</div>
+          <div class="summary-sub">{{ year_order_count }} orders &middot; {{ year_sales_qty }} items</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-label">Average Ticket</div>
+          <div class="summary-value">EUR {{ year_avg_ticket|floatformat:2 }}</div>
+          <div class="summary-sub">Across {{ year_order_count }} orders</div>
+        </div>
+        {% if show_profit %}
+          <div class="summary-card">
+            <div class="summary-label">Gross Profit</div>
+            <div class="summary-value">EUR {{ year_sales_profit|floatformat:2 }}</div>
+            <div class="summary-sub">FIFO &middot; full year</div>
+          </div>
+        {% endif %}
+        <div class="summary-card">
+          <div class="summary-label">Best Month</div>
+          <div class="summary-value">{% if best_month %}{{ best_month.label }}{% else %}&mdash;{% endif %}</div>
+          <div class="summary-sub">{% if best_month %}EUR {{ best_month.amount|floatformat:2 }}{% else %}No sales yet{% endif %}</div>
+        </div>
+      </div>
+
+      {{ year_chart|json_script:"yearChartData" }}
+      <section class="viz-card" style="margin-bottom:1.2rem;">
+        <h3 style="margin:0 0 .5rem;font-size:1.05rem;font-weight:900;color:var(--text);">Sales by Month</h3>
+        <div class="viz-sub">Click a bar or a month row to open that month's detailed records</div>
+        <div class="chart-box"><canvas id="yearBarChart"></canvas></div>
+      </section>
+
+      <section class="top-card">
+        <h3 style="margin:0 0 .6rem;font-size:1.05rem;font-weight:900;color:var(--text);">Monthly Breakdown</h3>
+        <div class="table-responsive">
+          <table class="table item-table mb-0">
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th class="text-center">Orders</th>
+                <th class="text-center">Items</th>
+                <th class="text-end">Sales</th>
+                {% if show_profit %}<th class="text-end">Profit</th>{% endif %}
+                <th class="text-end">Avg</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in monthly_rows %}
+                <tr>
+                  <td class="fw-bold">{{ row.label }}</td>
+                  <td class="text-center">{{ row.order_count }}</td>
+                  <td class="text-center">{{ row.qty }}</td>
+                  <td class="text-end fw-bold">EUR {{ row.amount|floatformat:2 }}</td>
+                  {% if show_profit %}<td class="text-end">EUR {{ row.profit|floatformat:2 }}</td>{% endif %}
+                  <td class="text-end">EUR {{ row.avg_ticket|floatformat:2 }}</td>
+                  <td class="text-end">{% if row.order_count %}<a class="btn btn-sm btn-outline-secondary" href="{{ row.detail_url }}">Open</a>{% endif %}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {% if payment_breakdown %}
+        <section class="top-card">
+          <h3 style="margin:0 0 .6rem;font-size:1.05rem;font-weight:900;color:var(--text);">Payment Mix &middot; {{ year }}</h3>
+          <div class="chart-legend" style="justify-content:flex-start;">
+            {% for row in payment_breakdown %}<span class="pay-pill">{{ row.label }} EUR {{ row.amount|floatformat:2 }} ({{ row.share_pct|floatformat:1 }}%)</span>{% endfor %}
+          </div>
+        </section>
+      {% endif %}
+    {% endif %}
+  {% endif %}
+
   {% if day_blocks or purchase_day_blocks %}
     <div class="summary-grid">
       {% if show_order_financials %}
@@ -833,22 +988,50 @@
           <div class="summary-sub">{{ total_purchase_orders }} purchase groups</div>
         </div>
       {% endif %}
-      {% if show_order_financials %}
-        <div class="summary-card payments">
-          <div class="summary-label">Payment Split</div>
-          <div class="payment-grid">
-            {% for key, value in payment_totals.items %}
-              <div class="payment-total">
-                <span>{{ key|capfirst }}</span>
-                <span>EUR {{ value|floatformat:2 }}</span>
-              </div>
-            {% empty %}
-              <div class="history-empty">No payment data in this range.</div>
-            {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if show_order_financials and trend_data %}
+    {{ trend_data|json_script:"trendData" }}
+    {% if payment_chart %}{{ payment_chart|json_script:"payMixData" }}{% endif %}
+    <div class="viz-grid">
+      <section class="viz-card">
+        <h3>Daily Money Flow</h3>
+        <div class="viz-sub">Sales{% if show_purchases %} vs purchases{% endif %}{% if show_profit %} and profit{% endif %} per active day</div>
+        <div class="chart-box"><canvas id="trendChart"></canvas></div>
+      </section>
+      {% if payment_chart %}
+        <section class="viz-card">
+          <h3>Payment Mix</h3>
+          <div class="viz-sub">Share of sales by method</div>
+          <div class="chart-box donut"><canvas id="payChart"></canvas></div>
+          <div class="chart-legend">
+            {% for p in payment_chart %}<span class="pay-pill">{{ p.label }} EUR {{ p.amount|floatformat:2 }}</span>{% endfor %}
           </div>
-        </div>
+        </section>
       {% endif %}
     </div>
+  {% endif %}
+
+  {% if top_products %}
+    <section class="top-card">
+      <h3 class="mb-2" style="font-size:1.05rem;font-weight:900;color:var(--text);">Top Products</h3>
+      {% for tp in top_products %}
+        <div class="top-row">
+          <div>
+            {% if tp.product %}
+              <a class="top-name" href="{% url 'product_detail' tp.product.id %}">{{ tp.name }}</a>
+            {% else %}
+              <span class="top-name">{{ tp.name }}</span>
+            {% endif %}
+            <div class="top-bar"><span style="width:{{ tp.bar }}%"></span></div>
+          </div>
+          <div class="top-metric">
+            {% if show_order_financials %}EUR {{ tp.revenue|floatformat:2 }}<div class="sub">{{ tp.qty }} units{% if show_profit %} · EUR {{ tp.profit|floatformat:2 }} profit{% endif %}</div>{% else %}{{ tp.qty }} units{% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </section>
   {% endif %}
 
   {% if day_blocks %}
@@ -930,18 +1113,11 @@
                 </summary>
 
                 <div class="order-body">
-                  <div class="order-tools">
-                      <span class="hint">
-                        {% if show_order_financials %}
-                        Expand each order to inspect products, quantities, payment method, and subtotals.
-                        {% else %}
-                        Expand each order to inspect products and quantities.
-                        {% endif %}
-                      </span>
-                    {% if row.detail_url %}
+                  {% if row.detail_url %}
+                    <div class="order-tools" style="justify-content:flex-end;">
                       <a href="{{ row.detail_url }}" class="btn btn-sm btn-outline-secondary">Print</a>
-                    {% endif %}
-                  </div>
+                    </div>
+                  {% endif %}
                   <div class="table-responsive">
                     <table class="table item-table">
                       <thead>
@@ -1064,12 +1240,11 @@
                   </summary>
 
                   <div class="order-body">
-                    <div class="order-tools">
-                      <span class="hint">Review the purchase lines below to verify quantity and cost per batch.</span>
-                      {% if row.edit_url %}
+                    {% if row.edit_url %}
+                      <div class="order-tools" style="justify-content:flex-end;">
                         <a href="{{ row.edit_url }}" class="btn btn-sm btn-outline-primary">Adjust record</a>
-                      {% endif %}
-                    </div>
+                      </div>
+                    {% endif %}
                     <div class="table-responsive">
                       <table class="table item-table">
                         <thead>
@@ -1327,4 +1502,65 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 </script>
+
+{% if show_order_financials and trend_data %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  (function () {
+    if (!window.Chart) return;
+    const showPurch = {{ show_purchases|yesno:"true,false" }};
+    const showProfit = {{ show_profit|yesno:"true,false" }};
+
+    const trendEl = document.getElementById('trendChart');
+    if (trendEl) {
+      const d = JSON.parse(document.getElementById('trendData').textContent);
+      const datasets = [{ label: 'Sales', data: d.map(x => x.sales), backgroundColor: '#2563eb', borderRadius: 5, maxBarThickness: 38 }];
+      if (showPurch) datasets.push({ label: 'Purchases', data: d.map(x => x.purchases), backgroundColor: '#f59e0b', borderRadius: 5, maxBarThickness: 38 });
+      if (showProfit) datasets.push({ type: 'line', label: 'Profit', data: d.map(x => x.profit), borderColor: '#10b981', backgroundColor: '#10b981', borderWidth: 2, tension: 0.3, pointRadius: 2 });
+      new Chart(trendEl, {
+        type: 'bar',
+        data: { labels: d.map(x => x.label), datasets },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: datasets.length > 1, position: 'bottom' }, tooltip: { callbacks: { label: c => `${c.dataset.label}: €${Number(c.raw).toFixed(2)}` } } },
+          scales: { y: { beginAtZero: true, ticks: { callback: v => '€' + v } } },
+        },
+      });
+    }
+
+    const payEl = document.getElementById('payChart');
+    const payDataEl = document.getElementById('payMixData');
+    if (payEl && payDataEl) {
+      const d = JSON.parse(payDataEl.textContent);
+      new Chart(payEl, {
+        type: 'doughnut',
+        data: { labels: d.map(x => x.label), datasets: [{ data: d.map(x => x.amount), backgroundColor: window.CHART_PALETTE, borderWidth: 0 }] },
+        options: { responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.label}: €${Number(c.raw).toFixed(2)}` } } } },
+      });
+    }
+  }());
+</script>
+{% endif %}
+
+{% if show_trend and show_order_financials %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  (function () {
+    if (!window.Chart) return;
+    const el = document.getElementById('yearBarChart');
+    if (!el) return;
+    const d = JSON.parse(document.getElementById('yearChartData').textContent);
+    new Chart(el, {
+      type: 'bar',
+      data: { labels: d.map(x => x.label), datasets: [{ data: d.map(x => x.amount), backgroundColor: '#2563eb', borderRadius: 6, maxBarThickness: 44 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => '€' + Number(c.raw).toFixed(2) } } },
+        scales: { y: { beginAtZero: true, ticks: { callback: v => '€' + v } } },
+        onClick: (e, els) => { if (els.length) { const u = d[els[0].index].url; if (u) window.location.href = u; } },
+      },
+    });
+  }());
+</script>
+{% endif %}
 {% endblock %}

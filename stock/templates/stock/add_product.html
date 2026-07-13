@@ -87,7 +87,7 @@
   }
 </style>
 
-<h2 class="mb-4">Add New Product</h2>
+<h1 class="pos-title mb-4">Add new product</h1>
 
 <form id="product-form" method="post" enctype="multipart/form-data" class="card p-4 shadow-sm border ds-card">
   {% csrf_token %}
@@ -162,9 +162,6 @@
         <div class="preview-label">Display Preview</div>
         <div class="preview-title" id="product-name-preview">Brand - Series - Product Name</div>
         <div class="preview-meta" id="product-meta-preview"></div>
-        <p class="small muted mt-3 mb-0">
-          The system will build the final product name from brand, series/model, name, specification, and color.
-        </p>
       </div>
     </div>
 

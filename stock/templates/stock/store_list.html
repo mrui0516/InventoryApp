@@ -1,0 +1,75 @@
+{% extends 'stock/base.html' %}
+{% block title %}Stores{% endblock %}
+
+{% block content %}
+<style>
+  .panel{background:#fff;border:1px solid var(--app-border);border-radius:var(--app-radius);box-shadow:var(--app-shadow)}
+  .hero{padding:1.35rem}
+  .hero h1{margin:0;font-size:2rem;font-weight:900;color:var(--app-text)}
+  .sub{color:var(--app-muted)}
+  .store-table th{background:#f5f8fc;color:#475569;font-size:.76rem;text-transform:uppercase;letter-spacing:.04em}
+  .store-table td{vertical-align:middle}
+  .store-name{font-weight:900;color:var(--app-text)}
+  .chip{display:inline-flex;align-items:center;padding:.24rem .6rem;border-radius:999px;font-size:.76rem;font-weight:800}
+  .chip.default{background:#eef4ff;border:1px solid #bfdbfe;color:#1d4ed8}
+  .chip.active{background:#ecfdf5;border:1px solid #a7f3d0;color:#047857}
+  .chip.inactive{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c}
+</style>
+
+<div class="d-grid gap-4">
+  <section class="panel hero">
+    <div class="d-flex justify-content-between gap-3 flex-wrap align-items-start">
+      <div>
+        <h1>Store Management</h1>
+        <div class="sub mt-1">{{ store_count }} store{{ store_count|pluralize }}</div>
+      </div>
+      <a href="{% url 'store_create' %}" class="btn btn-primary">Add store</a>
+    </div>
+  </section>
+
+  <section class="panel p-3">
+    <div class="table-responsive">
+      <table class="table align-middle store-table mb-0">
+        <thead>
+          <tr>
+            <th>Store</th>
+            <th>Code</th>
+            <th>Status</th>
+            <th class="text-center">Staff</th>
+            <th class="text-center">Orders</th>
+            <th class="text-end">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for store in stores %}
+            <tr>
+              <td>
+                <span class="store-name">{{ store.name }}</span>
+                {% if store.is_default %}<span class="chip default ms-2">Default</span>{% endif %}
+              </td>
+              <td><span class="sub fw-bold">{{ store.code }}</span></td>
+              <td>
+                {% if store.is_active %}<span class="chip active">Active</span>{% else %}<span class="chip inactive">Inactive</span>{% endif %}
+              </td>
+              <td class="text-center">{{ store.staff_count }}</td>
+              <td class="text-center">{{ store.order_count }}</td>
+              <td class="text-end">
+                <div class="d-flex gap-1 justify-content-end">
+                  <a href="{% url 'store_edit' store.id %}" class="btn btn-sm btn-outline-primary">Edit</a>
+                  <form method="post" action="{% url 'store_delete' store.id %}" class="d-inline"
+                        onsubmit="return confirm('Delete store {{ store.name|escapejs }}?');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-danger" {% if store.is_default or store.staff_count or store.order_count %}disabled{% endif %}>Delete</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6" class="text-center py-4 sub">No stores yet. Add your first store.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}

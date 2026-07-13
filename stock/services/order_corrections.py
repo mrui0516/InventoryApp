@@ -1,8 +1,8 @@
 from django.core.exceptions import ValidationError
-from django.db.models import Sum
 from django.db import transaction
 
-from ..models import Purchase, Sale, SaleOrder, SaleOrderChangeLog
+from ..models import Sale, SaleOrder, SaleOrderChangeLog, SaleOrderPayment
+from .stock_ops import consume_stock_fifo, restore_stock_fifo
 
 
 def snapshot_sale_order(order):
@@ -39,6 +39,10 @@ def snapshot_sale_order(order):
             }
             for item in items
         ],
+        'payments': [
+            {'method': payment.method, 'amount': str(payment.amount)}
+            for payment in order.payments.all()
+        ],
     }
 
 
@@ -60,36 +64,7 @@ def _consume_current_stock(line_items):
         quantity_needed = group['quantity']
         if quantity_needed <= 0:
             continue
-
-        available_stock = (
-            Purchase.objects
-            .filter(product=product, remaining__gt=0)
-            .aggregate(total=Sum('remaining'))
-            .get('total')
-            or 0
-        )
-        if available_stock < quantity_needed:
-            raise ValidationError(
-                f"Not enough current stock for {product.display_name}. "
-                f"Needed {quantity_needed}, available {available_stock}."
-            )
-
-        touched = []
-        batches = list(
-            Purchase.objects
-            .filter(product=product, remaining__gt=0)
-            .order_by('date', 'id')
-        )
-        for batch in batches:
-            if quantity_needed <= 0:
-                break
-            used = min(quantity_needed, batch.remaining)
-            batch.remaining -= used
-            quantity_needed -= used
-            touched.append(batch)
-
-        if touched:
-            Purchase.objects.bulk_update(touched, ['remaining'])
+        consume_stock_fifo(product, quantity_needed)
 
 
 def _restore_current_stock(line_items):
@@ -98,34 +73,7 @@ def _restore_current_stock(line_items):
         quantity_to_restore = group['quantity']
         if quantity_to_restore <= 0:
             continue
-
-        touched = []
-        batches = list(
-            Purchase.objects
-            .filter(product=product)
-            .order_by('-date', '-id')
-        )
-        for batch in batches:
-            if quantity_to_restore <= 0:
-                break
-
-            capacity = batch.quantity - batch.remaining
-            if capacity <= 0:
-                continue
-
-            restored = min(quantity_to_restore, capacity)
-            batch.remaining += restored
-            quantity_to_restore -= restored
-            touched.append(batch)
-
-        if quantity_to_restore > 0:
-            raise ValidationError(
-                f"Could not restore {group['quantity']} units back into current stock for {product.display_name}. "
-                "Please review manual stock adjustments before changing this historical order."
-            )
-
-        if touched:
-            Purchase.objects.bulk_update(touched, ['remaining'])
+        restore_stock_fifo(product, quantity_to_restore)
 
 
 def log_sale_order_change(*, order, order_id_snapshot, action, changed_by, reason, before_data, after_data):
@@ -141,13 +89,17 @@ def log_sale_order_change(*, order, order_id_snapshot, action, changed_by, reaso
 
 
 @transaction.atomic
-def save_sale_order_correction(*, order, customer, note, order_datetime, line_items, changed_by, reason):
+def save_sale_order_correction(*, order, customer, note, order_datetime, line_items, payment_totals, changed_by, reason, store=None):
     if not line_items:
         raise ValidationError("Add at least one product line before saving the order.")
 
     before_data = snapshot_sale_order(order)
     action = 'update' if order else 'create'
     previous_line_items = []
+
+    # Keep an existing order's store on edit; a new order is attributed to the
+    # active store (sales are per-store, inventory is shared).
+    target_store = (order.store if (order and order.store_id) else None) or store
 
     if action == 'update':
         previous_line_items = [
@@ -160,17 +112,21 @@ def save_sale_order_correction(*, order, customer, note, order_datetime, line_it
         _restore_current_stock(previous_line_items)
 
     if order is None:
-        order = SaleOrder.objects.create(customer=customer, note=note or '')
+        order = SaleOrder.objects.create(customer=customer, note=note or '', store=target_store)
 
     SaleOrder.objects.filter(pk=order.pk).update(
         customer=customer,
         note=note or '',
         created_at=order_datetime,
+        store=target_store,
     )
     order.refresh_from_db()
 
     if action == 'update':
+        # Rebuild lines and the order-level payment records from scratch so a
+        # removed product is fully rolled back (stock restored above, sale gone).
         order.items.all().delete()
+        order.payments.all().delete()
 
     _consume_current_stock(line_items)
 
@@ -180,6 +136,7 @@ def save_sale_order_correction(*, order, customer, note, order_datetime, line_it
             order=order,
             product=item['product'],
             customer=customer,
+            store=target_store,
             quantity=item['quantity'],
             unit_price=item['unit_price'],
             payment_method=item['payment_method'],
@@ -189,6 +146,11 @@ def save_sale_order_correction(*, order, customer, note, order_datetime, line_it
 
     if created_sales:
         Sale.objects.bulk_update(created_sales, ['date'])
+
+    # Order-level split tender (authoritative record), mirroring the POS outbound.
+    for method, amount in (payment_totals or {}).items():
+        if amount and amount > 0:
+            SaleOrderPayment.objects.create(order=order, method=method, amount=amount)
 
     after_data = snapshot_sale_order(order)
 

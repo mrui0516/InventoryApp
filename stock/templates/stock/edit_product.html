@@ -138,7 +138,7 @@
   }
 </style>
 
-<h2 class="mb-3">Edit Product: <span class="muted">{{ product.display_name }}</span></h2>
+<h1 class="pos-title mb-3">Edit product: <span class="muted">{{ product.display_name }}</span></h1>
 
 {% if images %}
   <h5 class="mb-2">Existing Images</h5>
@@ -230,9 +230,6 @@
         <div class="preview-label">Display Preview</div>
         <div class="preview-title" id="product-name-preview">{{ product.display_name }}</div>
         <div class="preview-meta" id="product-meta-preview"></div>
-        <p class="small muted mt-3 mb-0">
-          Existing price and stock history stay attached to this product. This screen only updates the product master data.
-        </p>
       </div>
     </div>
 
@@ -335,11 +332,11 @@
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title">Edit Stock Remaining</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
           <div class="mb-3">
-            <label class="form-label">New Remaining Quantity</label>
+            <label for="new-remain-input" class="form-label">New Remaining Quantity</label>
             <input type="number" id="new-remain-input" class="form-control" min="0" max="100000" placeholder="0">
             <div class="alert alert-info small mt-2">
               <strong>Old Value:</strong> <span id="old-remain-display">—</span>
@@ -358,7 +355,7 @@
 <div class="modal fade" id="productImgModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-lg">
     <div class="modal-content" style="background:#000;">
-      <button type="button" class="btn-close btn-close-white ms-auto m-2" data-bs-dismiss="modal"></button>
+      <button type="button" class="btn-close btn-close-white ms-auto m-2" data-bs-dismiss="modal" aria-label="Close"></button>
       <img id="productZoomImg" src="" alt="" style="width:100%; height:auto; display:block; border-radius:.4rem;">
     </div>
   </div>

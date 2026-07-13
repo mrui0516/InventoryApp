@@ -1,595 +1,212 @@
 {% extends 'stock/base.html' %}
-{% block title %}Catalog{% endblock %}
+{% block title %}Fragrance catalogue{% endblock %}
 
 {% block content %}
 <style>
-  .catalog-page{
-    --bg:#f6f1e8;
-    --surface:#fffdf9;
-    --surface-soft:#f3ece1;
-    --border:rgba(44,34,23,.10);
-    --text:#1d1813;
-    --muted:#74685a;
-    --accent:#214b50;
-    --accent-soft:#dde8e6;
-    --gold:#c2954a;
-    --shadow:0 24px 50px rgba(29,24,19,.08);
-    color:var(--text);
+  /* ===== KHAN PERFUME — fragrance catalogue (editorial index) ===============
+     Porcelain canvas, ink type, one wine accent. Serif for the editorial
+     moments (hero, house names), system sans for prices/meta. The bottle is
+     the hero: a specimen floating on white with a soft product shadow. ======= */
+  .cat{
+    --paper:#f5f4f1;
+    --surface:#ffffff;
+    --ink:#17140f;
+    --ink-soft:#5c554b;
+    --muted:#8b8478;
+    --line:rgba(23,20,15,.12);
+    --line-soft:rgba(23,20,15,.07);
+    --wine:#6e2b3e;
+    --serif:var(--font-display, Georgia, "Times New Roman", serif);
+    color:var(--ink);
+    background:var(--paper);
+    margin:-1.35rem calc(-1 * clamp(1rem,2vw,2rem)) -2rem;   /* bleed to page edges over .erp-content padding */
+    padding:0 0 4rem;
   }
+  .cat-wrap{ max-width:1320px; margin:0 auto; padding:0 clamp(1rem,3vw,2.6rem); }
 
-  .catalog-shell{
-    max-width:1380px;
-    margin:0 auto;
-    padding:1.5rem 1rem 3rem;
+  /* ---- hero ---- */
+  .cat-hero{ padding:clamp(2.4rem,6vw,4.6rem) 0 1.6rem; border-bottom:1px solid var(--line); }
+  .cat-eyebrow{
+    font-size:.74rem; font-weight:700; letter-spacing:.28em; text-transform:uppercase; color:var(--wine);
   }
-
-  .catalog-hero{
-    position:relative;
-    overflow:hidden;
-    background:
-      radial-gradient(circle at top left, rgba(194,149,74,.18), transparent 28%),
-      linear-gradient(135deg, #fff9ef 0%, #f5ede1 56%, #efe5d8 100%);
-    border:1px solid var(--border);
-    border-radius:28px;
-    box-shadow:var(--shadow);
-    padding:2rem;
+  .cat-display{
+    font-family:var(--serif); font-weight:500; color:var(--ink);
+    font-size:clamp(2.6rem,6.2vw,5rem); line-height:1.02; letter-spacing:-.015em;
+    margin:.7rem 0 0; max-width:16ch;
   }
-
-  .catalog-hero::after{
-    content:"";
-    position:absolute;
-    right:-70px;
-    bottom:-90px;
-    width:250px;
-    height:250px;
-    border-radius:50%;
-    background:radial-gradient(circle, rgba(33,75,80,.16), transparent 68%);
-    pointer-events:none;
+  .cat-display em{ font-style:italic; color:var(--wine); }
+  .cat-stats{
+    margin-top:1.4rem; display:flex; flex-wrap:wrap; align-items:baseline; gap:.35rem 1.1rem;
+    color:var(--muted); font-size:.95rem; font-weight:600;
   }
+  .cat-stats b{ color:var(--ink); font-weight:800; font-variant-numeric:tabular-nums; }
+  .cat-stats .now{ display:inline-flex; align-items:center; gap:.4rem; color:var(--ink-soft); }
+  .cat-stats .now::before{ content:""; width:7px; height:7px; border-radius:999px; background:#2f6b4f; }
+  .cat-filternote{ margin-top:.5rem; color:var(--ink-soft); font-size:.92rem; }
+  .cat-filternote a{ color:var(--wine); text-decoration:none; border-bottom:1px solid currentColor; }
 
-  .catalog-tag{
-    display:inline-flex;
-    align-items:center;
-    gap:.45rem;
-    padding:.38rem .78rem;
-    border-radius:999px;
-    background:rgba(255,255,255,.72);
-    border:1px solid rgba(44,34,23,.08);
-    color:var(--muted);
-    text-transform:uppercase;
-    letter-spacing:.08em;
-    font-size:.8rem;
-    font-weight:800;
+  /* ---- sticky search bar (slim, hairline) ---- */
+  .cat-bar{
+    position:sticky; top:0; z-index:20;
+    background:var(--paper);   /* fallback for browsers without color-mix */
+    background:color-mix(in srgb, var(--paper) 90%, transparent);
+    -webkit-backdrop-filter:saturate(1.2) blur(8px); backdrop-filter:saturate(1.2) blur(8px);
+    border-bottom:1px solid var(--line); padding:.7rem 0;
   }
-
-  .catalog-title{
-    margin:.85rem 0 .9rem;
-    font-size:clamp(2.2rem, 4.4vw, 4rem);
-    line-height:.98;
-    letter-spacing:-.05em;
-    font-weight:900;
-    max-width:780px;
+  .cat-bar-inner{ display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; }
+  .cat-bar .field{ flex:1 1 260px; min-width:0; }
+  .cat-bar input,.cat-bar select{
+    width:100%; min-height:46px; border:1px solid var(--line); border-radius:8px; background:#fff;
+    padding:.5rem .85rem; color:var(--ink); font-size:.95rem;
   }
+  .cat-bar input::placeholder{ color:#a49c8f; }
+  .cat-bar input:focus,.cat-bar select:focus{ outline:none; border-color:var(--wine); box-shadow:0 0 0 3px rgba(110,43,62,.12); }
+  .cat-bar select{ flex:0 0 220px; }
+  .btn-ink{ min-height:46px; border:1px solid var(--ink); background:var(--ink); color:#fff; border-radius:8px; padding:.5rem 1.3rem; font-weight:700; }
+  .btn-ink:hover{ background:#000; color:#fff; }
+  .btn-ghost{ min-height:46px; border:1px solid var(--line); background:transparent; color:var(--ink-soft); border-radius:8px; padding:.5rem 1rem; font-weight:700; text-decoration:none; display:inline-flex; align-items:center; }
+  .btn-ghost:hover{ border-color:var(--ink); color:var(--ink); }
 
-  .catalog-lead{
-    max-width:760px;
-    color:var(--muted);
-    font-size:1rem;
-    line-height:1.75;
-    margin:0;
-  }
+  /* ---- section headers ---- */
+  .cat-section{ padding-top:2.6rem; }
+  .cat-section-head{ display:flex; align-items:baseline; justify-content:space-between; gap:1rem; flex-wrap:wrap; margin-bottom:1.3rem; }
+  .cat-section-title{ font-family:var(--serif); font-weight:500; font-size:clamp(1.5rem,3vw,2.05rem); letter-spacing:-.01em; margin:0; }
+  .house-index{ display:flex; flex-wrap:wrap; gap:.3rem .5rem; }
+  .house-index a{ font-size:.86rem; font-weight:700; color:var(--ink-soft); text-decoration:none; padding:.15rem .1rem; border-bottom:1px solid transparent; }
+  .house-index a:hover{ color:var(--wine); border-color:var(--wine); }
 
-  .catalog-scope{
-    display:flex;
-    flex-wrap:wrap;
-    gap:.7rem;
-    margin-top:1.2rem;
-  }
-
-  .scope-chip{
-    display:inline-flex;
-    align-items:center;
-    gap:.35rem;
-    padding:.48rem .82rem;
-    border-radius:999px;
-    background:rgba(255,255,255,.72);
-    border:1px solid rgba(44,34,23,.08);
-    color:#2f2822;
-    font-weight:700;
-  }
-
-  .catalog-toolbar{
-    position:sticky;
-    top:.75rem;
-    z-index:10;
-    margin-top:1.25rem;
-    padding:1rem;
-    background:rgba(255,253,249,.94);
-    backdrop-filter:blur(12px);
-    border:1px solid var(--border);
-    border-radius:22px;
-    box-shadow:0 18px 36px rgba(29,24,19,.06);
-  }
-
-  .catalog-toolbar .form-control,
-  .catalog-toolbar .form-select{
-    min-height:48px;
-    border-radius:14px;
-    border:1px solid rgba(44,34,23,.12);
-    background:#fff;
-  }
-
-  .catalog-toolbar .form-control:focus,
-  .catalog-toolbar .form-select:focus{
-    border-color:rgba(33,75,80,.38);
-    box-shadow:0 0 0 .2rem rgba(33,75,80,.12);
-  }
-
-  .catalog-btn{
-    min-height:48px;
-    border-radius:14px;
-    font-weight:700;
-  }
-
-  .catalog-section{
-    margin-top:1.6rem;
-  }
-
-  .section-head{
-    display:flex;
-    align-items:end;
-    justify-content:space-between;
-    gap:1rem;
-    flex-wrap:wrap;
-    margin-bottom:1rem;
-  }
-
-  .section-title{
-    margin:0;
-    font-size:1.45rem;
-    font-weight:900;
-    letter-spacing:-.03em;
-  }
-
-  .section-copy{
-    margin:.25rem 0 0;
-    color:var(--muted);
-  }
-
-  .brand-index{
-    display:flex;
-    flex-wrap:wrap;
-    gap:.55rem;
-  }
-
-  .brand-index a{
-    padding:.42rem .78rem;
-    border-radius:999px;
-    border:1px solid rgba(44,34,23,.1);
-    background:#fff;
-    color:#302822;
-    text-decoration:none;
-    font-weight:700;
-    transition:.18s ease;
-  }
-
-  .brand-index a:hover{
-    color:var(--accent);
-    border-color:rgba(33,75,80,.3);
-    transform:translateY(-1px);
-  }
-
-  .best-grid{
-    display:grid;
-    grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));
-    gap:1rem;
-  }
-
-  .best-card,
-  .brand-panel,
-  .product-card{
-    background:var(--surface);
-    border:1px solid var(--border);
-    box-shadow:var(--shadow);
-  }
-
-  .best-card{
-    border-radius:24px;
-    overflow:hidden;
-    display:grid;
-    grid-template-rows:auto 1fr;
-    height:100%;
-  }
-
-  .best-media,
-  .product-media{
-    background:linear-gradient(180deg, #faf5ee, #f1e8da);
-    border-bottom:1px solid rgba(44,34,23,.06);
-  }
-
-  .best-media{
-    aspect-ratio:1/1;
-    min-height:240px;
-    padding:1rem;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    cursor:zoom-in;
-  }
-
-  .best-media img,
-  .product-media img{
-    width:100%;
-    height:100%;
-    object-fit:contain;
-    display:block;
-  }
-
-  .best-body{
-    padding:1rem;
-    display:grid;
-    grid-template-rows:auto minmax(52px, auto) minmax(34px, auto) auto auto;
-    gap:.65rem;
-    height:100%;
-  }
-
-  .best-rank{
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
-    width:34px;
-    height:34px;
-    border-radius:999px;
-    background:#181410;
-    color:#fff;
-    font-size:.84rem;
-    font-weight:900;
-  }
-
-  .best-name,
-  .product-name{
-    margin:0;
-    font-weight:850;
-    line-height:1.22;
-    color:#181410;
-  }
-
-  .best-name{
-    font-size:.94rem;
-    min-height:2.35rem;
-    display:-webkit-box;
-    -webkit-line-clamp:2;
-    -webkit-box-orient:vertical;
-    overflow:hidden;
-  }
-
-  .best-price,
-  .product-price{
-    font-size:1rem;
-    font-weight:900;
-    color:#181410;
-  }
-
-  .best-actions,
-  .product-actions{
-    display:flex;
-    gap:.55rem;
-    margin-top:auto;
-  }
-
-  .best-actions .btn,
-  .product-actions .btn{
-    border-radius:12px;
-    font-weight:700;
-    width:100%;
-  }
-
-  .brand-panel{
-    border-radius:26px;
-    padding:1.15rem;
-    margin-top:1.35rem;
-  }
-
-  .brand-header{
-    display:flex;
-    justify-content:space-between;
-    gap:1rem;
-    align-items:center;
-    flex-wrap:wrap;
-    margin-bottom:1rem;
-  }
-
-  .brand-name{
-    margin:0;
-    font-size:1.6rem;
-    font-weight:900;
-    letter-spacing:-.03em;
-  }
-
-  .availability-badge{
-    display:inline-flex;
-    align-items:center;
-    gap:.45rem;
-    padding:.45rem .82rem;
-    border-radius:999px;
-    font-size:.82rem;
-    font-weight:800;
-    white-space:nowrap;
-  }
-
-  .availability-badge.in-stock{
-    background:#e6f4ef;
-    color:#0d5a49;
-  }
-
-  .availability-badge.low-stock{
-    background:#fff1dc;
-    color:#8a4f0a;
-  }
-
-  .availability-badge.out-stock{
-    background:#fdeaea;
-    color:#962b2b;
-  }
-
-  .model-group + .model-group{
-    margin-top:1.4rem;
-    padding-top:1.2rem;
-    border-top:1px solid rgba(44,34,23,.08);
-  }
-
-  .model-header{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:1rem;
-    flex-wrap:wrap;
-    margin-bottom:1rem;
-  }
-
-  .model-title{
-    display:flex;
-    align-items:center;
-    gap:.75rem;
-    min-width:0;
-  }
-
-  .model-title h3{
-    margin:0;
-    font-size:.98rem;
-    font-weight:800;
-    text-transform:uppercase;
-    letter-spacing:.08em;
-    color:var(--muted);
-  }
-
-  .model-title .line{
-    flex:1;
-    height:1px;
-    min-width:80px;
-    background:linear-gradient(90deg, rgba(44,34,23,.14), transparent);
-  }
-
-  .product-grid{
-    display:grid;
-    grid-template-columns:repeat(auto-fill, minmax(230px, 1fr));
-    gap:1rem;
-    align-items:stretch;
-  }
-
-  .product-card{
-    border-radius:22px;
-    overflow:hidden;
-    display:grid;
-    grid-template-rows:auto 1fr;
-    height:100%;
+  /* ---- specimen grid + card (shared by best sellers and houses) ---- */
+  .spec-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:1.15rem 1.1rem; }
+  .spec{
+    display:flex; flex-direction:column; background:var(--surface);
+    border:1px solid var(--line); border-radius:10px; overflow:hidden;
     transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease;
   }
-
-  .product-card:hover{
-    transform:translateY(-3px);
-    border-color:rgba(33,75,80,.18);
-    box-shadow:0 28px 52px rgba(29,24,19,.12);
+  .spec:hover{ transform:translateY(-3px); border-color:rgba(23,20,15,.22); box-shadow:0 18px 34px rgba(23,20,15,.10); }
+  /* Uniform fixed-ratio tiles; the whole bottle shows (contain, never cropped),
+     padded so it sits with breathing room rather than filling edge-to-edge. */
+  .spec-figure{
+    position:relative; aspect-ratio:4/5; background:#fff; display:flex; align-items:center; justify-content:center;
+    padding:1.5rem; overflow:hidden; cursor:zoom-in; border-bottom:1px solid var(--line-soft);
   }
-
-  .product-media{
-    aspect-ratio:1/1;
-    min-height:240px;
-    padding:1rem;
-    cursor:zoom-in;
-    display:flex;
-    align-items:center;
-    justify-content:center;
+  .spec-figure img{ max-width:100%; max-height:100%; object-fit:contain; display:block; filter:drop-shadow(0 12px 10px rgba(23,20,15,.14)); }
+  .spec-figure.empty{ color:#c3bcae; font-size:.78rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; cursor:default; }
+  .spec-rank{
+    position:absolute; top:.55rem; left:.55rem; z-index:1;
+    font-family:var(--serif); font-style:italic; font-size:1rem; color:var(--wine);
+    background:rgba(255,255,255,.9); border:1px solid var(--line); border-radius:6px;
+    min-width:1.7rem; height:1.7rem; display:inline-flex; align-items:center; justify-content:center; padding:0 .35rem;
   }
-
-  .product-body{
-    padding:1rem;
-    display:grid;
-    grid-template-rows:minmax(46px, auto) minmax(38px, auto) auto auto;
-    gap:.7rem;
-    height:100%;
+  .spec-body{ display:flex; flex-direction:column; gap:.4rem; padding:.9rem .95rem 1rem; flex:1; }
+  .spec-name{ font-size:.95rem; font-weight:650; line-height:1.28; color:var(--ink); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; min-height:2.4em; }
+  .spec-meta{ color:var(--muted); font-size:.8rem; font-weight:600; letter-spacing:.01em; min-height:1.1em; }
+  .spec-price{ font-size:1.02rem; font-weight:800; color:var(--ink); font-variant-numeric:tabular-nums; }
+  .avail{ display:inline-flex; align-items:center; gap:.42rem; font-size:.78rem; font-weight:700; color:var(--muted); }
+  .avail::before{ content:""; width:7px; height:7px; border-radius:999px; background:currentColor; flex:0 0 auto; }
+  .avail.in-stock{ color:#2f6b4f; }
+  .avail.low-stock{ color:#9a6b1f; }
+  .avail.out-stock{ color:#9a3b3b; }
+  .spec-actions{ margin-top:.55rem; }
+  .spec-details{
+    width:100%; border:1px solid var(--line); background:transparent; color:var(--ink);
+    border-radius:7px; padding:.5rem; font-weight:700; font-size:.86rem;
   }
+  .spec-details:hover{ border-color:var(--wine); color:var(--wine); }
 
-  .best-name,
-  .product-name{
-    min-height:2.35rem;
-    display:-webkit-box;
-    -webkit-line-clamp:2;
-    -webkit-box-orient:vertical;
-    overflow:hidden;
+  /* ---- house (brand) block ---- */
+  .house{ padding-top:2.6rem; scroll-margin-top:70px; }
+  .house-head{ display:flex; align-items:baseline; justify-content:space-between; gap:1rem; flex-wrap:wrap; padding-bottom:.8rem; border-bottom:1px solid var(--ink); margin-bottom:1.4rem; }
+  .house-name{ font-family:var(--serif); font-weight:500; font-size:clamp(1.7rem,3.4vw,2.5rem); letter-spacing:-.01em; margin:0; }
+  .house-count{ color:var(--muted); font-size:.9rem; font-weight:700; }
+  .series{ margin-bottom:1.7rem; }
+  .series-label{
+    display:flex; align-items:center; gap:.9rem; margin:0 0 1rem;
+    font-size:.76rem; font-weight:800; letter-spacing:.18em; text-transform:uppercase; color:var(--muted);
   }
+  .series-label::after{ content:""; flex:1; height:1px; background:var(--line); }
 
-  .product-name{
-    font-size:.96rem;
-  }
+  /* ---- empty ---- */
+  .cat-empty{ margin-top:3rem; padding:3rem 1rem; text-align:center; border:1px solid var(--line); border-radius:12px; background:#fff; }
+  .cat-empty h2{ font-family:var(--serif); font-weight:500; font-size:1.6rem; margin:0 0 .4rem; }
+  .cat-empty p{ color:var(--muted); margin:0; }
 
-  .product-meta{
-    display:flex;
-    flex-wrap:wrap;
-    gap:.45rem;
-    align-content:start;
-    min-height:2.6rem;
-  }
-
-  .meta-chip{
-    padding:.3rem .55rem;
-    border-radius:999px;
-    background:var(--surface-soft);
-    border:1px solid rgba(44,34,23,.08);
-    color:#5a4f44;
-    font-size:.78rem;
-    font-weight:700;
-    max-width:100%;
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
-  }
-
-  .catalog-empty{
-    background:var(--surface);
-    border:1px solid var(--border);
-    border-radius:24px;
-    box-shadow:var(--shadow);
-    padding:2.6rem 1.5rem;
-    text-align:center;
-  }
-
+  /* ---- back to top ---- */
   .back-top{
-    position:fixed;
-    right:20px;
-    bottom:20px;
-    z-index:1060;
-    width:48px;
-    height:48px;
-    border:none;
-    border-radius:999px;
-    background:#181410;
-    color:#fff;
-    box-shadow:0 18px 30px rgba(24,20,16,.25);
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    opacity:0;
-    visibility:hidden;
-    transform:translateY(8px);
-    transition:.2s ease;
+    position:fixed; right:20px; bottom:20px; z-index:1060; width:46px; height:46px;
+    border:1px solid var(--line); border-radius:999px; background:#fff; color:var(--ink);
+    display:flex; align-items:center; justify-content:center; box-shadow:0 10px 24px rgba(23,20,15,.14);
+    opacity:0; visibility:hidden; transform:translateY(8px); transition:.2s ease; cursor:pointer;
   }
+  .back-top.show{ opacity:1; visibility:visible; transform:translateY(0); }
 
-  .back-top.show{
-    opacity:1;
-    visibility:visible;
-    transform:translateY(0);
-  }
+  /* ---- entrance (respecting reduced motion via app.css guard) ---- */
+  .reveal{ opacity:0; transform:translateY(10px); animation:catrise .5s ease forwards; }
+  @keyframes catrise{ to{ opacity:1; transform:none; } }
 
-  @media (max-width: 767px){
-    .catalog-shell{
-      padding:1rem .75rem 2rem;
-    }
-
-    .catalog-hero,
-    .catalog-toolbar,
-    .brand-panel{
-      border-radius:22px;
-    }
-
-    .best-grid,
-    .product-grid{
-      grid-template-columns:1fr;
-    }
-
-    .model-header,
-    .brand-header{
-      align-items:flex-start;
-    }
-
-    .best-media,
-    .product-media{
-      min-height:220px;
-    }
+  @media (max-width:575.98px){
+    .cat-bar select{ flex:1 1 100%; }
+    .spec-grid{ grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:.9rem .8rem; }
   }
 </style>
 
-<div class="catalog-page">
-  <div class="catalog-shell">
-    <section class="catalog-hero">
-      <span class="catalog-tag">Customer catalog</span>
-      <h1 class="catalog-title">Discover our most loved pieces, by brand and category.</h1>
-      <p class="catalog-lead">
-        This catalog is designed for customers: clean visuals, best-selling picks, and simple availability only.
-        No internal sales data, no stock counts, just an easy way to browse what is available now.
-      </p>
-      <div class="catalog-scope">
-        <span class="scope-chip">Category: {{ selected_category_name|default:"All Categories" }}</span>
-        <span class="scope-chip">Availability: live</span>
-        {% if query %}
-          <span class="scope-chip">Search: {{ query }}</span>
-        {% endif %}
-      </div>
-    </section>
+<div class="cat">
+  <div class="cat-wrap">
 
-    <form method="get" class="catalog-toolbar">
-      <div class="row g-2 align-items-center">
-        <div class="col-lg-7">
-          <input
-            type="text"
-            name="q"
-            class="form-control"
-            value="{{ query }}"
-            placeholder="Search by product name, brand, series, spec, or color"
-          >
-        </div>
-        <div class="col-lg-3">
-          <select name="category" class="form-select" onchange="this.form.submit()">
-            <option value="">All categories</option>
-            {% for cat in categories %}
-              <option value="{{ cat.id }}" {% if cat.id|stringformat:"s" == selected_category %}selected{% endif %}>{{ cat.name|title }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-sm-6 col-lg-1">
-          <button type="submit" class="btn btn-dark catalog-btn w-100">Show</button>
-        </div>
-        <div class="col-sm-6 col-lg-1">
-          <a href="{% url 'catalog' %}" class="btn btn-outline-secondary catalog-btn w-100">Reset</a>
-        </div>
+    <header class="cat-hero reveal">
+      <div class="cat-eyebrow">Fragrance catalogue</div>
+      <h1 class="cat-display">A library of <em>scent</em>.</h1>
+      <div class="cat-stats">
+        <span><b>{{ total_catalog_brands }}</b> houses</span>
+        <span><b>{{ total_catalog_products }}</b> fragrances</span>
+        <span class="now">In store now</span>
       </div>
-    </form>
+      {% if selected_category_name or query %}
+        <div class="cat-filternote">
+          Showing{% if selected_category_name %} {{ selected_category_name }}{% endif %}{% if query %} · results for “{{ query }}”{% endif %} — <a href="{% url 'catalog' %}">clear</a>
+        </div>
+      {% endif %}
+    </header>
+  </div>
+
+  <div class="cat-bar">
+    <div class="cat-wrap">
+      <form method="get" class="cat-bar-inner">
+        <div class="field">
+          <input type="text" name="q" value="{{ query }}" placeholder="Search a scent, house, series, or note">
+        </div>
+        <select name="category" onchange="this.form.submit()" aria-label="Category">
+          <option value="">All categories</option>
+          {% for cat in categories %}
+            <option value="{{ cat.id }}" {% if cat.id|stringformat:"s" == selected_category %}selected{% endif %}>{{ cat.name|title }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn-ink">Search</button>
+        <a href="{% url 'catalog' %}" class="btn-ghost">Reset</a>
+      </form>
+    </div>
+  </div>
+
+  <div class="cat-wrap">
 
     {% if hot_products and not query %}
-      <section class="catalog-section">
-        <div class="section-head">
-          <div>
-            <h2 class="section-title">Best sellers</h2>
-            <p class="section-copy">Popular picks, arranged for customer browsing instead of internal reporting.</p>
-          </div>
+      <section class="cat-section">
+        <div class="cat-section-head">
+          <h2 class="cat-section-title">Most loved</h2>
         </div>
-        <div class="best-grid">
+        <div class="spec-grid">
           {% for product in hot_products %}
-            <article class="best-card">
-              <div class="best-media" {% if product.primary_image %}onclick="openImage('{{ product.primary_image.image.url }}')"{% endif %}>
-                {% if product.primary_image %}
-                  <img src="{{ product.primary_image.image.url }}" alt="{{ product.catalog_title }}">
-                {% endif %}
+            <article class="spec">
+              <div class="spec-figure {% if not product.primary_image %}empty{% endif %}" {% if product.primary_image %}onclick="openImage('{{ product.primary_image.image.url }}')"{% endif %}>
+                <span class="spec-rank">{{ forloop.counter }}</span>
+                {% if product.primary_image %}<img src="{{ product.primary_image.image.url }}" alt="{{ product.catalog_title }}">{% else %}No bottle photo{% endif %}
               </div>
-              <div class="best-body">
-                <span class="best-rank">{{ forloop.counter }}</span>
-                <h3 class="best-name">{{ product.catalog_title }}</h3>
-                <div class="product-meta">
-                  {% if product.catalog_spec %}<span class="meta-chip">{{ product.catalog_spec }}</span>{% endif %}
-                  {% if product.catalog_color %}<span class="meta-chip">{{ product.catalog_color }}</span>{% endif %}
-                </div>
-                {% if product.default_price %}
-                  <div class="best-price">EUR {{ product.default_price|floatformat:2 }}</div>
-                {% endif %}
-                <span class="availability-badge {{ product.availability_class }}">{{ product.availability_label }}</span>
-                <div class="best-actions">
-                  <button
-                    type="button"
-                    class="btn btn-outline-secondary btn-sm"
-                      onclick="openDesc('{{ product.catalog_title|escapejs }}', '{{ product.description|default:'No description available.'|escapejs }}')"
-                  >
-                    Details
-                  </button>
+              <div class="spec-body">
+                <div class="spec-name">{{ product.catalog_title }}</div>
+                <div class="spec-meta">{{ product.catalog_spec }}{% if product.catalog_spec and product.catalog_color %} · {% endif %}{{ product.catalog_color }}</div>
+                {% if product.default_price %}<div class="spec-price">EUR {{ product.default_price|floatformat:2 }}</div>{% endif %}
+                <span class="avail {{ product.availability_class }}">{{ product.availability_label }}</span>
+                <div class="spec-actions">
+                  <button type="button" class="spec-details" onclick="openDesc('{{ product.catalog_title|escapejs }}', '{{ product.description|default:'No description available.'|escapejs }}')">Details</button>
                 </div>
               </div>
             </article>
@@ -599,68 +216,38 @@
     {% endif %}
 
     {% if brands %}
-      <section class="catalog-section">
-        <div class="section-head">
-          <div>
-            <h2 class="section-title">Browse by brand</h2>
-            <p class="section-copy">Every brand section only shows customer-friendly availability, not internal stock numbers.</p>
-          </div>
-          <nav class="brand-index">
-            {% for brand_block in brands %}
-              <a href="#brand-{{ forloop.counter }}">{{ brand_block.display_brand }}</a>
-            {% endfor %}
+      <section class="cat-section">
+        <div class="cat-section-head">
+          <h2 class="cat-section-title">By house</h2>
+          <nav class="house-index">
+            {% for brand_block in brands %}<a href="#house-{{ forloop.counter }}">{{ brand_block.display_brand }}</a>{% endfor %}
           </nav>
         </div>
 
         {% for brand_block in brands %}
-          <section class="brand-panel" id="brand-{{ forloop.counter }}">
-            <div class="brand-header">
-              <h2 class="brand-name">{{ brand_block.display_brand }}</h2>
-              <span class="availability-badge {% if brand_block.has_stock %}in-stock{% else %}out-stock{% endif %}">
-                {% if brand_block.has_stock %}Available in store{% else %}Currently sold out{% endif %}
-              </span>
+          <section class="house" id="house-{{ forloop.counter }}">
+            <div class="house-head">
+              <h3 class="house-name">{{ brand_block.display_brand }}</h3>
+              <span class="house-count">{{ brand_block.count }} piece{{ brand_block.count|pluralize }} · <span class="avail {% if brand_block.has_stock %}in-stock{% else %}out-stock{% endif %}">{% if brand_block.has_stock %}In store{% else %}Sold out{% endif %}</span></span>
             </div>
 
             {% for model_block in brand_block.models %}
               {% if model_block.products %}
-                <div class="model-group">
-                  <div class="model-header">
-                    <div class="model-title">
-                      <h3>{% if model_block.model %}{{ model_block.display_model }}{% else %}Other Selections{% endif %}</h3>
-                      <span class="line"></span>
-                    </div>
-                    <span class="availability-badge {% if model_block.has_stock %}in-stock{% else %}out-stock{% endif %}">
-                      {% if model_block.has_stock %}Available{% else %}Sold out{% endif %}
-                    </span>
-                  </div>
-
-                  <div class="product-grid">
+                <div class="series">
+                  {% if model_block.model %}<div class="series-label">{{ model_block.display_model }}</div>{% endif %}
+                  <div class="spec-grid">
                     {% for product in model_block.products %}
-                      <article class="product-card">
-                        <div class="product-media" {% if product.primary_image %}onclick="openImage('{{ product.primary_image.image.url }}')"{% endif %}>
-                          {% if product.primary_image %}
-                            <img src="{{ product.primary_image.image.url }}" alt="{{ product.catalog_title }}">
-                          {% endif %}
+                      <article class="spec">
+                        <div class="spec-figure {% if not product.primary_image %}empty{% endif %}" {% if product.primary_image %}onclick="openImage('{{ product.primary_image.image.url }}')"{% endif %}>
+                          {% if product.primary_image %}<img src="{{ product.primary_image.image.url }}" alt="{{ product.catalog_title }}">{% else %}No bottle photo{% endif %}
                         </div>
-                        <div class="product-body">
-                          <h3 class="product-name">{{ product.catalog_title }}</h3>
-                          <div class="product-meta">
-                            {% if product.catalog_spec %}<span class="meta-chip">{{ product.catalog_spec }}</span>{% endif %}
-                            {% if product.catalog_color %}<span class="meta-chip">{{ product.catalog_color }}</span>{% endif %}
-                            {% if product.catalog_category_name %}<span class="meta-chip">{{ product.catalog_category_name }}</span>{% endif %}
-                          </div>
-                          {% if product.default_price %}
-                            <div class="product-price">EUR {{ product.default_price|floatformat:2 }}</div>
-                          {% endif %}
-                          <span class="availability-badge {{ product.availability_class }}">{{ product.availability_label }}</span>
-                          <div class="product-actions">
-                            <button
-                              type="button"
-                              class="btn btn-outline-secondary btn-sm"
-                              onclick="openDesc('{{ product.catalog_title|escapejs }}', '{{ product.description|default:'No description available.'|escapejs }}')"
-                            >
-                              Details
-                            </button>
+                        <div class="spec-body">
+                          <div class="spec-name">{{ product.catalog_title }}</div>
+                          <div class="spec-meta">{{ product.catalog_spec }}{% if product.catalog_spec and product.catalog_color %} · {% endif %}{{ product.catalog_color }}</div>
+                          {% if product.default_price %}<div class="spec-price">EUR {{ product.default_price|floatformat:2 }}</div>{% endif %}
+                          <span class="avail {{ product.availability_class }}">{{ product.availability_label }}</span>
+                          <div class="spec-actions">
+                            <button type="button" class="spec-details" onclick="openDesc('{{ product.catalog_title|escapejs }}', '{{ product.description|default:'No description available.'|escapejs }}')">Details</button>
                           </div>
                         </div>
                       </article>
@@ -673,17 +260,18 @@
         {% endfor %}
       </section>
     {% else %}
-      <section class="catalog-empty">
-        <h2 class="section-title">No matching products</h2>
-        <p class="section-copy">Try a broader search or switch back to all categories.</p>
+      <section class="cat-empty">
+        <h2>Nothing matches yet</h2>
+        <p>Try a broader search, or switch back to all categories.</p>
       </section>
     {% endif %}
+
   </div>
 </div>
 
 <div class="modal fade" id="imageModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-lg">
-    <div class="modal-content" style="background:#0d0a08;border-radius:18px;">
+    <div class="modal-content" style="background:#0d0a08;border:none;border-radius:14px;">
       <img id="modalImage" class="img-fluid rounded" style="max-height:84vh; object-fit:contain;">
     </div>
   </div>
@@ -693,10 +281,10 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="descModalGlobalLabel">Product details</h5>
+        <h5 class="modal-title" id="descModalGlobalLabel" style="font-family:var(--font-display,serif);font-weight:500;">Product details</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body" id="descModalGlobalBody" style="white-space:pre-line;"></div>
+      <div class="modal-body" id="descModalGlobalBody" style="white-space:pre-line;color:#3a352d;line-height:1.7;"></div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
       </div>
@@ -708,32 +296,23 @@
 
 <script>
 function openImage(url) {
-  const modalImage = document.getElementById('modalImage');
-  modalImage.src = url;
+  document.getElementById('modalImage').src = url;
   new bootstrap.Modal(document.getElementById('imageModal')).show();
 }
-
 function openDesc(title, desc) {
   const modalEl = document.getElementById('descModalGlobal');
   document.getElementById('descModalGlobalLabel').textContent = title || 'Product details';
   document.getElementById('descModalGlobalBody').textContent = (desc && desc.trim()) ? desc : 'No description available.';
-  bootstrap.Modal.getOrCreateInstance(modalEl, {backdrop:true, keyboard:true}).show();
+  bootstrap.Modal.getOrCreateInstance(modalEl, { backdrop: true, keyboard: true }).show();
 }
-
 (function () {
   const btn = document.getElementById('backToTop');
   const root = document.documentElement;
   window.addEventListener('scroll', function () {
     const scrolled = root.scrollTop || document.body.scrollTop;
-    if (scrolled > 360) {
-      btn.classList.add('show');
-    } else {
-      btn.classList.remove('show');
-    }
+    btn.classList.toggle('show', scrolled > 360);
   });
-  btn.addEventListener('click', function () {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  });
-})();
+  btn.addEventListener('click', function () { window.scrollTo({ top: 0, behavior: 'smooth' }); });
+}());
 </script>
 {% endblock %}

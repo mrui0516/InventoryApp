@@ -73,7 +73,8 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
-                'django.template.context_processors.static', 
+                'django.template.context_processors.static',
+                'stock.context_processors.store_context',
             ],
         },
     },
@@ -144,3 +145,24 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_REDIRECT_URL = '/dashboard/'
 # 未登录访问受保护页面时，跳转到 login
 LOGIN_URL = '/login/'
+
+
+# ---------------------------------------------------------------------------
+# Shopify sync (product images -> Shopify store)
+# Credentials come from the environment; never commit the token.
+#   SHOPIFY_STORE_DOMAIN   e.g. 66tcd5-su.myshopify.com  (the *.myshopify.com admin domain)
+#   SHOPIFY_ADMIN_TOKEN    Admin API access token from a custom app (shpat_...)
+#   SHOPIFY_API_VERSION    Admin API version (default below)
+#   SHOPIFY_AUTO_SYNC      "1" to auto-push a product's image to Shopify when it is
+#                          uploaded in the app (off by default so dev/tests never call out).
+# ---------------------------------------------------------------------------
+SHOPIFY_STORE_DOMAIN = os.environ.get('SHOPIFY_STORE_DOMAIN', '66tcd5-su.myshopify.com')
+SHOPIFY_ADMIN_TOKEN = os.environ.get('SHOPIFY_ADMIN_TOKEN', '')
+SHOPIFY_API_VERSION = os.environ.get('SHOPIFY_API_VERSION', '2025-01')
+SHOPIFY_AUTO_SYNC = os.environ.get('SHOPIFY_AUTO_SYNC', '') in {'1', 'true', 'True', 'yes', 'on'}
+# When auto-sync is on, also CREATE the product in Shopify if it doesn't exist yet
+# (otherwise only attach images to products already there).
+SHOPIFY_AUTO_CREATE = os.environ.get('SHOPIFY_AUTO_CREATE', '') in {'1', 'true', 'True', 'yes', 'on'}
+# Status for products the sync creates. DRAFT (default) so new products are
+# reviewed before going live; set to ACTIVE to publish immediately.
+SHOPIFY_NEW_PRODUCT_STATUS = os.environ.get('SHOPIFY_NEW_PRODUCT_STATUS', 'DRAFT').upper()

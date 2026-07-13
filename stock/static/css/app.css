@@ -1,0 +1,461 @@
+/* ==========================================================================
+   app.css — KHAN PERFUME ERP shared design system
+   Dense, data-forward look: subtle borders over heavy shadows, tight radii,
+   compact spacing. Single source of truth for design tokens + shared
+   components. Loaded after bootstrap.min.css in base.html.
+   ========================================================================== */
+
+/* ----------------------------- Design tokens ---------------------------- */
+:root{
+  /* Canonical palette */
+  --app-bg:#f1f5f9;
+  --app-surface:#ffffff;
+  --app-surface-2:#f8fafc;
+  --app-text:#0f172a;
+  --app-muted:#5b6b7f;
+  --app-border:#e2e8f0;
+  --app-border-strong:#cbd5e1;
+  --app-accent:#2563eb;
+  --app-accent-ink:#1747a6;
+  --app-accent-soft:#eaf1ff;
+  --app-accent-line:#cbdbf4;   /* light accent border for tinted chips/pills */
+  --app-primary:#334155;       /* slate — neutral emphasis (headings, secondary) */
+  --app-good:#0f766e;   --app-good-soft:#e7faf6;
+  --app-warn:#9a6700;   --app-warn-soft:#fff6df;
+  --app-danger:#b42318; --app-danger-soft:#feeceb;
+
+  /* Elevation + shape (dense ERP: lean on borders, not big shadows) */
+  --app-shadow:0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.06);
+  --app-shadow-md:0 4px 12px rgba(16,24,40,.08);
+  --app-radius:.625rem;
+  --app-radius-sm:.5rem;
+  --app-radius-xs:.4rem;
+
+  /* Layout */
+  --sidebar-w:248px;
+
+  /* Typography — system stack for data/body, refined serif for page titles */
+  --font-display:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,ui-serif,serif;
+
+  /* Canonical chart palette — read in JS via window.CHART_PALETTE (base.html) */
+  --chart-1:#2563eb; --chart-2:#10b981; --chart-3:#f59e0b; --chart-4:#7c3aed; --chart-5:#64748b;
+
+  /* Back-compat aliases consumed by migrated pages (so their inline <style>
+     can be removed without rewriting markup). All point at the canonical set. */
+  --bg:var(--app-bg); --card:var(--app-surface); --soft:var(--app-surface-2);
+  --text:var(--app-text); --muted:var(--app-muted);
+  --border:var(--app-border); --accent:var(--app-accent);
+  --accent-soft:var(--app-accent-soft);
+  --good:var(--app-good); --good-soft:var(--app-good-soft);
+  --success:var(--app-good); --success-soft:var(--app-good-soft);
+  --warning:var(--app-warn); --warning-soft:var(--app-warn-soft);
+  --danger:var(--app-danger); --danger-soft:var(--app-danger-soft);
+  --shadow:var(--app-shadow); --shadow-md:var(--app-shadow-md);
+  --radius:var(--app-radius); --radius-sm:var(--app-radius-sm); --radius-xs:var(--app-radius-xs);
+
+  --pl-bg:var(--app-bg); --pl-card:var(--app-surface); --pl-soft:var(--app-surface-2);
+  --pl-text:var(--app-text); --pl-muted:var(--app-muted);
+  --pl-border:var(--app-border); --pl-accent:var(--app-accent); --pl-shadow:var(--app-shadow);
+
+  /* --ds-* aliases: base.html utilities + POS (inbound/outbound) — all canonical */
+  --ds-border:var(--app-border);
+  --ds-card-bg:var(--app-surface);
+  --ds-muted:var(--app-muted);
+  --ds-text:var(--app-text);
+  --ds-accent:var(--app-accent);
+  --ds-good:var(--app-good);
+  --ds-warn:var(--app-warn);
+  --ds-danger:var(--app-danger);
+  --ds-radius:var(--app-radius);
+  --nav-panel:rgba(255,255,255,.10);
+}
+
+/* ------------------------------ Base layer ------------------------------ */
+body, body.bg-light{ background:var(--app-bg); color:var(--app-text); }
+
+/* --------------------- Bootstrap primitive refinements ------------------ */
+/* Global, gentle, token-driven — unifies chrome across every page. */
+.btn{ border-radius:var(--app-radius-sm); font-weight:600; }
+.btn-sm{ border-radius:var(--app-radius-xs); }
+.form-control, .form-select{
+  border-radius:var(--app-radius-sm);
+  border-color:var(--app-border);
+}
+.form-control:focus, .form-select:focus{
+  border-color:var(--app-accent);
+  box-shadow:0 0 0 .2rem rgba(21,94,239,.12);
+}
+.card{
+  border-radius:var(--app-radius);
+  border-color:var(--app-border);
+  box-shadow:var(--app-shadow);
+}
+.alert{ border-radius:var(--app-radius-sm); }
+.table{ --bs-table-bg:transparent; }
+.table > :not(caption) > * > *{ padding:.55rem .65rem; }
+
+/* -------------------- Interaction polish (ui-ux-pro-max) ----------------- */
+/* Primary button + primary text follow the accent token (one CTA per screen) */
+.btn-primary{
+  --bs-btn-bg:var(--app-accent); --bs-btn-border-color:var(--app-accent);
+  --bs-btn-hover-bg:var(--app-accent-ink); --bs-btn-hover-border-color:var(--app-accent-ink);
+  --bs-btn-active-bg:var(--app-accent-ink); --bs-btn-active-border-color:var(--app-accent-ink);
+  --bs-btn-disabled-bg:var(--app-accent); --bs-btn-disabled-border-color:var(--app-accent);
+}
+.btn-outline-primary{
+  --bs-btn-color:var(--app-accent-ink); --bs-btn-border-color:var(--app-accent);
+  --bs-btn-hover-bg:var(--app-accent); --bs-btn-hover-border-color:var(--app-accent);
+  --bs-btn-active-bg:var(--app-accent-ink); --bs-btn-active-border-color:var(--app-accent-ink);
+}
+.text-primary{ color:var(--app-accent-ink) !important; }
+/* Smooth, native-feeling state transitions (~160ms) */
+.btn,.erp-nav-link,.card,.dash-card,.page-card,.spec{
+  transition:background-color .16s ease, border-color .16s ease, color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+.btn:active{ transform:translateY(1px); }
+/* Data tables highlight the hovered row for scannability */
+.table tbody tr{ transition:background-color .12s ease; }
+.table:not(.table-borderless) tbody tr:hover{ background:var(--app-surface-2); }
+/* Clear affordance on everything clickable */
+button,summary,[role="button"],label[for]{ cursor:pointer; }
+
+/* ---------------------- Typography + a11y foundation -------------------- */
+/* Refined serif for the biggest page titles only (restraint) */
+.dash-title,.page-title,.hero-title,.corr-title,.pos-title{ font-family:var(--font-display); letter-spacing:-.01em; }
+/* Shared page-title (h1) — consistent serif size across pages */
+.pos-title{ font-size:1.75rem; font-weight:700; color:var(--app-text); }
+/* Numbers never jitter: tabular figures on any money/qty cell */
+.num,.metric-value,.stat-value,.summary-value,.order-total,.day-amount,.day-total,
+td.text-end,th.text-end,.mono-num{ font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1; }
+/* Keyboard focus is always visible (mouse clicks stay clean) */
+:focus-visible{ outline:2px solid var(--app-accent); outline-offset:2px; border-radius:2px; }
+.btn:focus-visible,.form-control:focus-visible,.form-select:focus-visible,
+.erp-nav-link:focus-visible,summary:focus-visible,a:focus-visible{ outline:2px solid var(--app-accent); outline-offset:2px; }
+/* Media never overflows its container */
+img,svg,video,canvas{ max-width:100%; }
+img{ height:auto; }
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{
+    animation-duration:.001ms !important; animation-iteration-count:1 !important;
+    transition-duration:.001ms !important; scroll-behavior:auto !important;
+  }
+}
+
+/* ----------------------- App chrome: left ERP sidebar ------------------- */
+.erp-layout{ min-height:100vh; }
+
+.erp-sidebar{
+  position:fixed; inset:0 auto 0 0; width:var(--sidebar-w); z-index:1040;
+  display:flex; flex-direction:column; overflow-y:auto;
+  background:linear-gradient(180deg,#0b1220,#0f172a);
+  border-right:1px solid rgba(255,255,255,.06);
+}
+.erp-brand{
+  display:flex; align-items:baseline; gap:.3rem;
+  padding:1.05rem 1.2rem; text-decoration:none;
+  font-weight:800; font-size:1.1rem; letter-spacing:.04em; color:#fff;
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+.erp-brand span{ font-weight:600; font-size:.92rem; color:#7fb0ff; letter-spacing:.02em; }
+.erp-nav{ flex:1 1 auto; padding:.55rem .6rem 1rem; display:flex; flex-direction:column; gap:.1rem; }
+.erp-nav-group{
+  font-size:.68rem; font-weight:800; letter-spacing:.09em; text-transform:uppercase;
+  color:#5b6b82; padding:.95rem .8rem .35rem;
+}
+.erp-nav-link{
+  display:block; padding:.52rem .8rem; border-radius:var(--app-radius-sm);
+  color:rgba(255,255,255,.74); text-decoration:none; font-weight:600; font-size:.92rem;
+  white-space:nowrap;
+}
+.erp-nav-link:hover{ background:rgba(255,255,255,.07); color:#fff; }
+.erp-nav-link.active{ background:var(--app-accent); color:#fff; }
+.erp-userbox{
+  padding:.8rem; display:flex; flex-direction:column; gap:.5rem;
+  border-top:1px solid rgba(255,255,255,.08);
+}
+.erp-user{ font-size:.84rem; color:rgba(255,255,255,.6); }
+
+.erp-content{ margin-left:var(--sidebar-w); padding:1.35rem clamp(1rem,2vw,2rem); max-width:1560px; }
+
+.erp-topbar{ display:none; }
+.erp-backdrop{ display:none; }
+
+@media (max-width:991.98px){
+  .erp-sidebar{ transform:translateX(-100%); transition:transform .22s ease; box-shadow:0 0 48px rgba(0,0,0,.45); }
+  body.erp-nav-open .erp-sidebar{ transform:translateX(0); }
+  .erp-content{ margin-left:0; }
+  .erp-topbar{
+    display:flex; align-items:center; gap:.8rem;
+    position:sticky; top:0; z-index:1030;
+    background:linear-gradient(90deg,#0b1220,#111827); padding:.55rem .9rem;
+  }
+  .erp-topbar-brand{ color:#fff; font-weight:800; text-decoration:none; letter-spacing:.03em; }
+  .erp-burger{
+    background:transparent; border:1px solid rgba(255,255,255,.3); color:#fff;
+    border-radius:var(--app-radius-sm); padding:.2rem .62rem; font-size:1.25rem; line-height:1.2; cursor:pointer;
+  }
+  body.erp-nav-open .erp-backdrop{ display:block; position:fixed; inset:0; background:rgba(2,6,23,.5); z-index:1035; }
+}
+
+footer{ border-top:1px solid var(--app-border); margin-top:2rem; }
+
+/* ----------------------- Shared responsive utilities -------------------- */
+/* (relocated from base.html so every page shares one definition) */
+.collapse-scroll{
+  max-height:min(48vh,420px);
+  overflow-y:auto; overflow-x:auto;
+  -webkit-overflow-scrolling:touch;
+  padding-inline:.25rem;
+}
+.mobile-inner-table,
+.lowstock-table-wrap table{ min-width:520px; }
+
+@media (max-width:576px){
+  .mobile-card-table thead{ display:none !important; }
+  .mobile-card-table tbody tr{
+    display:block; margin-bottom:.8rem;
+    border:1px solid var(--ds-border); border-radius:var(--app-radius);
+    background:var(--ds-card-bg); box-shadow:var(--app-shadow); overflow:hidden;
+  }
+  .mobile-card-table tbody tr > td,
+  .mobile-card-table tbody tr > th{
+    display:grid; grid-template-columns:max-content 1fr;
+    align-items:center; gap:.75rem;
+    padding:.85rem 1rem !important; border:0 !important; font-size:1.02rem;
+  }
+  .mobile-card-table tbody tr > td::before,
+  .mobile-card-table tbody tr > th::before{
+    content:attr(data-label); font-weight:600; color:var(--ds-muted);
+  }
+  .mobile-card-table tbody tr > td > *{
+    justify-self:end; text-align:right; max-width:100%;
+    word-break:break-word; overflow-wrap:anywhere;
+  }
+  .mobile-card-table tbody tr > td{
+    text-align:right; word-break:break-word; overflow-wrap:anywhere;
+  }
+  .table-compact thead th{ position:static !important; }
+  .table-rounded > .table-responsive,
+  .lowstock-table-wrap > .table-responsive{ overflow-x:auto !important; }
+  .accordion-body.lowstock-body{ padding:.9rem .9rem; }
+  .btn-sm{ padding:.55rem .8rem; font-size:.95rem; border-radius:.6rem; }
+  #salesChart{ height:260px !important; }
+}
+
+/* ========================================================================
+   Shared component library
+   Lifted from the dashboard / product-list pages and retuned to the dense
+   ERP look. Class names are preserved so those templates render unchanged
+   after their inline <style> blocks are removed.
+   ======================================================================== */
+
+/* --- layout + headings --- */
+.dash-page{ display:grid; gap:1.1rem; }
+.page-shell{ display:grid; gap:1rem; }
+.dash-head,.section-head,.section-top,.mini-head,.item-head,
+.page-head,.strip-head,.product-row,.mini-row{
+  display:flex; justify-content:space-between; gap:1rem;
+  align-items:flex-start; flex-wrap:wrap;
+}
+.dash-title{ margin:0; font-size:1.75rem; font-weight:800; color:var(--text); }
+.page-title{ margin:0; font-size:1.7rem; font-weight:800; color:var(--pl-text); }
+.dash-sub{ margin:.3rem 0 0; color:var(--muted); max-width:62rem; }
+.page-sub,.mini-copy{ color:var(--pl-muted); }
+.dash-actions,.chip-row,.toolbar-actions,.quick-tags{ display:flex; gap:.6rem; flex-wrap:wrap; }
+.section-head h2,.section-head h3,.section-top h3{ margin:.55rem 0 .1rem; font-weight:800; color:var(--text); }
+.section-head h2{ font-size:1.12rem; }
+.section-head h3,.section-top h3{ font-size:1.02rem; }
+.section-head p,.section-top p,.tiny,.muted{ color:var(--muted); }
+.tiny{ font-size:.84rem; }
+
+/* --- surfaces --- */
+.dash-card,.page-card{
+  background:var(--card); border:1px solid var(--border);
+  border-radius:var(--app-radius); box-shadow:var(--app-shadow);
+}
+.pad{ padding:.9rem; }
+
+/* --- pills / chips / kickers --- */
+.kicker,.note-pill,.chip,.pill,.status-badge{
+  display:inline-flex; align-items:center; border-radius:999px; font-weight:700;
+}
+.kicker{
+  padding:.26rem .62rem; background:var(--accent-soft); color:var(--app-accent-ink);
+  font-size:.74rem; letter-spacing:.05em; text-transform:uppercase;
+}
+.toolbar-label,.metric-label,.stat-label{
+  display:block; font-size:.76rem; font-weight:800; letter-spacing:.05em;
+  text-transform:uppercase; color:var(--muted);
+}
+.chip{ gap:.4rem; padding:.32rem .66rem; background:var(--accent-soft); border:1px solid var(--app-accent-line); color:var(--app-accent-ink); font-size:.86rem; }
+.chip a{ color:var(--app-accent-ink); text-decoration:none; }
+.chip-remove{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:1.2rem; height:1.2rem; border-radius:999px;
+  background:rgba(23,55,97,.08); font-size:.95rem; font-weight:800; line-height:1;
+}
+.chip-remove:hover{ background:rgba(23,55,97,.16); }
+.pill{ min-width:2rem; justify-content:center; padding:.18rem .55rem; background:var(--accent-soft); border:1px solid var(--app-accent-line); color:var(--app-accent-ink); }
+.status-badge{ padding:.22rem .55rem; font-size:.8rem; }
+.status-warning{ background:var(--warning-soft); color:var(--warning); }
+.status-danger{ background:var(--danger-soft); color:var(--danger); }
+.note-pill{ padding:.34rem .72rem; border:1px solid var(--app-accent-line); background:var(--app-surface-2); color:var(--app-accent-ink); font-size:.84rem; }
+.note-pill.good{ background:var(--good-soft); color:var(--good); border-color:#bfeee6; }
+.note-pill.warn{ background:var(--warning-soft); color:var(--warning); border-color:#f4e2b0; }
+.note-pill.bad{ background:var(--danger-soft); color:var(--danger); border-color:#f6cfca; }
+
+/* --- metric / stat tiles --- */
+.snapshot-grid{ display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:.9rem; }
+.summary-grid{ display:grid; grid-template-columns:minmax(0,1.75fr) minmax(320px,1fr); gap:1rem; }
+.today-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:.9rem; }
+.strategy-grid{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; }
+.watch-grid{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; }
+.metric-card,.snapshot-card,.mix-item,.rank-item,.inventory-box,.mini-card{
+  padding:.8rem .9rem; border:1px solid var(--border);
+  border-radius:var(--app-radius-sm); background:var(--app-surface-2);
+}
+.snapshot-card.highlight{ background:var(--accent-soft); border-color:var(--app-accent-line); }
+.metric-value{ margin-top:.45rem; font-size:1.5rem; line-height:1.05; font-weight:800; color:var(--text); }
+.metric-sub{ margin-top:.4rem; color:var(--muted); font-size:.9rem; }
+.stat-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:.9rem; }
+.stat-card{ padding:.85rem .95rem; border:1px solid var(--pl-border); border-radius:var(--app-radius-sm); background:var(--app-surface-2); }
+.stat-value{ margin-top:.4rem; font-size:1.5rem; font-weight:800; color:var(--pl-text); }
+
+/* --- chart + progress --- */
+.chart-wrap{ padding:1rem; border:1px solid var(--border); border-radius:var(--app-radius-sm); background:var(--app-surface-2); }
+#salesBarChart{ width:100% !important; height:300px !important; display:block; }
+#yearBarChart{ width:100% !important; height:320px !important; display:block; }
+.mix-list,.mini-list,.rank-list,.stack-list{ display:grid; gap:.75rem; }
+.mini-list{ gap:.55rem; }
+.mix-track{ width:100%; height:9px; border-radius:999px; background:#e8eef6; border:1px solid #dbe5f1; overflow:hidden; }
+.mix-fill{ height:100%; background:linear-gradient(90deg,#7fb0ff,#155eef); border-radius:999px; }
+.mini-head{ align-items:baseline; }
+.item-name,.item-value{ font-weight:700; color:var(--text); }
+
+/* --- product thumbnails / rows --- */
+.product-rank{ display:grid; grid-template-columns:52px minmax(0,1fr); gap:.8rem; align-items:center; }
+.product-thumb,.product-placeholder{ width:52px; height:52px; border-radius:var(--app-radius-sm); object-fit:cover; border:1px solid var(--border); background:var(--app-surface-2); }
+.product-placeholder{ display:grid; place-items:center; color:#60748d; font-size:.72rem; text-transform:uppercase; }
+.inline-product{ display:grid; grid-template-columns:48px minmax(0,1fr); gap:.75rem; align-items:center; }
+.inline-product-thumb-wrap,.inline-product-thumb-empty{ width:48px; height:48px; border-radius:var(--app-radius-sm); border:1px solid var(--border); background:var(--app-surface-2); }
+.inline-product-thumb-wrap{ padding:0; overflow:hidden; display:block; cursor:zoom-in; }
+.inline-product-thumb{ width:100%; height:100%; object-fit:cover; display:block; }
+.inline-product-thumb-empty{ display:grid; place-items:center; color:#60748d; font-size:.68rem; font-weight:700; text-align:center; padding:.25rem; }
+/* Cart product cell (shared by inbound receive page and any page without inline cart CSS) */
+.cart-product{ display:grid; grid-template-columns:48px minmax(0,1fr); gap:.7rem; align-items:center; }
+.cart-product-thumb-wrap,.cart-product-thumb-empty{ width:48px; height:48px; border-radius:var(--app-radius-sm); border:1px solid var(--border); background:var(--app-surface-2); flex:0 0 auto; }
+.cart-product-thumb-wrap{ padding:0; overflow:hidden; display:block; }
+.cart-product-thumb{ width:100%; height:100%; object-fit:cover; display:block; }
+.cart-product-thumb-empty{ display:grid; place-items:center; color:var(--app-muted); font-size:.66rem; font-weight:700; text-align:center; padding:.2rem; }
+.cart-product-main{ min-width:0; }
+.product-block{ display:grid; grid-template-columns:64px minmax(0,1fr); gap:.9rem; align-items:center; }
+.thumb,.thumb-empty{ width:64px; height:64px; border-radius:var(--app-radius-sm); border:1px solid var(--pl-border); background:var(--app-surface-2); }
+.thumb{ object-fit:cover; cursor:zoom-in; }
+.thumb-empty{ display:grid; place-items:center; font-size:.72rem; color:#64748b; font-weight:700; }
+.product-name{ font-weight:800; color:var(--pl-text); line-height:1.2; }
+.product-meta{ margin-top:.2rem; color:var(--pl-muted); font-size:.9rem; }
+.sales-stack,.price-stack{ display:grid; gap:.25rem; }
+.sales-main,.price-main{ font-weight:800; color:var(--pl-text); }
+.sales-sub,.price-sub{ color:var(--pl-muted); font-size:.84rem; }
+.brand-pill,.stock-pill,.metric-pill{ display:inline-flex; align-items:center; padding:.22rem .58rem; border-radius:999px; font-size:.78rem; font-weight:700; border:1px solid var(--pl-border); }
+.brand-pill{ background:var(--app-surface-2); color:#1f2937; }
+.stock-pill.ok{ background:#ecfdf5; color:#0f766e; border-color:#bbf7d0; }
+.stock-pill.low{ background:#fff7ed; color:#9a6700; border-color:#fed7aa; }
+.stock-pill.zero{ background:#fef2f2; color:#b42318; border-color:#fecaca; }
+.metric-pill{ background:var(--accent-soft); color:var(--app-accent-ink); }
+
+/* --- tables --- */
+.table-wrap{ overflow:auto; border:1px solid var(--border); border-radius:var(--app-radius-sm); background:#fff; }
+.table thead th{ font-size:.78rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:#243549; background:#eef3f9; border-bottom:1px solid var(--border); }
+.table td,.table th{ vertical-align:middle; }
+/* Table overflow safety: a wide table scrolls inside its own wrapper instead of
+   forcing its grid/flex column wider and overlapping neighbours (e.g. a sticky
+   side panel). Scroll wrappers cap at 100%; cards that hold tables can shrink. */
+.table-responsive,.table-wrap{ max-width:100%; }
+.dash-card,.page-card,.split-col,.operation-card,.panel,.cardx,.corr-card,.viz-card,.top-card{ min-width:0; }
+.order-detail{ background:var(--app-surface-2); }
+
+/* --- toolbar / filters (product list) --- */
+.toolbar-grid{ display:grid; grid-template-columns:2fr repeat(4,minmax(0,1fr)); gap:.85rem; }
+.toolbar .form-control,.toolbar .form-select{ border-radius:var(--app-radius-sm); border:1px solid var(--pl-border); padding:.6rem .85rem; }
+.actions{ display:flex; gap:.5rem; flex-wrap:wrap; }
+.actions .btn{ border-radius:var(--app-radius-sm); }
+.export-panel{ margin-top:1rem; padding:.9rem .95rem; border:1px solid var(--pl-border); border-radius:var(--app-radius-sm); background:var(--app-surface-2); }
+.export-grid{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.85rem; }
+.shopify-location{ grid-column:span 2; }
+.shopify-options{ grid-column:span 3; }
+.check-row{ display:flex; gap:1rem; flex-wrap:wrap; align-items:center; }
+.check-row .form-check{ margin:0; }
+
+/* --- split + low-stock blocks (dashboard) --- */
+.split-col{ display:grid; gap:1rem; height:100%; }
+.lowstock .accordion-item{ border:1px solid var(--border); border-radius:var(--app-radius-sm); overflow:hidden; margin-bottom:.7rem; }
+.lowstock .accordion-button{ font-weight:800; color:var(--text); background:var(--app-surface-2); box-shadow:none; }
+.lowstock .accordion-button:not(.collapsed){ background:var(--accent-soft); color:var(--app-accent-ink); }
+.lowstock-shell{ display:grid; gap:1rem; }
+.lowstock-summary-grid{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.75rem; }
+.lowstock-stat{ padding:.8rem .9rem; border:1px solid var(--border); border-radius:var(--app-radius-sm); background:var(--app-surface-2); }
+.lowstock-stat .label{ display:block; font-size:.76rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); }
+.lowstock-stat .value{ margin-top:.4rem; font-size:1.35rem; font-weight:800; color:var(--text); }
+.lowstock-stat .sub{ margin-top:.18rem; font-size:.84rem; color:var(--muted); }
+.lowstock-focus-list{ display:grid; gap:.6rem; }
+.lowstock-focus-item{ padding:.75rem .85rem; border:1px solid var(--border); border-radius:var(--app-radius-sm); background:var(--app-surface-2); }
+.lowstock-brand-scroll{ max-height:430px; overflow:auto; padding-right:.2rem; }
+.lowstock-brand-head{ display:flex; justify-content:space-between; align-items:center; gap:.75rem; width:100%; }
+.lowstock-brand-meta{ display:flex; gap:.45rem; flex-wrap:wrap; align-items:center; }
+.lowstock-extra{ margin-top:.85rem; padding-top:.85rem; border-top:1px dashed var(--border); }
+.lowstock-extra summary{ cursor:pointer; font-weight:800; color:var(--app-accent-ink); list-style:none; }
+.lowstock-extra summary::-webkit-details-marker{ display:none; }
+.lowstock-extra summary::after{ content:"Show more"; margin-left:.55rem; font-size:.86rem; color:var(--muted); font-weight:700; }
+.lowstock-extra[open] summary::after{ content:"Hide"; }
+.qr-image{ width:180px; height:180px; border-radius:var(--app-radius-sm); border:1px solid var(--border); }
+
+/* --- product-list mobile card table --- */
+@media (max-width:576px){
+  .table-card thead{ display:none !important; }
+  .table-card tbody tr{ display:block; margin:.7rem 0; border:1px solid var(--pl-border); border-radius:var(--app-radius); background:#fff; box-shadow:var(--app-shadow); overflow:hidden; }
+  .table-card tbody td{ display:block; padding:1rem !important; border:0 !important; }
+  .mobile-grid{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.6rem; margin-top:.85rem; }
+  .mobile-box{ padding:.65rem .75rem; border-radius:var(--app-radius-sm); border:1px solid var(--pl-border); background:var(--app-surface-2); }
+  .mobile-box .label{ display:block; font-size:.74rem; font-weight:700; color:var(--pl-muted); text-transform:uppercase; }
+  .mobile-box .value{ display:block; margin-top:.18rem; font-weight:800; color:var(--pl-text); }
+}
+
+/* --- responsive grids (breakpoints account for the 248px sidebar) --- */
+@media (max-width:1650px){ .snapshot-grid{ grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media (max-width:1450px){ .summary-grid,.strategy-grid,.watch-grid{ grid-template-columns:1fr; } }
+@media (max-width:1199px){
+  .today-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .toolbar-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .export-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .shopify-location,.shopify-options{ grid-column:span 2; }
+}
+@media (max-width:767px){
+  .dash-title{ font-size:1.55rem; }
+  .page-title{ font-size:1.55rem; }
+  .snapshot-grid,.today-grid,.lowstock-summary-grid,.toolbar-grid,.export-grid{ grid-template-columns:1fr; }
+  .shopify-location,.shopify-options{ grid-column:span 1; }
+  #salesBarChart{ height:260px !important; }
+  .product-rank{ grid-template-columns:46px minmax(0,1fr); }
+  .product-thumb,.product-placeholder{ width:46px; height:46px; }
+}
+
+/* --------------------------- Mobile hardening --------------------------- */
+/* Applies app-wide so every page (incl. those with their own inline CSS)
+   gets consistent phone behaviour. */
+@media (max-width:576px){
+  /* Roomier gutters + no accidental sideways scroll from wide children */
+  .erp-content{ padding:.9rem .8rem 2rem; overflow-x:hidden; }
+  .container,.container-fluid{ padding-left:.8rem; padding-right:.8rem; }
+  /* 16px inputs stop iOS Safari from zooming in on focus */
+  .form-control,.form-select,input,textarea,select{ font-size:16px; }
+  /* Comfortable tap targets (WCAG ~44px) */
+  .btn{ min-height:44px; display:inline-flex; align-items:center; justify-content:center; }
+  .btn-sm{ min-height:38px; }
+  .erp-nav-link{ padding:.7rem .8rem; }
+  /* Wide tables scroll inside their own box instead of the page */
+  .table-responsive{ -webkit-overflow-scrolling:touch; }
+  /* Big page titles shrink a touch more on the smallest screens */
+  h1{ font-size:1.5rem; }
+}

@@ -1,0 +1,266 @@
+{% extends 'stock/base.html' %}
+{% block title %}Daily Summary · {{ day|date:"Y-m-d" }}{% endblock %}
+
+{% block content %}
+<style>
+  /* page-specific components only — tokens inherited from app.css */
+  .pay-pill{ display:inline-flex; align-items:center; padding:.2rem .55rem; border-radius:999px; background:var(--app-accent-soft); border:1px solid #cbdbf4; color:var(--app-accent-ink); font-size:.78rem; font-weight:800; }
+  .pay-stack{ display:inline-flex; flex-direction:column; gap:.2rem; align-items:flex-start; }
+  .pay-rows{ display:grid; gap:.55rem; margin-top:.9rem; }
+  .pay-row{ display:grid; grid-template-columns:1fr auto; gap:.4rem; align-items:center; }
+  .pay-row .bar{ grid-column:1/-1; height:7px; border-radius:999px; background:#e8eef6; overflow:hidden; }
+  .pay-row .bar span{ display:block; height:100%; background:linear-gradient(90deg,#7fb0ff,var(--app-accent)); }
+  .chart-box{ position:relative; height:200px; }
+  .top-row{ display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.7rem; align-items:center; padding:.5rem 0; border-top:1px solid var(--app-border); }
+  .top-row:first-of-type{ border-top:0; }
+  .top-name{ font-weight:800; color:var(--app-text); text-decoration:none; }
+  .top-name:hover{ color:var(--app-accent-ink); }
+  .top-bar{ height:6px; border-radius:999px; background:#eef2f7; margin-top:.3rem; overflow:hidden; }
+  .top-bar span{ display:block; height:100%; background:linear-gradient(90deg,#2563eb,#60a5fa); }
+  .top-metric{ text-align:right; white-space:nowrap; font-weight:900; }
+  .top-metric .sub{ color:var(--app-muted); font-size:.8rem; font-weight:700; }
+  @media print{ .erp-sidebar,.erp-topbar,.dash-actions,.no-print{ display:none !important; } .erp-content{ margin-left:0; } }
+</style>
+
+<div class="dash-page">
+  <div class="dash-head">
+    <div>
+      <span class="kicker">Daily Summary</span>
+      <h1 class="dash-title">{{ day|date:"l, j M Y" }}</h1>
+      <div class="dash-sub">
+        {% if active_store_is_all %}All stores{% elif active_store %}{{ active_store.name }}{% endif %}
+        {% if is_today %} · live{% endif %}
+      </div>
+    </div>
+    <div class="dash-actions no-print">
+      <a class="btn btn-outline-secondary" href="{{ prev_day_url }}">&laquo; Prev</a>
+      {% if not is_today %}<a class="btn btn-outline-secondary" href="{{ today_url }}">Today</a>{% endif %}
+      {% if next_day_url %}<a class="btn btn-outline-secondary" href="{{ next_day_url }}">Next &raquo;</a>{% endif %}
+      <a class="btn btn-outline-primary" href="{{ full_records_url }}">Full records</a>
+      <button type="button" class="btn btn-outline-dark" onclick="window.print()">Print</button>
+    </div>
+  </div>
+
+  <div class="snapshot-grid">
+    {% if show_order_financials %}
+      <div class="snapshot-card highlight">
+        <span class="metric-label">Sales</span>
+        <div class="metric-value">EUR {{ total_amount|floatformat:2 }}</div>
+        <div class="metric-sub">{{ order_count }} order{{ order_count|pluralize }}</div>
+      </div>
+    {% else %}
+      <div class="snapshot-card highlight">
+        <span class="metric-label">Orders</span>
+        <div class="metric-value">{{ order_count }}</div>
+        <div class="metric-sub">Today</div>
+      </div>
+    {% endif %}
+    <div class="snapshot-card">
+      <span class="metric-label">Items Sold</span>
+      <div class="metric-value">{{ total_qty }}</div>
+      <div class="metric-sub">Units across all orders</div>
+    </div>
+    {% if show_order_financials %}
+      <div class="snapshot-card">
+        <span class="metric-label">Average Order</span>
+        <div class="metric-value">EUR {{ avg_order|floatformat:2 }}</div>
+        <div class="metric-sub">Per order</div>
+      </div>
+    {% endif %}
+    {% if show_profit %}
+      <div class="snapshot-card">
+        <span class="metric-label">Net Profit</span>
+        <div class="metric-value">EUR {{ total_profit|floatformat:2 }}</div>
+        <div class="metric-sub">Admin only</div>
+      </div>
+    {% endif %}
+    <div class="snapshot-card">
+      <span class="metric-label">Stock Received</span>
+      <div class="metric-value">{{ received_units }}</div>
+      <div class="metric-sub">{{ received_orders }} inbound · all stores</div>
+    </div>
+  </div>
+
+  <div class="summary-grid">
+    <div class="dash-card pad">
+      <div class="section-top"><div><span class="kicker">Orders</span><h3>Today's orders</h3></div></div>
+      {% if orders %}
+        <div class="table-responsive">
+          <table class="table align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Customer</th>
+                {% if store_is_all %}<th>Store</th>{% endif %}
+                <th class="text-center">Items</th>
+                {% if show_order_financials %}<th>Payment</th><th class="text-end">Total</th>{% endif %}
+                {% if show_profit %}<th class="text-end">Profit</th>{% endif %}
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for order in orders %}
+                <tr>
+                  <td class="num">{{ order.summary_time }}</td>
+                  <td>
+                    {% if order.customer_id %}<a class="top-name" href="{% url 'customer_detail' order.customer_id %}">{{ order.summary_customer }}</a>{% else %}{{ order.summary_customer }}{% endif %}
+                    <div class="tiny">Order #{{ order.id }}</div>
+                  </td>
+                  {% if store_is_all %}<td>{{ order.summary_store }}</td>{% endif %}
+                  <td class="text-center num">{{ order.summary_qty }}</td>
+                  {% if show_order_financials %}
+                    <td>
+                      {% if order.summary_pay|length > 1 %}
+                        <span class="pay-stack">{% for p in order.summary_pay %}<span class="pay-pill">{{ p.label }} €{{ p.amount|floatformat:2 }}</span>{% endfor %}</span>
+                      {% else %}
+                        {% for p in order.summary_pay %}<span class="pay-pill">{{ p.label }}</span>{% endfor %}
+                      {% endif %}
+                    </td>
+                    <td class="text-end num fw-bold">EUR {{ order.summary_total|floatformat:2 }}</td>
+                  {% endif %}
+                  {% if show_profit %}<td class="text-end num {% if order.summary_profit < 0 %}text-danger{% endif %}">EUR {{ order.summary_profit|floatformat:2 }}</td>{% endif %}
+                  <td class="text-end no-print">
+                    <div class="d-flex gap-1 justify-content-end">
+                      <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#order-modal-{{ order.id }}">Details</button>
+                      <a class="btn btn-sm btn-outline-dark" href="{{ order.detail_url }}">Print</a>
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="tiny">No sales recorded for {{ day|date:"j M Y" }}.</div>
+      {% endif %}
+    </div>
+
+    <div class="split-col">
+      {% if show_order_financials %}
+        <div class="dash-card pad">
+          <div class="section-top"><div><span class="kicker">Payment</span><h3>Payment mix</h3></div></div>
+          {% if payment_rows %}
+            {{ payment_chart|json_script:"dayPayData" }}
+            <div class="chart-box"><canvas id="dayPayChart"></canvas></div>
+            <div class="pay-rows">
+              {% for row in payment_rows %}
+                <div class="pay-row">
+                  <span class="item-name">{{ row.label }}</span>
+                  <span class="item-value">EUR {{ row.amount|floatformat:2 }} · {{ row.pct }}%</span>
+                  <span class="bar"><span style="width:{{ row.pct }}%"></span></span>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="tiny">No payments yet.</div>
+          {% endif %}
+        </div>
+      {% endif %}
+
+      {% if top_products %}
+        <div class="dash-card pad">
+          <div class="section-top"><div><span class="kicker">Products</span><h3>Top products</h3></div></div>
+          {% for tp in top_products %}
+            <div class="top-row">
+              <div>
+                {% if tp.product %}<a class="top-name" href="{% url 'product_detail' tp.product.id %}">{{ tp.name }}</a>{% else %}<span class="top-name">{{ tp.name }}</span>{% endif %}
+                <div class="top-bar"><span style="width:{{ tp.bar }}%"></span></div>
+              </div>
+              <div class="top-metric">
+                {% if show_order_financials %}EUR {{ tp.revenue|floatformat:2 }}<div class="sub">{{ tp.qty }} units</div>{% else %}{{ tp.qty }} units{% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% for order in orders %}
+  <div class="modal fade" id="order-modal-{{ order.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div>
+            <h5 class="modal-title">Order #{{ order.id }} · {{ order.summary_time }}</h5>
+            <div class="tiny">{{ order.summary_customer }}{% if show_order_financials %} · EUR {{ order.summary_total|floatformat:2 }}{% endif %}</div>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th class="text-center">Qty</th>
+                  {% if show_order_financials %}<th class="text-end">Unit</th><th>Pay</th><th class="text-end">Subtotal</th>{% endif %}
+                  {% if show_profit %}<th class="text-end">Profit</th>{% endif %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in order.summary_items %}
+                  <tr>
+                    <td>
+                      <div class="d-flex align-items-center gap-2">
+                        {% if item.image_url %}<img src="{{ item.image_url }}" alt="" style="width:38px;height:38px;object-fit:cover;border-radius:.5rem;border:1px solid var(--app-border)">{% endif %}
+                        <div>
+                          {% if item.product %}<a class="top-name" href="{% url 'product_detail' item.product.id %}">{{ item.display_name }}</a>{% else %}{{ item.display_name }}{% endif %}
+                          {% if item.product %}<div class="tiny">{{ item.product.barcode }}</div>{% endif %}
+                        </div>
+                      </div>
+                    </td>
+                    <td class="text-center num">{{ item.quantity }}</td>
+                    {% if show_order_financials %}
+                      <td class="text-end num">EUR {{ item.unit_price|floatformat:2 }}</td>
+                      <td><span class="pay-pill">{{ item.payment_label }}</span></td>
+                      <td class="text-end num fw-bold">EUR {{ item.line_total|floatformat:2 }}</td>
+                    {% endif %}
+                    {% if show_profit %}<td class="text-end num {% if item.line_profit < 0 %}text-danger{% endif %}">EUR {{ item.line_profit|floatformat:2 }}</td>{% endif %}
+                  </tr>
+                {% endfor %}
+              </tbody>
+              {% if show_order_financials %}
+                <tfoot>
+                  <tr>
+                    <th>Total</th>
+                    <th class="text-center">{{ order.summary_qty }}</th>
+                    <th></th><th></th>
+                    <th class="text-end">EUR {{ order.summary_total|floatformat:2 }}</th>
+                    {% if show_profit %}<th class="text-end">EUR {{ order.summary_profit|floatformat:2 }}</th>{% endif %}
+                  </tr>
+                </tfoot>
+              {% endif %}
+            </table>
+          </div>
+          {% if order.summary_pay|length > 1 %}
+            <div class="d-flex flex-wrap gap-2 mt-3">{% for p in order.summary_pay %}<span class="pay-pill">{{ p.label }} €{{ p.amount|floatformat:2 }}</span>{% endfor %}</div>
+          {% endif %}
+        </div>
+        <div class="modal-footer">
+          <a class="btn btn-outline-dark" href="{{ order.detail_url }}">Print receipt</a>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endfor %}
+
+{% if show_order_financials and payment_rows %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  (function () {
+    if (!window.Chart) return;
+    var el = document.getElementById('dayPayChart');
+    if (!el) return;
+    var d = JSON.parse(document.getElementById('dayPayData').textContent);
+    new Chart(el, {
+      type: 'doughnut',
+      data: { labels: d.map(function (x) { return x.label; }), datasets: [{ data: d.map(function (x) { return x.amount; }), backgroundColor: window.CHART_PALETTE, borderWidth: 0 }] },
+      options: { responsive: true, maintainAspectRatio: false, cutout: '62%', plugins: { legend: { display: false }, tooltip: { callbacks: { label: function (c) { return c.label + ': €' + Number(c.raw).toFixed(2); } } } } },
+    });
+  }());
+</script>
+{% endif %}
+{% endblock %}

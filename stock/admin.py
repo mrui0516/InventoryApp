@@ -1,14 +1,28 @@
 from django.contrib import admin, messages
 from django.core.management import call_command
-from django.utils.html import format_html, mark_safe
+from django.utils.html import format_html
 from django.urls import reverse
-from django.db.models import Sum
-from decimal import Decimal
 from .models import (
     Product, Purchase, Sale, SaleOrder, Brand, ProductSeries,
     Category, Supplier, Customer, ProductImage, DailySalesSummary, InboundOrder,
-    ARInvoice, ARItem, ARPayment, AttendanceRecord, PrintProfile
+    ARInvoice, ARItem, ARPayment, AttendanceRecord, PrintProfile, StockAdjustmentLog,
+    SalesTarget, SaleOrderPayment, Store, StoreProfile
 )
+
+
+@admin.register(Store)
+class StoreAdmin(admin.ModelAdmin):
+    list_display = ('name', 'code', 'is_active', 'is_default', 'created_at')
+    list_filter = ('is_active', 'is_default')
+    search_fields = ('name', 'code')
+
+
+@admin.register(StoreProfile)
+class StoreProfileAdmin(admin.ModelAdmin):
+    list_display = ('user', 'store')
+    list_filter = ('store',)
+    search_fields = ('user__username',)
+    autocomplete_fields = ('user',)
 
 # 统一产品显示
 def format_product_display(obj):
@@ -219,9 +233,9 @@ class DailySalesSummaryAdmin(admin.ModelAdmin):
         try:
             for summary in queryset:
                 call_command("rebuild_dailysummary", date=summary.date.strftime("%Y-%m-%d"))
-            self.message_user(request, f"✅ Rebuilt {queryset.count()} summaries.", level=messages.SUCCESS)
+            self.message_user(request, f"Rebuilt {queryset.count()} summaries.", level=messages.SUCCESS)
         except Exception as e:
-            self.message_user(request, f"❌ Error: {e}", level=messages.ERROR)
+            self.message_user(request, f"Error: {e}", level=messages.ERROR)
 
 
 @admin.register(ARInvoice)
@@ -251,5 +265,36 @@ class AttendanceRecordAdmin(admin.ModelAdmin):
 
 @admin.register(PrintProfile)
 class PrintProfileAdmin(admin.ModelAdmin):
-    list_display = ('name', 'phone', 'email', 'updated_at')
+    list_display = ('name', 'store', 'phone', 'email', 'updated_at')
+    list_filter = ('store',)
+
+
+@admin.register(StockAdjustmentLog)
+class StockAdjustmentLogAdmin(admin.ModelAdmin):
+    list_display = ('product', 'adjustment_type', 'old_value', 'new_value', 'user', 'created_at')
+    list_filter = ('adjustment_type', 'created_at')
+    search_fields = ('product__name', 'product__barcode')
+    date_hierarchy = 'created_at'
+    readonly_fields = ('user', 'product', 'purchase', 'adjustment_type', 'old_value', 'new_value', 'created_at')
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(SalesTarget)
+class SalesTargetAdmin(admin.ModelAdmin):
+    list_display = ('category', 'monthly_amount', 'updated_at')
+    list_editable = ('monthly_amount',)
+    ordering = ('category__name',)
+
+
+@admin.register(SaleOrderPayment)
+class SaleOrderPaymentAdmin(admin.ModelAdmin):
+    list_display = ('order', 'method', 'amount', 'created_at')
+    list_filter = ('method', 'created_at')
+    search_fields = ('order__id', 'order__customer__name')
+    date_hierarchy = 'created_at'
 

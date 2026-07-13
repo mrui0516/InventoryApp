@@ -2,7 +2,7 @@
 {% block title %}New IOU / AR{% endblock %}
 
 {% block content %}
-<h2 class="mb-3">🧾 Create New IOU</h2>
+<h1 class="pos-title mb-3">Create new IOU</h1>
 
 <form id="ar-form" method="post" class="card p-3 shadow-sm">
   {% csrf_token %}
@@ -10,7 +10,7 @@
   <!-- 客户选择 -->
   <div class="row g-3 align-items-end">
     <div class="col-md-6 position-relative">
-      <label class="form-label fw-bold">Customer <span class="text-danger">*</span></label>
+      <label for="customer-search" class="form-label fw-bold">Customer <span class="text-danger">*</span></label>
       <input type="hidden" name="customer" id="customer-id" required
        value="{{ pre_customer.id|default:'' }}">
       <input type="text" id="customer-search" class="form-control"
@@ -18,14 +18,15 @@
        value="{% if pre_customer %}{{ pre_customer.name }} ({{ pre_customer.nif }}){% endif %}">
       <div id="customer-suggestions"
            class="list-group position-absolute w-100 shadow-sm d-none"
+           role="listbox" aria-label="Customer suggestions"
            style="z-index:1000; max-height:280px; overflow:auto;"></div>
     </div>
     <div class="col-md-3">
-      <label class="form-label fw-bold">Due Date <span class="text-danger">*</span></label>
+      <label for="{{ form.due_date.id_for_label }}" class="form-label fw-bold">Due Date <span class="text-danger">*</span></label>
       {{ form.due_date }}
     </div>
     <div class="col-12">
-      <label class="form-label fw-bold">Note</label>
+      <label for="{{ form.note.id_for_label }}" class="form-label fw-bold">Note</label>
       {{ form.note }}
     </div>
   </div>
@@ -33,7 +34,7 @@
   <hr class="my-3">
 
   <!-- 行项目 -->
-  <h5 class="mb-2">🧾 Items</h5>
+  <h5 class="mb-2">Items</h5>
   <div class="table-responsive">
     <table class="table table-bordered align-middle mb-2" id="item-table">
       <thead class="table-light text-center">
@@ -51,7 +52,7 @@
           <td><input type="number" name="quantity" class="form-control text-end" value="1" min="1" step="1" required></td>
           <td><input type="number" name="unit_price" class="form-control text-end" step="0.01" min="0.01" required></td>
           <td class="subtotal text-end">€0.00</td>
-          <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger remove-row">✕</button></td>
+          <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger remove-row" aria-label="Remove row">&times;</button></td>
         </tr>
       </tbody>
       <tfoot>
@@ -67,8 +68,8 @@
   </div>
 
   <div class="d-flex gap-2">
-    <button type="button" class="btn btn-outline-secondary" id="add-row">＋ Add Row</button>
-    <button type="submit" class="btn btn-primary">💾 Save IOU</button>
+    <button type="button" class="btn btn-outline-secondary" id="add-row">Add row</button>
+    <button type="submit" class="btn btn-primary">Save IOU</button>
   </div>
 </form>
 
@@ -106,7 +107,7 @@
       <td><input type="number" name="quantity" class="form-control text-end" value="1" min="1" step="1" required></td>
       <td><input type="number" name="unit_price" class="form-control text-end" step="0.01" min="0.01" required></td>
       <td class="subtotal text-end">€0.00</td>
-      <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger remove-row">✕</button></td>`;
+      <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger remove-row" aria-label="Remove row">&times;</button></td>`;
     tbody.appendChild(tr);
     recalc();
   }
@@ -135,6 +136,7 @@
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'list-group-item list-group-item-action';
+      btn.setAttribute('role', 'option');
       btn.textContent = `${c.name} (${c.nif})`;
       btn.addEventListener('click', ()=> chooseCustomer(idx));
       box.appendChild(btn);

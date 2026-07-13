@@ -1,0 +1,53 @@
+{% extends 'stock/base.html' %}
+{% block title %}{% if is_create %}Add Store{% else %}Edit Store{% endif %}{% endblock %}
+
+{% block content %}
+<style>
+  .shell{max-width:720px;margin:0 auto}
+  .cardx{background:#fff;border:1px solid var(--app-border);border-radius:var(--app-radius);box-shadow:var(--app-shadow)}
+  .head{padding:1.35rem}
+  .head h1{margin:0;font-size:2rem;font-weight:900;color:var(--app-text)}
+  .sub{color:var(--app-muted)}
+</style>
+
+<div class="shell d-grid gap-4">
+  <section class="cardx head">
+    <div class="d-flex justify-content-between gap-3 flex-wrap">
+      <h1>{% if is_create %}Add Store{% else %}Edit Store{% endif %}</h1>
+      <a href="{% url 'store_list' %}" class="btn btn-outline-secondary">Back to stores</a>
+    </div>
+  </section>
+
+  <form method="post" class="cardx p-4">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+    <div class="row g-3">
+      <div class="col-md-8">
+        <label class="form-label fw-bold" for="{{ form.name.id_for_label }}">Store name</label>
+        {{ form.name }}
+        {% if form.name.errors %}<div class="text-danger small mt-1">{{ form.name.errors|join:', ' }}</div>{% endif %}
+      </div>
+      <div class="col-md-4">
+        <label class="form-label fw-bold" for="{{ form.code.id_for_label }}">Short code</label>
+        {{ form.code }}
+        {% if form.code.errors %}<div class="text-danger small mt-1">{{ form.code.errors|join:', ' }}</div>{% endif %}
+      </div>
+      <div class="col-12 d-flex gap-4 flex-wrap mt-2">
+        <div class="form-check">
+          {{ form.is_active }}
+          <label class="form-check-label fw-bold" for="{{ form.is_active.id_for_label }}">Active</label>
+        </div>
+        <div class="form-check">
+          {{ form.is_default }}
+          <label class="form-check-label fw-bold" for="{{ form.is_default.id_for_label }}">Default store</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="d-flex gap-2 flex-wrap mt-4">
+      <button type="submit" class="btn btn-primary">{% if is_create %}Create store{% else %}Save changes{% endif %}</button>
+      <a href="{% url 'store_list' %}" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -3,23 +3,7 @@
 {% block content %}
 <div class="container my-4 customer-page">
   <style>
-    .customer-page{
-      --bg:#f6f7fb;
-      --card:#ffffff;
-      --text:#0f172a;
-      --muted:#475569;
-      --border:rgba(15,23,42,.1);
-      --accent:#2563eb;
-      --accent-soft:#e8f0ff;
-      --success:#047857;
-      --success-soft:#ecfdf5;
-      --warning:#b45309;
-      --warning-soft:#fff7ed;
-      --danger:#b91c1c;
-      --danger-soft:#fef2f2;
-      --shadow:0 14px 32px rgba(15,23,42,.08);
-      --radius:20px;
-    }
+    /* Design tokens inherited from app.css (dense-flat system) */
 
     .hero-card,
     .summary-card,
@@ -518,7 +502,151 @@
       font-weight:700;
     }
 
+    .insight-grid{
+      display:grid;
+      grid-template-columns:1.6fr 1fr;
+      gap:1rem;
+      margin-bottom:1rem;
+    }
+    .panel-card{
+      background:var(--card);
+      border:1px solid var(--border);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      padding:1rem 1.1rem;
+    }
+    .panel-card h3{
+      margin:0 0 .8rem;
+      color:var(--text);
+      font-size:1.1rem;
+      font-weight:900;
+    }
+    .chart-box{
+      position:relative;
+      height:240px;
+    }
+    .chart-box.donut{
+      height:200px;
+    }
+    .mix-legend{
+      display:flex;
+      flex-wrap:wrap;
+      gap:.45rem;
+      justify-content:center;
+      margin-top:.8rem;
+    }
+    .top-row{
+      display:grid;
+      grid-template-columns:44px minmax(0,1fr) auto;
+      gap:.85rem;
+      align-items:center;
+      padding:.6rem 0;
+      border-top:1px solid rgba(148,163,184,.16);
+    }
+    .top-row:first-of-type{
+      border-top:0;
+    }
+    .top-thumb,
+    .top-thumb-empty{
+      width:44px;
+      height:44px;
+      border-radius:12px;
+      border:1px solid rgba(148,163,184,.24);
+      background:#f8fafc;
+      overflow:hidden;
+      padding:0;
+    }
+    .top-thumb{cursor:zoom-in;display:block}
+    .top-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+    .top-thumb-empty{display:grid;place-items:center;font-size:.6rem;color:var(--muted);font-weight:800;text-align:center}
+    .top-name{color:var(--text);font-weight:800;text-decoration:none}
+    .top-name:hover{color:#1d4ed8}
+    .top-bar{height:7px;border-radius:999px;background:#eef2f7;margin-top:.4rem;overflow:hidden}
+    .top-bar span{display:block;height:100%;background:linear-gradient(90deg,#2563eb,#60a5fa)}
+    .top-metric{text-align:right;white-space:nowrap;font-weight:900;color:var(--text)}
+    .top-metric .sub{color:var(--muted);font-size:.82rem;font-weight:700}
+
+    .filter-card{
+      background:var(--card);
+      border:1px solid var(--border);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      padding:.85rem 1rem;
+      margin-bottom:1rem;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:1rem;
+      flex-wrap:wrap;
+    }
+    .filter-presets{
+      display:flex;
+      gap:.4rem;
+      flex-wrap:wrap;
+    }
+    .preset{
+      padding:.42rem .85rem;
+      border-radius:999px;
+      border:1px solid rgba(148,163,184,.3);
+      background:#f8fafc;
+      color:#334155;
+      font-weight:800;
+      font-size:.86rem;
+      text-decoration:none;
+    }
+    .preset.active{
+      background:var(--accent);
+      border-color:var(--accent);
+      color:#fff;
+    }
+    .filter-range{
+      display:flex;
+      gap:.5rem;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+    .filter-range input[type=date]{
+      border:1px solid var(--border);
+      border-radius:12px;
+      padding:.42rem .6rem;
+      font-weight:700;
+      color:var(--text);
+      background:#fff;
+    }
+    .filter-range .sep{color:var(--muted);font-weight:800}
+
+    details.month-card > summary.month-head{
+      cursor:pointer;
+      list-style:none;
+    }
+    details.month-card > summary.month-head::-webkit-details-marker{display:none}
+    .month-head{border-bottom:0}
+    details.month-card[open] > summary.month-head{
+      border-bottom:1px solid rgba(148,163,184,.16);
+    }
+    .month-head-end{
+      display:flex;
+      align-items:center;
+      gap:.9rem;
+    }
+    .month-arrow{
+      width:12px;
+      height:12px;
+      border-right:3px solid #0f172a;
+      border-bottom:3px solid #0f172a;
+      transform:rotate(45deg);
+      transition:transform .2s ease, border-color .2s ease;
+      flex:0 0 auto;
+    }
+    details.month-card[open] .month-arrow{
+      transform:rotate(225deg);
+      border-color:#1d4ed8;
+    }
+
     @media (max-width: 991.98px){
+      .insight-grid{
+        grid-template-columns:1fr;
+      }
       .hero-card,
       .hero-main,
       .month-head,
@@ -589,7 +717,6 @@
       <div class="avatar">{{ customer.name|default:"?"|first|upper }}</div>
       <div class="hero-text">
         <h1 class="hero-title">{{ customer.name }}</h1>
-        <p class="hero-sub">A full relationship view with contact details, payment follow-up, and order history grouped by month, date, and time.</p>
         {% if show_sensitive %}
           <div class="hero-grid">
             <div class="hero-field">
@@ -619,6 +746,21 @@
       </div>
     {% endif %}
   </div>
+
+  <form method="get" class="filter-card">
+    <div class="filter-presets">
+      <a href="?preset=all" class="preset {% if range_key == 'all' %}active{% endif %}">All time</a>
+      <a href="?preset=month" class="preset {% if range_key == 'month' %}active{% endif %}">This month</a>
+      <a href="?preset=year" class="preset {% if range_key == 'year' %}active{% endif %}">This year</a>
+    </div>
+    <div class="filter-range">
+      <input type="date" name="start_date" value="{{ start_date }}">
+      <span class="sep">→</span>
+      <input type="date" name="end_date" value="{{ end_date }}">
+      <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+      {% if range_active %}<a href="?preset=all" class="btn btn-outline-secondary btn-sm">Reset</a>{% endif %}
+    </div>
+  </form>
 
   <div class="summary-grid">
     {% if show_sales_sensitive %}
@@ -660,6 +802,21 @@
       <div class="summary-value">{{ total_items }}</div>
       <div class="summary-sub">Units sold to this customer</div>
     </div>
+    <div class="summary-card">
+      <div class="summary-label">Customer Since</div>
+      <div class="summary-value">{% if cadence.since %}{{ cadence.since|date:"Y-m" }}{% else %}-{% endif %}</div>
+      <div class="summary-sub">{% if cadence.since %}First recorded order{% else %}No orders yet{% endif %}</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Avg Days Between Orders</div>
+      <div class="summary-value">{% if cadence.avg_gap_days is not None %}{{ cadence.avg_gap_days }}{% else %}-{% endif %}</div>
+      <div class="summary-sub">Across {{ total_orders }} order{{ total_orders|pluralize }}</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Orders / Month</div>
+      <div class="summary-value">{% if cadence.orders_per_month is not None %}{{ cadence.orders_per_month }}{% else %}-{% endif %}</div>
+      <div class="summary-sub">Average ordering frequency</div>
+    </div>
     {% if show_sales_sensitive %}
       <div class="summary-card">
         <div class="summary-label">Largest Order</div>
@@ -675,6 +832,58 @@
       </div>
     {% endif %}
   </div>
+
+  {% if show_sales_sensitive and spend_trend %}
+    {{ spend_trend|json_script:"spendTrendData" }}
+    {% if payment_mix %}{{ payment_mix|json_script:"payMixData" }}{% endif %}
+    <div class="insight-grid">
+      <section class="panel-card">
+        <h3>Monthly Spend</h3>
+        <div class="chart-box"><canvas id="custSpendChart"></canvas></div>
+      </section>
+      {% if payment_mix %}
+        <section class="panel-card">
+          <h3>Payment Mix</h3>
+          <div class="chart-box donut"><canvas id="custPayChart"></canvas></div>
+          <div class="mix-legend">
+            {% for p in payment_mix %}<span class="pay-pill">{{ p.label }} {{ p.pct }}%</span>{% endfor %}
+          </div>
+        </section>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if top_products %}
+    <section class="panel-card" style="margin-bottom:1rem;">
+      <h3>Top Products</h3>
+      {% for tp in top_products %}
+        <div class="top-row">
+          {% if tp.image_url %}
+            <button type="button" class="top-thumb" data-product-preview-url="{{ tp.image_url }}" data-product-preview-title="{{ tp.name }}">
+              <img src="{{ tp.image_url }}" alt="{{ tp.name }}">
+            </button>
+          {% else %}
+            <div class="top-thumb-empty">No image</div>
+          {% endif %}
+          <div>
+            {% if tp.product %}
+              <a class="top-name" href="{% url 'product_detail' tp.product.id %}">{{ tp.name }}</a>
+            {% else %}
+              <span class="top-name">{{ tp.name }}</span>
+            {% endif %}
+            <div class="top-bar"><span style="width:{{ tp.bar }}%"></span></div>
+          </div>
+          <div class="top-metric">
+            {% if show_sales_sensitive %}
+              €{{ tp.spend|floatformat:2 }}<div class="sub">{{ tp.qty }} units</div>
+            {% else %}
+              {{ tp.qty }} units
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </section>
+  {% endif %}
 
   {% if show_ar %}
     <div class="ar-card">
@@ -757,25 +966,28 @@
 
   <div class="section-head">
     <h3>Order Timeline</h3>
-    <span class="section-note">{{ total_orders }} orders grouped by month, date, and time</span>
+    <span class="section-note">{{ range_label }} · {{ total_orders }} order{{ total_orders|pluralize }} · {{ total_items }} items{% if show_sales_sensitive %} · €{{ total_spent|floatformat:2 }}{% endif %}</span>
   </div>
 
   {% for month in month_blocks %}
-    <section class="month-card">
-      <div class="month-head">
+    <details class="month-card">
+      <summary class="month-head">
         <div>
           <div class="month-title">{{ month.month_label }}</div>
           <div class="month-meta">{{ month.totals.orders }} orders, {{ month.totals.qty }} items</div>
         </div>
-        {% if show_sales_sensitive %}
-          <div>
-            <div class="month-amount">€{{ month.totals.amount|floatformat:2 }}</div>
-            {% if show_profit %}
-              <div class="profit-note {% if month.totals.profit < 0 %}negative{% endif %}">Profit €{{ month.totals.profit|floatformat:2 }}</div>
-            {% endif %}
-          </div>
-        {% endif %}
-      </div>
+        <div class="month-head-end">
+          {% if show_sales_sensitive %}
+            <div>
+              <div class="month-amount">€{{ month.totals.amount|floatformat:2 }}</div>
+              {% if show_profit %}
+                <div class="profit-note {% if month.totals.profit < 0 %}negative{% endif %}">Profit €{{ month.totals.profit|floatformat:2 }}</div>
+              {% endif %}
+            </div>
+          {% endif %}
+          <span class="month-arrow" aria-hidden="true"></span>
+        </div>
+      </summary>
       {% if show_sales_sensitive and month.payment_breakdown %}
         <div class="month-payments">
           {% for pay in month.payment_breakdown %}
@@ -785,7 +997,7 @@
       {% endif %}
       <div class="month-body">
         {% for day in month.day_blocks %}
-          <details class="day-entry" {% if forloop.first and forloop.parentloop.first %}open{% endif %}>
+          <details class="day-entry">
             <summary class="day-summary">
               <div class="day-summary-main">
                 <div class="day-date">{{ day.date }}</div>
@@ -907,9 +1119,9 @@
           </details>
         {% endfor %}
       </div>
-    </section>
+    </details>
   {% empty %}
-    <div class="empty-card">No orders for this customer yet.</div>
+    <div class="empty-card">{% if range_active %}No orders in this date range.{% else %}No orders for this customer yet.{% endif %}</div>
   {% endfor %}
 
   {% if show_sensitive %}
@@ -919,7 +1131,7 @@
           {% csrf_token %}
           <div class="modal-header">
             <h5 class="modal-title text-danger">Confirm Deletion</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
             <p>Are you sure you want to delete <strong>{{ customer.name }}</strong> and all related data?</p>
@@ -938,7 +1150,7 @@
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title" id="customerProductPreviewTitle">Product image</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body p-3">
           <img id="customerProductPreviewImg" src="" alt="" class="img-fluid w-100 rounded-4">
@@ -963,4 +1175,38 @@
     });
   }());
 </script>
+{% if show_sales_sensitive and spend_trend %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  (function () {
+    if (!window.Chart) return;
+    const trendEl = document.getElementById('custSpendChart');
+    if (trendEl) {
+      const d = JSON.parse(document.getElementById('spendTrendData').textContent);
+      new Chart(trendEl, {
+        type: 'bar',
+        data: { labels: d.map(x => x.label), datasets: [{ data: d.map(x => x.amount), backgroundColor: '#2563eb', borderRadius: 6, maxBarThickness: 46 }] },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => '€' + Number(c.raw).toFixed(2) } } },
+          scales: { y: { beginAtZero: true, ticks: { callback: v => '€' + v } } }
+        }
+      });
+    }
+    const payEl = document.getElementById('custPayChart');
+    const payDataEl = document.getElementById('payMixData');
+    if (payEl && payDataEl) {
+      const d = JSON.parse(payDataEl.textContent);
+      new Chart(payEl, {
+        type: 'doughnut',
+        data: { labels: d.map(x => x.label), datasets: [{ data: d.map(x => x.amount), backgroundColor: window.CHART_PALETTE, borderWidth: 0 }] },
+        options: {
+          responsive: true, maintainAspectRatio: false, cutout: '60%',
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => c.label + ': €' + Number(c.raw).toFixed(2) } } }
+        }
+      });
+    }
+  }());
+</script>
+{% endif %}
 {% endblock %}

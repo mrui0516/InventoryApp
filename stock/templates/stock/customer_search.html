@@ -4,20 +4,11 @@
 {% block content %}
 <div class="container my-4 customer-page">
   <style>
+    /* Neutrals/radius/shadow inherited from app.css; keep page-local aliases */
     .customer-page{
-      --page-bg:#f4f6fb;
-      --card:#ffffff;
-      --text:#0f172a;
-      --muted:#64748b;
-      --border:rgba(15,23,42,.09);
-      --primary:#1d4ed8;
-      --primary-soft:#e8efff;
-      --success:#047857;
-      --success-soft:#ecfdf5;
-      --warning:#b45309;
-      --warning-soft:#fff7ed;
-      --shadow:0 16px 34px rgba(15,23,42,.08);
-      --radius:22px;
+      --page-bg:var(--app-bg);
+      --primary:var(--app-accent);
+      --primary-soft:var(--app-accent-soft);
     }
     .customer-shell{
       display:grid;
@@ -322,6 +313,42 @@
     .text-error{
       color:#b91c1c;
     }
+    .activity-card{
+      display:grid;
+      grid-template-columns:190px 1fr;
+      gap:1.3rem;
+      align-items:center;
+      padding:1.1rem 1.2rem;
+    }
+    .activity-chart{
+      position:relative;
+      height:170px;
+    }
+    .activity-legend{
+      display:grid;
+      gap:.55rem;
+      align-content:center;
+    }
+    .activity-legend .row{
+      display:flex;
+      align-items:center;
+      gap:.6rem;
+      color:var(--text);
+      font-weight:800;
+    }
+    .activity-legend .dot{
+      width:12px;
+      height:12px;
+      border-radius:4px;
+      flex:0 0 12px;
+    }
+    .activity-legend .dot[data-i="0"]{background:#2563eb}
+    .activity-legend .dot[data-i="1"]{background:#f59e0b}
+    .activity-legend .dot[data-i="2"]{background:#94a3b8}
+    .activity-legend .val{
+      margin-left:auto;
+      font-weight:900;
+    }
 
     @media (max-width: 1199.98px){
       .metric-grid,
@@ -349,6 +376,9 @@
       .customer-metrics{
         grid-template-columns:1fr;
       }
+      .activity-card{
+        grid-template-columns:1fr;
+      }
       .hero-title{
         font-size:1.65rem;
       }
@@ -366,10 +396,6 @@
     <section class="hero-card">
       <div>
         <h1 class="hero-title">Customer Management</h1>
-        <p class="hero-copy">
-          Search by name, NIF, phone, or email, then open a customer profile to review order history,
-          payment follow-up, and relationship notes in one place.
-        </p>
       </div>
       <div class="hero-tools">
         {% if query %}
@@ -409,6 +435,18 @@
         {% endif %}
       </article>
     </section>
+
+    {% if customer_summary.customer_count %}
+      <section class="metric-card activity-card">
+        {{ activity_breakdown|json_script:"activityData" }}
+        <div class="activity-chart"><canvas id="activityChart"></canvas></div>
+        <div class="activity-legend">
+          {% for a in activity_breakdown %}
+            <div class="row"><span class="dot" data-i="{{ forloop.counter0 }}"></span>{{ a.label }}<span class="val">{{ a.value }}</span></div>
+          {% endfor %}
+        </div>
+      </section>
+    {% endif %}
 
     <section class="toolbar-card">
       <form method="get" role="search">
@@ -572,7 +610,7 @@
           {% csrf_token %}
           <div class="modal-header">
             <h5 class="modal-title">Add New Customer</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
             <div class="mb-3">
@@ -666,6 +704,23 @@
           });
       });
     });
+  </script>
+{% endif %}
+
+{% if customer_summary.customer_count %}
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    (function () {
+      if (!window.Chart) return;
+      const el = document.getElementById('activityChart');
+      if (!el) return;
+      const d = JSON.parse(document.getElementById('activityData').textContent);
+      new Chart(el, {
+        type: 'doughnut',
+        data: { labels: d.map(x => x.label), datasets: [{ data: d.map(x => x.value), backgroundColor: ['#2563eb', '#f59e0b', '#94a3b8'], borderWidth: 0 }] },
+        options: { responsive: true, maintainAspectRatio: false, cutout: '62%', plugins: { legend: { display: false } } }
+      });
+    }());
   </script>
 {% endif %}
 {% endblock %}

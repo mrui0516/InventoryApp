@@ -4,15 +4,12 @@
 
 {% block content %}
 <style>
+  /* Neutrals/shadow inherited from app.css; keep page-local aliases */
   .product-detail-page{
-    --page-bg:#f4f7fb;
-    --card-bg:#ffffff;
-    --border:#d7e0ea;
-    --text:#102033;
-    --muted:#64748b;
-    --accent:#0f766e;
-    --accent-soft:#e6fffb;
-    --shadow:0 14px 30px rgba(15, 23, 42, .08);
+    --page-bg:var(--app-bg);
+    --card-bg:var(--app-surface);
+    --accent:var(--app-accent);
+    --accent-soft:var(--app-accent-soft);
   }
   .product-detail-page .hero{
     display:flex;
@@ -364,11 +361,36 @@
 
     <div class="col-xl-5">
       {% if show_sensitive %}
+        {% if supplier_costs %}
+          <div class="card-shell p-4 mb-4">
+            <div class="panel-head"><div><h3>Suppliers &amp; cost</h3></div></div>
+            <div class="table-shell">
+              <table class="table table-sm align-middle">
+                <thead>
+                  <tr><th>Supplier</th><th>Last cost</th><th>Min / Avg / Max</th><th>Batches</th></tr>
+                </thead>
+                <tbody>
+                  {% for s in supplier_costs %}
+                    <tr>
+                      <td>
+                        {% if s.supplier_id %}<a class="text-decoration-none" href="{% url 'supplier_detail' s.supplier_id %}">{{ s.name }}</a>{% else %}<span class="muted">{{ s.name }}</span>{% endif %}
+                        {% if s.supplier_id == cheapest_supplier_id %}<span class="badge bg-success ms-1">Cheapest</span>{% endif %}
+                      </td>
+                      <td class="fw-bold">{% if s.last_cost is not None %}EUR {{ s.last_cost|floatformat:2 }}{% else %}-{% endif %}{% if s.last_date %}<div class="muted small">{{ s.last_date|date:"Y-m-d" }}</div>{% endif %}</td>
+                      <td class="small">{% if s.min_cost is not None %}EUR {{ s.min_cost|floatformat:2 }} / {{ s.avg_cost|floatformat:2 }} / {{ s.max_cost|floatformat:2 }}{% else %}-{% endif %}</td>
+                      <td>{{ s.batches }} · {{ s.units }}u</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        {% endif %}
+
         <div class="card-shell p-4 mb-4">
           <div class="panel-head">
             <div>
               <h3>Purchase History</h3>
-              <p>Latest inbound layers and remaining stock.</p>
             </div>
           </div>
           <div class="table-shell">
