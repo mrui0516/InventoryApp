@@ -1,11 +1,13 @@
 import csv
 import json
+import tempfile
 from io import StringIO
 from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -2520,3 +2522,70 @@ class CloudinaryClientTests(SimpleTestCase):
              mock.patch("cloudinary.config"):
             with self.assertRaises(CloudinaryError):
                 CloudinaryClient().upload_image("/tmp/a.jpg", public_id="123", asset_folder="product_images")
+
+
+def _make_product(barcode="111", brand="Lattafa"):
+    from stock.models import Product
+    return Product.objects.create(name="X", brand=brand, barcode=barcode)
+
+
+def _tiny_png():
+    # 1x1 transparent PNG
+    import base64
+    data = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    )
+    return SimpleUploadedFile("p.png", data, content_type="image/png")
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class CloudinarySyncTests(TestCase):
+    def test_upload_when_primary_exists(self):
+        from stock.models import ProductImage
+        from stock.services import cloudinary_sync
+        p = _make_product(barcode="222", brand="Lattafa")
+        ProductImage.objects.create(product=p, image=_tiny_png())
+        client = mock.Mock()
+        code, _ = cloudinary_sync.sync_product_primary_image(p, client=client)
+        self.assertEqual(code, cloudinary_sync.UPLOADED)
+        _, kwargs = client.upload_image.call_args
+        self.assertEqual(kwargs["public_id"], "222")
+        self.assertEqual(kwargs["asset_folder"], "product_images/Lattafa")
+
+    def test_delete_when_no_image(self):
+        from stock.services import cloudinary_sync
+        p = _make_product(barcode="333")
+        client = mock.Mock()
+        code, _ = cloudinary_sync.sync_product_primary_image(p, client=client)
+        self.assertEqual(code, cloudinary_sync.DELETED)
+        client.delete_image.assert_called_once_with("333")
+
+    def test_skip_no_barcode(self):
+        from stock.services import cloudinary_sync
+        p = _make_product(barcode="")
+        client = mock.Mock()
+        code, _ = cloudinary_sync.sync_product_primary_image(p, client=client)
+        self.assertEqual(code, cloudinary_sync.SKIP_NO_BARCODE)
+        client.upload_image.assert_not_called()
+        client.delete_image.assert_not_called()
+
+    def test_error_wrapped(self):
+        from stock.models import ProductImage
+        from stock.services import cloudinary_sync
+        from stock.services.cloudinary_client import CloudinaryError
+        p = _make_product(barcode="444")
+        ProductImage.objects.create(product=p, image=_tiny_png())
+        client = mock.Mock()
+        client.upload_image.side_effect = CloudinaryError("nope")
+        code, _ = cloudinary_sync.sync_product_primary_image(p, client=client)
+        self.assertEqual(code, cloudinary_sync.ERROR)
+
+    def test_dry_run_makes_no_calls(self):
+        from stock.models import ProductImage
+        from stock.services import cloudinary_sync
+        p = _make_product(barcode="555")
+        ProductImage.objects.create(product=p, image=_tiny_png())
+        client = mock.Mock()
+        code, _ = cloudinary_sync.sync_product_primary_image(p, client=client, dry_run=True)
+        self.assertEqual(code, cloudinary_sync.UPLOADED)
+        client.upload_image.assert_not_called()
