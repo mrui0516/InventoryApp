@@ -166,3 +166,10 @@ SHOPIFY_AUTO_CREATE = os.environ.get('SHOPIFY_AUTO_CREATE', '') in {'1', 'true',
 # Status for products the sync creates. DRAFT (default) so new products are
 # reviewed before going live; set to ACTIVE to publish immediately.
 SHOPIFY_NEW_PRODUCT_STATUS = os.environ.get('SHOPIFY_NEW_PRODUCT_STATUS', 'DRAFT').upper()
+
+# --- Cloudinary (product image mirror) ---
+CLOUDINARY_CLOUD_NAME = os.environ.get('CLOUDINARY_CLOUD_NAME', 'bulvpmzg')
+CLOUDINARY_API_KEY = os.environ.get('CLOUDINARY_API_KEY', '')
+CLOUDINARY_API_SECRET = os.environ.get('CLOUDINARY_API_SECRET', '')
+CLOUDINARY_FOLDER = os.environ.get('CLOUDINARY_FOLDER', 'product_images')
+CLOUDINARY_AUTO_SYNC = os.environ.get('CLOUDINARY_AUTO_SYNC', '') in {'1', 'true', 'True', 'yes', 'on'}

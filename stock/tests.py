@@ -2483,3 +2483,40 @@ class UploadPathTests(SimpleTestCase):
             product_image_upload_to(self._obj("A/B:C"), "a.jpg"),
             "product_images/ABC/a.jpg",
         )
+
+
+from unittest import mock
+from django.test import override_settings
+
+
+class CloudinaryClientTests(SimpleTestCase):
+    @override_settings(CLOUDINARY_CLOUD_NAME="c", CLOUDINARY_API_KEY="k", CLOUDINARY_API_SECRET="s")
+    def test_is_configured_true_when_all_present(self):
+        from stock.services.cloudinary_client import CloudinaryClient
+        self.assertTrue(CloudinaryClient().is_configured())
+
+    @override_settings(CLOUDINARY_CLOUD_NAME="c", CLOUDINARY_API_KEY="k", CLOUDINARY_API_SECRET="")
+    def test_is_configured_false_when_secret_missing(self):
+        from stock.services.cloudinary_client import CloudinaryClient
+        self.assertFalse(CloudinaryClient().is_configured())
+
+    @override_settings(CLOUDINARY_CLOUD_NAME="c", CLOUDINARY_API_KEY="k", CLOUDINARY_API_SECRET="s")
+    def test_upload_image_passes_expected_params(self):
+        from stock.services.cloudinary_client import CloudinaryClient
+        with mock.patch("cloudinary.uploader.upload", return_value={"secure_url": "https://x/y.jpg"}) as up, \
+             mock.patch("cloudinary.config"):
+            url = CloudinaryClient().upload_image("/tmp/a.jpg", public_id="123", asset_folder="product_images/Lattafa")
+        self.assertEqual(url, "https://x/y.jpg")
+        _, kwargs = up.call_args
+        self.assertEqual(kwargs["public_id"], "123")
+        self.assertEqual(kwargs["asset_folder"], "product_images/Lattafa")
+        self.assertFalse(kwargs["unique_filename"])
+        self.assertTrue(kwargs["overwrite"])
+
+    @override_settings(CLOUDINARY_CLOUD_NAME="c", CLOUDINARY_API_KEY="k", CLOUDINARY_API_SECRET="s")
+    def test_upload_error_wrapped(self):
+        from stock.services.cloudinary_client import CloudinaryClient, CloudinaryError
+        with mock.patch("cloudinary.uploader.upload", side_effect=RuntimeError("boom")), \
+             mock.patch("cloudinary.config"):
+            with self.assertRaises(CloudinaryError):
+                CloudinaryClient().upload_image("/tmp/a.jpg", public_id="123", asset_folder="product_images")
