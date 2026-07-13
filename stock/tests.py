@@ -2598,6 +2598,7 @@ class CloudinarySignalTests(TestCase):
         from stock.models import ProductImage
         p = _make_product(barcode="666")
         with mock.patch("stock.services.cloudinary_sync.sync_product_primary_image") as sync:
+            sync.return_value = ("uploaded", "ok")
             with self.captureOnCommitCallbacks(execute=True):
                 ProductImage.objects.create(product=p, image=_tiny_png())
         sync.assert_called()
@@ -2608,6 +2609,7 @@ class CloudinarySignalTests(TestCase):
         p = _make_product(barcode="777")
         img = ProductImage.objects.create(product=p, image=_tiny_png())
         with mock.patch("stock.services.cloudinary_sync.sync_product_primary_image") as sync:
+            sync.return_value = ("uploaded", "ok")
             with self.captureOnCommitCallbacks(execute=True):
                 img.delete()
         sync.assert_called()
