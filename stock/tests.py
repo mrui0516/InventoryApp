@@ -1444,6 +1444,7 @@ class SaleOrderCorrectionTests(TestCase):
             "reason": "Employee forgot to input the sale on time",
             "items_json": json.dumps([{"product_id": self.product.id, "qty": 3, "price": "25.00", "payment": "cash"}]),
             "payments_json": json.dumps([{"method": "cash", "amount": "75.00"}]),
+            "affects_stock": "on",
         })
 
         self.assertEqual(response.status_code, 302)
@@ -1475,6 +1476,7 @@ class SaleOrderCorrectionTests(TestCase):
             "reason": "Entered late after stock count",
             "items_json": json.dumps([{"product_id": self.product.id, "qty": 4, "price": "25.00", "payment": "cash"}]),
             "payments_json": json.dumps([{"method": "cash", "amount": "100.00"}]),
+            "affects_stock": "on",
         })
 
         self.assertEqual(response.status_code, 302)
@@ -2901,3 +2903,62 @@ class AffectsStockProfitTests(TestCase):
         self.assertEqual(m[normal.id]["profit"], Decimal("45.00"))
         # no-stock sale is flat 50%
         self.assertEqual(m[no_stock.id]["cost"], Decimal("25.00"))
+
+
+class AffectsStockViewTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        from stock.models import Category, Customer, Product
+        cls.admin = get_user_model().objects.create_superuser(username="affview_admin", password="pw123456")
+        cls.category = Category.objects.create(name="AffView Cat")
+        cls.customer = Customer.objects.create(nif="500500500", name="AffView Cust")
+        cls.product = Product.objects.create(
+            name="Asad", barcode="5550001555", brand="Lattafa",
+            category=cls.category, default_price=Decimal("25.00"),
+        )
+
+    def _purchase(self, remaining=5):
+        from stock.models import Purchase
+        return Purchase.objects.create(product=self.product, supplier=None, quantity=5,
+                                       cost_price=Decimal("10.00"), remaining=remaining)
+
+    def _payload(self, **overrides):
+        data = {
+            "customer": self.customer.id,
+            "order_datetime": timezone.localtime(timezone.now()).strftime("%Y-%m-%dT%H:%M"),
+            "note": "backfill",
+            "reason": "missed historical order",
+            "items_json": json.dumps([{"product_id": self.product.id, "qty": 2, "price": "25.00", "payment": "cash"}]),
+            "payments_json": json.dumps([{"method": "cash", "amount": "50.00"}]),
+        }
+        data.update(overrides)
+        return data
+
+    def test_create_page_shows_checkbox_checked(self):
+        self.client.login(username="affview_admin", password="pw123456")
+        resp = self.client.get(reverse("sale_order_correction_create"))
+        self.assertContains(resp, 'name="affects_stock"')
+        self.assertContains(resp, 'id="affects-stock"')
+
+    def test_unchecked_creates_no_stock_order(self):
+        from stock.models import SaleOrder
+        purchase = self._purchase(remaining=5)
+        self.client.login(username="affview_admin", password="pw123456")
+        # affects_stock omitted from POST => unchecked
+        resp = self.client.post(reverse("sale_order_correction_create"), data=self._payload())
+        self.assertEqual(resp.status_code, 302)
+        order = SaleOrder.objects.latest("id")
+        purchase.refresh_from_db()
+        self.assertFalse(order.affects_stock)
+        self.assertEqual(purchase.remaining, 5)          # not consumed
+
+    def test_checked_creates_stock_order(self):
+        from stock.models import SaleOrder
+        purchase = self._purchase(remaining=5)
+        self.client.login(username="affview_admin", password="pw123456")
+        resp = self.client.post(reverse("sale_order_correction_create"), data=self._payload(affects_stock="on"))
+        self.assertEqual(resp.status_code, 302)
+        order = SaleOrder.objects.latest("id")
+        purchase.refresh_from_db()
+        self.assertTrue(order.affects_stock)
+        self.assertEqual(purchase.remaining, 3)          # consumed 2

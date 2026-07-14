@@ -2420,6 +2420,7 @@ def _sale_order_correction_view(request, order=None):
                     )
                     if selected_store is None:
                         selected_store = (order.store if (order and order.store_id) else None) or store_for_new_sale(request)
+                    affects_stock = ('affects_stock' in request.POST) if order is None else None
                     saved_order = save_sale_order_correction(
                         order=order,
                         customer=form.cleaned_data.get('customer'),
@@ -2430,6 +2431,7 @@ def _sale_order_correction_view(request, order=None):
                         changed_by=request.user,
                         reason=form.cleaned_data['reason'],
                         store=selected_store,
+                        affects_stock=affects_stock,
                     )
                 except ValueError as exc:
                     messages.error(request, str(exc))
@@ -2458,6 +2460,8 @@ def _sale_order_correction_view(request, order=None):
         _default_store = (order.store if (order and order.store_id) else None) or store_for_new_sale(request)
         selected_store_id = _default_store.id if _default_store else None
 
+    affects_stock_checked = ('affects_stock' in request.POST) if request.method == 'POST' else True
+
     return render(request, 'stock/sale_order_correction_form.html', {
         'form': form,
         'order': order,
@@ -2466,6 +2470,7 @@ def _sale_order_correction_view(request, order=None):
         'initial_cart': initial_cart,
         'store_options': stores_for_template,
         'selected_store_id': selected_store_id,
+        'affects_stock_checked': affects_stock_checked,
     })
 
 

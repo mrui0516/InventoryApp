@@ -129,6 +129,14 @@
               {{ form.reason }}
               {% if form.reason.errors %}<div class="text-danger small mt-1">{{ form.reason.errors|join:', ' }}</div>{% endif %}
             </div>
+            {% if is_create %}
+            <div class="col-12">
+              <label class="form-label fw-bold">
+                <input type="checkbox" name="affects_stock" id="affects-stock" {% if affects_stock_checked %}checked{% endif %}>
+                Affects inventory
+              </label>
+            </div>
+            {% endif %}
           </div>
         </section>
 
