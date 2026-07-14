@@ -193,6 +193,7 @@ has_admin_access(user)          → is_superuser only
 - `_restore_current_stock()` 归还旧行项目占用的 FIFO 批次，随后删除全部旧 `Sale` 与旧 `SaleOrderPayment`，`_consume_current_stock()` 按新行项目重新消耗批次并重建 `Sale` + `SaleOrderPayment`（与出货一致的订单级支付权威记录，`Sale.payment_method` 取该行主方式）—— 全程在 `transaction.atomic()` 中执行；两者均委托给 `services/stock_ops.py`（见 5.1）。**因此移除某产品行会真正回滚（库存归还 + 销售记录删除）。**
 - 修正/创建/删除均写入 `SaleOrderChangeLog`（`before_data`/`after_data`/`changed_by`/`reason`），形成可追溯的审计链。
 - 订单修正保存时可改归属店铺：`save_sale_order_correction(store=...)` 显式所选店铺优先，盖到 `SaleOrder` 与重建的每条 `Sale`；`snapshot_sale_order` 记录 `store_id/store_name` 供审计。仅活跃店铺可选，缺失/非法回退原店铺。
+- 补录订单可选「不影响库存」：`SaleOrder.affects_stock`（默认 True）门控创建/编辑/删除的库存扣减与归还；`sale_profit_map_for_sale_ids` 对 `affects_stock=False` 的销售跳过 FIFO 批次、成本/利润各取销售额 50%（`BACKFILL_MARGIN`）。
 
 ### 5.6 库存调整审计（`StockAdjustmentLog`）
 - `api_adjust_purchase_stock`（调整单个批次 `remaining`）与 `api_adjust_total_stock`（调整产品总库存）均要求 `has_manager_access`，并在调整成功后写入一条 `StockAdjustmentLog`（字段：`adjustment_type`、`old_value`、`new_value`、`product`、`purchase`（可空，仅单批次调整时关联）、`user`、`created_at`）。
