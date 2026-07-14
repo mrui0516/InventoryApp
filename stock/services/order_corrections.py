@@ -20,6 +20,7 @@ def snapshot_sale_order(order):
 
     return {
         'order_id': order.id,
+        'affects_stock': order.affects_stock,
         'store_id': order.store_id,
         'store_name': order.store.name if order.store else '',
         'customer_id': order.customer_id,
@@ -91,13 +92,18 @@ def log_sale_order_change(*, order, order_id_snapshot, action, changed_by, reaso
 
 
 @transaction.atomic
-def save_sale_order_correction(*, order, customer, note, order_datetime, line_items, payment_totals, changed_by, reason, store=None):
+def save_sale_order_correction(*, order, customer, note, order_datetime, line_items, payment_totals, changed_by, reason, store=None, affects_stock=None):
     if not line_items:
         raise ValidationError("Add at least one product line before saving the order.")
 
     before_data = snapshot_sale_order(order)
     action = 'update' if order else 'create'
     previous_line_items = []
+
+    if action == 'create':
+        effective_affects_stock = True if affects_stock is None else bool(affects_stock)
+    else:
+        effective_affects_stock = order.affects_stock
 
     # An explicitly selected store wins (lets a correction move the order between
     # stores); otherwise keep the existing order's store.
@@ -113,16 +119,18 @@ def save_sale_order_correction(*, order, customer, note, order_datetime, line_it
             }
             for item in order.items.select_related('product').order_by('id')
         ]
-        _restore_current_stock(previous_line_items)
+        if effective_affects_stock:
+            _restore_current_stock(previous_line_items)
 
     if order is None:
-        order = SaleOrder.objects.create(customer=customer, note=note or '', store=target_store)
+        order = SaleOrder.objects.create(customer=customer, note=note or '', store=target_store, affects_stock=effective_affects_stock)
 
     SaleOrder.objects.filter(pk=order.pk).update(
         customer=customer,
         note=note or '',
         created_at=order_datetime,
         store=target_store,
+        affects_stock=effective_affects_stock,
     )
     order.refresh_from_db()
 
@@ -132,7 +140,8 @@ def save_sale_order_correction(*, order, customer, note, order_datetime, line_it
         order.items.all().delete()
         order.payments.all().delete()
 
-    _consume_current_stock(line_items)
+    if effective_affects_stock:
+        _consume_current_stock(line_items)
 
     created_sales = []
     for item in line_items:
@@ -182,7 +191,8 @@ def delete_sale_order_correction(*, order, changed_by, reason):
         for item in order.items.select_related('product').order_by('id')
     ]
 
-    _restore_current_stock(previous_line_items)
+    if order.affects_stock:
+        _restore_current_stock(previous_line_items)
     order.delete()
 
     log_sale_order_change(

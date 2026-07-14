@@ -2769,3 +2769,85 @@ class AffectsStockModelTests(TestCase):
         order = SaleOrder.objects.create(note="x", affects_stock=False)
         order.refresh_from_db()
         self.assertFalse(order.affects_stock)
+
+
+class AffectsStockServiceTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        from stock.models import Category, Customer, Product
+        cls.admin = get_user_model().objects.create_superuser(username="affstock_admin", password="pw123456")
+        cls.category = Category.objects.create(name="Aff Cat")
+        cls.customer = Customer.objects.create(nif="900900900", name="Aff Cust")
+        cls.product = Product.objects.create(
+            name="Asad", barcode="8880001888", brand="Lattafa",
+            category=cls.category, default_price=Decimal("25.00"),
+        )
+
+    def _purchase(self, remaining=5):
+        from stock.models import Purchase
+        return Purchase.objects.create(product=self.product, supplier=None, quantity=5,
+                                       cost_price=Decimal("10.00"), remaining=remaining)
+
+    def _line_items(self, qty=2):
+        return [{"product": self.product, "quantity": qty,
+                 "unit_price": Decimal("25.00"), "payment_method": "cash"}]
+
+    def test_create_no_stock_skips_consume(self):
+        from stock.services.order_corrections import save_sale_order_correction
+        purchase = self._purchase(remaining=5)
+        order = save_sale_order_correction(
+            order=None, customer=self.customer, note="backfill", order_datetime=timezone.now(),
+            line_items=self._line_items(2), payment_totals={"cash": Decimal("50.00")},
+            changed_by=self.admin, reason="missed", affects_stock=False,
+        )
+        purchase.refresh_from_db()
+        self.assertFalse(order.affects_stock)
+        self.assertEqual(purchase.remaining, 5)          # not consumed
+        self.assertEqual(order.items.count(), 1)          # sale recorded
+
+    def test_create_default_consumes(self):
+        from stock.services.order_corrections import save_sale_order_correction
+        purchase = self._purchase(remaining=5)
+        order = save_sale_order_correction(
+            order=None, customer=self.customer, note="normal", order_datetime=timezone.now(),
+            line_items=self._line_items(2), payment_totals={"cash": Decimal("50.00")},
+            changed_by=self.admin, reason="x", affects_stock=None,
+        )
+        purchase.refresh_from_db()
+        self.assertTrue(order.affects_stock)
+        self.assertEqual(purchase.remaining, 3)          # consumed 2
+
+    def test_edit_no_stock_order_leaves_stock_untouched(self):
+        from stock.models import SaleOrder, Sale
+        from stock.services.order_corrections import save_sale_order_correction
+        purchase = self._purchase(remaining=5)
+        order = SaleOrder.objects.create(customer=self.customer, note="b", affects_stock=False)
+        Sale.objects.create(order=order, product=self.product, customer=self.customer,
+                            quantity=2, unit_price=Decimal("25.00"), payment_method="cash")
+        save_sale_order_correction(
+            order=order, customer=self.customer, note="b2", order_datetime=timezone.now(),
+            line_items=self._line_items(3), payment_totals={"cash": Decimal("75.00")},
+            changed_by=self.admin, reason="x", affects_stock=None,
+        )
+        purchase.refresh_from_db()
+        order.refresh_from_db()
+        self.assertFalse(order.affects_stock)             # kept
+        self.assertEqual(purchase.remaining, 5)           # neither restored nor consumed
+        self.assertEqual(order.items.get().quantity, 3)   # rebuilt
+
+    def test_delete_no_stock_order_does_not_restore(self):
+        from stock.models import SaleOrder, Sale
+        from stock.services.order_corrections import delete_sale_order_correction
+        purchase = self._purchase(remaining=5)
+        order = SaleOrder.objects.create(customer=self.customer, note="b", affects_stock=False)
+        Sale.objects.create(order=order, product=self.product, customer=self.customer,
+                            quantity=2, unit_price=Decimal("25.00"), payment_method="cash")
+        delete_sale_order_correction(order=order, changed_by=self.admin, reason="x")
+        purchase.refresh_from_db()
+        self.assertEqual(purchase.remaining, 5)           # not restored
+
+    def test_snapshot_includes_affects_stock(self):
+        from stock.models import SaleOrder
+        from stock.services.order_corrections import snapshot_sale_order
+        order = SaleOrder.objects.create(customer=self.customer, note="b", affects_stock=False)
+        self.assertFalse(snapshot_sale_order(order)["affects_stock"])
