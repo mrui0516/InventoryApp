@@ -2851,3 +2851,53 @@ class AffectsStockServiceTests(TestCase):
         from stock.services.order_corrections import snapshot_sale_order
         order = SaleOrder.objects.create(customer=self.customer, note="b", affects_stock=False)
         self.assertFalse(snapshot_sale_order(order)["affects_stock"])
+
+
+class AffectsStockProfitTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        from stock.models import Category, Customer, Product
+        cls.category = Category.objects.create(name="Prof Cat")
+        cls.customer = Customer.objects.create(nif="700700700", name="Prof Cust")
+        cls.product = Product.objects.create(
+            name="Asad", barcode="6660001666", brand="Lattafa",
+            category=cls.category, default_price=Decimal("25.00"),
+        )
+
+    def _purchase(self, qty, cost, when):
+        from stock.models import Purchase
+        p = Purchase.objects.create(product=self.product, supplier=None, quantity=qty,
+                                    cost_price=Decimal(cost), remaining=qty)
+        Purchase.objects.filter(pk=p.pk).update(date=when)
+        return p
+
+    def _sale(self, qty, price, when, affects_stock=True):
+        from stock.models import SaleOrder, Sale
+        order = SaleOrder.objects.create(customer=self.customer, affects_stock=affects_stock)
+        s = Sale.objects.create(order=order, product=self.product, customer=self.customer,
+                                quantity=qty, unit_price=Decimal(price), payment_method="cash")
+        Sale.objects.filter(pk=s.pk).update(date=when)
+        return Sale.objects.get(pk=s.pk)
+
+    def test_no_stock_sale_booked_at_50pct(self):
+        from stock.services.profit import sale_profit_map_for_sale_ids
+        base = timezone.now() - timedelta(days=5)
+        self._purchase(10, "10.00", base)
+        s = self._sale(2, "25.00", base + timedelta(hours=1), affects_stock=False)
+        m = sale_profit_map_for_sale_ids([s.id])[s.id]
+        self.assertEqual(m["revenue"], Decimal("50.00"))
+        self.assertEqual(m["cost"], Decimal("25.00"))
+        self.assertEqual(m["profit"], Decimal("25.00"))
+
+    def test_no_stock_sale_does_not_distort_normal_fifo(self):
+        from stock.services.profit import sale_profit_map_for_sale_ids
+        base = timezone.now() - timedelta(days=5)
+        self._purchase(3, "10.00", base)                                   # only 3 units @10
+        no_stock = self._sale(2, "25.00", base + timedelta(hours=1), affects_stock=False)
+        normal = self._sale(3, "25.00", base + timedelta(hours=2), affects_stock=True)
+        m = sale_profit_map_for_sale_ids([normal.id, no_stock.id])
+        # normal sale draws all 3 purchased units @10 => cost 30, unaffected by the no-stock sale
+        self.assertEqual(m[normal.id]["cost"], Decimal("30.00"))
+        self.assertEqual(m[normal.id]["profit"], Decimal("45.00"))
+        # no-stock sale is flat 50%
+        self.assertEqual(m[no_stock.id]["cost"], Decimal("25.00"))

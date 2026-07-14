@@ -1,9 +1,11 @@
 from collections import defaultdict
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.utils.timezone import make_naive
 
 from ..models import Purchase, Sale
+
+BACKFILL_MARGIN = Decimal("0.50")  # no-stock backfill orders book a flat 50% profit margin
 
 
 def sale_profit_map_for_sale_ids(sale_ids):
@@ -18,6 +20,11 @@ def sale_profit_map_for_sale_ids(sale_ids):
         return {}
 
     end_day = max(make_naive(sale.date).date() for sale in relevant_sales)
+
+    no_stock_sale_ids = set(
+        Sale.objects.filter(order__affects_stock=False, date__date__lte=end_day)
+        .values_list("id", flat=True)
+    )
 
     purchase_events = [
         ("in", make_naive(p.date), p.product_id, p.quantity, p.cost_price, p.id)
@@ -41,6 +48,16 @@ def sale_profit_map_for_sale_ids(sale_ids):
     for event_type, event_dt, product_id, quantity, amount, event_id in events:
         if event_type == "in":
             stock_batches[product_id].append([quantity, amount or Decimal("0.00")])
+            continue
+
+        if event_id in no_stock_sale_ids:
+            # Backfill order: does not consume FIFO batches; flat margin.
+            if event_id in relevant_sale_ids:
+                revenue = (amount or Decimal("0.00")) * quantity
+                cost = (revenue * (Decimal("1") - BACKFILL_MARGIN)).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )
+                profit_map[event_id] = {"revenue": revenue, "cost": cost, "profit": revenue - cost}
             continue
 
         remaining = quantity
