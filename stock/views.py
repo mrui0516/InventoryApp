@@ -60,6 +60,7 @@ from .permissions import (
 from .stores import (
     ACTIVE_STORE_SESSION_KEY,
     ALL_STORES,
+    available_stores,
     can_switch_store,
     resolve_active_store,
     scope_sales_by_store,
@@ -2412,6 +2413,13 @@ def _sale_order_correction_view(request, order=None):
             if form.is_valid():
                 try:
                     line_items, payment_totals, _ = _parse_correction_cart(request)
+                    _active_stores = available_stores()
+                    _raw_store = request.POST.get('store')
+                    selected_store = next(
+                        (s for s in _active_stores if str(s.id) == str(_raw_store)), None
+                    )
+                    if selected_store is None:
+                        selected_store = (order.store if (order and order.store_id) else None) or store_for_new_sale(request)
                     saved_order = save_sale_order_correction(
                         order=order,
                         customer=form.cleaned_data.get('customer'),
@@ -2421,7 +2429,7 @@ def _sale_order_correction_view(request, order=None):
                         payment_totals=payment_totals,
                         changed_by=request.user,
                         reason=form.cleaned_data['reason'],
-                        store=store_for_new_sale(request),
+                        store=selected_store,
                     )
                 except ValueError as exc:
                     messages.error(request, str(exc))
@@ -2440,12 +2448,24 @@ def _sale_order_correction_view(request, order=None):
     if order and order.pk:
         change_logs = order.change_logs.select_related('changed_by').order_by('-created_at', '-id')[:12]
 
+    stores_for_template = available_stores()
+    _raw_selected = request.POST.get('store') if request.method == 'POST' else None
+    selected_store_id = None
+    if _raw_selected:
+        _match = next((s for s in stores_for_template if str(s.id) == str(_raw_selected)), None)
+        selected_store_id = _match.id if _match else None
+    if selected_store_id is None:
+        _default_store = (order.store if (order and order.store_id) else None) or store_for_new_sale(request)
+        selected_store_id = _default_store.id if _default_store else None
+
     return render(request, 'stock/sale_order_correction_form.html', {
         'form': form,
         'order': order,
         'is_create': order is None,
         'change_logs': change_logs,
         'initial_cart': initial_cart,
+        'available_stores': stores_for_template,
+        'selected_store_id': selected_store_id,
     })
 
 

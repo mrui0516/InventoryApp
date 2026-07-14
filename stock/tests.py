@@ -2702,3 +2702,56 @@ class CorrectionStoreChangeServiceTests(TestCase):
         snap = snapshot_sale_order(order)
         self.assertEqual(snap["store_id"], self.store_a.id)
         self.assertEqual(snap["store_name"], "Store A")
+
+
+class CorrectionStoreChangeViewTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        from stock.models import Store, Category, Customer, Product
+        cls.admin = get_user_model().objects.create_superuser(username="corr_store_view_admin", password="pw123456")
+        cls.store_a = Store.objects.create(name="Store A", code="VSA")
+        cls.store_b = Store.objects.create(name="Store B", code="VSB")
+        cls.category = Category.objects.create(name="Corr View Cat")
+        cls.customer = Customer.objects.create(nif="222333444", name="Corr View Cust")
+        cls.product = Product.objects.create(
+            name="Asad", barcode="7770002777", brand="Lattafa",
+            category=cls.category, default_price=Decimal("25.00"),
+        )
+
+    def _order_in_a(self):
+        from stock.models import Purchase, SaleOrder, Sale
+        # remaining=8 reflects the 2 units already consumed by the Sale created
+        # below (created directly via the ORM, bypassing consume_stock_fifo) so
+        # the correction service's restore-then-consume round-trip balances.
+        Purchase.objects.create(product=self.product, supplier=None, quantity=10,
+                                cost_price=Decimal("10.00"), remaining=8)
+        order = SaleOrder.objects.create(customer=self.customer, note="o", store=self.store_a)
+        Sale.objects.create(order=order, product=self.product, customer=self.customer,
+                            store=self.store_a, quantity=2, unit_price=Decimal("25.00"),
+                            payment_method="cash")
+        return order
+
+    def test_form_shows_store_selector(self):
+        order = self._order_in_a()
+        self.client.login(username="corr_store_view_admin", password="pw123456")
+        resp = self.client.get(reverse("sale_order_correction_edit", args=[order.id]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'name="store"')
+        self.assertContains(resp, "Store B")
+
+    def test_post_moves_order_to_selected_store(self):
+        order = self._order_in_a()
+        self.client.login(username="corr_store_view_admin", password="pw123456")
+        resp = self.client.post(reverse("sale_order_correction_edit", args=[order.id]), data={
+            "customer": self.customer.id,
+            "order_datetime": timezone.localtime(timezone.now()).strftime("%Y-%m-%dT%H:%M"),
+            "note": "o",
+            "reason": "Entered under the wrong store",
+            "store": self.store_b.id,
+            "items_json": json.dumps([{"product_id": self.product.id, "qty": 2, "price": "25.00", "payment": "cash"}]),
+            "payments_json": json.dumps([{"method": "cash", "amount": "50.00"}]),
+        })
+        self.assertEqual(resp.status_code, 302)
+        order.refresh_from_db()
+        self.assertEqual(order.store_id, self.store_b.id)
+        self.assertTrue(all(s.store_id == self.store_b.id for s in order.items.all()))

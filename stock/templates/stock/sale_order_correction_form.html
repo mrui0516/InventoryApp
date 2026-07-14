@@ -109,6 +109,16 @@
               {{ form.order_datetime }}
               {% if form.order_datetime.errors %}<div class="text-danger small mt-1">{{ form.order_datetime.errors|join:', ' }}</div>{% endif %}
             </div>
+            {% if available_stores %}
+            <div class="col-md-6">
+              <label class="form-label fw-bold" for="order-store">Store</label>
+              <select name="store" id="order-store" class="form-select">
+                {% for s in available_stores %}
+                  <option value="{{ s.id }}" {% if s.id == selected_store_id %}selected{% endif %}>{{ s.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            {% endif %}
             <div class="col-12">
               <label class="form-label fw-bold" for="{{ form.note.id_for_label }}">Internal note</label>
               {{ form.note }}
