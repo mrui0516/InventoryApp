@@ -11,6 +11,7 @@ from django.db import models
 class SaleOrder(models.Model):
     customer = models.ForeignKey('Customer', on_delete=models.SET_NULL, null=True, blank=True)
     store = models.ForeignKey('Store', on_delete=models.SET_NULL, null=True, blank=True, db_index=True, related_name='sale_orders')
+    affects_stock = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     note = models.CharField(max_length=200, blank=True, null=True)
 

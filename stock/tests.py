@@ -2756,3 +2756,16 @@ class CorrectionStoreChangeViewTests(TestCase):
         order.refresh_from_db()
         self.assertEqual(order.store_id, self.store_b.id)
         self.assertTrue(all(s.store_id == self.store_b.id for s in order.items.all()))
+
+
+class AffectsStockModelTests(TestCase):
+    def test_defaults_true(self):
+        from stock.models import SaleOrder
+        order = SaleOrder.objects.create(note="x")
+        self.assertTrue(order.affects_stock)
+
+    def test_can_set_false(self):
+        from stock.models import SaleOrder
+        order = SaleOrder.objects.create(note="x", affects_stock=False)
+        order.refresh_from_db()
+        self.assertFalse(order.affects_stock)
