@@ -2640,3 +2640,65 @@ class CloudinaryCommandTests(TestCase):
         _, kwargs = sync.call_args
         self.assertTrue(kwargs.get("dry_run"))
         self.assertIn("999", out.getvalue())
+
+
+class CorrectionStoreChangeServiceTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        from stock.models import Store, Category, Customer, Product
+        cls.admin = get_user_model().objects.create_superuser(username="corr_store_svc_admin", password="pw123456")
+        cls.store_a = Store.objects.create(name="Store A", code="CSA")
+        cls.store_b = Store.objects.create(name="Store B", code="CSB")
+        cls.category = Category.objects.create(name="Corr Store Cat")
+        cls.customer = Customer.objects.create(nif="111222333", name="Corr Store Cust")
+        cls.product = Product.objects.create(
+            name="Asad", barcode="7770001777", brand="Lattafa",
+            category=cls.category, default_price=Decimal("25.00"),
+        )
+
+    def _make_order_in_store(self, store):
+        from stock.models import Purchase, SaleOrder, Sale
+        # remaining=8 reflects the 2 units already consumed by the Sale created
+        # below (created directly via the ORM, bypassing consume_stock_fifo) so
+        # the correction service's restore-then-consume round-trip balances.
+        Purchase.objects.create(product=self.product, supplier=None, quantity=10,
+                                cost_price=Decimal("10.00"), remaining=8)
+        order = SaleOrder.objects.create(customer=self.customer, note="o", store=store)
+        Sale.objects.create(order=order, product=self.product, customer=self.customer,
+                            store=store, quantity=2, unit_price=Decimal("25.00"),
+                            payment_method="cash")
+        return order
+
+    def _line_items(self):
+        return [{"product": self.product, "quantity": 2,
+                 "unit_price": Decimal("25.00"), "payment_method": "cash"}]
+
+    def test_selected_store_moves_order_and_sales(self):
+        from stock.services.order_corrections import save_sale_order_correction
+        order = self._make_order_in_store(self.store_a)
+        save_sale_order_correction(
+            order=order, customer=self.customer, note="o", order_datetime=timezone.now(),
+            line_items=self._line_items(), payment_totals={"cash": Decimal("50.00")},
+            changed_by=self.admin, reason="wrong store", store=self.store_b,
+        )
+        order.refresh_from_db()
+        self.assertEqual(order.store_id, self.store_b.id)
+        self.assertTrue(all(s.store_id == self.store_b.id for s in order.items.all()))
+
+    def test_no_store_passed_keeps_current(self):
+        from stock.services.order_corrections import save_sale_order_correction
+        order = self._make_order_in_store(self.store_a)
+        save_sale_order_correction(
+            order=order, customer=self.customer, note="o", order_datetime=timezone.now(),
+            line_items=self._line_items(), payment_totals={"cash": Decimal("50.00")},
+            changed_by=self.admin, reason="x", store=None,
+        )
+        order.refresh_from_db()
+        self.assertEqual(order.store_id, self.store_a.id)
+
+    def test_snapshot_captures_store(self):
+        from stock.services.order_corrections import snapshot_sale_order
+        order = self._make_order_in_store(self.store_a)
+        snap = snapshot_sale_order(order)
+        self.assertEqual(snap["store_id"], self.store_a.id)
+        self.assertEqual(snap["store_name"], "Store A")

@@ -20,6 +20,8 @@ def snapshot_sale_order(order):
 
     return {
         'order_id': order.id,
+        'store_id': order.store_id,
+        'store_name': order.store.name if order.store else '',
         'customer_id': order.customer_id,
         'customer_name': order.customer.name if order.customer else '',
         'note': order.note or '',
@@ -97,9 +99,11 @@ def save_sale_order_correction(*, order, customer, note, order_datetime, line_it
     action = 'update' if order else 'create'
     previous_line_items = []
 
-    # Keep an existing order's store on edit; a new order is attributed to the
-    # active store (sales are per-store, inventory is shared).
-    target_store = (order.store if (order and order.store_id) else None) or store
+    # An explicitly selected store wins (lets a correction move the order between
+    # stores); otherwise keep the existing order's store.
+    target_store = store if store is not None else (
+        order.store if (order and order.store_id) else None
+    )
 
     if action == 'update':
         previous_line_items = [
