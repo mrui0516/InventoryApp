@@ -2464,7 +2464,7 @@ def _sale_order_correction_view(request, order=None):
         'is_create': order is None,
         'change_logs': change_logs,
         'initial_cart': initial_cart,
-        'available_stores': stores_for_template,
+        'store_options': stores_for_template,
         'selected_store_id': selected_store_id,
     })
 

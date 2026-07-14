@@ -2737,6 +2737,7 @@ class CorrectionStoreChangeViewTests(TestCase):
         resp = self.client.get(reverse("sale_order_correction_edit", args=[order.id]))
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, 'name="store"')
+        self.assertContains(resp, 'id="order-store"')
         self.assertContains(resp, "Store B")
 
     def test_post_moves_order_to_selected_store(self):
