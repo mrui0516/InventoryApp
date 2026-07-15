@@ -64,7 +64,8 @@ InventoryApp/
 │   │   ├── summaries.py                # DailySalesSummary 重算逻辑
 │   │   ├── inventory.py                # build_inventory_snapshot（库存快照）
 │   │   ├── shopify_client.py / shopify_sync.py       # Shopify Admin API：按 barcode=SKU 挂图/建品
-│   │   └── cloudinary_client.py / cloudinary_sync.py # 产品主图镜像到 Cloudinary（public_id=条码, asset_folder=product_images/<品牌>）
+│   │   ├── cloudinary_client.py / cloudinary_sync.py # 产品主图镜像到 Cloudinary（public_id=条码, asset_folder=product_images/<品牌>）
+│   │   └── cloudinary_urls.py                        # 读取 Cloudinary 命名约定（public_id=条码），构造公开交付 URL；纯字符串拼接，不发网络请求、不读凭据；供 Shopify CSV 导出使用
 │   │
 │   ├── management/commands/
 │   │   ├── rebuild_dailysummary.py     # 正式 management command：重建每日汇总

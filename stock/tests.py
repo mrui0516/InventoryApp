@@ -2963,3 +2963,152 @@ class AffectsStockViewTests(TestCase):
         purchase.refresh_from_db()
         self.assertTrue(order.affects_stock)
         self.assertEqual(purchase.remaining, 3)          # consumed 2
+
+
+@override_settings(CLOUDINARY_CLOUD_NAME="testcloud", CLOUDINARY_AUTO_SYNC=False)
+class CloudinaryImageUrlTests(TestCase):
+    def test_url_for_product_with_barcode_and_image(self):
+        from stock.models import ProductImage
+        from stock.services.cloudinary_urls import product_image_cdn_url
+        p = _make_product(barcode="6290362349730")
+        ProductImage.objects.create(product=p, image=_tiny_png())
+        self.assertEqual(
+            product_image_cdn_url(p),
+            "https://res.cloudinary.com/testcloud/image/upload/"
+            "c_pad,b_white,w_1600,h_1600,q_auto/6290362349730.jpg",
+        )
+
+    def test_blank_without_image(self):
+        from stock.services.cloudinary_urls import product_image_cdn_url
+        p = _make_product(barcode="6290362349730")
+        self.assertEqual(product_image_cdn_url(p), "")
+
+    def test_blank_without_barcode(self):
+        from stock.models import ProductImage
+        from stock.services.cloudinary_urls import product_image_cdn_url
+        p = _make_product(barcode="")
+        ProductImage.objects.create(product=p, image=_tiny_png())
+        self.assertEqual(product_image_cdn_url(p), "")
+
+    def test_blank_for_falsy_product(self):
+        from stock.services.cloudinary_urls import product_image_cdn_url
+        self.assertEqual(product_image_cdn_url(None), "")
+
+    @override_settings(CLOUDINARY_CLOUD_NAME="")
+    def test_blank_when_cloud_name_missing(self):
+        from stock.models import ProductImage
+        from stock.services.cloudinary_urls import product_image_cdn_url
+        p = _make_product(barcode="6290362349730")
+        ProductImage.objects.create(product=p, image=_tiny_png())
+        self.assertEqual(product_image_cdn_url(p), "")
+
+    def test_custom_transformation_is_used(self):
+        from stock.models import ProductImage
+        from stock.services.cloudinary_urls import product_image_cdn_url
+        p = _make_product(barcode="6290362349730")
+        ProductImage.objects.create(product=p, image=_tiny_png())
+        self.assertEqual(
+            product_image_cdn_url(p, transformation="w_400"),
+            "https://res.cloudinary.com/testcloud/image/upload/w_400/6290362349730.jpg",
+        )
+
+    def test_barcode_is_stripped(self):
+        # cloudinary_sync strips the barcode when choosing public_id; the URL
+        # must use the same key or it would point at a non-existent asset.
+        # Barcode is max_length=13, so keep the padded value within that.
+        from stock.models import ProductImage
+        from stock.services.cloudinary_urls import product_image_cdn_url
+        p = _make_product(barcode="  62903623  ")
+        ProductImage.objects.create(product=p, image=_tiny_png())
+        self.assertIn("/62903623.jpg", product_image_cdn_url(p))
+
+    def test_url_key_matches_sync_upload_public_id(self):
+        # Binds the two halves of the naming contract: whatever public_id
+        # sync_product_primary_image actually passes to the Cloudinary client
+        # is the exact key product_image_cdn_url must build a URL for. If the
+        # upload side ever changes the key (e.g. adds a folder prefix) without
+        # updating the URL side, this test fails instead of both halves
+        # silently drifting apart.
+        from stock.models import ProductImage
+        from stock.services import cloudinary_sync
+        from stock.services.cloudinary_urls import product_image_cdn_url
+        p = _make_product(barcode="6290362349730")
+        ProductImage.objects.create(product=p, image=_tiny_png())
+
+        client = mock.Mock()
+        code, _ = cloudinary_sync.sync_product_primary_image(p, client=client)
+        self.assertEqual(code, cloudinary_sync.UPLOADED)
+        _, kwargs = client.upload_image.call_args
+        public_id = kwargs["public_id"]
+
+        self.assertTrue(product_image_cdn_url(p).endswith(f"/{public_id}.jpg"))
+
+
+@override_settings(CLOUDINARY_CLOUD_NAME="testcloud", CLOUDINARY_AUTO_SYNC=False)
+class ShopifyCsvCloudinaryImageTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.manager = user_model.objects.create_superuser(username="csv_admin", password="pw123456")
+        cls.category = Category.objects.create(name="Perfumes")
+        cls.brand = Brand.objects.create(name="Lattafa")
+        cls.brand.categories.add(cls.category)
+        cls.series = ProductSeries.objects.create(brand=cls.brand, name="Asad")
+
+    def _make_csv_product(self, barcode, spec):
+        from stock.models import Product
+        return Product.objects.create(
+            name="EDP",
+            barcode=barcode,
+            brand="Lattafa",
+            brand_master=self.brand,
+            series_master=self.series,
+            model="Asad",
+            category=self.category,
+            spec=spec,
+            default_price=Decimal("39.90"),
+        )
+
+    def _export_rows(self):
+        self.client.login(username="csv_admin", password="pw123456")
+        response = self.client.get(reverse("export_shopify_inventory_csv"))
+        self.assertEqual(response.status_code, 200)
+        return list(csv.DictReader(StringIO(response.content.decode("utf-8-sig"))))
+
+    def test_export_uses_cloudinary_url_for_both_image_columns(self):
+        from stock.models import ProductImage
+        product = self._make_csv_product("1234509876511", "100ml")
+        ProductImage.objects.create(product=product, image=_tiny_png())
+
+        rows = self._export_rows()
+
+        expected = (
+            "https://res.cloudinary.com/testcloud/image/upload/"
+            "c_pad,b_white,w_1600,h_1600,q_auto/1234509876511.jpg"
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["Product image URL"], expected)
+        self.assertEqual(rows[0]["Variant image URL"], expected)
+        self.assertNotIn("/media/", rows[0]["Product image URL"])
+
+    def test_export_leaves_image_columns_blank_without_image(self):
+        self._make_csv_product("1234509876512", "50ml")
+
+        rows = self._export_rows()
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["Product image URL"], "")
+        self.assertEqual(rows[0]["Variant image URL"], "")
+
+    @override_settings(CLOUDINARY_CLOUD_NAME="")
+    def test_export_falls_back_to_absolute_media_url_without_cloud_name(self):
+        from stock.models import ProductImage
+        product = self._make_csv_product("1234509876513", "30ml")
+        ProductImage.objects.create(product=product, image=_tiny_png())
+
+        rows = self._export_rows()
+
+        self.assertEqual(len(rows), 1)
+        self.assertIn("/media/", rows[0]["Product image URL"])
+        self.assertTrue(rows[0]["Product image URL"].startswith("http://"))
+        self.assertNotIn("res.cloudinary.com", rows[0]["Product image URL"])

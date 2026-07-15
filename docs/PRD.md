@@ -356,6 +356,7 @@
 
 - **F2.18.1** 各导出功能均基于当前页面的筛选条件（关键字/日期范围/分类等）生成对应数据集。
 - **F2.18.2** 导出文件直接以 HTTP 响应下载，不在服务器持久化存储（不应在仓库中残留临时导出文件，如已发现的 `tmp_product_export.xlsx` 应被清理并加入 `.gitignore`，目前已通过 `tmp_*.xlsx` 规则覆盖）。
+- **F2.18.3 Shopify CSV 导出图片用 Cloudinary URL**：Shopify 库存 CSV 的 `Product image URL`/`Variant image URL` 两列输出公开的 Cloudinary 交付 URL（`c_pad,b_white,w_1600,h_1600,q_auto/<条码>.jpg`），供 Shopify 导入时直接抓取，每个产品呈现统一的 1:1 白底方图。此前两列输出的是 `request.build_absolute_uri` 的本机局域网地址，Shopify 服务器无法访问，实为死链接。无图片的产品两列留空；未配置 Cloudinary 时回退到本机绝对 URL。
 
 ---
 
