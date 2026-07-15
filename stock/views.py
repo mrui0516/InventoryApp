@@ -66,6 +66,7 @@ from .stores import (
     scope_sales_by_store,
     store_for_new_sale,
 )
+from .services.cloudinary_urls import product_image_cdn_url
 from .services.dashboard import (
     build_monthly_dashboard_snapshot,
     build_period_comparison,
@@ -330,7 +331,9 @@ def _build_shopify_image_url(request, product):
     image_url = get_product_image_url(product)
     if not image_url:
         return ''
-    return request.build_absolute_uri(image_url)
+    # Shopify fetches this URL from its own servers, so the local absolute URL
+    # (a LAN address) is only a fallback for when Cloudinary is not configured.
+    return product_image_cdn_url(product) or request.build_absolute_uri(image_url)
 
 
 def _first_shopify_image_url(request, group_products):

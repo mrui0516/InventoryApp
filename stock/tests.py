@@ -3021,3 +3021,73 @@ class CloudinaryImageUrlTests(TestCase):
         p = _make_product(barcode="  62903623  ")
         ProductImage.objects.create(product=p, image=_tiny_png())
         self.assertIn("/62903623.jpg", product_image_cdn_url(p))
+
+
+@override_settings(CLOUDINARY_CLOUD_NAME="testcloud", CLOUDINARY_AUTO_SYNC=False)
+class ShopifyCsvCloudinaryImageTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.manager = user_model.objects.create_superuser(username="csv_admin", password="pw123456")
+        cls.category = Category.objects.create(name="Perfumes")
+        cls.brand = Brand.objects.create(name="Lattafa")
+        cls.brand.categories.add(cls.category)
+        cls.series = ProductSeries.objects.create(brand=cls.brand, name="Asad")
+
+    def _make_csv_product(self, barcode, spec):
+        from stock.models import Product
+        return Product.objects.create(
+            name="EDP",
+            barcode=barcode,
+            brand="Lattafa",
+            brand_master=self.brand,
+            series_master=self.series,
+            model="Asad",
+            category=self.category,
+            spec=spec,
+            default_price=Decimal("39.90"),
+        )
+
+    def _export_rows(self):
+        self.client.login(username="csv_admin", password="pw123456")
+        response = self.client.get(reverse("export_shopify_inventory_csv"))
+        self.assertEqual(response.status_code, 200)
+        return list(csv.DictReader(StringIO(response.content.decode("utf-8-sig"))))
+
+    def test_export_uses_cloudinary_url_for_both_image_columns(self):
+        from stock.models import ProductImage
+        product = self._make_csv_product("1234509876511", "100ml")
+        ProductImage.objects.create(product=product, image=_tiny_png())
+
+        rows = self._export_rows()
+
+        expected = (
+            "https://res.cloudinary.com/testcloud/image/upload/"
+            "c_pad,b_white,w_1600,h_1600,q_auto/1234509876511.jpg"
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["Product image URL"], expected)
+        self.assertEqual(rows[0]["Variant image URL"], expected)
+        self.assertNotIn("/media/", rows[0]["Product image URL"])
+
+    def test_export_leaves_image_columns_blank_without_image(self):
+        self._make_csv_product("1234509876512", "50ml")
+
+        rows = self._export_rows()
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["Product image URL"], "")
+        self.assertEqual(rows[0]["Variant image URL"], "")
+
+    @override_settings(CLOUDINARY_CLOUD_NAME="")
+    def test_export_falls_back_to_absolute_media_url_without_cloud_name(self):
+        from stock.models import ProductImage
+        product = self._make_csv_product("1234509876513", "30ml")
+        ProductImage.objects.create(product=product, image=_tiny_png())
+
+        rows = self._export_rows()
+
+        self.assertEqual(len(rows), 1)
+        self.assertIn("/media/", rows[0]["Product image URL"])
+        self.assertTrue(rows[0]["Product image URL"].startswith("http://"))
+        self.assertNotIn("res.cloudinary.com", rows[0]["Product image URL"])
