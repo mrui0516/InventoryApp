@@ -2616,7 +2616,8 @@ class CloudinarySignalTests(TestCase):
                 img.delete()
         sync.assert_called()
 
-    def test_disabled_by_default_no_sync(self):
+    @override_settings(CLOUDINARY_AUTO_SYNC=False)
+    def test_disabled_no_sync(self):
         from stock.models import ProductImage
         p = _make_product(barcode="888")
         with mock.patch("stock.services.cloudinary_sync.sync_product_primary_image") as sync:
