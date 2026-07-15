@@ -237,7 +237,6 @@
 - **F2.9.4** 所有修正操作仅限超级管理员（Admin）执行（`@admin_required` 或等价校验）。
 - **F2.9.5 修正时改店铺**：管理员在订单修正表单可选择本单归属店铺（仅活跃店铺），用于修复下错店铺的订单；保存后订单与其全部明细行改到所选店铺，审计日志记录 旧→新 店铺。库存不受影响，不涉及应收(AR)。
 - **F2.9.6 补录订单可不影响库存**：新增历史订单时可取消「Affects inventory」，该单只记销售额/支付、不扣库存（用于货已出、库存已对账的遗漏订单），利润按销售额 50% 估算，且不参与 FIFO 成本；默认勾选＝正常扣库存。
-- **F2.9.7 Shopify CSV 导出图片改用 Cloudinary URL**：Shopify CSV 导出（`Product image URL`/`Variant image URL` 两列）改为输出公开的 Cloudinary 交付 URL（`c_pad,b_white,w_1600,h_1600,q_auto/<条码>.jpg`），供 Shopify 导入时直接抓取，每个产品呈现统一的 1:1 白底方图；无图片的产品两列仍留空；未配置 Cloudinary 时回退到此前的本机绝对 URL。
 
 ---
 
@@ -357,6 +356,7 @@
 
 - **F2.18.1** 各导出功能均基于当前页面的筛选条件（关键字/日期范围/分类等）生成对应数据集。
 - **F2.18.2** 导出文件直接以 HTTP 响应下载，不在服务器持久化存储（不应在仓库中残留临时导出文件，如已发现的 `tmp_product_export.xlsx` 应被清理并加入 `.gitignore`，目前已通过 `tmp_*.xlsx` 规则覆盖）。
+- **F2.18.3 Shopify CSV 导出图片用 Cloudinary URL**：Shopify 库存 CSV 的 `Product image URL`/`Variant image URL` 两列输出公开的 Cloudinary 交付 URL（`c_pad,b_white,w_1600,h_1600,q_auto/<条码>.jpg`），供 Shopify 导入时直接抓取，每个产品呈现统一的 1:1 白底方图。此前两列输出的是 `request.build_absolute_uri` 的本机局域网地址，Shopify 服务器无法访问，实为死链接。无图片的产品两列留空；未配置 Cloudinary 时回退到本机绝对 URL。
 
 ---
 
