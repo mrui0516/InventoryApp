@@ -25,7 +25,8 @@
 ### 1.2 技术基线
 - 后端：Django 5.2.4，数据库 SQLite（`db.sqlite3`）
 - 前端：Django 模板 + Bootstrap，`django-widget-tweaks`
-- 报表：openpyxl（Excel）、reportlab（PDF）、qrcode（二维码）
+- 报表：openpyxl（Excel）、reportlab（PDF）、qrcode（二维码）、csv（Shopify 导出）
+- 外部集成：Shopify Admin GraphQL（`requests`）、Cloudinary 图床（`cloudinary`），均由环境变量门控、默认关闭
 - 时区：`Europe/Lisbon`
 - 认证：Django 内建用户体系，登录页 `/login/`，登录后默认跳转 `/dashboard/`
 
@@ -557,8 +558,8 @@
 
 以下问题在代码审查中被识别，记录于此供后续迭代规划，**不作为本基线版本的验收条款**：
 
-1. `inventory_system/settings.py` 中 `SECRET_KEY` 硬编码、`DEBUG=True`，建议迁移至环境变量并在生产环境关闭 DEBUG。
-2. `db.sqlite3`（数据库）与 `media/`（约 89MB，产品图片）当前无自动备份机制，建议建立定期备份方案。
+1. `settings.py` 中 `SECRET_KEY` 硬编码、`DEBUG=True`。仓库是 public，旧 key 视为已泄露需轮换；`settings.py` 已有 `.env` 加载器，搬进去即可。
+2. `db.sqlite3` 与 `media/`（79MB，产品图片）无自动备份；且本地领先远程 34 个提交，代码亦无异地副本。
 3. `sale_profit_map_for_sale_ids` 的全量 FIFO 重放在数据量持续增长后可能成为性能瓶颈，建议规划增量化或缓存方案。
 
-> 已完成（2026-06-12 技术债清理）：移除死代码 `apply_fifo`/`_legacy_*` 视图、一次性脚本 `addsale_before.py`、根目录临时文件、未使用 import，及 `requirements.txt` 中未使用的 `pandas`/`numpy`/`matplotlib` 依赖栈。
+> 详细清单与优先级见 [TODO.md](./TODO.md)，状态层面摘要见 [STATUS.md](./STATUS.md) 第 6 节。

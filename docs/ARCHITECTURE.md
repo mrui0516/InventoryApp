@@ -12,12 +12,13 @@
 | 数据库 | SQLite（`db.sqlite3`，单文件） |
 | 前端 | Django Template + Bootstrap 5（本地静态资源，非 CDN）+ `django-widget-tweaks` |
 | 扫码 | `html5-qrcode.min.js`（浏览器端摄像头扫码） |
+| 图表 | Chart.js（本地静态资源；调色板经 `window.CHART_PALETTE` 读 CSS 令牌） |
 | 报表/导出 | `openpyxl`（Excel）、`reportlab`（PDF）、`csv`（Shopify 导出）、`qrcode`（二维码生成） |
 | 图片处理 | `Pillow` |
+| 外部集成 | `requests`（Shopify Admin GraphQL）、`cloudinary`（图床镜像）；均由环境变量门控，默认关闭 |
 | 认证 | Django 内建 `django.contrib.auth`（User + Group "Managers"） |
-| 部署形态 | 单进程 `manage.py runserver` / WSGI（`inventory_system/wsgi.py`），未见容器化或生产部署配置 |
-
-（`requirements.txt` 此前包含 `pandas`/`numpy`/`matplotlib` 等未使用的数据科学库，已于技术债清理中移除。）
+| 配置 | `settings.py` 顶部自带 `.env` 加载器（读 `BASE_DIR/.env`，真实环境变量优先），无 `python-dotenv` 依赖 |
+| 部署形态 | 单进程 `manage.py runserver` / WSGI；实际由 U 盘上的 `start.bat` → `runserver.py` 用便携版 Python 启动，无容器化 |
 
 ---
 
@@ -50,14 +51,14 @@ InventoryApp/
 │   ├── views.py                       # 全部视图逻辑（约 4800 行，60+ 个视图函数）
 │   ├── forms.py                       # 全部表单与 FormSet（534 行）
 │   ├── admin.py                       # Django Admin 自定义（270 行）
-│   ├── urls.py                        # 路由表（70+ 条 path）
+│   ├── urls.py                        # 路由表（60 条 path）
 │   ├── permissions.py                 # 角色判定 + 装饰器
 │   ├── signals.py                     # Sale 信号→每日汇总重算；ProductImage 信号→镜像图片到 Cloudinary/Shopify（门控）
 │   ├── apps.py                        # AppConfig，ready() 中注册 signals
-│   ├── tests.py                       # 52 个测试用例（约 1560 行）
+│   ├── tests.py                       # 147 个测试用例（约 3100 行）
 │   │
 │   ├── services/                      # 业务逻辑层（从 views 中抽出的可复用逻辑）
-│   │   ├── dashboard.py               # 月度快照 + MoM 同期对比 + 销售目标/补货建议
+│   │   ├── dashboard.py               # 月度快照 + MoM 同期对比 + 销售目标 + 多店铺对比
 │   │   ├── profit.py                   # FIFO 利润重放：sale_profit_map_for_sale_ids
 │   │   ├── order_corrections.py        # 历史订单修正/审计核心逻辑
 │   │   ├── stock_ops.py                # FIFO 库存原子条件更新：consume_stock_fifo / restore_stock_fifo
@@ -81,7 +82,7 @@ InventoryApp/
 │   └── static/                         # Bootstrap 5 全量资源 + html5-qrcode + popper
 │
 ├── static/                              # STATICFILES_DIRS 引用的项目级静态目录
-├── media/                                # 用户上传的产品图片（git 已忽略，约 89MB）
+├── media/                                # 用户上传的产品图片（git 已忽略，约 79MB，按品牌分目录）
 └── .venv/                                # 本地虚拟环境（状态见 STATUS.md）
 ```
 
@@ -205,7 +206,7 @@ has_admin_access(user)          → is_superuser only
 - `build_monthly_dashboard_snapshot` 计算月度全量快照（销售/采购/AR/库存/资金占用/滞销品等）。
 - **MoM 同期对比**用轻量函数 `compute_period_headline`（仅做销售头部聚合，DB 端 `Sum(unit_price*quantity)`，利润仅在 `show_profit` 时才触发 FIFO 重放）计算上月同期窗口，避免为对比而重复整份快照的库存/AR 开销；`build_period_comparison` 产出各 KPI 的带符号增减幅。
 - **销售目标**：`build_target_progress` 汇总所选分类的 `SalesTarget.monthly_amount`，给出达成进度与（仅当月）日均跑率月末预测。
-- **年度销售趋势**：`build_yearly_sales_overview(year, …)`（`resolve_year` 负责年份夹取）按月聚合全年销售为 12 行明细 + 支付占比 + 年度合计，供 `yearly_sales_view`（`/sales-trend/`）渲染 12 月柱状图与明细表；利润对全年 sale_ids 做一次 FIFO 重放。
+- **年度销售趋势**：`build_yearly_sales_overview(year, …)`（`resolve_year` 负责年份夹取）按月聚合全年销售为 12 行明细 + 支付占比 + 年度合计，供 `record_view`（`/sales-records/`）在**无区间**时渲染 12 月柱状图与明细表（Sales Trend 已并入该页，`yearly_sales_view` / `/sales-trend/` 仅保留为旧链接的重定向）；利润对全年 sale_ids 做一次 FIFO 重放。
 - **当日支付方式统计**：`dashboard_view` 在遍历当日订单时顺带按 `payment_method` 累加金额/件数，产出 `today_payment_breakdown`（实时，不走快照缓存）。
 - **缓存（cheap win）**：视图层对月度快照与 MoM 对比按 `(month, sorted category ids, show_profit, period_end)` 维度做 60s `LocMemCache` 缓存；"今日操作"区块（含当日支付统计）仍每次实时计算，故缓存仅影响月度总览的新鲜度（≤60s），不影响当日订单。AR 汇总已由 Python 循环改为 DB `aggregate`，低库存列表补 `prefetch_related('images')` 消除 N+1。
 
@@ -225,7 +226,7 @@ has_admin_access(user)          → is_superuser only
 - **活动店铺解析**（`stock/stores.py`）：会话键 `active_store_id`。员工（非经理）**锁定**在 `StoreProfile.store`；经理/管理员可切换任意在营店铺或 **All stores**（聚合），未显式选择时**默认 All stores**。`resolve_active_store(request) -> (store|None, is_all)`；`store_for_new_sale(request)` 返回落账的具体店铺（All 时回退 home/默认店）；`scope_sales_by_store(qs, store, is_all)` 过滤（All 或 store 为 None 时不过滤）。
 - **注入**：`stock/context_processors.py::store_context` 向所有模板暴露 `active_store`/`active_store_is_all`/`store_can_switch`/`available_stores`（在 settings 注册）；`base.html` 侧栏渲染店铺切换下拉（经理）或只读店名（员工）。切换端点 `set_active_store`（`stores/switch/`，仅经理，写会话后回退来源页）。
 - **落账/过滤点**：出货 `outbound_view` 与订单修正 `save_sale_order_correction(store=...)` 写 `SaleOrder.store`+`Sale.store`（修正编辑时**保留原店铺**）；`ar_new_view` 写 `ARInvoice.store`。读侧按活动店铺过滤：销售记录 `record_view`（销售侧）、`ar_list_view`、员工列表 `employee_list_view`（按 `store_profile__store`），新建员工自动分配 `StoreProfile`。
-- **读侧全量过滤（Phase 2 已完成）**：**仪表盘** `dashboard_view` + `services/dashboard.py`（`compute_period_headline`/`build_period_comparison`/`build_monthly_dashboard_snapshot`/`build_yearly_sales_overview` 均加 `store=None` 参数，经 `_apply_store()` 过滤销售与 AR；库存/采购/滞销分析保持全店共享；快照缓存键加入 store 维度）；**销售趋势** `yearly_sales_view`；**订单修正中心** `sale_order_correction_center_view` 列表；**客户详情** `customer_detail_view`（该客户的订单与 AR 按店铺）；**客户列表** `customer_search_view`（统计子查询按店铺 + 指定店铺时仅显示"本店客户"）；**考勤** `attendance_view` 团队区（按 `user__store_profile__store`）。所有过滤 All stores 时不生效。
+- **读侧全量过滤（Phase 2 已完成）**：**仪表盘** `dashboard_view` + `services/dashboard.py`（`compute_period_headline`/`build_period_comparison`/`build_monthly_dashboard_snapshot`/`build_yearly_sales_overview` 均加 `store=None` 参数，经 `_apply_store()` 过滤销售与 AR；库存/采购/滞销分析保持全店共享；快照缓存键加入 store 维度）；**销售趋势**（并入 `record_view` 的无区间态）；**订单修正中心** `sale_order_correction_center_view` 列表；**客户详情** `customer_detail_view`（该客户的订单与 AR 按店铺）；**客户列表** `customer_search_view`（统计子查询按店铺 + 指定店铺时仅显示"本店客户"）；**考勤** `attendance_view` 团队区（按 `user__store_profile__store`）。所有过滤 All stores 时不生效。
 - **店铺管理页**（Admin）：`store_list_view`/`store_create_view`/`store_edit_view`/`store_delete_view`（`/stores/*`，`@admin_required`）+ `StoreForm`，模板 `store_list.html`/`store_form.html`，侧栏 Admin 分组入口。保存时强制"恰有一个默认店铺"；删除仅在店铺无销售/发票/员工且非默认时允许。`Store`/`StoreProfile` 亦注册进 Django Admin。
 - **打印小票抬头按店铺**：`PrintProfile` 加 `store` OneToOne（迁移 0030/0031：原单例抬头挂到默认店铺，其余店铺各建一份，从默认抬头 + 店名播种）。`PrintProfile.get_for_store(store)` 按店铺取/建；`get_solo()` 退化为默认店铺抬头。小票（`sale_order_detail`）用**该订单店铺**的抬头；抬头编辑页（`print_profile_edit_view`）编辑**当前活动店铺**的抬头（All stores 时编辑默认店铺）。
 - **仍待接入**：按分类的销售目标 `SalesTarget` 改为按店铺（模型变更；当前仪表盘目标进度用店铺销售额对比全局分类目标，为已知局限）；员工创建/编辑表单增加显式店铺选择（当前新建按活动/默认店铺自动分配）。
@@ -262,20 +263,27 @@ has_admin_access(user)          → is_superuser only
 
 ## 7. 测试架构
 
-- 唯一测试文件 `stock/tests.py`，基于 Django `TestCase` + 测试数据库（SQLite），共 **86 个测试**，按场景分为多个测试类：
-  - `SummaryRebuildTests` — 每日汇总信号重算
-  - `WorkflowRegressionTests` — 出货流程、CSRF、库存调整权限
-  - `InventoryAdjustmentSyncTests` — 库存调整与仪表盘快照同步
-  - `SalesRecordsViewTests` — 销售记录页分组/权限
-  - `CustomerDetailViewTests` — 客户详情时间线与权限
-  - `DashboardViewTests` — 仪表盘权限与指标
-  - `ProductArchitectureTests` — 产品表单/品牌系列结构化数据/Shopify 导出
-  - `InboundOutboundPageTests` — 进出库页面渲染
-  - `SaleOrderCorrectionTests` — 历史订单修正全流程（创建/编辑/删除 + 库存联动 + 审计日志）
-  - `SupplierManagementTests` / `EmployeeManagementTests` / `AttendanceManagementTests`
-  - `DashboardEnhancementTests` — MoM 同期对比、销售目标进度（分类作用域）、补货建议 days-of-cover
-- 测试大量使用 `self.captureOnCommitCallbacks(execute=True)` 来同步触发 `transaction.on_commit` 回调（验证信号驱动的汇总重算）。
-- 当前状态：全部通过（详见 [STATUS.md](./STATUS.md)）。
+唯一测试文件 `stock/tests.py`（约 3100 行），基于 Django `TestCase` + 测试数据库（SQLite），共 **147 个测试**、28 个测试类：
+
+| 领域 | 测试类 |
+|---|---|
+| 汇总/信号 | `SummaryRebuildTests` |
+| 出货与库存 | `WorkflowRegressionTests`（出货、CSRF、调整权限）、`InventoryAdjustmentSyncTests`、`InboundOutboundPageTests` |
+| 销售与客户 | `SalesRecordsViewTests`、`CustomerDetailViewTests` |
+| 仪表盘 | `DashboardViewTests`、`DashboardEnhancementTests`（MoM、销售目标进度） |
+| 产品 | `ProductArchitectureTests`（表单/品牌系列/Shopify CSV 导出）、`UploadPathTests` |
+| 订单修正 | `SaleOrderCorrectionTests`（创建/编辑/删除 + 库存联动 + 审计）、`CorrectionStoreChange{Service,View}Tests`、`AffectsStock{Model,Service,Profit,View}Tests` |
+| 多店铺 | `MultiStoreTests` |
+| 供应商/HR | `SupplierManagementTests`、`EmployeeManagementTests`、`AttendanceManagementTests` |
+| Shopify | `ShopifySyncTests`、`ShopifyCsvCloudinaryImageTests` |
+| Cloudinary | `Cloudinary{Client,Sync,Signal,Command,ImageUrl}Tests` |
+
+约定：
+
+- 外部集成（Shopify / Cloudinary）**全部 mock**，测试不发真实网络请求、不读密钥。
+- 涉及 Cloudinary 的测试用 `@override_settings` 钉死 `CLOUDINARY_CLOUD_NAME`/`CLOUDINARY_AUTO_SYNC`，**不依赖本机 `.env`**（否则结果会因机器而异）。
+- 大量使用 `self.captureOnCommitCallbacks(execute=True)` 同步触发 `transaction.on_commit` 回调（验证信号驱动的汇总重算）。
+- 跑测试用**系统 Python**或便携版 Python，`.venv` 没装 Django（见 [STATUS.md](./STATUS.md) 第 3 节）。
 
 ---
 
