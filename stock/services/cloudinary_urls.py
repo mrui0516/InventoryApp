@@ -16,7 +16,9 @@ def _has_primary_image(product):
     images = getattr(product, 'images', None)
     if images is None:
         return False
-    return images.first() is not None
+    # Use the prefetch cache (images.all()) rather than images.first(), which
+    # always issues a fresh query even when the caller prefetch_related('images').
+    return next(iter(images.all()), None) is not None
 
 
 def product_image_cdn_url(product, transformation=SHOPIFY_IMAGE_TRANSFORMATION):

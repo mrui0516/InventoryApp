@@ -3022,6 +3022,27 @@ class CloudinaryImageUrlTests(TestCase):
         ProductImage.objects.create(product=p, image=_tiny_png())
         self.assertIn("/62903623.jpg", product_image_cdn_url(p))
 
+    def test_url_key_matches_sync_upload_public_id(self):
+        # Binds the two halves of the naming contract: whatever public_id
+        # sync_product_primary_image actually passes to the Cloudinary client
+        # is the exact key product_image_cdn_url must build a URL for. If the
+        # upload side ever changes the key (e.g. adds a folder prefix) without
+        # updating the URL side, this test fails instead of both halves
+        # silently drifting apart.
+        from stock.models import ProductImage
+        from stock.services import cloudinary_sync
+        from stock.services.cloudinary_urls import product_image_cdn_url
+        p = _make_product(barcode="6290362349730")
+        ProductImage.objects.create(product=p, image=_tiny_png())
+
+        client = mock.Mock()
+        code, _ = cloudinary_sync.sync_product_primary_image(p, client=client)
+        self.assertEqual(code, cloudinary_sync.UPLOADED)
+        _, kwargs = client.upload_image.call_args
+        public_id = kwargs["public_id"]
+
+        self.assertTrue(product_image_cdn_url(p).endswith(f"/{public_id}.jpg"))
+
 
 @override_settings(CLOUDINARY_CLOUD_NAME="testcloud", CLOUDINARY_AUTO_SYNC=False)
 class ShopifyCsvCloudinaryImageTests(TestCase):
