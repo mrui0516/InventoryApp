@@ -81,7 +81,7 @@
 
 | 项 | 现状 | 风险等级 |
 |---|---|---|
-| `SECRET_KEY` 硬编码在 `settings.py`，`DEBUG=True` | **仓库是 public**，旧 key 已在 git 历史中，视为已泄露 | 高 |
+| `SECRET_KEY` 已轮换、改从 `.env` 读；旧 key 仍在 git 历史 | 已轮换降级：新 key 不入库、旧 key 已弃用。**仓库仍 public**，待转 private | 中（转 private 后更低） |
 | `db.sqlite3` + `media/`（79MB）无备份，且远程落后 34 个提交 | 单点故障即数据全部丢失 | 高 |
 | Cloudinary API Secret 明文存于 `.env`（U 盘上） | U 盘丢失/被盗即泄露；建议轮换 | 中 |
 | `.venv` 不完整（见第 3 节） | 新环境/新协作者按 `.venv` 操作会直接失败 | 中 |
@@ -99,6 +99,8 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-07-16：安全加固——`SECRET_KEY` 轮换并改从 `.env` 读（旧 key 弃用）、`DEBUG` 由 `.env` 控制（本机仍 True）、加 WhiteNoise + `STATIC_ROOT`（备将来 `DEBUG=False`）、`ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS` 可由环境扩展、加 `.env.example`。147/147 通过。仓库转 private 待手动操作。
+- 2026-07-16：上线本地每日备份（`Downloads\InventoryApp-Backups`，计划任务，含恢复步骤 [BACKUP.md](./BACKUP.md)）。
 - 2026-07-15：Shopify CSV 导出的图片两列改用 Cloudinary 公网 URL（此前输出局域网地址，Shopify 抓不到，一直是死链接）。新增 `services/cloudinary_urls.py`。
 - 2026-07-14：补录历史订单可选「不影响库存」（`SaleOrder.affects_stock`，迁移 0033）；此类单不扣库存、不参与 FIFO，利润按销售额 50% 估算。
 - 2026-07-13：订单修正支持改店铺（修下错店铺的单），订单与其全部明细行一并迁移，审计日志记 旧→新。

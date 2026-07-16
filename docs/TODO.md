@@ -14,15 +14,17 @@
 
 **背景**：`github.com/mrui0516/InventoryApp` 是 **public** 仓库，`settings.py` 里硬编码的 `SECRET_KEY` 已在 git 历史中，视为**已泄露，必须轮换**。
 
-**现状**：`settings.py` 顶部**已有手写的 `.env` 加载器**（读 `BASE_DIR/.env`，真实环境变量优先），Cloudinary 的密钥已经走这条路。所以不需要引入 `python-dotenv`，只需把这两个值搬进去。
+**现状**：`settings.py` 顶部**已有手写的 `.env` 加载器**（读 `BASE_DIR/.env`，真实环境变量优先）。代码改动已完成（2026-07-16）。
 
-- [ ] 生成一个新的随机 `SECRET_KEY`（旧的视为已泄露，不再使用）
-- [ ] 新 key 写入 `.env`；`settings.py` 改为 `SECRET_KEY = os.environ['SECRET_KEY']`
-- [ ] `DEBUG = os.environ.get('DEBUG', 'False') == 'True'`，`.env` 里本机设 `DEBUG=True`
-- [ ] 新建 `.env.example`（占位模板，提交到仓库，供新环境参考）
-- [ ] 同步更新 `docs/STATUS.md`（第 6 节移除该风险、第 7 节记一行）
+- [x] 生成新的随机 `SECRET_KEY` 写入 `.env`（旧的视为已泄露，不再使用）
+- [x] `settings.py` 改为从环境读 `SECRET_KEY`（缺省用非生产 dev 兜底）
+- [x] `DEBUG = os.environ.get('DEBUG','False')=='True'`；`.env` 本机设 `DEBUG=True`
+- [x] `.env.example` 模板已提交
+- [x] 加 WhiteNoise + `STATIC_ROOT`，`collectstatic` 验证通过（`DEBUG=False` 时静态可用）
+- [ ] **把 GitHub 仓库改为 private**（`gh` 未装 → 网页操作：仓库 Settings → General → Danger Zone → Change repository visibility → Private）
+- [ ] 上公网那天：`.env` 里 `DEBUG=False`、`ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS` 加隧道域名、跑 `collectstatic`
 
-> ⚠ **不在本任务范围内**：旧 `SECRET_KEY` 仍留在 git 历史中。是否用 `git filter-repo` 重写历史彻底清除属破坏性操作，需单独讨论并取得明确同意。
+> ⚠ **不在本任务范围内**：旧 `SECRET_KEY` 仍留在 git 历史中。但已轮换（新 key 只在 `.env`），旧 key 不再被使用，价值已失；仓库转 private 后进一步降低暴露。是否用 `git filter-repo` 重写历史彻底清除属破坏性操作，需单独讨论。
 
 ---
 

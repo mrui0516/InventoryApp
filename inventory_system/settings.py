@@ -31,21 +31,33 @@ if _env_file.exists():
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-ofv45l88dauyb%kza&q&j57k@9rm8o!5j1zs4ol#4ph(-@74q='
+# SECRET_KEY / DEBUG come from the environment (.env, loaded above). The old
+# hardcoded key is in the public git history and must be treated as leaked; the
+# real key now lives only in .env (git-ignored). The fallback below is a
+# non-production dev key, used only when .env is absent (e.g. a fresh checkout).
+SECRET_KEY = os.environ.get('SECRET_KEY') or 'django-insecure-dev-only-not-for-production'
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# Off by default (safe). .env sets DEBUG=True for local use; set it to False when
+# the app is exposed on a public URL (then run `collectstatic` so WhiteNoise can
+# serve static files).
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
-# 尝试自动添加本机局域网 IP（用于手机访问）
+# 自动添加本机局域网 IP（用于手机访问）
 try:
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
     ALLOWED_HOSTS.append(local_ip)
-except:
+except Exception:
     pass
+
+# Extra hosts / CSRF origins from the environment (comma-separated), for when the
+# app is reached through a tunnel domain — config-only, no code change:
+#   ALLOWED_HOSTS=pos.example.com
+#   CSRF_TRUSTED_ORIGINS=https://pos.example.com
+ALLOWED_HOSTS += [h.strip() for h in os.environ.get('ALLOWED_HOSTS', '').split(',') if h.strip()]
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',') if o.strip()]
 
 
 # Application definition
@@ -63,6 +75,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # Serves static files when DEBUG=False (runserver stops doing so). Must sit
+    # right after SecurityMiddleware. Harmless when DEBUG=True.
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -141,6 +156,8 @@ USE_I18N = True
 
 STATIC_URL = '/static/'
 STATICFILES_DIRS = [ BASE_DIR / "static" ]
+# collectstatic target; WhiteNoise serves from here when DEBUG=False.
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 
 MEDIA_URL = '/media/'
