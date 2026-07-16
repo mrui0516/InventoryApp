@@ -44,13 +44,20 @@ DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
-# 自动添加本机局域网 IP（用于手机访问）
-try:
-    hostname = socket.gethostname()
-    local_ip = socket.gethostbyname(hostname)
-    ALLOWED_HOSTS.append(local_ip)
-except Exception:
-    pass
+# 自动添加本机局域网 IP（用于手机/局域网访问）。用 UDP 路由探测法而非
+# gethostbyname —— 后者在多网卡机器上（例如装了 Tailscale 之后）常返回错误的
+# 169.254.x 链路本地地址，导致真实局域网 IP 触发 DisallowedHost。
+def _detect_lan_ip():
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as _sk:
+            _sk.connect(("8.8.8.8", 80))  # 不发数据，只取默认路由所用的本机 IP
+            return _sk.getsockname()[0]
+    except Exception:
+        return None
+
+_lan_ip = _detect_lan_ip()
+if _lan_ip and _lan_ip not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(_lan_ip)
 
 # Extra hosts / CSRF origins from the environment (comma-separated), for when the
 # app is reached through a tunnel domain — config-only, no code change:
