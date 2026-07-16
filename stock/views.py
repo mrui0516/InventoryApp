@@ -473,6 +473,7 @@ def _build_pending_reviews():
 
 
 @login_required
+@manager_required
 def inbound_view(request):
 
     today = timezone.localdate()
@@ -616,6 +617,7 @@ def suppliers_autocomplete(request):
 
 
 @login_required
+@manager_required
 def inbound_receive_view(request, order_id):
     """复核 / 编辑 / 确认收货 / 取消 一张暂定（pending_receipt）入库单。
 
@@ -846,6 +848,7 @@ def outbound_view(request):
 # 产品列表
 # -----------------------------
 @login_required
+@manager_required
 def product_list_view(request):
     show_sales_sensitive = has_sales_sensitive_access(request.user)
     query = request.GET.get('q', '').strip()
@@ -1411,6 +1414,7 @@ def add_product_view(request):
 
 
 @login_required
+@manager_required
 def product_detail_view(request, pk):
     product = get_object_or_404(
         Product.objects.select_related('category', 'brand_master', 'series_master').prefetch_related('images'),
@@ -3608,6 +3612,7 @@ def store_delete_view(request, store_id):
 
 
 @login_required
+@manager_required
 def daily_summary_view(request):
     """A focused, store-scoped end-of-day summary: today's orders, KPIs, payment
     mix, top products and stock received. Defaults to today; ?date= views a day."""
@@ -4393,6 +4398,7 @@ def customer_search_view(request):
 
 
 @login_required
+@manager_required
 def customer_detail_view(request, customer_id):
     customer = get_object_or_404(Customer, id=customer_id)
     show_sensitive = has_manager_access(request.user)
@@ -4779,6 +4785,7 @@ def products_autocomplete(request):
 # -----------------------------
 
 @login_required
+@manager_required
 def catalog_view(request):
     query = request.GET.get('q', '').strip()
     category_id = request.GET.get('category', '').strip()
@@ -5173,6 +5180,7 @@ def ar_new_view(request):
     })
 
 @login_required
+@manager_required
 def ar_list_view(request):
     q = request.GET.get('q', '')
     status = request.GET.get('status', '')
@@ -5205,6 +5213,7 @@ def ar_list_view(request):
     return render(request, 'stock/ar_list.html', context)
 
 @login_required
+@manager_required
 def ar_detail_view(request, invoice_id):
     invoice = get_object_or_404(ARInvoice.objects.select_related('customer'), id=invoice_id)
     items = invoice.items.all().order_by('id')
