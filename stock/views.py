@@ -3759,8 +3759,57 @@ def daily_summary_view(request):
     })
 
 
+def _employee_sales_day_view(request):
+    """Employee Sales: a single day's orders, amounts only, no charts."""
+    day = timezone.localdate()
+    day_str = (request.GET.get('date') or '').strip()
+    if day_str:
+        try:
+            day = datetime.strptime(day_str, '%Y-%m-%d').date()
+        except ValueError:
+            day = timezone.localdate()
+
+    active_store, store_is_all = resolve_active_store(request)
+    orders_qs = (
+        SaleOrder.objects
+        .filter(created_at__date=day)
+        .select_related('customer')
+        .prefetch_related('items', 'payments')
+        .order_by('-created_at', '-id')
+    )
+    # Reuse the shared store scoping (unfiltered when store is None / "all stores").
+    orders_qs = scope_sales_by_store(orders_qs, active_store, store_is_all)
+
+    payment_labels = {'cash': 'Cash', 'card': 'Card', 'mbway': 'MBWay'}
+    orders = []
+    day_total = Decimal('0.00')
+    for order in orders_qs:
+        items = list(order.items.all())
+        total = sum((i.quantity * (i.unit_price or Decimal('0.00')) for i in items), Decimal('0.00'))
+        qty = sum(i.quantity for i in items)
+        methods = [payment_labels.get(p.method, (p.method or '').title()) for p in order.payments.all()]
+        orders.append({
+            'created_hhmm': timezone.localtime(order.created_at).strftime('%H:%M'),
+            'customer_name': order.customer.name if order.customer_id else 'Walk-in / No customer',
+            'item_count': qty,
+            'payment_label': ', '.join(dict.fromkeys(methods)) or '-',
+            'total_amount': total,
+        })
+        day_total += total
+
+    return render(request, 'stock/sales_records_employee.html', {
+        'day': day,
+        'date_value': day.strftime('%Y-%m-%d'),
+        'orders': orders,
+        'order_count': len(orders),
+        'day_total': day_total,
+    })
+
+
 @login_required
 def record_view(request):
+    if not has_manager_access(request.user):
+        return _employee_sales_day_view(request)
     start_str = request.GET.get('start_date', '').strip()
     end_str = request.GET.get('end_date', '').strip()
     show_sensitive = has_manager_access(request.user)

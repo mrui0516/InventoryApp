@@ -504,6 +504,8 @@ class SalesRecordsViewTests(TestCase):
         self.assertContains(response, "vs purchases")
 
     def test_sales_records_hides_purchase_data_for_regular_user(self):
+        # A non-manager now gets the lean employee Sales view: today's orders
+        # and amounts only, no purchase data and no charts.
         self.client.login(username="records_user", password="pw123456")
         today = timezone.localdate()
 
@@ -513,18 +515,14 @@ class SalesRecordsViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertFalse(response.context["show_purchases"])
-        self.assertFalse(response.context["show_sales_sensitive"])
-        self.assertTrue(response.context["show_order_financials"])
-        self.assertFalse(response.context["show_profit"])
         self.assertNotContains(response, "Purchase Cost")
         self.assertNotContains(response, "Inbound Purchases")
-        self.assertContains(response, "Sales Amount")
-        # Financials are visible to this role: payment mix donut + daily trend.
-        self.assertContains(response, "Payment Mix")
-        self.assertContains(response, 'id="trendChart"')
-        # Purchases dataset must NOT be exposed to a non-manager.
         self.assertNotContains(response, "vs purchases")
+        self.assertNotContains(response, "<canvas")
+        # The day's order and its amount are still shown.
+        self.assertContains(response, "EUR 30.00")
+        self.assertContains(response, "Record Customer")
+        self.assertContains(response, 'name="date"')
 
     def test_sales_records_groups_corrected_order_by_order_datetime(self):
         self.client.login(username="records_admin", password="pw123456")
@@ -3164,3 +3162,24 @@ class EmployeeBlockedViewsTests(TestCase):
         self.client.login(username="blk_mgr", password="pw123456")
         for name in ["daily_summary", "inbound", "product_list", "catalog", "ar_list"]:
             self.assertEqual(self.client.get(reverse(name)).status_code, 200, name)
+
+
+class EmployeeSalesViewTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.employee = user_model.objects.create_user(username="sales_emp", password="pw123456")
+
+    def test_employee_sales_shows_todays_orders_with_amounts_no_charts(self):
+        order = SaleOrder.objects.create()
+        product = Product.objects.create(name="P", barcode="7000000000001", brand="B")
+        Sale.objects.create(order=order, product=product, quantity=2,
+                            unit_price=Decimal("10.00"), payment_method="cash")
+
+        self.client.login(username="sales_emp", password="pw123456")
+        resp = self.client.get(reverse("sales_records"))
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "EUR 20.00")       # order/day total shown
+        self.assertContains(resp, 'name="date"')      # single-day date picker
+        self.assertNotContains(resp, "<canvas")       # no charts at all

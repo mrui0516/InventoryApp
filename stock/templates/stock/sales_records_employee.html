@@ -1,0 +1,47 @@
+{% extends 'stock/base.html' %}
+{% block content %}
+<div class="page-card">
+  <h1 class="pos-title">Sales</h1>
+
+  <form method="get" class="row g-2 align-items-end mb-3">
+    <div class="col-auto">
+      <label class="form-label fw-bold" for="date">Date</label>
+      <input type="date" id="date" name="date" value="{{ date_value }}" class="form-control">
+    </div>
+    <div class="col-auto">
+      <button type="submit" class="btn btn-primary">View</button>
+    </div>
+  </form>
+
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Time</th><th>Customer</th><th>Items</th><th>Payment</th><th class="text-end">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for o in orders %}
+        <tr>
+          <td class="num">{{ o.created_hhmm }}</td>
+          <td>{{ o.customer_name }}</td>
+          <td class="num">{{ o.item_count }}</td>
+          <td>{{ o.payment_label }}</td>
+          <td class="num text-end">EUR {{ o.total_amount|floatformat:2 }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-muted">No orders for {{ date_value }}.</td></tr>
+        {% endfor %}
+      </tbody>
+      {% if orders %}
+      <tfoot>
+        <tr class="fw-bold">
+          <td colspan="4" class="text-end">Day total ({{ order_count }} orders)</td>
+          <td class="num text-end">EUR {{ day_total|floatformat:2 }}</td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+{% endblock %}
