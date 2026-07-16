@@ -30,8 +30,8 @@
 
 **背景**：`db.sqlite3` + `media/`（79MB）此前**无任何备份**；且本地领先 `origin/master` **34 个提交**，GitHub 上没有近期工作 → 代码也没有异地副本。
 
-- [x] **本地每日备份**已上线（C 盘，计划任务 `InventoryDailyBackup`，每天 21:00）。详见 [BACKUP.md](./BACKUP.md)。
-- [ ] **异地副本**：装 Google Drive 桌面版并登录，把每日备份也落到云盘同步夹（防本机失火/被偷）。见 BACKUP.md 文末。
+- [x] **本地每日备份**已上线（`Downloads\InventoryApp-Backups`，计划任务 `InventoryDailyBackup`，每天 21:00）。详见 [BACKUP.md](./BACKUP.md)。
+- [ ] **异地副本（可选）**：把 Downloads 设为同步到已装的 Google Drive，备份即自动上云（防本机失火/被偷）。见 BACKUP.md 局限与可选增强。
 - [ ] `git push` 把 34 个提交推到 GitHub（先确认没有密钥被误提交）
 
 ---
