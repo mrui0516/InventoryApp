@@ -3183,3 +3183,35 @@ class EmployeeSalesViewTests(TestCase):
         self.assertContains(resp, "EUR 20.00")       # order/day total shown
         self.assertContains(resp, 'name="date"')      # single-day date picker
         self.assertNotContains(resp, "<canvas")       # no charts at all
+
+
+class EmployeeCustomerViewTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.employee = user_model.objects.create_user(username="cust_emp", password="pw123456")
+        cls.alice = Customer.objects.create(nif="111111111", name="Alice Stone", phone="912000001")
+        cls.bob = Customer.objects.create(nif="222222222", name="Bob Rivers", phone="912000002")
+
+    def test_no_query_shows_no_customer_rows(self):
+        self.client.login(username="cust_emp", password="pw123456")
+        resp = self.client.get(reverse("customer_search"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotContains(resp, "Alice Stone")
+        self.assertNotContains(resp, "Bob Rivers")
+
+    def test_query_shows_only_matching_minimal_fields(self):
+        self.client.login(username="cust_emp", password="pw123456")
+        resp = self.client.get(reverse("customer_search"), {"q": "Alice"})
+        self.assertContains(resp, "Alice Stone")
+        self.assertContains(resp, "912000001")
+        self.assertNotContains(resp, "Bob Rivers")
+        self.assertNotContains(resp, "Total spent")   # no spend/balance columns
+
+    def test_employee_can_add_customer(self):
+        self.client.login(username="cust_emp", password="pw123456")
+        resp = self.client.post(reverse("add_customer_ajax"), {
+            "nif": "999999999", "name": "New Walkin", "phone": "912999999",
+        })
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(Customer.objects.filter(nif="999999999").exists())

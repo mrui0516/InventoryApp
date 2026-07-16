@@ -1,0 +1,68 @@
+{% extends 'stock/base.html' %}
+{% block content %}
+<div class="page-card">
+  <h1 class="pos-title">Customers</h1>
+
+  <div class="d-flex gap-2 mb-3">
+    <form method="get" class="d-flex gap-2 flex-grow-1">
+      <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Search name / phone / email / NIF">
+      <button type="submit" class="btn btn-primary">Search</button>
+    </form>
+    <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addCustomerModal">Add customer</button>
+  </div>
+
+  {% if query %}
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead><tr><th>Name</th><th>Phone</th><th>Email</th></tr></thead>
+      <tbody>
+        {% for c in customers %}
+        <tr><td>{{ c.name }}</td><td>{{ c.phone|default:"-" }}</td><td>{{ c.email|default:"-" }}</td></tr>
+        {% empty %}
+        <tr><td colspan="3" class="text-muted">No customers match "{{ query }}".</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+<div class="modal fade" id="addCustomerModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Add customer</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="addCustomerError" class="text-danger mb-2" role="alert"></div>
+        <div class="mb-2"><label class="form-label" for="ac_nif">NIF (9 digits)</label><input id="ac_nif" class="form-control"></div>
+        <div class="mb-2"><label class="form-label" for="ac_name">Name</label><input id="ac_name" class="form-control"></div>
+        <div class="mb-2"><label class="form-label" for="ac_phone">Phone</label><input id="ac_phone" class="form-control"></div>
+        <div class="mb-2"><label class="form-label" for="ac_email">Email</label><input id="ac_email" class="form-control"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" id="ac_save">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('ac_save').addEventListener('click', function () {
+  const body = new FormData();
+  body.append('nif', document.getElementById('ac_nif').value);
+  body.append('name', document.getElementById('ac_name').value);
+  body.append('phone', document.getElementById('ac_phone').value);
+  body.append('email', document.getElementById('ac_email').value);
+  fetch('{% url "add_customer_ajax" %}', {
+    method: 'POST',
+    headers: {'X-CSRFToken': '{{ csrf_token }}'},
+    body: body,
+  }).then(r => r.json()).then(d => {
+    if (d.success) { window.location.reload(); }
+    else { document.getElementById('addCustomerError').textContent = d.error || 'Could not add customer.'; }
+  });
+});
+</script>
+{% endblock %}

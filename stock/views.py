@@ -4318,8 +4318,29 @@ def add_customer(request):
         'email': customer.email
     })
 
+def _employee_customer_search_view(request):
+    """Employee Customers: search + add only; no full list, no history."""
+    query = (request.GET.get('q') or '').strip()
+    customers = []
+    if query:
+        customers = list(
+            Customer.objects.filter(
+                Q(name__icontains=query)
+                | Q(phone__icontains=query)
+                | Q(email__icontains=query)
+                | Q(nif__icontains=query)
+            ).order_by('name')[:50]
+        )
+    return render(request, 'stock/customer_search_employee.html', {
+        'query': query,
+        'customers': customers,
+    })
+
+
 @login_required
 def customer_search_view(request):
+    if not has_manager_access(request.user):
+        return _employee_customer_search_view(request)
     query = request.GET.get('q', '').strip()
     show_sensitive = has_manager_access(request.user)
     show_sales_sensitive = has_sales_sensitive_access(request.user)
