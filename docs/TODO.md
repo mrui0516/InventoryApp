@@ -21,7 +21,7 @@
 - [x] `DEBUG = os.environ.get('DEBUG','False')=='True'`；`.env` 本机设 `DEBUG=True`
 - [x] `.env.example` 模板已提交
 - [x] 加 WhiteNoise + `STATIC_ROOT`，`collectstatic` 验证通过（`DEBUG=False` 时静态可用）
-- [ ] **把 GitHub 仓库改为 private**（`gh` 未装 → 网页操作：仓库 Settings → General → Danger Zone → Change repository visibility → Private）
+- [x] **把 GitHub 仓库改为 private**（2026-07-16 完成）
 - [ ] 上公网那天：`.env` 里 `DEBUG=False`、`ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS` 加隧道域名、跑 `collectstatic`
 
 > ⚠ **不在本任务范围内**：旧 `SECRET_KEY` 仍留在 git 历史中。但已轮换（新 key 只在 `.env`），旧 key 不再被使用，价值已失；仓库转 private 后进一步降低暴露。是否用 `git filter-repo` 重写历史彻底清除属破坏性操作，需单独讨论。

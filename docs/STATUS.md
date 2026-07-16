@@ -81,7 +81,7 @@
 
 | 项 | 现状 | 风险等级 |
 |---|---|---|
-| `SECRET_KEY` 已轮换、改从 `.env` 读；旧 key 仍在 git 历史 | 已轮换降级：新 key 不入库、旧 key 已弃用。**仓库仍 public**，待转 private | 中（转 private 后更低） |
+| `SECRET_KEY` 已轮换、改从 `.env` 读；旧 key 仍在 git 历史 | 新 key 不入库、旧 key 已弃用失效；**仓库已转 private**（2026-07-16）。旧 key 仍在历史但已无价值 | 低 |
 | `db.sqlite3` + `media/`（79MB）无备份，且远程落后 34 个提交 | 单点故障即数据全部丢失 | 高 |
 | Cloudinary API Secret 明文存于 `.env`（U 盘上） | U 盘丢失/被盗即泄露；建议轮换 | 中 |
 | `.venv` 不完整（见第 3 节） | 新环境/新协作者按 `.venv` 操作会直接失败 | 中 |
