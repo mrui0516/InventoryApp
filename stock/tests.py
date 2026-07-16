@@ -3112,3 +3112,27 @@ class ShopifyCsvCloudinaryImageTests(TestCase):
         self.assertIn("/media/", rows[0]["Product image URL"])
         self.assertTrue(rows[0]["Product image URL"].startswith("http://"))
         self.assertNotIn("res.cloudinary.com", rows[0]["Product image URL"])
+
+
+class EmployeeNavTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.employee = user_model.objects.create_user(username="nav_emp", password="pw123456")
+        cls.manager = user_model.objects.create_user(username="nav_mgr", password="pw123456", is_staff=True)
+
+    def _nav(self, username):
+        self.client.login(username=username, password="pw123456")
+        return self.client.get(reverse("dashboard"))
+
+    def test_employee_sidebar_shows_only_allowed_links(self):
+        resp = self._nav("nav_emp")
+        for name in ["dashboard", "outbound", "sales_records", "customer_search"]:
+            self.assertContains(resp, 'href="%s"' % reverse(name))
+        for name in ["daily_summary", "inbound", "attendance", "product_list", "catalog", "ar_list"]:
+            self.assertNotContains(resp, 'href="%s"' % reverse(name))
+
+    def test_manager_sidebar_shows_everything(self):
+        resp = self._nav("nav_mgr")
+        for name in ["daily_summary", "inbound", "attendance", "product_list", "catalog", "ar_list", "sales_records", "customer_search"]:
+            self.assertContains(resp, 'href="%s"' % reverse(name))

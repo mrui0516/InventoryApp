@@ -58,24 +58,32 @@
 
       <nav class="erp-nav">
         <a class="erp-nav-link {% if current_url == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}">Dashboard</a>
+        {% if user|is_manager_user %}
         <a class="erp-nav-link {% if current_url == 'daily_summary' %}active{% endif %}" href="{% url 'daily_summary' %}">Today</a>
+        {% endif %}
 
         <div class="erp-nav-group">Operations</div>
+        {% if user|is_manager_user %}
         <a class="erp-nav-link {% if current_url == 'inbound' %}active{% endif %}" href="{% url 'inbound' %}">Inbound</a>
+        {% endif %}
         <a class="erp-nav-link {% if current_url == 'outbound' %}active{% endif %}" href="{% url 'outbound' %}">Outbound</a>
+        {% if user|is_manager_user %}
         <a class="erp-nav-link {% if current_url == 'attendance' %}active{% endif %}" href="{% url 'attendance' %}">Attendance</a>
+        {% endif %}
 
+        {% if user|is_manager_user %}
         <div class="erp-nav-group">Catalog</div>
         <a class="erp-nav-link {% if current_url in 'product_list,product_detail,edit_product,add_product' %}active{% endif %}" href="{% url 'product_list' %}">Products</a>
         <a class="erp-nav-link {% if current_url == 'catalog' %}active{% endif %}" href="{% url 'catalog' %}">Catalog View</a>
-        {% if user|is_manager_user %}
-          <a class="erp-nav-link {% if current_url in 'supplier_list,supplier_create,supplier_edit,supplier_detail' %}active{% endif %}" href="{% url 'supplier_list' %}">Suppliers</a>
+        <a class="erp-nav-link {% if current_url in 'supplier_list,supplier_create,supplier_edit,supplier_detail' %}active{% endif %}" href="{% url 'supplier_list' %}">Suppliers</a>
         {% endif %}
 
-        <div class="erp-nav-group">Sales & Clients</div>
+        <div class="erp-nav-group">Sales &amp; Clients</div>
         <a class="erp-nav-link {% if current_url == 'sales_records' %}active{% endif %}" href="{% url 'sales_records' %}">Sales</a>
         <a class="erp-nav-link {% if current_url in 'customer_search,customer_detail,edit_customer' %}active{% endif %}" href="{% url 'customer_search' %}">Customers</a>
+        {% if user|is_manager_user %}
         <a class="erp-nav-link {% if current_url in 'ar_list,ar_detail,ar_new,ar_add_payment,ar_add_items' %}active{% endif %}" href="{% url 'ar_list' %}">IOU / AR</a>
+        {% endif %}
 
         {% if user.is_superuser %}
           <div class="erp-nav-group">Admin</div>
