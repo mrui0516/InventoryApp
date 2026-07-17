@@ -4475,9 +4475,39 @@ def customer_search_view(request):
     })
 
 
+def _employee_customer_orders_view(request, customer_id):
+    """Employee: a customer's orders only (for reconciliation) - no analytics."""
+    customer = get_object_or_404(Customer, id=customer_id)
+    active_store, store_is_all = resolve_active_store(request)
+    orders_qs = (
+        SaleOrder.objects.filter(customer=customer)
+        .prefetch_related('items', 'payments')
+        .order_by('-created_at', '-id')
+    )
+    orders_qs = scope_sales_by_store(orders_qs, active_store, store_is_all)
+    payment_labels = {'cash': 'Cash', 'card': 'Card', 'mbway': 'MBWay'}
+    orders = []
+    for order in orders_qs:
+        items = list(order.items.all())
+        total = sum((i.quantity * (i.unit_price or Decimal('0.00')) for i in items), Decimal('0.00'))
+        methods = [payment_labels.get(p.method, (p.method or '').title()) for p in order.payments.all()]
+        orders.append({
+            'order_id': order.id,
+            'created_at': timezone.localtime(order.created_at).strftime('%Y-%m-%d %H:%M'),
+            'item_count': sum(i.quantity for i in items),
+            'payment_label': ', '.join(dict.fromkeys(methods)) or '-',
+            'total_amount': total,
+        })
+    return render(request, 'stock/customer_orders_employee.html', {
+        'customer': customer,
+        'orders': orders,
+    })
+
+
 @login_required
-@manager_required
 def customer_detail_view(request, customer_id):
+    if not has_manager_access(request.user):
+        return _employee_customer_orders_view(request, customer_id)
     customer = get_object_or_404(Customer, id=customer_id)
     show_sensitive = has_manager_access(request.user)
     show_sales_sensitive = has_sales_sensitive_access(request.user)

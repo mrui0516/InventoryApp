@@ -668,12 +668,14 @@ class CustomerDetailViewTests(TestCase):
         self.assertEqual(response.context["top_products"][0]["qty"], 2)
 
     def test_customer_detail_hides_sensitive_sections_for_regular_user(self):
+        # Task 9: non-manager users now get the lean employee orders view
+        # (200) instead of being redirected away from customer_detail.
         self.client.login(username="customer_timeline_user", password="pw123456")
 
         response = self.client.get(reverse("customer_detail", args=[self.customer.id]))
 
-        self.assertEqual(response.status_code, 302)
-        self.assertIn(reverse("dashboard"), response.headers["Location"])
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "stock/customer_orders_employee.html")
 
 
 class DashboardViewTests(TestCase):
@@ -3201,12 +3203,46 @@ class EmployeeBlockedViewsTests(TestCase):
         self.client.login(username="blk_emp", password="pw123456")
         for name in ["daily_summary", "inbound", "catalog", "ar_list"]:
             self._assert_blocked(reverse(name))
-        self._assert_blocked(reverse("customer_detail", args=[self.customer.id]))
+
+    def test_employee_customer_detail_now_routes_to_orders_view(self):
+        # Task 9: customer_detail is no longer manager-only; employees get
+        # a lean orders-only view instead of a 302 redirect.
+        self.client.login(username="blk_emp", password="pw123456")
+        resp = self.client.get(reverse("customer_detail", args=[self.customer.id]))
+        self.assertEqual(resp.status_code, 200)
 
     def test_manager_can_open_restricted_pages(self):
         self.client.login(username="blk_mgr", password="pw123456")
         for name in ["daily_summary", "inbound", "product_list", "catalog", "ar_list"]:
             self.assertEqual(self.client.get(reverse(name)).status_code, 200, name)
+
+
+class EmployeeCustomerOrdersTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.employee = user_model.objects.create_user(username="recon_emp", password="pw123456")
+        cls.customer = Customer.objects.create(nif="333333333", name="Recon Cust")
+        cls.order = SaleOrder.objects.create(customer=cls.customer)
+        product = Product.objects.create(name="R", barcode="7300000000001", brand="B")
+        Sale.objects.create(order=cls.order, product=product, quantity=2,
+                            unit_price=Decimal("7.50"), payment_method="cash")
+
+    def test_employee_sees_customer_orders_only(self):
+        self.client.login(username="recon_emp", password="pw123456")
+        resp = self.client.get(reverse("customer_detail", args=[self.customer.id]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Recon Cust")
+        self.assertContains(resp, "EUR 15.00")
+        self.assertContains(resp, reverse("sale_order_detail", args=[self.order.id]))
+        self.assertNotContains(resp, "<canvas")
+
+    def test_manager_still_sees_full_customer_detail(self):
+        user_model = get_user_model()
+        user_model.objects.create_user(username="recon_mgr", password="pw123456", is_staff=True)
+        self.client.login(username="recon_mgr", password="pw123456")
+        resp = self.client.get(reverse("customer_detail", args=[self.customer.id]))
+        self.assertEqual(resp.status_code, 200)
 
 
 class EmployeeSalesViewTests(TestCase):
