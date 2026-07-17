@@ -270,3 +270,70 @@ orders view) and the still-pending Task 5 (auto-attendance) and Task 6 (docs,
 reflecting the final state). The revision partially reverses Task 1 (nav) and
 Task 2 (product blocks) — those reversals are explicit new tasks, not edits to
 the completed commits.
+
+---
+
+## Revision (2026-07-16c) — employee product edit/export + polished order pages
+
+Approved amendment after the 2026-07-16b tasks (172 tests). Extends the employee
+experience further. Auto-attendance and the store-scoping fix are unchanged.
+
+### R6. Employees can edit products
+
+- Remove `@manager_required` from `edit_product_view` — employees can edit
+  product fields (name/prices/spec/etc.) and upload new images (the edit view
+  already handles image upload on POST).
+- `delete_product_view` (whole product) and `delete_product_image` (single
+  image) STAY `@manager_required` (no change). In `edit_product.html`, hide the
+  whole-product delete block and the per-image delete forms behind
+  `{% if user|is_manager_user %}` so employees don't hit those 302 endpoints.
+- In `product_list.html`, make the **Add Product** button (line ~12) and the
+  per-row **Edit** links (lines ~258, ~290) visible to employees (they are
+  currently `{% if can_manage %}`). Employees add + edit; delete stays manager.
+
+### R7. Employees can download the product Excel
+
+- Remove `@manager_required` from `export_product_list_excel`. This export is a
+  **customer-facing product list** — columns are Image / Product / Category /
+  Retail Price / Wholesale Price / Availability, with **no cost / profit /
+  supplier** — so it is safe for employees (they already see retail/wholesale
+  prices on the product page).
+- In `product_list.html`, the export panel (`{% if can_manage %}` at line ~100)
+  wraps BOTH "Export For Client" (Excel) and "Export For Shopify". Split it:
+  **"Export For Client" visible to all**; **"Export For Shopify" stays
+  `{% if can_manage %}`** (manager-only).
+
+### R8. Employee Sales/Customers pages match the manager design
+
+- The three lean employee templates (`sales_records_employee.html`,
+  `customer_search_employee.html`, `customer_orders_employee.html`) currently use
+  bare Bootstrap tables. Restyle them with the app's shared design system used by
+  the manager pages (`page-card`, section/`strip-head` headers, the standard
+  table treatment, stat/summary cards where appropriate) so they look consistent
+  with `sales_records.html` / `customer_search.html`. No new intro/explanatory
+  paragraphs (house rule) — titles + controls + data only.
+
+### R9. Each order row: a View modal + a Print button
+
+- In the employee **Sales** day list and the **customer orders** page, each order
+  row gets two actions instead of the current time/order#-cell link:
+  - **View** — a Bootstrap modal (same pattern as `daily_summary.html`'s
+    `#order-modal-{{ id }}` "Details" modal) showing the order's line items
+    (name / qty / unit price / subtotal), payment method(s), and total — **no
+    profit/cost** (isolation). Opens in place, for quick reconciliation.
+  - **Print** — a button linking to `sale_order_detail` (the printable
+    receipt/detail page; already store-scoped to the employee).
+- The two employee helpers (`_employee_sales_day_view`,
+  `_employee_customer_orders_view`) must pass each order's **items** (a list of
+  {name, qty, unit_price, line_total}) to the template so the modal can render
+  them (they currently pass only aggregates). Orders per page are few (one day /
+  one customer), so inline per-order modals are fine.
+
+### R10. Net effect
+
+Employee product access becomes: view/search list, **Add Product**, **Edit
+Product** (fields + add images; not delete), open product detail, and **Export
+For Client (Excel)**. Inbound, Shopify export, edit's delete actions, and whole-
+product/image deletion stay manager-only. Employee Sales/Customers pages are
+visually consistent with manager pages and expose per-order **View** (modal) +
+**Print** (detail) actions.
