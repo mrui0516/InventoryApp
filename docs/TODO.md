@@ -30,11 +30,11 @@
 
 ## 🔴 2. 数据备份 + 推送到远程
 
-**背景**：`db.sqlite3` + `media/`（79MB）此前**无任何备份**；且本地领先 `origin/master` **34 个提交**，GitHub 上没有近期工作 → 代码也没有异地副本。
+**背景**：`db.sqlite3` + `media/`（79MB）此前**无任何备份**；代码也没有异地副本。
 
 - [x] **本地每日备份**已上线（`Downloads\InventoryApp-Backups`，计划任务 `InventoryDailyBackup`，每天 21:00）。详见 [BACKUP.md](./BACKUP.md)。
-- [ ] **异地副本（可选）**：把 Downloads 设为同步到已装的 Google Drive，备份即自动上云（防本机失火/被偷）。见 BACKUP.md 局限与可选增强。
-- [ ] `git push` 把 34 个提交推到 GitHub（先确认没有密钥被误提交）
+- [x] **代码推送到 GitHub**（2026-07-16，密钥扫描确认无泄露后推送；`master` 与 `origin/master` 已同步）。
+- [ ] **数据异地副本（仅剩这项，需你手动）**：把 Downloads 设为同步到已装的 Google Drive，备份即自动上云（防本机失火/被偷）。见 BACKUP.md 局限与可选增强。
 
 ---
 

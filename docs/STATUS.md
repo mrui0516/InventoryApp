@@ -13,7 +13,7 @@
 | 功能完整度 | ✅ 已覆盖 PRD 全部 20 个模块 | 正在生产使用中（真实业务数据） |
 | 自动化测试 | ✅ 178/178 通过 | `python manage.py test stock` |
 | 数据库迁移 | ✅ 无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
-| 版本控制 | ⚠ 本地领先远程 34 个提交 | 见第 4 节 |
+| 版本控制 | ✅ 已推送 GitHub，与 origin/master 同步 | 见第 4 节 |
 | 本地虚拟环境 | ⚠ `.venv` 不完整/未使用 | 见第 3 节 |
 | 生产可用性 | ⚠ 仍是开发配置 | `DEBUG=True`、`SECRET_KEY` 硬编码（见第 6 节） |
 | 数据备份 | ❌ 无 | `db.sqlite3` + `media/`（79MB）无任何备份机制 |
@@ -61,7 +61,7 @@
 ## 4. 版本控制状态
 
 - 远程：`origin = https://github.com/mrui0516/InventoryApp.git`，本地分支 `master` 跟踪 `origin/master`。
-- **本地领先远程 34 个提交**（共 35 个提交，远程只有最初那 1 个）。即 GitHub 上没有近期任何工作 → **没有异地备份**（与第 6 节"无备份"风险叠加）。
+- **已推送到 GitHub**（2026-07-16，密钥扫描确认 `.env`/Cloudinary 密钥从未入库后推送），`master` 与 `origin/master` 同步 → 代码已有异地副本。
 - `.gitignore` 已正确排除 `db.sqlite3`、`media/`、`.venv/`、`.env`、临时文件等。
 - `.env`（Cloudinary 密钥）不入库，仅存在于本地/U 盘。
 
@@ -82,7 +82,7 @@
 | 项 | 现状 | 风险等级 |
 |---|---|---|
 | `SECRET_KEY` 已轮换、改从 `.env` 读；旧 key 仍在 git 历史 | 新 key 不入库、旧 key 已弃用失效；**仓库已转 private**（2026-07-16）。旧 key 仍在历史但已无价值 | 低 |
-| `db.sqlite3` + `media/`（79MB）无备份，且远程落后 34 个提交 | 单点故障即数据全部丢失 | 高 |
+| `db.sqlite3` + `media/`（79MB）本地已有每日备份，但无异地副本 | 本机失火/被偷则本地备份同亡（代码已推 GitHub，数据未上云） | 中 |
 | Cloudinary API Secret 明文存于 `.env`（U 盘上） | U 盘丢失/被盗即泄露；建议轮换 | 中 |
 | `.venv` 不完整（见第 3 节） | 新环境/新协作者按 `.venv` 操作会直接失败 | 中 |
 | `sale_profit_map_for_sale_ids` 全量 FIFO 重放 | 当前 4,166 条销售记录下可接受，规模增长后需关注 | 低（中长期） |
@@ -143,8 +143,7 @@
 
 ## 8. 建议的下一步（按优先级）
 
-1. **推送到远程**：本地领先 34 个提交，GitHub 上没有近期工作，等于没有异地备份。
-2. **数据备份**：为 `db.sqlite3` 与 `media/` 建立定期备份（脚本 + 任务计划）。
+1. ~~推送到远程~~ ✅ 已完成（2026-07-16）。~~数据备份~~ ✅ 本地每日备份已上线；仅剩**数据异地副本**（Downloads → Google Drive 同步）。
 3. **`SECRET_KEY` / `DEBUG` 收敛**：`settings.py` 已有 `.env` 加载器（见其顶部），把两者搬进 `.env` 即可；仓库是 public，旧 `SECRET_KEY` 必须换新。
 4. **轮换 Cloudinary API Secret**（明文存于 U 盘上的 `.env`）。
 5. **统一运行环境**：修复或删除 `.venv`，避免与便携版/系统 Python 三者混淆。
