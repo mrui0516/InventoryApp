@@ -1,61 +1,86 @@
 {% extends 'stock/base.html' %}
+{% block title %}Sales{% endblock %}
 {% block content %}
-<div class="page-card">
-  <h1 class="pos-title">Sales</h1>
-
-  <form method="get" class="row g-2 align-items-end mb-3">
-    <div class="col-auto">
-      <label class="form-label fw-bold" for="date">Date</label>
-      <input type="date" id="date" name="date" value="{{ date_value }}" class="form-control">
+<div class="page-shell">
+  <section class="page-card pad">
+    <div class="page-head">
+      <div>
+        <h1 class="page-title">Sales</h1>
+      </div>
     </div>
-    <div class="col-auto">
-      <button type="submit" class="btn btn-primary">View</button>
-    </div>
-  </form>
+  </section>
 
-  <form method="get" class="row g-2 align-items-end mb-3">
-    <div class="col-auto">
-      <label class="form-label fw-bold" for="order">Order #</label>
-      <input type="text" id="order" name="order" class="form-control" placeholder="Find by order number">
+  <section class="page-card pad">
+    <div class="strip-head mb-3">
+      <div>
+        <h2 class="h5 mb-1">Find Orders</h2>
+      </div>
     </div>
-    <div class="col-auto"><button type="submit" class="btn btn-outline-primary">Find</button></div>
-  </form>
+    <form method="get" class="toolbar row g-2 align-items-end mb-3">
+      <div class="col-auto">
+        <label class="form-label fw-bold" for="date">Date</label>
+        <input type="date" id="date" name="date" value="{{ date_value }}" class="form-control">
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-primary">View</button>
+      </div>
+    </form>
 
-  <div class="table-responsive">
-    <table class="table align-middle">
-      <thead>
-        <tr>
-          <th>Time</th><th>Customer</th><th>Items</th><th>Payment</th><th class="text-end">Total</th><th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for o in orders %}
-        <tr>
-          <td class="num">{{ o.created_hhmm }}</td>
-          <td>{{ o.customer_name }}</td>
-          <td class="num">{{ o.item_count }}</td>
-          <td>{{ o.payment_label }}</td>
-          <td class="num text-end">EUR {{ o.total_amount|floatformat:2 }}</td>
-          <td>
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#order-modal-{{ o.order_id }}">View</button>
-            <a href="{% url 'sale_order_detail' o.order_id %}" class="btn btn-sm btn-outline-primary">Print</a>
-          </td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="6" class="text-muted">No orders for {{ date_value }}.</td></tr>
-        {% endfor %}
-      </tbody>
-      {% if orders %}
-      <tfoot>
-        <tr class="fw-bold">
-          <td colspan="4" class="text-end">Day total ({{ order_count }} orders)</td>
-          <td class="num text-end">EUR {{ day_total|floatformat:2 }}</td>
-          <td></td>
-        </tr>
-      </tfoot>
-      {% endif %}
-    </table>
-  </div>
+    <form method="get" class="toolbar row g-2 align-items-end">
+      <div class="col-auto">
+        <label class="form-label fw-bold" for="order">Order #</label>
+        <input type="text" id="order" name="order" class="form-control" placeholder="Find by order number">
+      </div>
+      <div class="col-auto"><button type="submit" class="btn btn-outline-primary">Find</button></div>
+    </form>
+  </section>
+
+  <section class="page-card pad">
+    <div class="strip-head mb-3">
+      <div>
+        <h2 class="h5 mb-1">Orders</h2>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <div class="table-responsive">
+        <table class="table align-middle mb-0">
+          <thead>
+            <tr>
+              <th>Time</th><th>Customer</th><th>Items</th><th>Payment</th><th class="text-end">Total</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for o in orders %}
+            <tr>
+              <td class="num">{{ o.created_hhmm }}</td>
+              <td>{{ o.customer_name }}</td>
+              <td class="num">{{ o.item_count }}</td>
+              <td>{{ o.payment_label }}</td>
+              <td class="num text-end">EUR {{ o.total_amount|floatformat:2 }}</td>
+              <td>
+                <div class="actions">
+                  <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#order-modal-{{ o.order_id }}">View</button>
+                  <a href="{% url 'sale_order_detail' o.order_id %}" class="btn btn-sm btn-outline-primary">Print</a>
+                </div>
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="text-muted">No orders for {{ date_value }}.</td></tr>
+            {% endfor %}
+          </tbody>
+          {% if orders %}
+          <tfoot>
+            <tr class="fw-bold">
+              <td colspan="4" class="text-end">Day total ({{ order_count }} orders)</td>
+              <td class="num text-end">EUR {{ day_total|floatformat:2 }}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+          {% endif %}
+        </table>
+      </div>
+    </div>
+  </section>
 </div>
 
 {% for o in orders %}

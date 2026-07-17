@@ -3432,3 +3432,18 @@ class EmployeeOrderActionsTests(TestCase):
         self.assertContains(resp, "order-modal-%s" % self.order.id)
         self.assertContains(resp, "Widget")
         self.assertContains(resp, reverse("sale_order_detail", args=[self.order.id]))
+
+
+class EmployeePageStyleTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.employee = user_model.objects.create_user(username="style_emp", password="pw123456")
+
+    def test_employee_pages_use_shared_card_scaffold(self):
+        self.client.login(username="style_emp", password="pw123456")
+        for url in [reverse("sales_records"), reverse("customer_search")]:
+            resp = self.client.get(url)
+            self.assertEqual(resp.status_code, 200)
+            self.assertContains(resp, "page-card")     # shared design-system card, like manager pages
+            self.assertContains(resp, "page-title")    # shared heading class, like product_list.html
