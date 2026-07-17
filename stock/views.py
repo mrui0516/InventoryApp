@@ -848,7 +848,6 @@ def outbound_view(request):
 # 产品列表
 # -----------------------------
 @login_required
-@manager_required
 def product_list_view(request):
     show_sales_sensitive = has_sales_sensitive_access(request.user)
     query = request.GET.get('q', '').strip()
@@ -1395,7 +1394,6 @@ def export_shopify_inventory_csv(request):
 # 产品增/改/详情
 # -----------------------------
 @login_required
-@manager_required
 def add_product_view(request):
     if request.method == 'POST':
         form = ProductForm(request.POST)
@@ -1414,7 +1412,6 @@ def add_product_view(request):
 
 
 @login_required
-@manager_required
 def product_detail_view(request, pk):
     product = get_object_or_404(
         Product.objects.select_related('category', 'brand_master', 'series_master').prefetch_related('images'),

@@ -852,8 +852,7 @@ class DashboardViewTests(TestCase):
         self.assertEqual(self.client.get(reverse("customer_search")).status_code, 200)
 
         product_list_response = self.client.get(reverse("product_list"))
-        self.assertEqual(product_list_response.status_code, 302)
-        self.assertIn(reverse("dashboard"), product_list_response.headers["Location"])
+        self.assertEqual(product_list_response.status_code, 200)
 
         ar_list_response = self.client.get(reverse("ar_list"))
         self.assertEqual(ar_list_response.status_code, 302)
@@ -1082,8 +1081,12 @@ class ProductArchitectureTests(TestCase):
         self.client.login(username="product_employee", password="pw123456")
         response = self.client.get(reverse("product_detail", args=[product.id]))
 
-        self.assertEqual(response.status_code, 302)
-        self.assertIn(reverse("dashboard"), response.headers["Location"])
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Anker - USB-C - Cable")
+        self.assertContains(response, "Retail Price")
+        self.assertContains(response, "Wholesale Price")
+        self.assertNotContains(response, "Suppliers &amp; cost")
+        self.assertNotContains(response, "Sales History")
 
     def test_product_list_can_filter_by_brand(self):
         perfume_brand = Brand.objects.create(name="Lattafa")
@@ -1159,8 +1162,11 @@ class ProductArchitectureTests(TestCase):
         self.client.login(username="product_employee", password="pw123456")
         response = self.client.get(reverse("product_list"))
 
-        self.assertEqual(response.status_code, 302)
-        self.assertIn(reverse("dashboard"), response.headers["Location"])
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Retail / Wholesale")
+        self.assertContains(response, "EUR 29.00")
+        self.assertContains(response, "EUR 17.00")
+        self.assertNotContains(response, "Best selling")
 
     def test_product_list_shows_shopify_export_for_manager(self):
         self.client.login(username="product_admin", password="pw123456")
@@ -1314,6 +1320,37 @@ class ProductArchitectureTests(TestCase):
         self.assertEqual(rows[1]["Price"], "29.90")
         self.assertEqual(rows[1]["Cost per item"], "11.11")
         self.assertEqual(rows[1]["Inventory quantity"], "0")
+
+
+class EmployeeProductAccessTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.employee = user_model.objects.create_user(username="prod_emp", password="pw123456")
+        cls.category = Category.objects.create(name="PCat")
+        cls.product = Product.objects.create(name="PP", barcode="7100000000001", brand="B",
+                                             default_price=Decimal("9.90"))
+
+    def test_employee_can_view_products_and_detail(self):
+        self.client.login(username="prod_emp", password="pw123456")
+        self.assertEqual(self.client.get(reverse("product_list")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("product_detail", args=[self.product.pk])).status_code, 200)
+
+    def test_employee_can_add_product(self):
+        self.client.login(username="prod_emp", password="pw123456")
+        resp = self.client.post(reverse("add_product"), {
+            "barcode": "7100000000002", "category": self.category.id,
+            "new_brand_name": "NB", "name": "New Item", "default_price": "12.00",
+        })
+        self.assertIn(resp.status_code, (200, 302))
+        self.assertTrue(Product.objects.filter(barcode="7100000000002").exists())
+
+    def test_employee_still_blocked_from_inbound_and_edit(self):
+        self.client.login(username="prod_emp", password="pw123456")
+        for url in [reverse("inbound"), reverse("edit_product", args=[self.product.pk])]:
+            resp = self.client.get(url)
+            self.assertEqual(resp.status_code, 302)
+            self.assertIn(reverse("dashboard"), resp.headers["Location"])
 
 
 class InboundOutboundPageTests(TestCase):
@@ -3136,9 +3173,9 @@ class EmployeeNavTests(TestCase):
 
     def test_employee_sidebar_shows_only_allowed_links(self):
         resp = self._nav("nav_emp")
-        for name in ["dashboard", "outbound", "sales_records", "customer_search"]:
+        for name in ["dashboard", "outbound", "sales_records", "customer_search", "product_list"]:
             self.assertContains(resp, 'href="%s"' % reverse(name))
-        for name in ["daily_summary", "inbound", "attendance", "product_list", "catalog", "ar_list"]:
+        for name in ["daily_summary", "inbound", "attendance", "catalog", "ar_list"]:
             self.assertNotContains(resp, 'href="%s"' % reverse(name))
 
     def test_manager_sidebar_shows_everything(self):
@@ -3162,7 +3199,7 @@ class EmployeeBlockedViewsTests(TestCase):
 
     def test_employee_blocked_from_restricted_pages(self):
         self.client.login(username="blk_emp", password="pw123456")
-        for name in ["daily_summary", "inbound", "product_list", "catalog", "ar_list"]:
+        for name in ["daily_summary", "inbound", "catalog", "ar_list"]:
             self._assert_blocked(reverse(name))
         self._assert_blocked(reverse("customer_detail", args=[self.customer.id]))
 
