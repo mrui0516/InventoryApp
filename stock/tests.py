@@ -1902,38 +1902,46 @@ class AttendanceManagementTests(TestCase):
         cls.employee = user_model.objects.create_user(username="attendance_employee", password="pw123456")
         cls.manager = user_model.objects.create_user(username="attendance_manager", password="pw123456", is_staff=True)
 
-    def test_employee_can_check_in_and_check_out(self):
+    def test_login_opens_shift_logout_closes_it(self):
         self.client.login(username="attendance_employee", password="pw123456")
+        rec = AttendanceRecord.objects.get(user=self.employee)
+        self.assertIsNone(rec.clock_out_at)
+        self.client.logout()
+        rec.refresh_from_db()
+        self.assertIsNotNone(rec.clock_out_at)
 
-        check_in_response = self.client.post(reverse("attendance"), data={
-            "action": "check_in",
-            "note": "Morning shift",
-        })
-        self.assertEqual(check_in_response.status_code, 302)
+    def test_second_login_while_open_does_not_duplicate(self):
+        self.client.login(username="attendance_employee", password="pw123456")
+        self.client.login(username="attendance_employee", password="pw123456")
+        self.assertEqual(AttendanceRecord.objects.filter(user=self.employee).count(), 1)
 
-        record = AttendanceRecord.objects.get(user__username="attendance_employee")
-        self.assertIsNone(record.clock_out_at)
-        self.assertIn("Morning shift", record.note)
+    def test_stale_previous_day_shift_closed_on_next_login(self):
+        stale = AttendanceRecord.objects.create(
+            user=self.employee,
+            clock_in_at=timezone.now() - timedelta(days=1),
+        )
+        self.client.login(username="attendance_employee", password="pw123456")
+        stale.refresh_from_db()
+        self.assertIsNotNone(stale.clock_out_at)                 # stale closed
+        self.assertEqual(AttendanceRecord.objects.filter(user=self.employee, clock_out_at__isnull=True).count(), 1)  # one fresh open
 
-        check_out_response = self.client.post(reverse("attendance"), data={
-            "action": "check_out",
-            "note": "Closing counter",
-        })
-        self.assertEqual(check_out_response.status_code, 302)
+    def test_manager_login_creates_no_record(self):
+        self.client.login(username="attendance_manager", password="pw123456")
+        self.assertEqual(AttendanceRecord.objects.filter(user=self.manager).count(), 0)
 
-        record.refresh_from_db()
-        self.assertIsNotNone(record.clock_out_at)
-        self.assertIn("Closing counter", record.note)
+    def test_employee_blocked_from_attendance_page(self):
+        self.client.login(username="attendance_employee", password="pw123456")
+        resp = self.client.get(reverse("attendance"))
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(reverse("dashboard"), resp.headers["Location"])
 
     def test_manager_can_see_team_attendance_section(self):
         AttendanceRecord.objects.create(user=self.employee, clock_in_at=timezone.now() - timedelta(hours=2))
         self.client.login(username="attendance_manager", password="pw123456")
-
-        response = self.client.get(reverse("attendance"))
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Team attendance overview")
-        self.assertContains(response, "attendance_employee")
+        resp = self.client.get(reverse("attendance"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Team attendance overview")
+        self.assertContains(resp, "attendance_employee")
 
 
 class DashboardEnhancementTests(TestCase):

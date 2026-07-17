@@ -3074,6 +3074,7 @@ def employee_delete_view(request, user_id):
 
 
 @login_required
+@manager_required
 def attendance_view(request):
     today = timezone.localdate()
     open_shift = (
