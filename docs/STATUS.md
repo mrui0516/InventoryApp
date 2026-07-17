@@ -99,6 +99,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-07-16：员工界面收窄（可见页面从"全部"限为 Dashboard/Outbound/Products/Sales/Customers 5 项，Products 保留查看/搜索/新增但隐藏成本/供应商比价/销售历史，进货与编辑产品仍仅经理，AR/进货/考勤/Today/Catalog 对员工整页 302 拦截）+ Sales/Customers 员工视图改为单日订单/无分析的精简版（Sales 支持按订单号搜索直达订单详情，Customers 支持按客户查订单对账）+ 登录/登出自动开关考勤班次（免手动打卡）。
 - 2026-07-16：安全加固——`SECRET_KEY` 轮换并改从 `.env` 读（旧 key 弃用）、`DEBUG` 由 `.env` 控制（本机仍 True）、加 WhiteNoise + `STATIC_ROOT`（备将来 `DEBUG=False`）、`ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS` 可由环境扩展、加 `.env.example`。147/147 通过。仓库转 private 待手动操作。
 - 2026-07-16：上线本地每日备份（`Downloads\InventoryApp-Backups`，计划任务，含恢复步骤 [BACKUP.md](./BACKUP.md)）。
 - 2026-07-15：Shopify CSV 导出的图片两列改用 Cloudinary 公网 URL（此前输出局域网地址，Shopify 抓不到，一直是死链接）。新增 `services/cloudinary_urls.py`。

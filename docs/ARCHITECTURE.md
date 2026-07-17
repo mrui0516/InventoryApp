@@ -186,8 +186,18 @@ has_admin_access(user)          → is_superuser only
 ```
 - 装饰器 `manager_required` / `admin_required` 用于视图级拦截（未授权时重定向到 dashboard）。
 - 模板级通过 `access_tags.py::is_manager_user` 过滤器 + 视图传入的 `show_sensitive`/`show_sales_sensitive`/`show_profit`/`show_order_financials` 等布尔上下文变量控制字段显隐。
-- **例外（已审查的设计决策）**：`ar_list_view` / `ar_detail_view` 仅使用 `@login_required`（任意已登录用户可访问发票列表/详情），未使用 `@manager_required`。页面内全部 € 金额已通过模板 `{% if show_sensitive %}` 对非经理角色隐藏，不构成敏感数据泄露。该设置经代码审查确认维持现状（见 STATUS.md 近期变更记录），不应在后续审查中重复提出。
 - AJAX/JSON API（如 `api_adjust_purchase_stock`/`api_adjust_total_stock`）的权限校验不使用 `manager_required` 装饰器——该装饰器在未授权时 `redirect("dashboard")`，会破坏 JSON 响应契约；这类视图改为手动 `if not has_manager_access(request.user): return JsonResponse({...}, status=403)`。
+
+### 5.4.1 员工界面收窄（Employee interface restriction，2026-07-16）
+员工（`has_manager_access(user)` 为 False，即非 `is_staff`/非 "Managers" 组/非超管）的可用界面被收窄为一个精简子集，而非完整功能的隐藏字段版本。
+
+- **侧边栏**：员工仅看到 Dashboard / Outbound（POS）/ Products / Sales / Customers 五个入口（`base.html` 用 `{% if user|is_manager_user %}` 包裹其余分组/条目）。隐藏：Today（daily_summary）、Inbound、Attendance、Catalog View、Suppliers、IOU/AR、Admin 分组。
+- **视图级拦截（`@manager_required`，员工 GET 直接 302 到 dashboard）**：`daily_summary_view`、`inbound_view`/`inbound_receive_view`、`edit_product_view`、`catalog_view`、`ar_list_view`/`ar_detail_view`（连同 AR 全部写操作视图）、`attendance_view`。
+- **Products 对员工重新开放**：`product_list_view`/`product_detail_view`/`add_product_view` 三个视图**已移除** `@manager_required`（只保留 `@login_required`），员工可查看/搜索产品列表、打开产品详情、新增产品。**进货（inbound）与编辑产品（edit_product）仍仅经理**。敏感产品信息（成本、"Suppliers & cost" 供应商比价区块、批次成本、销售历史/指标）继续由既有的 `{% if show_sensitive %}`/`{% if show_sales_sensitive %}` 模板门控隐藏——员工只看零售价/批发价。无审批/待定工作流，无 schema 变更。
+- **Sales（员工）**：`record_view` 首行分支——非经理调用 `_employee_sales_day_view(request)`，渲染精简模板 `sales_records_employee.html`：单日订单列表（GET `date`，缺省为今天）+ € 金额，无图表/年度总览/采购数据，按活动店铺范围（`scope_sales_by_store`）过滤。新增**订单号搜索**（GET `order`）：按 id 精确匹配（`.isdigit()` 校验），店铺范围内命中即 302 到 `sale_order_detail`，未命中给出 `messages.warning` 并回退日视图；每个订单行的时间单元格也链到 `sale_order_detail`。经理保留完整 `record_view` 页面（图表/年度总览/采购数据不变）。
+- **Customers（员工）**：`customer_search_view` 首行分支——非经理调用 `_employee_customer_search_view(request)`，渲染 `customer_search_employee.html`：无查询词不出列表，有查询词（name/phone/email/nif icontains）时结果仅展示姓名/电话/邮箱，上限 50 条；保留"Add customer"（沿用既有 `add_customer_ajax` 端点，模态框 + AJAX 提交，无需页面跳转）。`customer_detail_view` 同样首行分支——非经理调用 `_employee_customer_orders_view(request, customer_id)`，渲染 `customer_orders_employee.html`：该客户的订单列表（日期/订单号/件数/支付方式/金额，均链到 `sale_order_detail`，按活动店铺范围过滤）供对账用，无分析图表/余额/时间线。经理保留完整 `customer_search_view`/`customer_detail_view`（含图表、AR、时间线）。
+- **自动考勤（Auto-attendance）**：`stock/signals.py` 新增 `user_logged_in`/`user_logged_out` 的 `@receiver`：`open_attendance_on_login` 对非经理用户在登录时开一条 `AttendanceRecord` 班次——若当天已有未打卡下班的班次则复用（不重复开），若存在**前一天**未关闭的班次则先自动补 23:59:59 打卡下班（`note` 追加 `auto-closed: no logout`）再开新班次；`close_attendance_on_logout` 对非经理用户在登出时关闭最近一条未下班的班次（`note` 追加 `auto: logout`）。经理登录/登出不产生任何 `AttendanceRecord`（`has_manager_access` 早退）。`AttendanceRecord` 模型与迁移历史均无变化，纯签入既有信号机制（`apps.py.ready()` 已注册 `signals` 模块，无需额外接线）。`attendance_view` 现为 `@manager_required`（团队考勤汇总视图，见上）。
+- **既往"已审查决策"作废说明**：此前本节记录 `ar_list_view`/`ar_detail_view` 仅 `@login_required`（任意登录用户可访问、靠模板隐藏金额）为"已审查、维持现状"的设计决策；该决策已被本次改动**取代**——两个视图现均加了 `@manager_required`，员工完全无法访问 AR 列表/详情（302 到 dashboard），不再依赖模板隐藏金额。
 
 ### 5.5 历史订单修正与审计（`services/order_corrections.py`）
 - **与 POS 出货同构的购物车式编辑**：修正表单（`sale_order_correction_form.html`）改用与 `outbound.html` 一致的客户端购物车（产品自动补全 → 行项目弹窗：数量/零售批发切换/每行 € 折扣/每行支付方式或行内拆分），序列化为 `items_json`（`product_id` 标识）+ `payments_json`；视图 `_parse_correction_cart` 复用与出货相同的校验/支付汇总契约，编辑态用 `_build_correction_cart` 把现有行预载（`initial_cart` → `json_script`）。**旧的行项目 `formset` 已移除**（其隐藏 `DELETE` 字段 + JS `.checked` 不生效，导致"删除行"不回滚的缺陷一并消除）。
