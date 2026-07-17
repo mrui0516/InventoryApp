@@ -205,7 +205,7 @@ class WorkflowRegressionTests(TestCase):
         )
 
     def test_inbound_with_supplier_creates_pending_without_stock(self):
-        self.client.login(username="cashier", password="pw123456")
+        self.client.login(username="manager", password="pw123456")
         supplier = Supplier.objects.create(name="Acme Supplies")
         purchases_before = Purchase.objects.count()
         stock_before = self.product.total_stock()
@@ -230,7 +230,7 @@ class WorkflowRegressionTests(TestCase):
         self.assertEqual(self.product.total_stock(), stock_before)
 
     def test_inbound_receive_converts_pending_into_stock(self):
-        self.client.login(username="cashier", password="pw123456")
+        self.client.login(username="manager", password="pw123456")
         supplier = Supplier.objects.create(name="Acme Supplies")
         order = InboundOrder.objects.create(supplier=supplier, status="pending_receipt", total_amount=Decimal("0.00"))
         item = InboundPendingItem.objects.create(
@@ -504,6 +504,8 @@ class SalesRecordsViewTests(TestCase):
         self.assertContains(response, "vs purchases")
 
     def test_sales_records_hides_purchase_data_for_regular_user(self):
+        # A non-manager now gets the lean employee Sales view: today's orders
+        # and amounts only, no purchase data and no charts.
         self.client.login(username="records_user", password="pw123456")
         today = timezone.localdate()
 
@@ -513,18 +515,14 @@ class SalesRecordsViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertFalse(response.context["show_purchases"])
-        self.assertFalse(response.context["show_sales_sensitive"])
-        self.assertTrue(response.context["show_order_financials"])
-        self.assertFalse(response.context["show_profit"])
         self.assertNotContains(response, "Purchase Cost")
         self.assertNotContains(response, "Inbound Purchases")
-        self.assertContains(response, "Sales Amount")
-        # Financials are visible to this role: payment mix donut + daily trend.
-        self.assertContains(response, "Payment Mix")
-        self.assertContains(response, 'id="trendChart"')
-        # Purchases dataset must NOT be exposed to a non-manager.
         self.assertNotContains(response, "vs purchases")
+        self.assertNotContains(response, "<canvas")
+        # The day's order and its amount are still shown.
+        self.assertContains(response, "EUR 30.00")
+        self.assertContains(response, "Record Customer")
+        self.assertContains(response, 'name="date"')
 
     def test_sales_records_groups_corrected_order_by_order_datetime(self):
         self.client.login(username="records_admin", password="pw123456")
@@ -670,20 +668,14 @@ class CustomerDetailViewTests(TestCase):
         self.assertEqual(response.context["top_products"][0]["qty"], 2)
 
     def test_customer_detail_hides_sensitive_sections_for_regular_user(self):
+        # Task 9: non-manager users now get the lean employee orders view
+        # (200) instead of being redirected away from customer_detail.
         self.client.login(username="customer_timeline_user", password="pw123456")
 
         response = self.client.get(reverse("customer_detail", args=[self.customer.id]))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Timeline Customer")
-        # Charts are sales-sensitive: a regular user sees no spend trend payload.
-        self.assertNotContains(response, "spendTrendData")
-        self.assertNotContains(response, "NIF")
-        self.assertNotContains(response, "Phone")
-        self.assertNotContains(response, "Email")
-        self.assertNotContains(response, "New IOU")
-        self.assertNotContains(response, "Confirm Deletion")
-        self.assertNotContains(response, "IOU / AR Overview")
+        self.assertTemplateUsed(response, "stock/customer_orders_employee.html")
 
 
 class DashboardViewTests(TestCase):
@@ -792,7 +784,7 @@ class DashboardViewTests(TestCase):
         self.assertContains(response, "Amount")
         self.assertContains(response, "Unit")
         self.assertContains(response, "Operations")
-        self.assertContains(response, "Sales & Clients")
+        self.assertContains(response, "Sales &amp; Clients")
         self.assertContains(response, reverse("sales_records"))
         self.assertContains(response, reverse("customer_search"))
 
@@ -825,11 +817,17 @@ class DashboardViewTests(TestCase):
         self.assertContains(response, "Payment methods today")
 
     def test_catalog_page_renders(self):
-        self.client.login(username="dashboard_user", password="pw123456")
+        self.client.login(username="dashboard_admin", password="pw123456")
         response = self.client.get(reverse("catalog"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Fragrance catalogue")
         self.assertContains(response, "A library of")
+
+    def test_employee_blocked_from_catalog_page(self):
+        self.client.login(username="dashboard_user", password="pw123456")
+        response = self.client.get(reverse("catalog"))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("dashboard"), response.headers["Location"])
 
     def test_sales_page_shows_year_trend_by_default(self):
         # Sales Trend was merged into the Sales (records) page as its no-range state.
@@ -854,8 +852,13 @@ class DashboardViewTests(TestCase):
 
         self.assertEqual(self.client.get(reverse("sales_records")).status_code, 200)
         self.assertEqual(self.client.get(reverse("customer_search")).status_code, 200)
-        self.assertEqual(self.client.get(reverse("product_list")).status_code, 200)
-        self.assertEqual(self.client.get(reverse("ar_list")).status_code, 200)
+
+        product_list_response = self.client.get(reverse("product_list"))
+        self.assertEqual(product_list_response.status_code, 200)
+
+        ar_list_response = self.client.get(reverse("ar_list"))
+        self.assertEqual(ar_list_response.status_code, 302)
+        self.assertIn(reverse("dashboard"), ar_list_response.headers["Location"])
 
     def test_regular_user_ar_pages_hide_financial_details(self):
         self.client.login(username="dashboard_user", password="pw123456")
@@ -863,13 +866,10 @@ class DashboardViewTests(TestCase):
         list_response = self.client.get(reverse("ar_list"))
         detail_response = self.client.get(reverse("ar_detail", args=[self.invoice.id]))
 
-        self.assertEqual(list_response.status_code, 200)
-        self.assertEqual(detail_response.status_code, 200)
-        self.assertNotContains(list_response, "Total Balance")
-        self.assertNotContains(list_response, "New IOU")
-        self.assertContains(list_response, "Customer IOUs")
-        self.assertContains(detail_response, "Invoice")
-        self.assertNotContains(detail_response, "Record a Payment")
+        self.assertEqual(list_response.status_code, 302)
+        self.assertIn(reverse("dashboard"), list_response.headers["Location"])
+        self.assertEqual(detail_response.status_code, 302)
+        self.assertIn(reverse("dashboard"), detail_response.headers["Location"])
 
     def test_regular_user_can_open_any_order_detail_without_customer_contacts(self):
         self.client.login(username="dashboard_user", password="pw123456")
@@ -1087,7 +1087,8 @@ class ProductArchitectureTests(TestCase):
         self.assertContains(response, "Anker - USB-C - Cable")
         self.assertContains(response, "Retail Price")
         self.assertContains(response, "Wholesale Price")
-        self.assertNotContains(response, "Sales history is hidden for employee accounts.")
+        self.assertNotContains(response, "Suppliers &amp; cost")
+        self.assertNotContains(response, "Sales History")
 
     def test_product_list_can_filter_by_brand(self):
         perfume_brand = Brand.objects.create(name="Lattafa")
@@ -1112,7 +1113,7 @@ class ProductArchitectureTests(TestCase):
             default_price=Decimal("19.90"),
         )
 
-        self.client.login(username="product_employee", password="pw123456")
+        self.client.login(username="product_admin", password="pw123456")
         response = self.client.get(reverse("product_list"), {
             "category": self.category.id,
             "brand": perfume_brand.id,
@@ -1167,7 +1168,6 @@ class ProductArchitectureTests(TestCase):
         self.assertContains(response, "Retail / Wholesale")
         self.assertContains(response, "EUR 29.00")
         self.assertContains(response, "EUR 17.00")
-        self.assertNotContains(response, "Sales activity is hidden for employee accounts.")
         self.assertNotContains(response, "Best selling")
 
     def test_product_list_shows_shopify_export_for_manager(self):
@@ -1324,11 +1324,84 @@ class ProductArchitectureTests(TestCase):
         self.assertEqual(rows[1]["Inventory quantity"], "0")
 
 
+class EmployeeProductAccessTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.employee = user_model.objects.create_user(username="prod_emp", password="pw123456")
+        cls.category = Category.objects.create(name="PCat")
+        cls.product = Product.objects.create(name="PP", barcode="7100000000001", brand="B",
+                                             default_price=Decimal("9.90"))
+
+    def test_employee_can_view_products_and_detail(self):
+        self.client.login(username="prod_emp", password="pw123456")
+        self.assertEqual(self.client.get(reverse("product_list")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("product_detail", args=[self.product.pk])).status_code, 200)
+
+    def test_employee_can_add_product(self):
+        self.client.login(username="prod_emp", password="pw123456")
+        resp = self.client.post(reverse("add_product"), {
+            "barcode": "7100000000002", "category": self.category.id,
+            "new_brand_name": "NB", "name": "New Item", "default_price": "12.00",
+        })
+        self.assertIn(resp.status_code, (200, 302))
+        self.assertTrue(Product.objects.filter(barcode="7100000000002").exists())
+
+    def test_employee_still_blocked_from_inbound(self):
+        self.client.login(username="prod_emp", password="pw123456")
+        for url in [reverse("inbound")]:
+            resp = self.client.get(url)
+            self.assertEqual(resp.status_code, 302)
+            self.assertIn(reverse("dashboard"), resp.headers["Location"])
+
+
+class EmployeeProductEditExportTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.employee = user_model.objects.create_user(username="edit_emp", password="pw123456")
+        cls.category = Category.objects.create(name="ECat")
+        cls.product = Product.objects.create(name="Old Name", barcode="7400000000001", brand="B",
+                                             default_price=Decimal("9.90"))
+
+    def test_employee_can_open_and_submit_edit(self):
+        self.client.login(username="edit_emp", password="pw123456")
+        self.assertEqual(self.client.get(reverse("edit_product", args=[self.product.pk])).status_code, 200)
+        resp = self.client.post(reverse("edit_product", args=[self.product.pk]), {
+            "barcode": "7400000000001", "category": self.category.id,
+            "new_brand_name": "B", "name": "New Name", "default_price": "10.50",
+        })
+        self.assertIn(resp.status_code, (200, 302))
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.name, "New Name")
+
+    def test_employee_can_download_product_excel(self):
+        self.client.login(username="edit_emp", password="pw123456")
+        resp = self.client.get(reverse("export_product_list_excel"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("spreadsheet", resp["Content-Type"])
+
+    def test_employee_still_blocked_from_deletes_and_shopify_export(self):
+        self.client.login(username="edit_emp", password="pw123456")
+        for resp in [
+            self.client.post(reverse("delete_product", args=[self.product.pk])),
+        ]:
+            self.assertEqual(resp.status_code, 302)
+            self.assertIn(reverse("dashboard"), resp.headers["Location"])
+        # product_list shows Add/Edit/Client-export to employee, not Shopify export
+        page = self.client.get(reverse("product_list"))
+        self.assertContains(page, reverse("add_product"))
+        self.assertContains(page, reverse("edit_product", args=[self.product.pk]))
+        self.assertContains(page, reverse("export_product_list_excel"))
+        self.assertNotContains(page, reverse("export_shopify_inventory_csv"))
+
+
 class InboundOutboundPageTests(TestCase):
     @classmethod
     def setUpTestData(cls):
         user_model = get_user_model()
         cls.user = user_model.objects.create_user(username="ops_employee", password="pw123456")
+        cls.manager = user_model.objects.create_user(username="ops_manager", password="pw123456", is_staff=True)
 
     def test_outbound_page_renders_review_guardrails(self):
         self.client.login(username="ops_employee", password="pw123456")
@@ -1341,7 +1414,7 @@ class InboundOutboundPageTests(TestCase):
         self.assertContains(response, "Before you confirm")
 
     def test_inbound_page_renders_review_guardrails(self):
-        self.client.login(username="ops_employee", password="pw123456")
+        self.client.login(username="ops_manager", password="pw123456")
 
         response = self.client.get(reverse("inbound"))
 
@@ -1349,6 +1422,14 @@ class InboundOutboundPageTests(TestCase):
         self.assertContains(response, "Review and Confirm Inbound")
         self.assertContains(response, "Final Inbound Review")
         self.assertContains(response, "Guardrails")
+
+    def test_employee_blocked_from_inbound_page(self):
+        self.client.login(username="ops_employee", password="pw123456")
+
+        response = self.client.get(reverse("inbound"))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("dashboard"), response.headers["Location"])
 
 
 class SaleOrderCorrectionTests(TestCase):
@@ -1901,38 +1982,46 @@ class AttendanceManagementTests(TestCase):
         cls.employee = user_model.objects.create_user(username="attendance_employee", password="pw123456")
         cls.manager = user_model.objects.create_user(username="attendance_manager", password="pw123456", is_staff=True)
 
-    def test_employee_can_check_in_and_check_out(self):
+    def test_login_opens_shift_logout_closes_it(self):
         self.client.login(username="attendance_employee", password="pw123456")
+        rec = AttendanceRecord.objects.get(user=self.employee)
+        self.assertIsNone(rec.clock_out_at)
+        self.client.logout()
+        rec.refresh_from_db()
+        self.assertIsNotNone(rec.clock_out_at)
 
-        check_in_response = self.client.post(reverse("attendance"), data={
-            "action": "check_in",
-            "note": "Morning shift",
-        })
-        self.assertEqual(check_in_response.status_code, 302)
+    def test_second_login_while_open_does_not_duplicate(self):
+        self.client.login(username="attendance_employee", password="pw123456")
+        self.client.login(username="attendance_employee", password="pw123456")
+        self.assertEqual(AttendanceRecord.objects.filter(user=self.employee).count(), 1)
 
-        record = AttendanceRecord.objects.get(user__username="attendance_employee")
-        self.assertIsNone(record.clock_out_at)
-        self.assertIn("Morning shift", record.note)
+    def test_stale_previous_day_shift_closed_on_next_login(self):
+        stale = AttendanceRecord.objects.create(
+            user=self.employee,
+            clock_in_at=timezone.now() - timedelta(days=1),
+        )
+        self.client.login(username="attendance_employee", password="pw123456")
+        stale.refresh_from_db()
+        self.assertIsNotNone(stale.clock_out_at)                 # stale closed
+        self.assertEqual(AttendanceRecord.objects.filter(user=self.employee, clock_out_at__isnull=True).count(), 1)  # one fresh open
 
-        check_out_response = self.client.post(reverse("attendance"), data={
-            "action": "check_out",
-            "note": "Closing counter",
-        })
-        self.assertEqual(check_out_response.status_code, 302)
+    def test_manager_login_creates_no_record(self):
+        self.client.login(username="attendance_manager", password="pw123456")
+        self.assertEqual(AttendanceRecord.objects.filter(user=self.manager).count(), 0)
 
-        record.refresh_from_db()
-        self.assertIsNotNone(record.clock_out_at)
-        self.assertIn("Closing counter", record.note)
+    def test_employee_blocked_from_attendance_page(self):
+        self.client.login(username="attendance_employee", password="pw123456")
+        resp = self.client.get(reverse("attendance"))
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(reverse("dashboard"), resp.headers["Location"])
 
     def test_manager_can_see_team_attendance_section(self):
         AttendanceRecord.objects.create(user=self.employee, clock_in_at=timezone.now() - timedelta(hours=2))
         self.client.login(username="attendance_manager", password="pw123456")
-
-        response = self.client.get(reverse("attendance"))
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Team attendance overview")
-        self.assertContains(response, "attendance_employee")
+        resp = self.client.get(reverse("attendance"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Team attendance overview")
+        self.assertContains(resp, "attendance_employee")
 
 
 class DashboardEnhancementTests(TestCase):
@@ -3112,3 +3201,249 @@ class ShopifyCsvCloudinaryImageTests(TestCase):
         self.assertIn("/media/", rows[0]["Product image URL"])
         self.assertTrue(rows[0]["Product image URL"].startswith("http://"))
         self.assertNotIn("res.cloudinary.com", rows[0]["Product image URL"])
+
+
+class EmployeeNavTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.employee = user_model.objects.create_user(username="nav_emp", password="pw123456")
+        cls.manager = user_model.objects.create_user(username="nav_mgr", password="pw123456", is_staff=True)
+
+    def _nav(self, username):
+        self.client.login(username=username, password="pw123456")
+        return self.client.get(reverse("dashboard"))
+
+    def test_employee_sidebar_shows_only_allowed_links(self):
+        resp = self._nav("nav_emp")
+        for name in ["dashboard", "outbound", "sales_records", "customer_search", "product_list"]:
+            self.assertContains(resp, 'href="%s"' % reverse(name))
+        for name in ["daily_summary", "inbound", "attendance", "catalog", "ar_list"]:
+            self.assertNotContains(resp, 'href="%s"' % reverse(name))
+
+    def test_manager_sidebar_shows_everything(self):
+        resp = self._nav("nav_mgr")
+        for name in ["daily_summary", "inbound", "attendance", "product_list", "catalog", "ar_list", "sales_records", "customer_search"]:
+            self.assertContains(resp, 'href="%s"' % reverse(name))
+
+
+class EmployeeBlockedViewsTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.employee = user_model.objects.create_user(username="blk_emp", password="pw123456")
+        cls.manager = user_model.objects.create_user(username="blk_mgr", password="pw123456", is_staff=True)
+        cls.customer = Customer.objects.create(nif="123456789", name="Blk Cust")
+
+    def _assert_blocked(self, url):
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 302, url)
+        self.assertIn(reverse("dashboard"), resp.headers["Location"], url)
+
+    def test_employee_blocked_from_restricted_pages(self):
+        self.client.login(username="blk_emp", password="pw123456")
+        for name in ["daily_summary", "inbound", "catalog", "ar_list"]:
+            self._assert_blocked(reverse(name))
+
+    def test_employee_customer_detail_now_routes_to_orders_view(self):
+        # Task 9: customer_detail is no longer manager-only; employees get
+        # a lean orders-only view instead of a 302 redirect.
+        self.client.login(username="blk_emp", password="pw123456")
+        resp = self.client.get(reverse("customer_detail", args=[self.customer.id]))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_manager_can_open_restricted_pages(self):
+        self.client.login(username="blk_mgr", password="pw123456")
+        for name in ["daily_summary", "inbound", "product_list", "catalog", "ar_list"]:
+            self.assertEqual(self.client.get(reverse(name)).status_code, 200, name)
+
+
+class EmployeeCustomerOrdersTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.employee = user_model.objects.create_user(username="recon_emp", password="pw123456")
+        cls.customer = Customer.objects.create(nif="333333333", name="Recon Cust")
+        cls.order = SaleOrder.objects.create(customer=cls.customer)
+        product = Product.objects.create(name="R", barcode="7300000000001", brand="B")
+        Sale.objects.create(order=cls.order, product=product, quantity=2,
+                            unit_price=Decimal("7.50"), payment_method="cash")
+
+    def test_employee_sees_customer_orders_only(self):
+        self.client.login(username="recon_emp", password="pw123456")
+        resp = self.client.get(reverse("customer_detail", args=[self.customer.id]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Recon Cust")
+        self.assertContains(resp, "EUR 15.00")
+        self.assertContains(resp, reverse("sale_order_detail", args=[self.order.id]))
+        self.assertNotContains(resp, "<canvas")
+
+    def test_manager_still_sees_full_customer_detail(self):
+        user_model = get_user_model()
+        user_model.objects.create_user(username="recon_mgr", password="pw123456", is_staff=True)
+        self.client.login(username="recon_mgr", password="pw123456")
+        resp = self.client.get(reverse("customer_detail", args=[self.customer.id]))
+        self.assertEqual(resp.status_code, 200)
+
+
+class EmployeeSalesViewTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.employee = user_model.objects.create_user(username="sales_emp", password="pw123456")
+
+    def test_employee_sales_shows_todays_orders_with_amounts_no_charts(self):
+        order = SaleOrder.objects.create()
+        product = Product.objects.create(name="P", barcode="7000000000001", brand="B")
+        Sale.objects.create(order=order, product=product, quantity=2,
+                            unit_price=Decimal("10.00"), payment_method="cash")
+
+        self.client.login(username="sales_emp", password="pw123456")
+        resp = self.client.get(reverse("sales_records"))
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "EUR 20.00")       # order/day total shown
+        self.assertContains(resp, 'name="date"')      # single-day date picker
+        self.assertNotContains(resp, "<canvas")       # no charts at all
+
+    def test_order_number_search_redirects_to_detail(self):
+        order = SaleOrder.objects.create()
+        product = Product.objects.create(name="Q", barcode="7200000000001", brand="B")
+        Sale.objects.create(order=order, product=product, quantity=1,
+                            unit_price=Decimal("5.00"), payment_method="cash")
+        self.client.login(username="sales_emp", password="pw123456")
+        resp = self.client.get(reverse("sales_records"), {"order": str(order.id)})
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(reverse("sale_order_detail", args=[order.id]), resp.headers["Location"])
+
+    def test_order_rows_link_to_detail(self):
+        order = SaleOrder.objects.create()
+        product = Product.objects.create(name="Q2", barcode="7200000000002", brand="B")
+        Sale.objects.create(order=order, product=product, quantity=1,
+                            unit_price=Decimal("5.00"), payment_method="cash")
+        self.client.login(username="sales_emp", password="pw123456")
+        resp = self.client.get(reverse("sales_records"))
+        self.assertContains(resp, reverse("sale_order_detail", args=[order.id]))
+
+
+class EmployeeCustomerViewTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.employee = user_model.objects.create_user(username="cust_emp", password="pw123456")
+        cls.alice = Customer.objects.create(nif="111111111", name="Alice Stone", phone="912000001")
+        cls.bob = Customer.objects.create(nif="222222222", name="Bob Rivers", phone="912000002")
+
+    def test_no_query_shows_no_customer_rows(self):
+        self.client.login(username="cust_emp", password="pw123456")
+        resp = self.client.get(reverse("customer_search"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotContains(resp, "Alice Stone")
+        self.assertNotContains(resp, "Bob Rivers")
+
+    def test_query_shows_only_matching_minimal_fields(self):
+        self.client.login(username="cust_emp", password="pw123456")
+        resp = self.client.get(reverse("customer_search"), {"q": "Alice"})
+        self.assertContains(resp, "Alice Stone")
+        self.assertContains(resp, "912000001")
+        self.assertNotContains(resp, "Bob Rivers")
+        self.assertNotContains(resp, "Total spent")   # no spend/balance columns
+
+    def test_employee_can_add_customer(self):
+        self.client.login(username="cust_emp", password="pw123456")
+        resp = self.client.post(reverse("add_customer_ajax"), {
+            "nif": "999999999", "name": "New Walkin", "phone": "912999999",
+        })
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(Customer.objects.filter(nif="999999999").exists())
+
+
+class EmployeeCrossStoreIsolationTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.employee = user_model.objects.create_user(username="iso_emp", password="pw123456")
+
+        cls.store_a = Store.objects.create(name="Porto", code="PRT")
+        cls.store_b = Store.objects.create(name="Faro", code="FAR")
+        StoreProfile.objects.update_or_create(user=cls.employee, defaults={'store': cls.store_a})
+
+        cls.customer = Customer.objects.create(nif="333444555", name="Iso Cust")
+        cls.product = Product.objects.create(
+            name="Iso Product", barcode="7330000000001", brand="Maison",
+            default_price=Decimal("20.00"),
+        )
+
+        cls.order_a = SaleOrder.objects.create(customer=cls.customer, store=cls.store_a)
+        Sale.objects.create(
+            order=cls.order_a, product=cls.product, customer=cls.customer, store=cls.store_a,
+            quantity=1, unit_price=Decimal("20.00"), payment_method="cash",
+        )
+
+        cls.order_b = SaleOrder.objects.create(customer=cls.customer, store=cls.store_b)
+        Sale.objects.create(
+            order=cls.order_b, product=cls.product, customer=cls.customer, store=cls.store_b,
+            quantity=1, unit_price=Decimal("50.00"), payment_method="cash",
+        )
+
+    def test_employee_cannot_open_other_store_order_detail(self):
+        self.client.login(username="iso_emp", password="pw123456")
+        response = self.client.get(reverse("sale_order_detail", args=[self.order_b.id]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_employee_can_open_own_store_order_detail(self):
+        self.client.login(username="iso_emp", password="pw123456")
+        response = self.client.get(reverse("sale_order_detail", args=[self.order_a.id]))
+        self.assertEqual(response.status_code, 200)
+
+    def test_employee_sales_day_view_excludes_other_store_order(self):
+        self.client.login(username="iso_emp", password="pw123456")
+        today = timezone.localdate()
+        response = self.client.get(reverse("sales_records"), {"date": today.isoformat()})
+        self.assertEqual(response.status_code, 200)
+        order_ids = [row['order_id'] for row in response.context['orders']]
+        self.assertIn(self.order_a.id, order_ids)
+        self.assertNotIn(self.order_b.id, order_ids)
+
+
+class EmployeeOrderActionsTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.employee = user_model.objects.create_user(username="act_emp", password="pw123456")
+        cls.customer = Customer.objects.create(nif="444444444", name="Act Cust")
+        cls.order = SaleOrder.objects.create(customer=cls.customer)
+        cls.product = Product.objects.create(name="Widget", barcode="7500000000001", brand="B")
+        Sale.objects.create(order=cls.order, product=cls.product, quantity=2,
+                            unit_price=Decimal("5.00"), payment_method="cash")
+
+    def test_sales_row_has_view_modal_and_print_button(self):
+        self.client.login(username="act_emp", password="pw123456")
+        resp = self.client.get(reverse("sales_records"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "order-modal-%s" % self.order.id)     # View modal present
+        self.assertContains(resp, "Widget")                              # item rendered in modal
+        self.assertContains(resp, reverse("sale_order_detail", args=[self.order.id]))  # Print link
+
+    def test_customer_orders_row_has_view_modal_and_print_button(self):
+        self.client.login(username="act_emp", password="pw123456")
+        resp = self.client.get(reverse("customer_detail", args=[self.customer.id]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "order-modal-%s" % self.order.id)
+        self.assertContains(resp, "Widget")
+        self.assertContains(resp, reverse("sale_order_detail", args=[self.order.id]))
+
+
+class EmployeePageStyleTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.employee = user_model.objects.create_user(username="style_emp", password="pw123456")
+
+    def test_employee_pages_use_shared_card_scaffold(self):
+        self.client.login(username="style_emp", password="pw123456")
+        for url in [reverse("sales_records"), reverse("customer_search")]:
+            resp = self.client.get(url)
+            self.assertEqual(resp.status_code, 200)
+            self.assertContains(resp, "page-card")     # shared design-system card, like manager pages
+            self.assertContains(resp, "page-title")    # shared heading class, like product_list.html

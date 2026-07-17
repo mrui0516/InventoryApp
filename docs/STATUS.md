@@ -1,6 +1,6 @@
 # 项目状态文档（Status）
 
-> 快照时间：2026-07-15。记录当前代码、数据、测试、环境与版本控制的实际状态，便于评估"现在能不能上线/部署/迭代"。配合 [PRD.md](./PRD.md)（功能与验收标准）与 [ARCHITECTURE.md](./ARCHITECTURE.md)（技术架构）一起阅读。
+> 快照时间：2026-07-16。记录当前代码、数据、测试、环境与版本控制的实际状态，便于评估"现在能不能上线/部署/迭代"。配合 [PRD.md](./PRD.md)（功能与验收标准）与 [ARCHITECTURE.md](./ARCHITECTURE.md)（技术架构）一起阅读。
 >
 > 第 7 节只记"发生了什么"，一条一行；具体改了哪些函数、跑了多少测试请查 `git log`。
 
@@ -11,7 +11,7 @@
 | 维度 | 状态 | 说明 |
 |---|---|---|
 | 功能完整度 | ✅ 已覆盖 PRD 全部 20 个模块 | 正在生产使用中（真实业务数据） |
-| 自动化测试 | ✅ 147/147 通过 | `python manage.py test stock` |
+| 自动化测试 | ✅ 178/178 通过 | `python manage.py test stock` |
 | 数据库迁移 | ✅ 无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
 | 版本控制 | ⚠ 本地领先远程 34 个提交 | 见第 4 节 |
 | 本地虚拟环境 | ⚠ `.venv` 不完整/未使用 | 见第 3 节 |
@@ -69,7 +69,7 @@
 
 ## 5. 测试与质量状态
 
-- `python manage.py test stock` → **147 个测试全部通过**（耗时约 85s）。
+- `python manage.py test stock` → **178 个测试全部通过**（耗时约 132s）。
 - `python manage.py check` → 无系统检查问题。
 - `python manage.py makemigrations --check --dry-run` → 无待生成迁移，模型与迁移文件一致。
 - 迁移历史：33 个迁移（`0001_initial` ~ `0033_saleorder_affects_stock`），体现了从早期"扁平 Sale 表"到"SaleOrder + Sale 行项目"、品牌/系列结构化、AR 模块、考勤、打印配置、库存调整审计、销售目标、多店铺等逐步演进的过程。
@@ -99,6 +99,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-07-16：员工界面收窄（可见页面 Dashboard/Outbound/Products/Sales/Customers；AR/进货/考勤/Today/Catalog 对员工整页 302 拦截）。Products 对员工开放查看/搜索/新增/**编辑**/下载客户 Excel（隐藏成本/供应商比价/销售历史；进货、删产品/图、Shopify 导出仍仅经理）。Sales/Customers 员工视图为单日订单/无分析的精简版（按订单号搜索直达详情；按客户查订单对账；每单 **View 弹窗 + Print 按钮**；订单详情按店铺隔离）。样式与经理页统一。登录/登出自动开关考勤班次（免手动打卡）。178 测试通过。
 - 2026-07-16：安全加固——`SECRET_KEY` 轮换并改从 `.env` 读（旧 key 弃用）、`DEBUG` 由 `.env` 控制（本机仍 True）、加 WhiteNoise + `STATIC_ROOT`（备将来 `DEBUG=False`）、`ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS` 可由环境扩展、加 `.env.example`。147/147 通过。仓库转 private 待手动操作。
 - 2026-07-16：上线本地每日备份（`Downloads\InventoryApp-Backups`，计划任务，含恢复步骤 [BACKUP.md](./BACKUP.md)）。
 - 2026-07-15：Shopify CSV 导出的图片两列改用 Cloudinary 公网 URL（此前输出局域网地址，Shopify 抓不到，一直是死链接）。新增 `services/cloudinary_urls.py`。

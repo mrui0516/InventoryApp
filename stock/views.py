@@ -473,6 +473,7 @@ def _build_pending_reviews():
 
 
 @login_required
+@manager_required
 def inbound_view(request):
 
     today = timezone.localdate()
@@ -616,6 +617,7 @@ def suppliers_autocomplete(request):
 
 
 @login_required
+@manager_required
 def inbound_receive_view(request, order_id):
     """复核 / 编辑 / 确认收货 / 取消 一张暂定（pending_receipt）入库单。
 
@@ -1069,7 +1071,6 @@ def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_cat
 
 
 @login_required
-@manager_required
 def export_product_list_excel(request):
     show_sales_sensitive = has_sales_sensitive_access(request.user)
     query = request.GET.get('q', '').strip()
@@ -1392,7 +1393,6 @@ def export_shopify_inventory_csv(request):
 # 产品增/改/详情
 # -----------------------------
 @login_required
-@manager_required
 def add_product_view(request):
     if request.method == 'POST':
         form = ProductForm(request.POST)
@@ -1466,7 +1466,6 @@ def product_detail_view(request, pk):
     })
 
 @login_required
-@manager_required
 def edit_product_view(request, pk):
     product = get_object_or_404(
         Product.objects.select_related('category', 'brand_master', 'series_master'),
@@ -2052,7 +2051,11 @@ def check_barcode(request):
 
 @login_required
 def sale_order_detail_view(request, order_id):
-    order = get_object_or_404(SaleOrder.objects.select_related('customer'), id=order_id)
+    order_qs = SaleOrder.objects.select_related('customer')
+    if not has_manager_access(request.user):
+        active_store, store_is_all = resolve_active_store(request)
+        order_qs = scope_sales_by_store(order_qs, active_store, store_is_all)
+    order = get_object_or_404(order_qs, id=order_id)
     items = list(
         order.items
         .select_related('product', 'product__brand_master', 'product__series_master')
@@ -3070,6 +3073,7 @@ def employee_delete_view(request, user_id):
 
 
 @login_required
+@manager_required
 def attendance_view(request):
     today = timezone.localdate()
     open_shift = (
@@ -3608,6 +3612,7 @@ def store_delete_view(request, store_id):
 
 
 @login_required
+@manager_required
 def daily_summary_view(request):
     """A focused, store-scoped end-of-day summary: today's orders, KPIs, payment
     mix, top products and stock received. Defaults to today; ?date= views a day."""
@@ -3754,8 +3759,76 @@ def daily_summary_view(request):
     })
 
 
+def _employee_sales_day_view(request):
+    """Employee Sales: a single day's orders, amounts only, no charts."""
+    day = timezone.localdate()
+    day_str = (request.GET.get('date') or '').strip()
+    if day_str:
+        try:
+            day = datetime.strptime(day_str, '%Y-%m-%d').date()
+        except ValueError:
+            day = timezone.localdate()
+
+    active_store, store_is_all = resolve_active_store(request)
+
+    order_str = (request.GET.get('order') or '').strip()
+    if order_str:
+        oq = SaleOrder.objects.filter(id=order_str) if order_str.isdigit() else SaleOrder.objects.none()
+        found = scope_sales_by_store(oq, active_store, store_is_all).first()
+        if found:
+            return redirect('sale_order_detail', order_id=found.id)
+        messages.warning(request, f'Order #{order_str} not found.')
+
+    orders_qs = (
+        SaleOrder.objects
+        .filter(created_at__date=day)
+        .select_related('customer')
+        .prefetch_related('items', 'payments')
+        .order_by('-created_at', '-id')
+    )
+    # Reuse the shared store scoping (unfiltered when store is None / "all stores").
+    orders_qs = scope_sales_by_store(orders_qs, active_store, store_is_all)
+
+    payment_labels = {'cash': 'Cash', 'card': 'Card', 'mbway': 'MBWay'}
+    orders = []
+    day_total = Decimal('0.00')
+    for order in orders_qs:
+        items = list(order.items.all())
+        total = sum((i.quantity * (i.unit_price or Decimal('0.00')) for i in items), Decimal('0.00'))
+        qty = sum(i.quantity for i in items)
+        methods = [payment_labels.get(p.method, (p.method or '').title()) for p in order.payments.all()]
+        orders.append({
+            'order_id': order.id,
+            'created_hhmm': timezone.localtime(order.created_at).strftime('%H:%M'),
+            'customer_name': order.customer.name if order.customer_id else 'Walk-in / No customer',
+            'item_count': qty,
+            'payment_label': ', '.join(dict.fromkeys(methods)) or '-',
+            'total_amount': total,
+            'items': [
+                {
+                    'name': build_product_label(i.product),
+                    'qty': i.quantity,
+                    'unit_price': i.unit_price or Decimal('0.00'),
+                    'line_total': (i.unit_price or Decimal('0.00')) * i.quantity,
+                }
+                for i in items
+            ],
+        })
+        day_total += total
+
+    return render(request, 'stock/sales_records_employee.html', {
+        'day': day,
+        'date_value': day.strftime('%Y-%m-%d'),
+        'orders': orders,
+        'order_count': len(orders),
+        'day_total': day_total,
+    })
+
+
 @login_required
 def record_view(request):
+    if not has_manager_access(request.user):
+        return _employee_sales_day_view(request)
     start_str = request.GET.get('start_date', '').strip()
     end_str = request.GET.get('end_date', '').strip()
     show_sensitive = has_manager_access(request.user)
@@ -4264,8 +4337,29 @@ def add_customer(request):
         'email': customer.email
     })
 
+def _employee_customer_search_view(request):
+    """Employee Customers: search + add only; no full list, no history."""
+    query = (request.GET.get('q') or '').strip()
+    customers = []
+    if query:
+        customers = list(
+            Customer.objects.filter(
+                Q(name__icontains=query)
+                | Q(phone__icontains=query)
+                | Q(email__icontains=query)
+                | Q(nif__icontains=query)
+            ).order_by('name')[:50]
+        )
+    return render(request, 'stock/customer_search_employee.html', {
+        'query': query,
+        'customers': customers,
+    })
+
+
 @login_required
 def customer_search_view(request):
+    if not has_manager_access(request.user):
+        return _employee_customer_search_view(request)
     query = request.GET.get('q', '').strip()
     show_sensitive = has_manager_access(request.user)
     show_sales_sensitive = has_sales_sensitive_access(request.user)
@@ -4392,8 +4486,48 @@ def customer_search_view(request):
     })
 
 
+def _employee_customer_orders_view(request, customer_id):
+    """Employee: a customer's orders only (for reconciliation) - no analytics."""
+    customer = get_object_or_404(Customer, id=customer_id)
+    active_store, store_is_all = resolve_active_store(request)
+    orders_qs = (
+        SaleOrder.objects.filter(customer=customer)
+        .prefetch_related('items', 'payments')
+        .order_by('-created_at', '-id')
+    )
+    orders_qs = scope_sales_by_store(orders_qs, active_store, store_is_all)
+    payment_labels = {'cash': 'Cash', 'card': 'Card', 'mbway': 'MBWay'}
+    orders = []
+    for order in orders_qs:
+        items = list(order.items.all())
+        total = sum((i.quantity * (i.unit_price or Decimal('0.00')) for i in items), Decimal('0.00'))
+        methods = [payment_labels.get(p.method, (p.method or '').title()) for p in order.payments.all()]
+        orders.append({
+            'order_id': order.id,
+            'created_at': timezone.localtime(order.created_at).strftime('%Y-%m-%d %H:%M'),
+            'item_count': sum(i.quantity for i in items),
+            'payment_label': ', '.join(dict.fromkeys(methods)) or '-',
+            'total_amount': total,
+            'items': [
+                {
+                    'name': build_product_label(i.product),
+                    'qty': i.quantity,
+                    'unit_price': i.unit_price or Decimal('0.00'),
+                    'line_total': (i.unit_price or Decimal('0.00')) * i.quantity,
+                }
+                for i in items
+            ],
+        })
+    return render(request, 'stock/customer_orders_employee.html', {
+        'customer': customer,
+        'orders': orders,
+    })
+
+
 @login_required
 def customer_detail_view(request, customer_id):
+    if not has_manager_access(request.user):
+        return _employee_customer_orders_view(request, customer_id)
     customer = get_object_or_404(Customer, id=customer_id)
     show_sensitive = has_manager_access(request.user)
     show_sales_sensitive = has_sales_sensitive_access(request.user)
@@ -4779,6 +4913,7 @@ def products_autocomplete(request):
 # -----------------------------
 
 @login_required
+@manager_required
 def catalog_view(request):
     query = request.GET.get('q', '').strip()
     category_id = request.GET.get('category', '').strip()
@@ -5173,6 +5308,7 @@ def ar_new_view(request):
     })
 
 @login_required
+@manager_required
 def ar_list_view(request):
     q = request.GET.get('q', '')
     status = request.GET.get('status', '')
@@ -5205,6 +5341,7 @@ def ar_list_view(request):
     return render(request, 'stock/ar_list.html', context)
 
 @login_required
+@manager_required
 def ar_detail_view(request, invoice_id):
     invoice = get_object_or_404(ARInvoice.objects.select_related('customer'), id=invoice_id)
     items = invoice.items.all().order_by('id')

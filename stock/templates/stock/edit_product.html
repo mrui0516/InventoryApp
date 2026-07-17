@@ -1,5 +1,6 @@
 {% extends 'stock/base.html' %}
 {% load widget_tweaks %}
+{% load access_tags %}
 {% block title %}Edit Product{% endblock %}
 
 {% block content %}
@@ -146,12 +147,14 @@
     {% for img in images %}
       <div class="img-item" data-image-id="{{ img.id }}">
         <img src="{{ img.image.url }}" alt="" class="js-zoom" data-src="{{ img.image.url }}">
+        {% if user|is_manager_user %}
         <div class="del-form">
           <form method="post" action="{% url 'delete_product_image' img.id %}" class="js-del-img" onsubmit="return confirm('Delete this image?');">
             {% csrf_token %}
             <button type="submit" class="btn btn-sm btn-danger w-100">Delete</button>
           </form>
         </div>
+        {% endif %}
       </div>
     {% endfor %}
   </div>
@@ -286,6 +289,7 @@
   </div>
 </form>
 
+{% if user|is_manager_user %}
 <section class="danger-zone mb-4">
   <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
     <div>
@@ -325,6 +329,7 @@
     {% endif %}
   </div>
 </section>
+{% endif %}
 
 {% if request.user.is_superuser %}
   <div class="modal fade" id="editRemainModal" tabindex="-1" aria-hidden="true">

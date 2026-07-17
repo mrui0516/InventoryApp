@@ -788,3 +788,583 @@ Not a task — a quick smoke check after restarting the server:
 2. Employee opens Sales → date picker + that day's orders with € totals, no charts. Type `/inbound/` in the URL → redirected to dashboard.
 3. Employee opens Customers → empty until search; search finds a customer (name/phone only); "Add customer" works; no way to open a customer's history.
 4. Log out, log back in → attendance record opened; check the manager Attendance page shows the employee's shift.
+
+---
+
+## REVISION 2026-07-16b — additional tasks (7-9)
+
+Spec revision section governs. Tasks 1-4 are committed. Execute remaining tasks in this order: **Task 5 (attendance) → Task 7 → Task 8 → Task 9 → Task 6 (docs last, covering the final state)**. Same rules: SYSTEM python, full-suite green is the source of truth, no UTF-8 BOM, do not weaken manager assertions.
+
+Post-revision employee page set: Dashboard, Outbound, **Products (view/search/add)**, Sales (day list + order-number search + order detail), Customers (search + add + per-customer orders). Still blocked: Inbound, edit product, Catalog View, AR, Today, Attendance page, Suppliers, Admin.
+
+---
+
+### Task 7: Reopen Products to employees (view / search / add)
+
+**Files:**
+- Modify: `stock/views.py` (remove `@manager_required` from 3 views)
+- Modify: `stock/templates/stock/base.html` (Products link visible to all)
+- Test: `stock/tests.py` (revert product-block tests; add new)
+
+**Interfaces:** consumes `is_manager_user` (template), `has_manager_access`.
+
+- [ ] **Step 1: Write the new test class**
+
+```python
+class EmployeeProductAccessTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.employee = user_model.objects.create_user(username="prod_emp", password="pw123456")
+        cls.category = Category.objects.create(name="PCat")
+        cls.product = Product.objects.create(name="PP", barcode="7100000000001", brand="B",
+                                             default_price=Decimal("9.90"))
+
+    def test_employee_can_view_products_and_detail(self):
+        self.client.login(username="prod_emp", password="pw123456")
+        self.assertEqual(self.client.get(reverse("product_list")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("product_detail", args=[self.product.pk])).status_code, 200)
+
+    def test_employee_can_add_product(self):
+        self.client.login(username="prod_emp", password="pw123456")
+        resp = self.client.post(reverse("add_product"), {
+            "barcode": "7100000000002", "category": self.category.id,
+            "new_brand_name": "NB", "name": "New Item", "default_price": "12.00",
+        })
+        self.assertIn(resp.status_code, (200, 302))
+        self.assertTrue(Product.objects.filter(barcode="7100000000002").exists())
+
+    def test_employee_still_blocked_from_inbound_and_edit(self):
+        self.client.login(username="prod_emp", password="pw123456")
+        for url in [reverse("inbound"), reverse("edit_product", args=[self.product.pk])]:
+            resp = self.client.get(url)
+            self.assertEqual(resp.status_code, 302)
+            self.assertIn(reverse("dashboard"), resp.headers["Location"])
+```
+
+Verify the `add_product` and `edit_product` URL names via `stock/urls.py` — if they differ, use the actual names. `Product`, `Category` are imported at the top of tests.py.
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `...python.exe manage.py test stock.tests.EmployeeProductAccessTests -v 2`
+Expected: the view/detail/add tests FAIL (employee currently 302'd by Task 2).
+
+- [ ] **Step 3: Remove `@manager_required` from the 3 product views**
+
+In `stock/views.py`, remove the `@manager_required` line (added in Task 2) from `product_list_view`, `product_detail_view`, `add_product_view`. Keep `@login_required`. Do NOT touch `edit_product_view`, `inbound_view`, `inbound_receive_view`.
+
+- [ ] **Step 4: Restore the Products nav link for employees**
+
+In `stock/templates/stock/base.html`, the Catalog block is currently fully manager-gated. Replace it so **Products is visible to all**, Catalog View + Suppliers stay manager-only:
+
+```html
+        <div class="erp-nav-group">Catalog</div>
+        <a class="erp-nav-link {% if current_url in 'product_list,product_detail,edit_product,add_product' %}active{% endif %}" href="{% url 'product_list' %}">Products</a>
+        {% if user|is_manager_user %}
+        <a class="erp-nav-link {% if current_url == 'catalog' %}active{% endif %}" href="{% url 'catalog' %}">Catalog View</a>
+        <a class="erp-nav-link {% if current_url in 'supplier_list,supplier_create,supplier_edit,supplier_detail' %}active{% endif %}" href="{% url 'supplier_list' %}">Suppliers</a>
+        {% endif %}
+```
+
+- [ ] **Step 5: Revert the product-block tests changed in Task 2**
+
+Task 2 changed these to assert 302; revert to assert employee SEES the page (200), sensitive hidden:
+- `test_product_list_hides_sales_metrics_but_keeps_prices_for_regular_user` — employee GET `product_list` → 200, a price string present, a sales-metric string absent.
+- `test_product_detail_shows_prices_but_hides_sales_history_for_regular_user` — employee GET `product_detail` → 200, prices present, sales history / "Suppliers &amp; cost" absent.
+- In `test_regular_user_can_open_pages_but_not_sensitive_views`, change the `product_list` assertion back to 200 (leave `ar_list` at 302 — AR stays blocked).
+
+Recover the original bodies with `git show cd2db89:stock/tests.py` if helpful.
+
+- [ ] **Step 6: Full suite + commit**
+
+Run: `...python.exe manage.py test stock` → all pass.
+```
+git add stock/views.py stock/templates/stock/base.html stock/tests.py
+git commit -m "feat: reopen product view/search/add to employees (inbound/edit stay manager-only)"
+```
+
+---
+
+### Task 8: Sales order-number search + order-detail links
+
+**Files:**
+- Modify: `stock/views.py` (`_employee_sales_day_view`)
+- Modify: `stock/templates/stock/sales_records_employee.html`
+- Test: `stock/tests.py` (extend `EmployeeSalesViewTests`)
+
+**Interfaces:** consumes `redirect`, `messages`, `scope_sales_by_store`, `resolve_active_store`, `SaleOrder` (all imported in views.py). URL `sale_order_detail` takes `order_id`.
+
+- [ ] **Step 1: Write the failing tests** (add to `EmployeeSalesViewTests`)
+
+```python
+    def test_order_number_search_redirects_to_detail(self):
+        order = SaleOrder.objects.create()
+        product = Product.objects.create(name="Q", barcode="7200000000001", brand="B")
+        Sale.objects.create(order=order, product=product, quantity=1,
+                            unit_price=Decimal("5.00"), payment_method="cash")
+        self.client.login(username="sales_emp", password="pw123456")
+        resp = self.client.get(reverse("sales_records"), {"order": str(order.id)})
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(reverse("sale_order_detail", args=[order.id]), resp.headers["Location"])
+
+    def test_order_rows_link_to_detail(self):
+        order = SaleOrder.objects.create()
+        product = Product.objects.create(name="Q2", barcode="7200000000002", brand="B")
+        Sale.objects.create(order=order, product=product, quantity=1,
+                            unit_price=Decimal("5.00"), payment_method="cash")
+        self.client.login(username="sales_emp", password="pw123456")
+        resp = self.client.get(reverse("sales_records"))
+        self.assertContains(resp, reverse("sale_order_detail", args=[order.id]))
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `...python.exe manage.py test stock.tests.EmployeeSalesViewTests -v 2` → both new tests FAIL.
+
+- [ ] **Step 3: Add order lookup + order_id in the helper**
+
+In `_employee_sales_day_view`, after `active_store, store_is_all = resolve_active_store(request)`, add:
+
+```python
+    order_str = (request.GET.get('order') or '').strip()
+    if order_str:
+        oq = SaleOrder.objects.filter(id=order_str) if order_str.isdigit() else SaleOrder.objects.none()
+        found = scope_sales_by_store(oq, active_store, store_is_all).first()
+        if found:
+            return redirect('sale_order_detail', order_id=found.id)
+        messages.warning(request, f'Order #{order_str} not found.')
+```
+
+And add `'order_id': order.id,` to each appended row dict.
+
+- [ ] **Step 4: Update the template** (`sales_records_employee.html`)
+
+Add an order-number search form after the date form:
+
+```html
+  <form method="get" class="row g-2 align-items-end mb-3">
+    <div class="col-auto">
+      <label class="form-label fw-bold" for="order">Order #</label>
+      <input type="text" id="order" name="order" class="form-control" placeholder="Find by order number">
+    </div>
+    <div class="col-auto"><button type="submit" class="btn btn-outline-primary">Find</button></div>
+  </form>
+```
+
+And change the time cell to a detail link:
+
+```html
+          <td class="num"><a href="{% url 'sale_order_detail' o.order_id %}">{{ o.created_hhmm }}</a></td>
+```
+
+- [ ] **Step 5: Full suite + commit**
+
+Run: `...python.exe manage.py test stock` → all pass.
+```
+git add stock/views.py stock/templates/stock/sales_records_employee.html stock/tests.py
+git commit -m "feat: employee Sales order-number search + order-detail links"
+```
+
+---
+
+### Task 9: Per-customer orders for reconciliation
+
+**Files:**
+- Modify: `stock/views.py` (`customer_detail_view` branch + helper `_employee_customer_orders_view`)
+- Modify: `stock/templates/stock/customer_search_employee.html` (link results to the orders view)
+- Create: `stock/templates/stock/customer_orders_employee.html`
+- Test: `stock/tests.py` (new class)
+
+**Interfaces:** consumes `has_manager_access`, `get_object_or_404`, `Customer`, `SaleOrder`, `resolve_active_store`, `scope_sales_by_store`, `timezone`, `Decimal`, `render` (all imported). `sale_order_detail` takes `order_id`.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+class EmployeeCustomerOrdersTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.employee = user_model.objects.create_user(username="recon_emp", password="pw123456")
+        cls.customer = Customer.objects.create(nif="333333333", name="Recon Cust")
+        cls.order = SaleOrder.objects.create(customer=cls.customer)
+        product = Product.objects.create(name="R", barcode="7300000000001", brand="B")
+        Sale.objects.create(order=cls.order, product=product, quantity=2,
+                            unit_price=Decimal("7.50"), payment_method="cash")
+
+    def test_employee_sees_customer_orders_only(self):
+        self.client.login(username="recon_emp", password="pw123456")
+        resp = self.client.get(reverse("customer_detail", args=[self.customer.id]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Recon Cust")
+        self.assertContains(resp, "EUR 15.00")
+        self.assertContains(resp, reverse("sale_order_detail", args=[self.order.id]))
+        self.assertNotContains(resp, "<canvas")
+
+    def test_manager_still_sees_full_customer_detail(self):
+        user_model = get_user_model()
+        user_model.objects.create_user(username="recon_mgr", password="pw123456", is_staff=True)
+        self.client.login(username="recon_mgr", password="pw123456")
+        resp = self.client.get(reverse("customer_detail", args=[self.customer.id]))
+        self.assertEqual(resp.status_code, 200)
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `...python.exe manage.py test stock.tests.EmployeeCustomerOrdersTests -v 2` → `test_employee_sees_customer_orders_only` FAILS (employee 302'd by Task 2's `@manager_required`).
+
+- [ ] **Step 3: Branch `customer_detail_view` + add helper**
+
+Remove the `@manager_required` decorator from `customer_detail_view`; make its FIRST statement:
+
+```python
+    if not has_manager_access(request.user):
+        return _employee_customer_orders_view(request, customer_id)
+```
+
+Add this helper immediately above `customer_detail_view`:
+
+```python
+def _employee_customer_orders_view(request, customer_id):
+    """Employee: a customer's orders only (for reconciliation) - no analytics."""
+    customer = get_object_or_404(Customer, id=customer_id)
+    active_store, store_is_all = resolve_active_store(request)
+    orders_qs = (
+        SaleOrder.objects.filter(customer=customer)
+        .prefetch_related('items', 'payments')
+        .order_by('-created_at', '-id')
+    )
+    orders_qs = scope_sales_by_store(orders_qs, active_store, store_is_all)
+    payment_labels = {'cash': 'Cash', 'card': 'Card', 'mbway': 'MBWay'}
+    orders = []
+    for order in orders_qs:
+        items = list(order.items.all())
+        total = sum((i.quantity * (i.unit_price or Decimal('0.00')) for i in items), Decimal('0.00'))
+        methods = [payment_labels.get(p.method, (p.method or '').title()) for p in order.payments.all()]
+        orders.append({
+            'order_id': order.id,
+            'created_at': timezone.localtime(order.created_at).strftime('%Y-%m-%d %H:%M'),
+            'item_count': sum(i.quantity for i in items),
+            'payment_label': ', '.join(dict.fromkeys(methods)) or '-',
+            'total_amount': total,
+        })
+    return render(request, 'stock/customer_orders_employee.html', {
+        'customer': customer,
+        'orders': orders,
+    })
+```
+
+- [ ] **Step 4: Create the lean orders template** (`stock/templates/stock/customer_orders_employee.html`)
+
+```html
+{% extends 'stock/base.html' %}
+{% block content %}
+<div class="page-card">
+  <h1 class="pos-title">{{ customer.name }}</h1>
+  <p class="num">{{ customer.phone|default:"-" }}{% if customer.email %} - {{ customer.email }}{% endif %}</p>
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead><tr><th>Date</th><th>Order #</th><th>Items</th><th>Payment</th><th class="text-end">Total</th></tr></thead>
+      <tbody>
+        {% for o in orders %}
+        <tr>
+          <td>{{ o.created_at }}</td>
+          <td><a href="{% url 'sale_order_detail' o.order_id %}">#{{ o.order_id }}</a></td>
+          <td class="num">{{ o.item_count }}</td>
+          <td>{{ o.payment_label }}</td>
+          <td class="num text-end">EUR {{ o.total_amount|floatformat:2 }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-muted">No orders for this customer.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+```
+
+- [ ] **Step 5: Link customer-search results to the orders view**
+
+In `stock/templates/stock/customer_search_employee.html`, change the result name cell to a link:
+
+```html
+        <tr><td><a href="{% url 'customer_detail' c.id %}">{{ c.name }}</a></td><td>{{ c.phone|default:"-" }}</td><td>{{ c.email|default:"-" }}</td></tr>
+```
+
+- [ ] **Step 6: Full suite + commit**
+
+Run: `...python.exe manage.py test stock` → all pass.
+```
+git add stock/views.py stock/templates/stock/customer_orders_employee.html stock/templates/stock/customer_search_employee.html stock/tests.py
+git commit -m "feat: employee per-customer orders view for reconciliation"
+```
+
+---
+
+### Task 6 (revised): Documentation — final state
+
+Update `docs/PRD.md`, `docs/ARCHITECTURE.md`, `docs/STATUS.md` to describe the FINAL employee experience (Dashboard, Outbound, Products view/search/add with sensitive info hidden and inbound/edit manager-only, single-day Sales with order-number search + order detail, Customers search+add + per-customer orders for reconciliation, auto-attendance from login/logout). Note the AR `@login_required` note is superseded (employees blocked from AR).
+
+---
+
+## REVISION 2026-07-16c — additional tasks (10-12)
+
+Spec revision section 2026-07-16c governs. Execute order: **Task 10 → Task 11 → Task 12**. Same rules: SYSTEM python, full-suite green is the source of truth, no UTF-8 BOM, do not weaken manager assertions, no intro/explanatory paragraphs in templates.
+
+URL names (verified): `add_product`, `edit_product`, `product_detail`, `product_list`, `export_product_list_excel`, `export_shopify_inventory_csv`, `delete_product`, `delete_product_image`, `sale_order_detail` (arg `order_id`), `sales_records`, `customer_detail` (arg `customer_id`).
+
+---
+
+### Task 10: Employees can edit products + download the product Excel
+
+**Files:**
+- Modify: `stock/views.py` (remove 2 `@manager_required`)
+- Modify: `stock/templates/stock/product_list.html` (ungate Add Product / Edit / Export For Client; keep Shopify export manager-only)
+- Modify: `stock/templates/stock/edit_product.html` (hide delete blocks from employees)
+- Test: `stock/tests.py` (new class)
+
+**Interfaces:** consumes `is_manager_user` template filter, `has_manager_access`.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+class EmployeeProductEditExportTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.employee = user_model.objects.create_user(username="edit_emp", password="pw123456")
+        cls.category = Category.objects.create(name="ECat")
+        cls.product = Product.objects.create(name="Old Name", barcode="7400000000001", brand="B",
+                                             default_price=Decimal("9.90"))
+
+    def test_employee_can_open_and_submit_edit(self):
+        self.client.login(username="edit_emp", password="pw123456")
+        self.assertEqual(self.client.get(reverse("edit_product", args=[self.product.pk])).status_code, 200)
+        resp = self.client.post(reverse("edit_product", args=[self.product.pk]), {
+            "barcode": "7400000000001", "category": self.category.id,
+            "new_brand_name": "B", "name": "New Name", "default_price": "10.50",
+        })
+        self.assertIn(resp.status_code, (200, 302))
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.name, "New Name")
+
+    def test_employee_can_download_product_excel(self):
+        self.client.login(username="edit_emp", password="pw123456")
+        resp = self.client.get(reverse("export_product_list_excel"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("spreadsheet", resp["Content-Type"])
+
+    def test_employee_still_blocked_from_deletes_and_shopify_export(self):
+        self.client.login(username="edit_emp", password="pw123456")
+        for resp in [
+            self.client.post(reverse("delete_product", args=[self.product.pk])),
+        ]:
+            self.assertEqual(resp.status_code, 302)
+            self.assertIn(reverse("dashboard"), resp.headers["Location"])
+        # product_list shows Add/Edit/Client-export to employee, not Shopify export
+        page = self.client.get(reverse("product_list"))
+        self.assertContains(page, reverse("add_product"))
+        self.assertContains(page, reverse("edit_product", args=[self.product.pk]))
+        self.assertContains(page, reverse("export_product_list_excel"))
+        self.assertNotContains(page, reverse("export_shopify_inventory_csv"))
+```
+
+(If `delete_product` requires POST and returns 302 to dashboard via manager_required, good. Verify `export_product_list_excel` Content-Type contains "spreadsheet"; if the app uses a different xlsx mime, assert on that instead.)
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `...python.exe manage.py test stock.tests.EmployeeProductEditExportTests -v 2` → edit/excel tests FAIL (employee 302'd today).
+
+- [ ] **Step 3: Remove the two decorators**
+
+In `stock/views.py`, remove the `@manager_required` line from `edit_product_view` and from `export_product_list_excel` (keep `@login_required`). Do NOT touch `delete_product_view` or `delete_product_image` (stay manager-only).
+
+- [ ] **Step 4: product_list.html — ungate Add Product / Edit / Client export**
+
+- The **Add Product** button (`{% if can_manage %}` at line ~12) → remove that gate (show to all authenticated users).
+- The per-row **Edit** links (`{% if can_manage %}` at lines ~258 and ~290) → remove those gates.
+- The export panel is wrapped by one `{% if can_manage %}` (line ~100) around BOTH "Export For Client" and "Export For Shopify". Restructure so **"Export For Client" (the `export_product_list_excel` form) is visible to all**, and only **"Export For Shopify" stays inside `{% if can_manage %}`**. Move the `{% if can_manage %}`/`{% endif %}` to wrap only the Shopify export-panel block.
+
+- [ ] **Step 5: edit_product.html — hide delete from employees**
+
+Wrap the per-image delete forms (line ~150, `action="{% url 'delete_product_image' ... %}"`) and the whole-product delete block (line ~294, `{% if can_delete_product %}`) with `{% if user|is_manager_user %}` so employees don't see delete controls. (Add `{% load access_tags %}` at the top of edit_product.html only if it is not already loaded.)
+
+- [ ] **Step 6: Full suite + commit**
+
+Run: `...python.exe manage.py test stock` → all pass.
+```
+git add stock/views.py stock/templates/stock/product_list.html stock/templates/stock/edit_product.html stock/tests.py
+git commit -m "feat: employees can edit products + download the client product Excel"
+```
+
+---
+
+### Task 11: Per-order View modal + Print button (employee Sales + customer orders)
+
+**Files:**
+- Modify: `stock/views.py` (`_employee_sales_day_view`, `_employee_customer_orders_view` — add per-order `items`)
+- Modify: `stock/templates/stock/sales_records_employee.html`, `stock/templates/stock/customer_orders_employee.html`
+- Test: `stock/tests.py` (extend/append)
+
+**Interfaces:** consumes `build_product_label` (available in views.py), `sale_order_detail` URL.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+class EmployeeOrderActionsTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.employee = user_model.objects.create_user(username="act_emp", password="pw123456")
+        cls.customer = Customer.objects.create(nif="444444444", name="Act Cust")
+        cls.order = SaleOrder.objects.create(customer=cls.customer)
+        cls.product = Product.objects.create(name="Widget", barcode="7500000000001", brand="B")
+        Sale.objects.create(order=cls.order, product=cls.product, quantity=2,
+                            unit_price=Decimal("5.00"), payment_method="cash")
+
+    def test_sales_row_has_view_modal_and_print_button(self):
+        self.client.login(username="act_emp", password="pw123456")
+        resp = self.client.get(reverse("sales_records"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "order-modal-%s" % self.order.id)     # View modal present
+        self.assertContains(resp, "Widget")                              # item rendered in modal
+        self.assertContains(resp, reverse("sale_order_detail", args=[self.order.id]))  # Print link
+
+    def test_customer_orders_row_has_view_modal_and_print_button(self):
+        self.client.login(username="act_emp", password="pw123456")
+        resp = self.client.get(reverse("customer_detail", args=[self.customer.id]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "order-modal-%s" % self.order.id)
+        self.assertContains(resp, "Widget")
+        self.assertContains(resp, reverse("sale_order_detail", args=[self.order.id]))
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `...python.exe manage.py test stock.tests.EmployeeOrderActionsTests -v 2` → FAIL.
+
+- [ ] **Step 3: Helpers — pass per-order items**
+
+In `_employee_sales_day_view` and `_employee_customer_orders_view`, when building each order's row dict, add an `items` list (the modal needs line detail — no profit/cost):
+
+```python
+        'items': [
+            {
+                'name': build_product_label(i.product),
+                'qty': i.quantity,
+                'unit_price': i.unit_price or Decimal('0.00'),
+                'line_total': (i.unit_price or Decimal('0.00')) * i.quantity,
+            }
+            for i in items
+        ],
+```
+
+(`items` is the already-materialized `list(order.items.all())` in each helper.)
+
+- [ ] **Step 4: Templates — View modal + Print button**
+
+In BOTH `sales_records_employee.html` and `customer_orders_employee.html`, replace the current detail link (on the time cell / order# cell) with an **actions cell** containing a **View** button and a **Print** button, and add a per-order modal. Follow the `daily_summary.html` modal pattern (`#order-modal-{{ o.order_id }}`):
+
+```html
+          <td>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#order-modal-{{ o.order_id }}">View</button>
+            <a href="{% url 'sale_order_detail' o.order_id %}" class="btn btn-sm btn-outline-primary">Print</a>
+          </td>
+```
+
+And, after the table (still inside the content block), one modal per order:
+
+```html
+{% for o in orders %}
+<div class="modal fade" id="order-modal-{{ o.order_id }}" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Order #{{ o.order_id }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <table class="table">
+          <thead><tr><th>Item</th><th class="text-end">Qty</th><th class="text-end">Unit</th><th class="text-end">Subtotal</th></tr></thead>
+          <tbody>
+            {% for it in o.items %}
+            <tr><td>{{ it.name }}</td><td class="num text-end">{{ it.qty }}</td><td class="num text-end">EUR {{ it.unit_price|floatformat:2 }}</td><td class="num text-end">EUR {{ it.line_total|floatformat:2 }}</td></tr>
+            {% endfor %}
+          </tbody>
+          <tfoot><tr class="fw-bold"><td colspan="3" class="text-end">Total ({{ o.payment_label }})</td><td class="num text-end">EUR {{ o.total_amount|floatformat:2 }}</td></tr></tfoot>
+        </table>
+      </div>
+      <div class="modal-footer">
+        <a href="{% url 'sale_order_detail' o.order_id %}" class="btn btn-primary">Print</a>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endfor %}
+```
+
+Add an "Actions" column header where appropriate. Remove the old detail link from the time/order# cell. `base.html` loads `bootstrap.min.js` (modals work).
+
+- [ ] **Step 5: Full suite + commit**
+
+Run: `...python.exe manage.py test stock` → all pass.
+```
+git add stock/views.py stock/templates/stock/sales_records_employee.html stock/templates/stock/customer_orders_employee.html stock/tests.py
+git commit -m "feat: per-order View modal + Print button on employee Sales & customer orders"
+```
+
+---
+
+### Task 12: Align employee page CSS with the manager pages
+
+**Files:**
+- Modify: `stock/templates/stock/sales_records_employee.html`, `stock/templates/stock/customer_search_employee.html`, `stock/templates/stock/customer_orders_employee.html`
+- Test: `stock/tests.py` (light structural assertions)
+
+**Interfaces:** consumes the shared design system in `static/css/app.css` (classes like `page-card`, `strip-head`, `stat-card`, standard `.table` treatment) as used by `sales_records.html` / `customer_search.html` / `product_list.html`.
+
+- [ ] **Step 1: Read the manager templates for the shared classes**
+
+Read `stock/templates/stock/sales_records.html`, `customer_search.html`, and `product_list.html` to see the page scaffold they use (e.g. `<section class="page-card pad">`, `strip-head` headers, `page-title`/`h5` headings, table wrappers). The employee templates should use the SAME scaffolding so they look consistent.
+
+- [ ] **Step 2: Write light structural tests**
+
+```python
+class EmployeePageStyleTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.employee = user_model.objects.create_user(username="style_emp", password="pw123456")
+
+    def test_employee_pages_use_shared_card_scaffold(self):
+        self.client.login(username="style_emp", password="pw123456")
+        for url in [reverse("sales_records"), reverse("customer_search")]:
+            resp = self.client.get(url)
+            self.assertEqual(resp.status_code, 200)
+            self.assertContains(resp, "page-card")     # shared design-system card, like manager pages
+```
+
+(Adjust the asserted class to whatever the manager pages actually use as their primary card wrapper, confirmed in Step 1. Styling quality is verified manually; this test only guards that the shared scaffold is present.)
+
+- [ ] **Step 3: Run to verify it fails (if the current templates lack the class)**
+
+Run: `...python.exe manage.py test stock.tests.EmployeePageStyleTests -v 2`. If the employee templates already contain `page-card`, adjust the assertion to a class they currently lack but the manager pages have, so the test is meaningful.
+
+- [ ] **Step 4: Restyle the three employee templates**
+
+Rework `sales_records_employee.html`, `customer_search_employee.html`, `customer_orders_employee.html` to use the same page scaffold as the manager pages: wrap content in the shared card/section structure, use the standard header (`strip-head` / `page-title` / `h5`), style forms with the toolbar/`form-*` conventions, and give tables the standard treatment (matching, e.g., `sales_records.html`). Keep ALL existing functionality (date/order search, add-customer modal, View/Print buttons, per-order modals) intact — this is styling only. No intro/explanatory paragraphs.
+
+- [ ] **Step 5: Full suite + commit**
+
+Run: `...python.exe manage.py test stock` → all pass.
+```
+git add stock/templates/stock/sales_records_employee.html stock/templates/stock/customer_search_employee.html stock/templates/stock/customer_orders_employee.html stock/tests.py
+git commit -m "feat: align employee Sales/Customers page styling with the manager pages"
+```
+
+---
+
+### Task 6 (revised again): Documentation — final state
+
+When all of 10-12 are done, update `docs/PRD.md` / `docs/ARCHITECTURE.md` / `docs/STATUS.md` to reflect that employees can also edit products (not delete), download the client product Excel, and that the employee Sales/Customers pages are styled like the manager pages with per-order View (modal) + Print (detail) actions. (Can be folded into the final docs pass.)

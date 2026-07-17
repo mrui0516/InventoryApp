@@ -1,11 +1,14 @@
 import logging
 
 from django.conf import settings
+from django.contrib.auth.signals import user_logged_in, user_logged_out
 from django.db import transaction
 from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
+from django.utils import timezone
 
-from .models import ProductImage, Sale
+from .models import AttendanceRecord, ProductImage, Sale
+from .permissions import has_manager_access
 from .services import schedule_summary_recalc
 
 logger = logging.getLogger(__name__)
@@ -100,3 +103,44 @@ def mirror_product_image_on_delete(sender, instance, **kwargs):
     """Re-sync Cloudinary after an image is removed (upload new primary, or
     delete the asset when none remain)."""
     _mirror_to_cloudinary(instance.product)
+
+
+@receiver(user_logged_in)
+def open_attendance_on_login(sender, request, user, **kwargs):
+    """Employees: opening a shift on login. Reuse today's open shift; close a
+    stale previous-day open shift first."""
+    if has_manager_access(user):
+        return
+    today = timezone.localdate()
+    open_shift = (
+        AttendanceRecord.objects
+        .filter(user=user, clock_out_at__isnull=True)
+        .order_by('-clock_in_at', '-id')
+        .first()
+    )
+    if open_shift:
+        if timezone.localtime(open_shift.clock_in_at).date() == today:
+            return  # already an open shift today
+        end_of_day = timezone.localtime(open_shift.clock_in_at).replace(
+            hour=23, minute=59, second=59, microsecond=0)
+        open_shift.clock_out_at = end_of_day
+        open_shift.note = (open_shift.note + ' auto-closed: no logout').strip()
+        open_shift.save(update_fields=['clock_out_at', 'note'])
+    AttendanceRecord.objects.create(user=user, clock_in_at=timezone.now(), note='auto: login')
+
+
+@receiver(user_logged_out)
+def close_attendance_on_logout(sender, request, user, **kwargs):
+    """Employees: closing the open shift on logout."""
+    if user is None or has_manager_access(user):
+        return
+    open_shift = (
+        AttendanceRecord.objects
+        .filter(user=user, clock_out_at__isnull=True)
+        .order_by('-clock_in_at', '-id')
+        .first()
+    )
+    if open_shift:
+        open_shift.clock_out_at = timezone.now()
+        open_shift.note = (open_shift.note + ' auto: logout').strip()
+        open_shift.save(update_fields=['clock_out_at', 'note'])

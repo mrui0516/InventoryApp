@@ -9,9 +9,7 @@
       <div>
         <h1 class="page-title">Products</h1>
       </div>
-      {% if can_manage %}
-        <a href="{% url 'add_product' %}" class="btn btn-primary">Add Product</a>
-      {% endif %}
+      <a href="{% url 'add_product' %}" class="btn btn-primary">Add Product</a>
     </div>
   </section>
 
@@ -97,8 +95,7 @@
       </div>
     {% endif %}
 
-    {% if can_manage %}
-      <div class="export-panel">
+    <div class="export-panel">
         <div class="strip-head mb-3">
           <div>
             <h3 class="h6 mb-1">Export For Client</h3>
@@ -139,6 +136,7 @@
           </div>
         </form>
       </div>
+    {% if can_manage %}
       <div class="export-panel">
         <div class="strip-head mb-3">
           <div>
@@ -255,9 +253,7 @@
 
                     <div class="actions d-sm-none mt-3">
                       <a href="{% url 'product_detail' product.id %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="btn btn-sm btn-outline-primary">View</a>
-                      {% if can_manage %}
-                        <a href="{% url 'edit_product' product.id %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="btn btn-sm btn-outline-secondary">Edit</a>
-                      {% endif %}
+                      <a href="{% url 'edit_product' product.id %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="btn btn-sm btn-outline-secondary">Edit</a>
                     </div>
                   </td>
                   {% if show_sales_sensitive %}
@@ -287,9 +283,7 @@
                   <td class="d-none d-sm-table-cell">
                     <div class="actions">
                       <a href="{% url 'product_detail' product.id %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="btn btn-sm btn-outline-primary">View</a>
-                      {% if can_manage %}
-                        <a href="{% url 'edit_product' product.id %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="btn btn-sm btn-outline-secondary">Edit</a>
-                      {% endif %}
+                      <a href="{% url 'edit_product' product.id %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="btn btn-sm btn-outline-secondary">Edit</a>
                     </div>
                   </td>
                 </tr>
