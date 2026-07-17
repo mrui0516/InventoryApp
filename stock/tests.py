@@ -3404,3 +3404,31 @@ class EmployeeCrossStoreIsolationTests(TestCase):
         order_ids = [row['order_id'] for row in response.context['orders']]
         self.assertIn(self.order_a.id, order_ids)
         self.assertNotIn(self.order_b.id, order_ids)
+
+
+class EmployeeOrderActionsTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.employee = user_model.objects.create_user(username="act_emp", password="pw123456")
+        cls.customer = Customer.objects.create(nif="444444444", name="Act Cust")
+        cls.order = SaleOrder.objects.create(customer=cls.customer)
+        cls.product = Product.objects.create(name="Widget", barcode="7500000000001", brand="B")
+        Sale.objects.create(order=cls.order, product=cls.product, quantity=2,
+                            unit_price=Decimal("5.00"), payment_method="cash")
+
+    def test_sales_row_has_view_modal_and_print_button(self):
+        self.client.login(username="act_emp", password="pw123456")
+        resp = self.client.get(reverse("sales_records"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "order-modal-%s" % self.order.id)     # View modal present
+        self.assertContains(resp, "Widget")                              # item rendered in modal
+        self.assertContains(resp, reverse("sale_order_detail", args=[self.order.id]))  # Print link
+
+    def test_customer_orders_row_has_view_modal_and_print_button(self):
+        self.client.login(username="act_emp", password="pw123456")
+        resp = self.client.get(reverse("customer_detail", args=[self.customer.id]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "order-modal-%s" % self.order.id)
+        self.assertContains(resp, "Widget")
+        self.assertContains(resp, reverse("sale_order_detail", args=[self.order.id]))

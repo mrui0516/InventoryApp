@@ -5,21 +5,53 @@
   <p class="num">{{ customer.phone|default:"-" }}{% if customer.email %} - {{ customer.email }}{% endif %}</p>
   <div class="table-responsive">
     <table class="table align-middle">
-      <thead><tr><th>Date</th><th>Order #</th><th>Items</th><th>Payment</th><th class="text-end">Total</th></tr></thead>
+      <thead><tr><th>Date</th><th>Order #</th><th>Items</th><th>Payment</th><th class="text-end">Total</th><th>Actions</th></tr></thead>
       <tbody>
         {% for o in orders %}
         <tr>
           <td>{{ o.created_at }}</td>
-          <td><a href="{% url 'sale_order_detail' o.order_id %}">#{{ o.order_id }}</a></td>
+          <td>#{{ o.order_id }}</td>
           <td class="num">{{ o.item_count }}</td>
           <td>{{ o.payment_label }}</td>
           <td class="num text-end">EUR {{ o.total_amount|floatformat:2 }}</td>
+          <td>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#order-modal-{{ o.order_id }}">View</button>
+            <a href="{% url 'sale_order_detail' o.order_id %}" class="btn btn-sm btn-outline-primary">Print</a>
+          </td>
         </tr>
         {% empty %}
-        <tr><td colspan="5" class="text-muted">No orders for this customer.</td></tr>
+        <tr><td colspan="6" class="text-muted">No orders for this customer.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+
+{% for o in orders %}
+<div class="modal fade" id="order-modal-{{ o.order_id }}" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Order #{{ o.order_id }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <table class="table">
+          <thead><tr><th>Item</th><th class="text-end">Qty</th><th class="text-end">Unit</th><th class="text-end">Subtotal</th></tr></thead>
+          <tbody>
+            {% for it in o.items %}
+            <tr><td>{{ it.name }}</td><td class="num text-end">{{ it.qty }}</td><td class="num text-end">EUR {{ it.unit_price|floatformat:2 }}</td><td class="num text-end">EUR {{ it.line_total|floatformat:2 }}</td></tr>
+            {% endfor %}
+          </tbody>
+          <tfoot><tr class="fw-bold"><td colspan="3" class="text-end">Total ({{ o.payment_label }})</td><td class="num text-end">EUR {{ o.total_amount|floatformat:2 }}</td></tr></tfoot>
+        </table>
+      </div>
+      <div class="modal-footer">
+        <a href="{% url 'sale_order_detail' o.order_id %}" class="btn btn-primary">Print</a>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endfor %}
 {% endblock %}

@@ -3804,6 +3804,15 @@ def _employee_sales_day_view(request):
             'item_count': qty,
             'payment_label': ', '.join(dict.fromkeys(methods)) or '-',
             'total_amount': total,
+            'items': [
+                {
+                    'name': build_product_label(i.product),
+                    'qty': i.quantity,
+                    'unit_price': i.unit_price or Decimal('0.00'),
+                    'line_total': (i.unit_price or Decimal('0.00')) * i.quantity,
+                }
+                for i in items
+            ],
         })
         day_total += total
 
@@ -4499,6 +4508,15 @@ def _employee_customer_orders_view(request, customer_id):
             'item_count': sum(i.quantity for i in items),
             'payment_label': ', '.join(dict.fromkeys(methods)) or '-',
             'total_amount': total,
+            'items': [
+                {
+                    'name': build_product_label(i.product),
+                    'qty': i.quantity,
+                    'unit_price': i.unit_price or Decimal('0.00'),
+                    'line_total': (i.unit_price or Decimal('0.00')) * i.quantity,
+                }
+                for i in items
+            ],
         })
     return render(request, 'stock/customer_orders_employee.html', {
         'customer': customer,
