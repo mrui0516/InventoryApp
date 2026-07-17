@@ -1347,12 +1347,53 @@ class EmployeeProductAccessTests(TestCase):
         self.assertIn(resp.status_code, (200, 302))
         self.assertTrue(Product.objects.filter(barcode="7100000000002").exists())
 
-    def test_employee_still_blocked_from_inbound_and_edit(self):
+    def test_employee_still_blocked_from_inbound(self):
         self.client.login(username="prod_emp", password="pw123456")
-        for url in [reverse("inbound"), reverse("edit_product", args=[self.product.pk])]:
+        for url in [reverse("inbound")]:
             resp = self.client.get(url)
             self.assertEqual(resp.status_code, 302)
             self.assertIn(reverse("dashboard"), resp.headers["Location"])
+
+
+class EmployeeProductEditExportTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.employee = user_model.objects.create_user(username="edit_emp", password="pw123456")
+        cls.category = Category.objects.create(name="ECat")
+        cls.product = Product.objects.create(name="Old Name", barcode="7400000000001", brand="B",
+                                             default_price=Decimal("9.90"))
+
+    def test_employee_can_open_and_submit_edit(self):
+        self.client.login(username="edit_emp", password="pw123456")
+        self.assertEqual(self.client.get(reverse("edit_product", args=[self.product.pk])).status_code, 200)
+        resp = self.client.post(reverse("edit_product", args=[self.product.pk]), {
+            "barcode": "7400000000001", "category": self.category.id,
+            "new_brand_name": "B", "name": "New Name", "default_price": "10.50",
+        })
+        self.assertIn(resp.status_code, (200, 302))
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.name, "New Name")
+
+    def test_employee_can_download_product_excel(self):
+        self.client.login(username="edit_emp", password="pw123456")
+        resp = self.client.get(reverse("export_product_list_excel"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("spreadsheet", resp["Content-Type"])
+
+    def test_employee_still_blocked_from_deletes_and_shopify_export(self):
+        self.client.login(username="edit_emp", password="pw123456")
+        for resp in [
+            self.client.post(reverse("delete_product", args=[self.product.pk])),
+        ]:
+            self.assertEqual(resp.status_code, 302)
+            self.assertIn(reverse("dashboard"), resp.headers["Location"])
+        # product_list shows Add/Edit/Client-export to employee, not Shopify export
+        page = self.client.get(reverse("product_list"))
+        self.assertContains(page, reverse("add_product"))
+        self.assertContains(page, reverse("edit_product", args=[self.product.pk]))
+        self.assertContains(page, reverse("export_product_list_excel"))
+        self.assertNotContains(page, reverse("export_shopify_inventory_csv"))
 
 
 class InboundOutboundPageTests(TestCase):

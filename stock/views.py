@@ -1071,7 +1071,6 @@ def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_cat
 
 
 @login_required
-@manager_required
 def export_product_list_excel(request):
     show_sales_sensitive = has_sales_sensitive_access(request.user)
     query = request.GET.get('q', '').strip()
@@ -1467,7 +1466,6 @@ def product_detail_view(request, pk):
     })
 
 @login_required
-@manager_required
 def edit_product_view(request, pk):
     product = get_object_or_404(
         Product.objects.select_related('category', 'brand_master', 'series_master'),
