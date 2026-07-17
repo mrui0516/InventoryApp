@@ -3,6 +3,13 @@
 Date: 2026-07-16
 Status: Approved — ready for implementation plan
 
+> **Revision 2026-07-16b (approved):** see the "## Revision" section at the end.
+> It **reopens product view/add to employees** (superseding the "block Products"
+> parts of §1-§2 below), and adds **order-number search + order detail on Sales**
+> and a **customer-orders reconciliation view**. The auto-attendance design
+> (§5) is unchanged. Where this revision and §1-§2 disagree about Products or
+> `customer_detail`, the revision wins.
+
 ## Goal
 
 Tighten what a non-manager **employee** account can see and do, for information
@@ -184,3 +191,82 @@ Manager opens Attendance → team view populated from the auto records
 - Precise attendance beyond login/logout (heartbeat, idle timeout, geofence).
 - Trimming the employee Dashboard further (kept as-is with existing gating).
 - Any change to manager-facing pages.
+
+---
+
+## Revision (2026-07-16b) — reopen products, sales/customer reconciliation
+
+Approved amendment after Tasks 1-4 were built. The employee is NOT limited to 4
+pages after all: products are reopened (view + add), and Sales/Customers gain
+reconciliation affordances. Auto-attendance (§5) is unchanged.
+
+### R1. Products reopened to employees (supersedes the Products parts of §1-§2)
+
+- Employees may **view/search the product list, open product detail, and add a
+  new product**. Restore the **Products** nav link for employees.
+- Remove `@manager_required` from `product_list_view`, `product_detail_view`,
+  `add_product_view` (undo Task 2 for these three).
+- **Inbound stays manager-only** (`inbound_view`, `inbound_receive_view` keep
+  `@manager_required`) — employees create the catalog entry, managers do the
+  stock receipt (which is where cost price lives, on `Purchase`).
+- **Editing an existing product stays manager-only** (`edit_product_view` keeps
+  `@manager_required`) — employees add, not edit.
+- **No pending/approval workflow, no schema change.** The earlier "pending
+  product" idea is dropped. `ProductForm` already has no cost field
+  (`default_price`/`wholesale_price` are retail/wholesale, not cost), so an
+  employee adding a product never touches cost.
+- **Sensitive-info isolation is already implemented** and just needs to remain
+  in effect: `product_detail.html` gates "Suppliers & cost", batch costs, and
+  sales history behind `{% if show_sensitive %}` / `{% if show_sales_sensitive %}`
+  (manager-only), and the product list hides sales metrics for non-managers.
+  Employees see retail/wholesale prices only.
+- **Tests:** revert the product tests that Task 2 changed to assert a 302
+  (`test_product_list_hides_sales_metrics_but_keeps_prices_for_regular_user`,
+  `test_product_detail_shows_prices_but_hides_sales_history_for_regular_user`,
+  and any product-block assertions in `test_regular_user_can_open_pages_but_not_sensitive_views`)
+  back to the employee-visible-with-sensitive-hidden behavior. Add a test that an
+  employee can POST a new product via `add_product_view` and that
+  `inbound`/`edit_product` remain blocked (302) for employees.
+
+### R2. Sales: order-number search + order detail (extends §3 / Task 3)
+
+- The employee Sales view (`_employee_sales_day_view`) gains an **order-number
+  search**: entering an order number finds **that order across all dates** (not
+  limited to the selected day) and links to its detail. Simplest: a second input
+  (`order` / order id) that, when present, looks up the order and shows it (or
+  redirects to `sale_order_detail`).
+- Each order row (day list and search result) **links to `sale_order_detail`**.
+  `sale_order_detail` is already employee-accessible and already hides customer
+  contacts (NIF/email) while showing amounts — suitable for reconciliation.
+- Store scope still applies to the day list; an order-number lookup returns the
+  order only if it is in the employee's store (avoid cross-store leakage).
+
+### R3. Customers: per-customer orders for reconciliation (extends §4 / Task 4)
+
+- After an employee finds a customer, they can open that customer's **orders**
+  (date / order # / amount / payment) and drill into `sale_order_detail` — for
+  reconciliation (对账). Orders only: **no** spend analytics, charts, timeline,
+  balance, or the full `customer_detail` page.
+- Implementation: remove `@manager_required` from `customer_detail_view` and
+  branch inside it — employee → a lean orders-only template; manager → the
+  existing full page unchanged. (This is the same top-of-view branch pattern used
+  for `record_view` / `customer_search_view`.) The employee customer-search
+  results link each customer to this orders view.
+- Store scope applies (only the employee's store's orders for that customer).
+
+### R4. Net effect on the employee page set
+
+Employee-visible pages become: Dashboard, Outbound, **Products (view/search/add)**,
+Sales (single-day list + order-number search + order detail), Customers (search +
+add + per-customer orders for reconciliation). Still blocked from employees:
+Inbound, edit product, Catalog View, AR, Today (daily_summary), Attendance page,
+Suppliers, and all Admin pages.
+
+### R5. Execution note
+
+Tasks 1-4 are already committed on `feature/employee-interface-restriction`.
+This revision adds new tasks (reopen products; sales order search+detail; customer
+orders view) and the still-pending Task 5 (auto-attendance) and Task 6 (docs,
+reflecting the final state). The revision partially reverses Task 1 (nav) and
+Task 2 (product blocks) — those reversals are explicit new tasks, not edits to
+the completed commits.
