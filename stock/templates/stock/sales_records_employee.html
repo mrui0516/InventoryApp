@@ -13,6 +13,14 @@
     </div>
   </form>
 
+  <form method="get" class="row g-2 align-items-end mb-3">
+    <div class="col-auto">
+      <label class="form-label fw-bold" for="order">Order #</label>
+      <input type="text" id="order" name="order" class="form-control" placeholder="Find by order number">
+    </div>
+    <div class="col-auto"><button type="submit" class="btn btn-outline-primary">Find</button></div>
+  </form>
+
   <div class="table-responsive">
     <table class="table align-middle">
       <thead>
@@ -23,7 +31,7 @@
       <tbody>
         {% for o in orders %}
         <tr>
-          <td class="num">{{ o.created_hhmm }}</td>
+          <td class="num"><a href="{% url 'sale_order_detail' o.order_id %}">{{ o.created_hhmm }}</a></td>
           <td>{{ o.customer_name }}</td>
           <td class="num">{{ o.item_count }}</td>
           <td>{{ o.payment_label }}</td>

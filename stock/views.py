@@ -3768,6 +3768,15 @@ def _employee_sales_day_view(request):
             day = timezone.localdate()
 
     active_store, store_is_all = resolve_active_store(request)
+
+    order_str = (request.GET.get('order') or '').strip()
+    if order_str:
+        oq = SaleOrder.objects.filter(id=order_str) if order_str.isdigit() else SaleOrder.objects.none()
+        found = scope_sales_by_store(oq, active_store, store_is_all).first()
+        if found:
+            return redirect('sale_order_detail', order_id=found.id)
+        messages.warning(request, f'Order #{order_str} not found.')
+
     orders_qs = (
         SaleOrder.objects
         .filter(created_at__date=day)
@@ -3787,6 +3796,7 @@ def _employee_sales_day_view(request):
         qty = sum(i.quantity for i in items)
         methods = [payment_labels.get(p.method, (p.method or '').title()) for p in order.payments.all()]
         orders.append({
+            'order_id': order.id,
             'created_hhmm': timezone.localtime(order.created_at).strftime('%H:%M'),
             'customer_name': order.customer.name if order.customer_id else 'Walk-in / No customer',
             'item_count': qty,

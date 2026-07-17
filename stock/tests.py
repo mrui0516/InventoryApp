@@ -3229,6 +3229,25 @@ class EmployeeSalesViewTests(TestCase):
         self.assertContains(resp, 'name="date"')      # single-day date picker
         self.assertNotContains(resp, "<canvas")       # no charts at all
 
+    def test_order_number_search_redirects_to_detail(self):
+        order = SaleOrder.objects.create()
+        product = Product.objects.create(name="Q", barcode="7200000000001", brand="B")
+        Sale.objects.create(order=order, product=product, quantity=1,
+                            unit_price=Decimal("5.00"), payment_method="cash")
+        self.client.login(username="sales_emp", password="pw123456")
+        resp = self.client.get(reverse("sales_records"), {"order": str(order.id)})
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(reverse("sale_order_detail", args=[order.id]), resp.headers["Location"])
+
+    def test_order_rows_link_to_detail(self):
+        order = SaleOrder.objects.create()
+        product = Product.objects.create(name="Q2", barcode="7200000000002", brand="B")
+        Sale.objects.create(order=order, product=product, quantity=1,
+                            unit_price=Decimal("5.00"), payment_method="cash")
+        self.client.login(username="sales_emp", password="pw123456")
+        resp = self.client.get(reverse("sales_records"))
+        self.assertContains(resp, reverse("sale_order_detail", args=[order.id]))
+
 
 class EmployeeCustomerViewTests(TestCase):
     @classmethod
