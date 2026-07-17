@@ -2053,7 +2053,11 @@ def check_barcode(request):
 
 @login_required
 def sale_order_detail_view(request, order_id):
-    order = get_object_or_404(SaleOrder.objects.select_related('customer'), id=order_id)
+    order_qs = SaleOrder.objects.select_related('customer')
+    if not has_manager_access(request.user):
+        active_store, store_is_all = resolve_active_store(request)
+        order_qs = scope_sales_by_store(order_qs, active_store, store_is_all)
+    order = get_object_or_404(order_qs, id=order_id)
     items = list(
         order.items
         .select_related('product', 'product__brand_master', 'product__series_master')

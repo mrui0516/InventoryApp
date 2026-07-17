@@ -3315,3 +3315,51 @@ class EmployeeCustomerViewTests(TestCase):
         })
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(Customer.objects.filter(nif="999999999").exists())
+
+
+class EmployeeCrossStoreIsolationTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        user_model = get_user_model()
+        cls.employee = user_model.objects.create_user(username="iso_emp", password="pw123456")
+
+        cls.store_a = Store.objects.create(name="Porto", code="PRT")
+        cls.store_b = Store.objects.create(name="Faro", code="FAR")
+        StoreProfile.objects.update_or_create(user=cls.employee, defaults={'store': cls.store_a})
+
+        cls.customer = Customer.objects.create(nif="333444555", name="Iso Cust")
+        cls.product = Product.objects.create(
+            name="Iso Product", barcode="7330000000001", brand="Maison",
+            default_price=Decimal("20.00"),
+        )
+
+        cls.order_a = SaleOrder.objects.create(customer=cls.customer, store=cls.store_a)
+        Sale.objects.create(
+            order=cls.order_a, product=cls.product, customer=cls.customer, store=cls.store_a,
+            quantity=1, unit_price=Decimal("20.00"), payment_method="cash",
+        )
+
+        cls.order_b = SaleOrder.objects.create(customer=cls.customer, store=cls.store_b)
+        Sale.objects.create(
+            order=cls.order_b, product=cls.product, customer=cls.customer, store=cls.store_b,
+            quantity=1, unit_price=Decimal("50.00"), payment_method="cash",
+        )
+
+    def test_employee_cannot_open_other_store_order_detail(self):
+        self.client.login(username="iso_emp", password="pw123456")
+        response = self.client.get(reverse("sale_order_detail", args=[self.order_b.id]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_employee_can_open_own_store_order_detail(self):
+        self.client.login(username="iso_emp", password="pw123456")
+        response = self.client.get(reverse("sale_order_detail", args=[self.order_a.id]))
+        self.assertEqual(response.status_code, 200)
+
+    def test_employee_sales_day_view_excludes_other_store_order(self):
+        self.client.login(username="iso_emp", password="pw123456")
+        today = timezone.localdate()
+        response = self.client.get(reverse("sales_records"), {"date": today.isoformat()})
+        self.assertEqual(response.status_code, 200)
+        order_ids = [row['order_id'] for row in response.context['orders']]
+        self.assertIn(self.order_a.id, order_ids)
+        self.assertNotIn(self.order_b.id, order_ids)
