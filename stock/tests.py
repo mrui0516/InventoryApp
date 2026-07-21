@@ -3682,3 +3682,18 @@ class EmployeePriceReadOnlyTests(TestCase):
         })
         p.refresh_from_db()
         self.assertFalse(p.price_locked)   # employee POST cannot lock it
+
+
+class PerfumeBackfillCommandTests(TestCase):
+    def test_backfill_prices_unlocked_perfumes(self):
+        from django.core.management import call_command
+        perfumes = Category.objects.create(name="Perfumes")
+        p = Product.objects.create(name="P", barcode="8400000000001", brand="B", category=perfumes)
+        # Create the batch WITHOUT triggering the signal path would be hard; instead
+        # set price back to a stale value, then let the command recompute.
+        Purchase.objects.create(product=p, quantity=5, remaining=5, cost_price=Decimal("12.34"))
+        Product.objects.filter(pk=p.pk).update(default_price=Decimal("1"), wholesale_price=Decimal("1"))
+        call_command("sync_perfume_prices")
+        p.refresh_from_db()
+        self.assertEqual(p.wholesale_price, Decimal("23"))
+        self.assertEqual(p.default_price, Decimal("35"))
