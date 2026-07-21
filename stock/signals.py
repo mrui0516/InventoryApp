@@ -154,3 +154,13 @@ def reprice_perfume_on_purchase(sender, instance, **kwargs):
         sync_perfume_price(instance.product)
     except Exception:  # never let pricing break an inbound
         logger.exception('perfume reprice on purchase failed for %s', getattr(instance, 'product_id', '?'))
+
+
+@receiver(post_delete, sender=Purchase)
+def reprice_perfume_on_purchase_delete(sender, instance, **kwargs):
+    """Deleting a batch may change a perfume's current FIFO cost."""
+    from .services.pricing import sync_perfume_price
+    try:
+        sync_perfume_price(instance.product)
+    except Exception:
+        logger.exception('perfume reprice on purchase delete failed for %s', getattr(instance, 'product_id', '?'))

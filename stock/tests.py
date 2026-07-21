@@ -3585,6 +3585,16 @@ class PerfumePricingTriggerTests(TestCase):
         p.refresh_from_db()
         self.assertEqual(p.wholesale_price, Decimal("30"))   # cheap batch emptied -> pricier current
 
+    def test_deleting_current_batch_reprices(self):
+        p = self._perfume("8200000000004")
+        cheap, _ = self._two_batches(p, cheap_cost="10.00", cheap_qty=2, pricey_cost="20.00", pricey_qty=5)
+        p.refresh_from_db()
+        self.assertEqual(p.wholesale_price, Decimal("20"))   # current = cheap batch
+        cheap.delete()                                        # remove the current batch
+        p.refresh_from_db()
+        self.assertEqual(p.wholesale_price, Decimal("30"))   # now current = pricier: ceil(20+10)
+        self.assertEqual(p.default_price, Decimal("42"))
+
 
 class PerfumePriceLockFormTests(TestCase):
     @classmethod
