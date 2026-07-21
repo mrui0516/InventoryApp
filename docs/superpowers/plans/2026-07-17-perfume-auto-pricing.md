@@ -563,7 +563,9 @@ git commit -m "feat: sync_perfume_prices backfill command"
 
 - [ ] **Step 1: Update `docs/ARCHITECTURE.md`**
 
-In the core-business-patterns section (§5), add a subsection describing perfume auto-pricing: the formula (wholesale = ⌈FIFO cost + 10⌉, retail = wholesale + 12), Perfumes-only, `services/pricing.py::sync_perfume_price` (idempotent, `.update()` write, skips locked/non-perfume/cost≤0), the trigger points (Purchase `post_save`; end of `consume_stock_fifo`/`restore_stock_fifo`; the two stock-adjustment APIs), the `Product.price_locked` lock (manager-only checkbox), and the `sync_perfume_prices` backfill command.
+In the core-business-patterns section (§5), add a subsection describing perfume auto-pricing: the formula (wholesale = ⌈FIFO cost + 10⌉, retail = wholesale + 12), Perfumes-only, `services/pricing.py::sync_perfume_price` (idempotent, `.update()` write, skips locked/non-perfume/cost≤0), the trigger points (Purchase `post_save`; end of `consume_stock_fifo`/`restore_stock_fifo`; the two stock-adjustment APIs), the `Product.price_locked` lock (manager-only checkbox), the `sync_perfume_prices` backfill command, and that product retail/wholesale prices are **view-only for non-managers** (ProductForm `disabled=True`, server-enforced) — Task 7.
+
+> **Execution order:** Tasks 1 → 2 → 3 → 4 → 5 → 7 → 6 (docs last, covering Task 7 too).
 
 - [ ] **Step 2: Update `docs/PRD.md`**
 
@@ -584,3 +586,132 @@ Not a task — a smoke check:
 
 1. `...python.exe manage.py sync_perfume_prices --dry-run` then without `--dry-run` → prices the 227 existing perfumes.
 2. In the app (as a manager): inbound a perfume at a new cost → its wholesale/retail update to ⌈cost+10⌉ / +12. Tick "Lock price", save → later inbounds no longer change it.
+
+---
+
+### Task 7: Prices are view-only for employees (all products)
+
+**Files:**
+- Modify: `stock/forms.py` (`ProductForm.__init__` — disable price fields for non-managers)
+- Modify: `stock/views.py` (`add_product_view`, `edit_product_view` — pass `can_edit_prices=`)
+- Test: `stock/tests.py` (append)
+
+**Interfaces:**
+- Consumes: `has_manager_access` (already imported in views.py).
+
+Goal: a non-manager (employee) can SEE the retail (`default_price`) and wholesale
+(`wholesale_price`) prices on the add/edit product form but cannot change them —
+enforced on the server via Django's `disabled=True` (a tampered POST is ignored,
+the field keeps its initial value). Applies to ALL products. Managers unchanged.
+
+- [ ] **Step 1: Write the failing test**
+
+Append to `stock/tests.py`:
+
+```python
+class EmployeePriceReadOnlyTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.category = Category.objects.create(name="Accessories")
+
+    def _product(self):
+        from stock.models import Product
+        return Product.objects.create(name="Item", barcode="8500000000001", brand="B",
+                                      category=self.category, default_price=Decimal("50"),
+                                      wholesale_price=Decimal("40"))
+
+    def test_employee_cannot_change_prices_even_by_tampering(self):
+        from stock.models import Product
+        user_model = get_user_model()
+        user_model.objects.create_user(username="ro_emp", password="pw123456")
+        self.client.login(username="ro_emp", password="pw123456")
+        p = self._product()
+        # Employee submits the edit form with tampered prices + a legit name change.
+        resp = self.client.post(reverse("edit_product", args=[p.pk]), {
+            "barcode": "8500000000001", "category": self.category.id,
+            "new_brand_name": "B", "name": "Renamed",
+            "default_price": "1", "wholesale_price": "1",
+        })
+        self.assertIn(resp.status_code, (200, 302))
+        p.refresh_from_db()
+        self.assertEqual(p.name, "Renamed")              # non-price edit still works
+        self.assertEqual(p.default_price, Decimal("50"))  # price change ignored
+        self.assertEqual(p.wholesale_price, Decimal("40"))
+
+    def test_manager_can_change_prices(self):
+        user_model = get_user_model()
+        user_model.objects.create_user(username="ro_mgr", password="pw123456", is_staff=True)
+        self.client.login(username="ro_mgr", password="pw123456")
+        p = self._product()
+        resp = self.client.post(reverse("edit_product", args=[p.pk]), {
+            "barcode": "8500000000001", "category": self.category.id,
+            "new_brand_name": "B", "name": "Item",
+            "default_price": "77", "wholesale_price": "66",
+        })
+        self.assertIn(resp.status_code, (200, 302))
+        p.refresh_from_db()
+        self.assertEqual(p.default_price, Decimal("77"))
+        self.assertEqual(p.wholesale_price, Decimal("66"))
+
+    def test_employee_sees_price_field_disabled(self):
+        user_model = get_user_model()
+        user_model.objects.create_user(username="ro_emp2", password="pw123456")
+        self.client.login(username="ro_emp2", password="pw123456")
+        p = self._product()
+        resp = self.client.get(reverse("edit_product", args=[p.pk]))
+        self.assertEqual(resp.status_code, 200)
+        # The price inputs render as disabled for employees (visible but not editable).
+        self.assertContains(resp, "disabled")
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `...python.exe manage.py test stock.tests.EmployeePriceReadOnlyTests -v 2`
+Expected: `test_employee_cannot_change_prices_even_by_tampering` FAILS (employee currently can change prices → 1/1).
+
+- [ ] **Step 3: Add `can_edit_prices` to `ProductForm`**
+
+In `stock/forms.py`, in `ProductForm.__init__` (add one if the class doesn't define it — call `super().__init__` first, preserving any existing `__init__` body such as the brand/series queryset setup):
+
+```python
+    def __init__(self, *args, can_edit_prices=True, **kwargs):
+        super().__init__(*args, **kwargs)
+        # ... keep any existing __init__ body here ...
+        if not can_edit_prices:
+            self.fields['default_price'].disabled = True
+            self.fields['wholesale_price'].disabled = True
+```
+
+If `ProductForm` already has an `__init__`, merge: add the `can_edit_prices=True` keyword parameter to its signature and append the `if not can_edit_prices:` block at the end. A `disabled` field renders disabled AND ignores submitted data (uses the field's initial), so no view-side value scrubbing is needed.
+
+- [ ] **Step 4: Pass `can_edit_prices` from the views**
+
+In `stock/views.py`, every place `add_product_view` and `edit_product_view` construct `ProductForm(...)` (both the GET/unbound and POST/bound instantiations), add the keyword:
+
+```python
+        form = ProductForm(request.POST, request.FILES, instance=product,
+                           can_edit_prices=has_manager_access(request.user))
+```
+
+and for the unbound GET case:
+
+```python
+        form = ProductForm(instance=product, can_edit_prices=has_manager_access(request.user))
+```
+
+(For `add_product_view` there is no `instance=`; add the same `can_edit_prices=` keyword to its `ProductForm(...)` calls. Read the two views to update every `ProductForm(` construction — do not miss the bound POST one, or a tampered POST could still change prices.)
+
+- [ ] **Step 5: Run the test, then the full suite**
+
+```
+...python.exe manage.py test stock.tests.EmployeePriceReadOnlyTests -v 2
+...python.exe manage.py test stock
+```
+Expected: PASS; full suite OK. If an existing test posted a price change as a NON-manager and asserted it took effect, that behavior is now intentionally blocked — update it (post as a manager, or assert the price is unchanged). The Task-10 test `test_employee_can_open_and_submit_edit` changes only `name`, so it still passes.
+
+- [ ] **Step 6: Commit**
+
+```
+git add stock/forms.py stock/views.py stock/tests.py
+git commit -m "feat: product prices are view-only for employees (server-enforced)"
+```

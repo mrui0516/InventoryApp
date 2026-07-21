@@ -45,6 +45,13 @@ Example: current FIFO cost 12.34 → wholesale ⌈22.34⌉ = **23** → retail *
   manually. Default unlocked (auto).
 - **Trigger:** whenever the current FIFO cost may have changed — idempotent, so
   it only actually changes a price when the current cost changed.
+- **Employees may VIEW but not CHANGE prices (all products):** on the add/edit
+  product form, the retail (`default_price`) and wholesale (`wholesale_price`)
+  fields are **read-only for non-managers** — shown (so they can see the value)
+  but not editable, and **server-enforced** (a tampered POST is ignored). Managers
+  edit prices as before. Implemented with Django form `disabled=True` on those two
+  fields for non-managers (renders disabled AND ignores submitted data in favor
+  of the field's initial). This applies to ALL products, not only perfumes.
 
 ## Changes
 
