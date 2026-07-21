@@ -3454,3 +3454,69 @@ class PerfumePriceLockedFieldTests(TestCase):
         from stock.models import Product
         p = Product.objects.create(name="X", barcode="8000000000001", brand="B")
         self.assertFalse(p.price_locked)
+
+
+class PerfumePricingServiceTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.perfumes = Category.objects.create(name="Perfumes")
+        cls.accessories = Category.objects.create(name="Accessories")
+
+    def _perfume(self, barcode, cost=None, remaining=5, locked=False):
+        from stock.models import Product, Purchase
+        p = Product.objects.create(name="P", barcode=barcode, brand="B",
+                                   category=self.perfumes, price_locked=locked)
+        if cost is not None:
+            Purchase.objects.create(product=p, quantity=remaining, remaining=remaining,
+                                    cost_price=Decimal(str(cost)))
+        return p
+
+    def test_formula_rounds_up(self):
+        from stock.services.pricing import sync_perfume_price
+        p = self._perfume("8100000000001", cost="12.34")
+        self.assertTrue(sync_perfume_price(p))
+        self.assertEqual(p.wholesale_price, Decimal("23"))   # ceil(12.34+10)=23
+        self.assertEqual(p.default_price, Decimal("35"))      # 23+12
+
+    def test_ceil_boundary(self):
+        from stock.services.pricing import sync_perfume_price
+        exact = self._perfume("8100000000002", cost="12.00")
+        sync_perfume_price(exact)
+        self.assertEqual(exact.wholesale_price, Decimal("22"))  # ceil(22.00)=22
+        over = self._perfume("8100000000003", cost="12.01")
+        sync_perfume_price(over)
+        self.assertEqual(over.wholesale_price, Decimal("23"))   # ceil(22.01)=23
+
+    def test_no_cost_skips(self):
+        from stock.services.pricing import sync_perfume_price
+        p = self._perfume("8100000000004", cost=None)   # no purchase -> cost 0
+        p.default_price = Decimal("99")
+        p.save(update_fields=["default_price"])
+        self.assertFalse(sync_perfume_price(p))
+        p.refresh_from_db()
+        self.assertEqual(p.default_price, Decimal("99"))
+
+    def test_locked_skips(self):
+        from stock.services.pricing import sync_perfume_price
+        p = self._perfume("8100000000005", cost="12.34", locked=True)
+        p.default_price = Decimal("99")
+        p.save(update_fields=["default_price"])
+        self.assertFalse(sync_perfume_price(p))
+        p.refresh_from_db()
+        self.assertEqual(p.default_price, Decimal("99"))
+
+    def test_non_perfume_skips(self):
+        from stock.models import Product, Purchase
+        from stock.services.pricing import sync_perfume_price
+        p = Product.objects.create(name="A", barcode="8100000000006", brand="B",
+                                   category=self.accessories, default_price=Decimal("5"))
+        Purchase.objects.create(product=p, quantity=3, remaining=3, cost_price=Decimal("12.34"))
+        self.assertFalse(sync_perfume_price(p))
+        p.refresh_from_db()
+        self.assertEqual(p.default_price, Decimal("5"))
+
+    def test_idempotent(self):
+        from stock.services.pricing import sync_perfume_price
+        p = self._perfume("8100000000007", cost="12.34")
+        self.assertTrue(sync_perfume_price(p))
+        self.assertFalse(sync_perfume_price(p))   # second call: no change
