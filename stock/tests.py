@@ -1198,6 +1198,7 @@ class ProductArchitectureTests(TestCase):
             color="Blue",
             description="Evening fragrance",
             default_price=Decimal("39.90"),
+            price_locked=True,  # keep the manually-set price for this export-format test
         )
         second = Product.objects.create(
             name="EDP",
@@ -1210,6 +1211,7 @@ class ProductArchitectureTests(TestCase):
             spec="50ml",
             color="Blue",
             default_price=Decimal("29.90"),
+            price_locked=True,  # keep the manually-set price for this export-format test
         )
         Purchase.objects.create(product=first, quantity=8, remaining=6, cost_price=Decimal("12.34"))
         Purchase.objects.create(product=second, quantity=3, remaining=0, cost_price=Decimal("11.11"))
@@ -3474,7 +3476,9 @@ class PerfumePricingServiceTests(TestCase):
     def test_formula_rounds_up(self):
         from stock.services.pricing import sync_perfume_price
         p = self._perfume("8100000000001", cost="12.34")
-        self.assertTrue(sync_perfume_price(p))
+        # Purchase.post_save already synced the price (Task 3 trigger); the
+        # explicit call here is idempotent and returns False (no change).
+        self.assertFalse(sync_perfume_price(p))
         self.assertEqual(p.wholesale_price, Decimal("23"))   # ceil(12.34+10)=23
         self.assertEqual(p.default_price, Decimal("35"))      # 23+12
 
@@ -3518,5 +3522,65 @@ class PerfumePricingServiceTests(TestCase):
     def test_idempotent(self):
         from stock.services.pricing import sync_perfume_price
         p = self._perfume("8100000000007", cost="12.34")
-        self.assertTrue(sync_perfume_price(p))
-        self.assertFalse(sync_perfume_price(p))   # second call: no change
+        # Purchase.post_save already synced the price (Task 3 trigger).
+        self.assertFalse(sync_perfume_price(p))   # already correct: no change
+        self.assertFalse(sync_perfume_price(p))   # second call: still no change
+
+
+class PerfumePricingTriggerTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.perfumes = Category.objects.create(name="Perfumes")
+
+    def _perfume(self, barcode):
+        from stock.models import Product
+        return Product.objects.create(name="P", barcode=barcode, brand="B", category=self.perfumes)
+
+    def test_inbound_first_batch_sets_price(self):
+        from stock.models import Purchase
+        p = self._perfume("8200000000001")
+        Purchase.objects.create(product=p, quantity=5, remaining=5, cost_price=Decimal("12.34"))
+        p.refresh_from_db()
+        self.assertEqual(p.wholesale_price, Decimal("23"))
+        self.assertEqual(p.default_price, Decimal("35"))
+
+    def _two_batches(self, product, cheap_cost, cheap_qty, pricey_cost, pricey_qty):
+        # Purchase.date is auto_now_add=True, so create(date=...) is IGNORED.
+        # Force distinct dates with .update() (bypasses auto_now_add) so the
+        # cheap batch is unambiguously the oldest (current FIFO), then re-sync
+        # because the create-time signal ran before the dates were fixed.
+        from stock.models import Purchase
+        from stock.services.pricing import sync_perfume_price
+        cheap = Purchase.objects.create(product=product, quantity=cheap_qty, remaining=cheap_qty,
+                                        cost_price=Decimal(str(cheap_cost)))
+        pricey = Purchase.objects.create(product=product, quantity=pricey_qty, remaining=pricey_qty,
+                                         cost_price=Decimal(str(pricey_cost)))
+        Purchase.objects.filter(pk=cheap.pk).update(date=timezone.now() - timedelta(days=2))
+        Purchase.objects.filter(pk=pricey.pk).update(date=timezone.now())
+        sync_perfume_price(product)
+        return cheap, pricey
+
+    def test_sale_batch_transition_changes_price(self):
+        from stock.services.stock_ops import consume_stock_fifo
+        p = self._perfume("8200000000002")
+        self._two_batches(p, cheap_cost="10.00", cheap_qty=1, pricey_cost="20.00", pricey_qty=5)
+        p.refresh_from_db()
+        self.assertEqual(p.wholesale_price, Decimal("20"))   # current = cheap batch: ceil(10+10)
+        consume_stock_fifo(p, 1)                              # deplete the cheap batch
+        p.refresh_from_db()
+        self.assertEqual(p.wholesale_price, Decimal("30"))   # now current = pricier: ceil(20+10)
+        self.assertEqual(p.default_price, Decimal("42"))
+
+    def test_adjust_purchase_stock_reprices(self):
+        p = self._perfume("8200000000003")
+        cheap, _ = self._two_batches(p, cheap_cost="10.00", cheap_qty=2, pricey_cost="20.00", pricey_qty=5)
+        p.refresh_from_db()
+        self.assertEqual(p.wholesale_price, Decimal("20"))
+        user_model = get_user_model()
+        user_model.objects.create_user(username="adj_mgr", password="pw123456", is_staff=True)
+        self.client.login(username="adj_mgr", password="pw123456")
+        self.client.post(reverse("api_adjust_purchase_stock"),
+                         data={"purchase_id": cheap.id, "new_remaining": 0},
+                         content_type="application/json")
+        p.refresh_from_db()
+        self.assertEqual(p.wholesale_price, Decimal("30"))   # cheap batch emptied -> pricier current

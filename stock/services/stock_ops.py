@@ -65,6 +65,9 @@ def consume_stock_fifo(product, quantity):
             f"Stock for {product.display_name} changed during this operation. Please retry."
         )
 
+    from .pricing import sync_perfume_price
+    sync_perfume_price(product)
+
 
 @transaction.atomic
 def restore_stock_fifo(product, quantity):
@@ -103,3 +106,6 @@ def restore_stock_fifo(product, quantity):
             f"Could not restore {quantity} units back into current stock for {product.display_name}. "
             "Please review manual stock adjustments before changing this historical order."
         )
+
+    from .pricing import sync_perfume_price
+    sync_perfume_price(product)

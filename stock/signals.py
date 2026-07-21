@@ -7,7 +7,7 @@ from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 from django.utils import timezone
 
-from .models import AttendanceRecord, ProductImage, Sale
+from .models import AttendanceRecord, ProductImage, Purchase, Sale
 from .permissions import has_manager_access
 from .services import schedule_summary_recalc
 
@@ -144,3 +144,13 @@ def close_attendance_on_logout(sender, request, user, **kwargs):
         open_shift.clock_out_at = timezone.now()
         open_shift.note = (open_shift.note + ' auto: logout').strip()
         open_shift.save(update_fields=['clock_out_at', 'note'])
+
+
+@receiver(post_save, sender=Purchase)
+def reprice_perfume_on_purchase(sender, instance, **kwargs):
+    """A new/updated purchase batch may change a perfume's current FIFO cost."""
+    from .services.pricing import sync_perfume_price
+    try:
+        sync_perfume_price(instance.product)
+    except Exception:  # never let pricing break an inbound
+        logger.exception('perfume reprice on purchase failed for %s', getattr(instance, 'product_id', '?'))

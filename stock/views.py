@@ -5464,6 +5464,9 @@ def api_adjust_purchase_stock(request):
             )
             inventory_snapshot = build_inventory_snapshot(purchase.product)
 
+            from .services.pricing import sync_perfume_price
+            sync_perfume_price(purchase.product)
+
         return JsonResponse({
             'success': True,
             'message': f'Updated remaining from {old_remaining} to {new_remaining}',
@@ -5525,6 +5528,9 @@ def api_adjust_total_stock(request):
                 # consume_stock_fifo 用条件 UPDATE 保证并发安全
                 consume_stock_fifo(product, abs(difference))
                 message = f'Decreased stock by {abs(difference)}'
+
+            from .services.pricing import sync_perfume_price
+            sync_perfume_price(product)
 
             StockAdjustmentLog.objects.create(
                 user=request.user,
