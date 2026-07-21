@@ -3584,3 +3584,31 @@ class PerfumePricingTriggerTests(TestCase):
                          content_type="application/json")
         p.refresh_from_db()
         self.assertEqual(p.wholesale_price, Decimal("30"))   # cheap batch emptied -> pricier current
+
+
+class PerfumePriceLockFormTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.perfumes = Category.objects.create(name="Perfumes")
+
+    def test_manager_can_lock_and_lock_prevents_reprice(self):
+        from stock.models import Product, Purchase
+        user_model = get_user_model()
+        user_model.objects.create_user(username="lock_mgr", password="pw123456", is_staff=True)
+        self.client.login(username="lock_mgr", password="pw123456")
+        p = Product.objects.create(name="P", barcode="8300000000001", brand="B",
+                                   category=self.perfumes, default_price=Decimal("99"),
+                                   wholesale_price=Decimal("88"))
+        resp = self.client.post(reverse("edit_product", args=[p.pk]), {
+            "barcode": "8300000000001", "category": self.perfumes.id,
+            "new_brand_name": "B", "name": "P", "default_price": "99",
+            "wholesale_price": "88", "price_locked": "on",
+        })
+        self.assertIn(resp.status_code, (200, 302))
+        p.refresh_from_db()
+        self.assertTrue(p.price_locked)
+        # An inbound must NOT overwrite the locked prices.
+        Purchase.objects.create(product=p, quantity=5, remaining=5, cost_price=Decimal("12.34"))
+        p.refresh_from_db()
+        self.assertEqual(p.default_price, Decimal("99"))
+        self.assertEqual(p.wholesale_price, Decimal("88"))

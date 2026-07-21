@@ -57,6 +57,7 @@ class ProductForm(forms.ModelForm):
             'color',
             'default_price',
             'wholesale_price',
+            'price_locked',
             'description',
         ]
         widgets = {
