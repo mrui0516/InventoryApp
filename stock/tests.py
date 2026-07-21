@@ -3612,3 +3612,73 @@ class PerfumePriceLockFormTests(TestCase):
         p.refresh_from_db()
         self.assertEqual(p.default_price, Decimal("99"))
         self.assertEqual(p.wholesale_price, Decimal("88"))
+
+
+class EmployeePriceReadOnlyTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.category = Category.objects.create(name="Accessories")
+
+    def _product(self):
+        from stock.models import Product
+        return Product.objects.create(name="Item", barcode="8500000000001", brand="B",
+                                      category=self.category, default_price=Decimal("50"),
+                                      wholesale_price=Decimal("40"))
+
+    def test_employee_cannot_change_prices_even_by_tampering(self):
+        from stock.models import Product
+        user_model = get_user_model()
+        user_model.objects.create_user(username="ro_emp", password="pw123456")
+        self.client.login(username="ro_emp", password="pw123456")
+        p = self._product()
+        # Employee submits the edit form with tampered prices + a legit name change.
+        resp = self.client.post(reverse("edit_product", args=[p.pk]), {
+            "barcode": "8500000000001", "category": self.category.id,
+            "new_brand_name": "B", "name": "Renamed",
+            "default_price": "1", "wholesale_price": "1",
+        })
+        self.assertIn(resp.status_code, (200, 302))
+        p.refresh_from_db()
+        self.assertEqual(p.name, "Renamed")              # non-price edit still works
+        self.assertEqual(p.default_price, Decimal("50"))  # price change ignored
+        self.assertEqual(p.wholesale_price, Decimal("40"))
+
+    def test_manager_can_change_prices(self):
+        user_model = get_user_model()
+        user_model.objects.create_user(username="ro_mgr", password="pw123456", is_staff=True)
+        self.client.login(username="ro_mgr", password="pw123456")
+        p = self._product()
+        resp = self.client.post(reverse("edit_product", args=[p.pk]), {
+            "barcode": "8500000000001", "category": self.category.id,
+            "new_brand_name": "B", "name": "Item",
+            "default_price": "77", "wholesale_price": "66",
+        })
+        self.assertIn(resp.status_code, (200, 302))
+        p.refresh_from_db()
+        self.assertEqual(p.default_price, Decimal("77"))
+        self.assertEqual(p.wholesale_price, Decimal("66"))
+
+    def test_employee_sees_price_field_disabled(self):
+        user_model = get_user_model()
+        user_model.objects.create_user(username="ro_emp2", password="pw123456")
+        self.client.login(username="ro_emp2", password="pw123456")
+        p = self._product()
+        resp = self.client.get(reverse("edit_product", args=[p.pk]))
+        self.assertEqual(resp.status_code, 200)
+        # The price inputs render as disabled for employees (visible but not editable).
+        self.assertContains(resp, "disabled")
+
+    def test_employee_cannot_lock_price_by_tampering(self):
+        from stock.models import Product
+        user_model = get_user_model()
+        user_model.objects.create_user(username="ro_emp3", password="pw123456")
+        self.client.login(username="ro_emp3", password="pw123456")
+        p = Product.objects.create(name="Item", barcode="8500000000009", brand="B",
+                                   category=self.category, default_price=Decimal("50"),
+                                   wholesale_price=Decimal("40"))
+        self.client.post(reverse("edit_product", args=[p.pk]), {
+            "barcode": "8500000000009", "category": self.category.id, "new_brand_name": "B",
+            "name": "Item", "default_price": "50", "wholesale_price": "40", "price_locked": "on",
+        })
+        p.refresh_from_db()
+        self.assertFalse(p.price_locked)   # employee POST cannot lock it

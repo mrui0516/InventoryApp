@@ -1395,14 +1395,14 @@ def export_shopify_inventory_csv(request):
 @login_required
 def add_product_view(request):
     if request.method == 'POST':
-        form = ProductForm(request.POST)
+        form = ProductForm(request.POST, can_edit_prices=has_manager_access(request.user))
         if form.is_valid():
             product = form.save()
             for img in request.FILES.getlist('images'):
                 ProductImage.objects.create(product=product, image=img)
             return redirect('product_detail', pk=product.pk)
     else:
-        form = ProductForm()
+        form = ProductForm(can_edit_prices=has_manager_access(request.user))
     return render(request, 'stock/add_product.html', {
         'form': form,
         'brand_series_map_json': json.dumps(build_brand_series_map()),
@@ -1473,7 +1473,8 @@ def edit_product_view(request, pk):
     )
 
     if request.method == 'POST':
-        form = ProductForm(request.POST, request.FILES, instance=product)
+        form = ProductForm(request.POST, request.FILES, instance=product,
+                           can_edit_prices=has_manager_access(request.user))
         if form.is_valid():
             form.save()
 
@@ -1510,7 +1511,7 @@ def edit_product_view(request, pk):
         else:
             messages.error(request, "Please fix the highlighted fields.")
     else:
-        form = ProductForm(instance=product)
+        form = ProductForm(instance=product, can_edit_prices=has_manager_access(request.user))
 
     images = product.images.all()
     purchases = product.purchase_set.all().order_by('-date')

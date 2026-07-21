@@ -76,7 +76,7 @@ class ProductForm(forms.ModelForm):
             }),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, can_edit_prices=True, **kwargs):
         super().__init__(*args, **kwargs)
         def parse_pk(value):
             if value in (None, ''):
@@ -125,6 +125,11 @@ class ProductForm(forms.ModelForm):
         self.fields['name'].label = 'Product Name'
         self.fields['spec'].label = 'Specification'
         self.fields['color'].label = 'Color'
+
+        if not can_edit_prices:
+            self.fields['default_price'].disabled = True
+            self.fields['wholesale_price'].disabled = True
+            self.fields['price_locked'].disabled = True
 
     def clean(self):
         cleaned = super().clean()
