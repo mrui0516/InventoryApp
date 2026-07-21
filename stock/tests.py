@@ -3447,3 +3447,10 @@ class EmployeePageStyleTests(TestCase):
             self.assertEqual(resp.status_code, 200)
             self.assertContains(resp, "page-card")     # shared design-system card, like manager pages
             self.assertContains(resp, "page-title")    # shared heading class, like product_list.html
+
+
+class PerfumePriceLockedFieldTests(TestCase):
+    def test_price_locked_defaults_false(self):
+        from stock.models import Product
+        p = Product.objects.create(name="X", barcode="8000000000001", brand="B")
+        self.assertFalse(p.price_locked)
