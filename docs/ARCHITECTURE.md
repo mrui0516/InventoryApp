@@ -167,6 +167,19 @@ PrintProfile       —— 单例配置表（固定 pk=1）
 - 利润计算（`services/profit.py::sale_profit_map_for_sale_ids`）对全量 `Purchase`+`Sale` 按时间顺序重放，逐笔还原每个 `Sale` 当时消耗的批次成本 → `profit = revenue - cost`。**这是全量重放，随数据量增长需关注性能**（见 STATUS.md）。
 - **并发安全的批次更新**（`services/stock_ops.py::consume_stock_fifo` / `restore_stock_fifo`）：扣减/归还均通过 `Purchase.objects.filter(pk=..., remaining__gte=/lte=...).update(remaining=F('remaining') ± n)` 的条件更新实现乐观并发控制；若 `update()` 影响行数为 0，说明该批次自读取后已被并发修改，抛出 `StockConflictError`（`ValidationError` 子类，fail-fast，要求调用方提示用户重试）。`outbound_view` 与 `order_corrections.py` 的 `_consume_current_stock`/`_restore_current_stock` 均委托给这两个函数。**不依赖 `select_for_update()`**——该方法在本项目使用的 SQLite 后端上是 no-op（`has_select_for_update = False`），不会加行锁。
 
+### 5.1b 香水自动定价（Perfume auto-pricing，`services/pricing.py`）
+- **公式**：`wholesale = ⌈current_fifo_cost + 10⌉`（向上取整为整数）、`retail(default_price) = wholesale + 12`。例：成本 12.34 → 批发 23、零售 35。
+- **仅限 Perfumes 分类**（`is_perfume(product)` 按 `category.name` 大小写不敏感等于 `"Perfumes"` 判定）；以下情况跳过（不写入）：产品 `price_locked=True`、非 Perfumes 分类、或 `current_fifo_cost_price() <= 0`。
+- **`sync_perfume_price(product)`**：幂等——先比较算出的 `wholesale`/`retail` 与产品当前值是否相同，相同则不写、返回 `False`；仅当价格确实变化时才 `Product.objects.filter(pk=product.pk).update(wholesale_price=..., default_price=...)`（**从不调用 `save()`**，避免触发 `Product.save()` 里其它字段同步逻辑或递归信号）。
+- **触发点**（凡是"当前 FIFO 成本"可能变化之处）：
+  - `stock/signals.py::reprice_perfume_on_purchase`——`Purchase` 的 `post_save` 信号（新增/编辑批次，即进货入库触发）；异常被捕获记录日志，不让定价失败影响入库主流程。
+  - `services/stock_ops.py::consume_stock_fifo` / `restore_stock_fifo` 末尾各调用一次——出货/归还消耗的是最早批次，走的是批量 `.update()`（不产生 `post_save` 信号），因此需要显式调用。
+  - `views.py` 中的 `api_adjust_purchase_stock`、`api_adjust_total_stock` 两个库存调整 API（调整某批次或总库存后可能换到另一批次作为"当前"批次）。
+  - 因为 `sync_perfume_price` 幂等且仅在价格真正变化时写入，**并非每次入库都会改价**——只有当"当前正在卖的那个批次"的成本变化时（如原批次卖空、切到下一批次，或调整的正是当前批次）才会重算出新值。
+- **`Product.price_locked`**（`BooleanField`，默认 `False`，迁移 `0034_product_price_locked.py`）：新增/编辑产品表单上的 **"Lock price"** 复选框，勾选后该产品的手动定价被锁定，`sync_perfume_price` 对其永远跳过（即使成本继续变化）。
+- **员工只读价格（Task 7）**：`ProductForm.__init__(..., can_edit_prices=True)` 在 `can_edit_prices=False`（非经理）时把 `default_price`/`wholesale_price`/`price_locked` 三个字段设为 Django `disabled=True`——服务端强制：即使篡改 POST 带上这些字段的值，Django 表单在 `disabled=True` 时会忽略提交值、改用 `initial`/实例原值，不会被写入。适用于**全部产品**（不限于 Perfumes）。视图层调用处按 `has_manager_access` 传入 `can_edit_prices`。
+- **`sync_perfume_prices` 管理命令**（`management/commands/sync_perfume_prices.py`）：对全部 `category__name__iexact='Perfumes'` 的产品批量调用 `sync_perfume_price`，用于给已存量的香水产品补算价格；支持 `--dry-run`（仅打印将处理的产品，不写入）。
+
 ### 5.2 幂等提交（Idempotency）
 - 进货（`inbound_view`）、出货（`outbound_view`）等高频表单提交对请求体做 SHA256 摘要，调用 `cache.add(digest, True, timeout=8)`。
 - `cache.add` 仅在 key 不存在时写入并返回 `True`；8 秒内的重复提交会因 key 已存在而被识别为重复请求并拒绝，防止双击/网络重试导致的重复入库/出货。

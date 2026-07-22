@@ -1,7 +1,9 @@
 import csv
 import json
 import tempfile
-from io import StringIO
+from io import BytesIO, StringIO
+from xml.etree import ElementTree
+from zipfile import ZipFile
 from datetime import timedelta
 from decimal import Decimal
 
@@ -1198,6 +1200,7 @@ class ProductArchitectureTests(TestCase):
             color="Blue",
             description="Evening fragrance",
             default_price=Decimal("39.90"),
+            price_locked=True,  # keep the manually-set price for this export-format test
         )
         second = Product.objects.create(
             name="EDP",
@@ -1210,6 +1213,7 @@ class ProductArchitectureTests(TestCase):
             spec="50ml",
             color="Blue",
             default_price=Decimal("29.90"),
+            price_locked=True,  # keep the manually-set price for this export-format test
         )
         Purchase.objects.create(product=first, quantity=8, remaining=6, cost_price=Decimal("12.34"))
         Purchase.objects.create(product=second, quantity=3, remaining=0, cost_price=Decimal("11.11"))
@@ -1380,6 +1384,21 @@ class EmployeeProductEditExportTests(TestCase):
         resp = self.client.get(reverse("export_product_list_excel"))
         self.assertEqual(resp.status_code, 200)
         self.assertIn("spreadsheet", resp["Content-Type"])
+
+    def test_product_excel_uses_excel_safe_currency_number_format(self):
+        self.client.login(username="edit_emp", password="pw123456")
+
+        resp = self.client.get(reverse("export_product_list_excel"))
+
+        workbook_bytes = b"".join(resp.streaming_content)
+        with ZipFile(BytesIO(workbook_bytes)) as workbook_zip:
+            styles = ElementTree.fromstring(workbook_zip.read("xl/styles.xml"))
+        namespace = {"main": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+        format_codes = {
+            node.attrib["formatCode"]
+            for node in styles.findall("main:numFmts/main:numFmt", namespace)
+        }
+        self.assertIn('"EUR" #,##0.00', format_codes)
 
     def test_employee_still_blocked_from_deletes_and_shopify_export(self):
         self.client.login(username="edit_emp", password="pw123456")
@@ -3447,3 +3466,261 @@ class EmployeePageStyleTests(TestCase):
             self.assertEqual(resp.status_code, 200)
             self.assertContains(resp, "page-card")     # shared design-system card, like manager pages
             self.assertContains(resp, "page-title")    # shared heading class, like product_list.html
+
+
+class PerfumePriceLockedFieldTests(TestCase):
+    def test_price_locked_defaults_false(self):
+        from stock.models import Product
+        p = Product.objects.create(name="X", barcode="8000000000001", brand="B")
+        self.assertFalse(p.price_locked)
+
+
+class PerfumePricingServiceTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.perfumes = Category.objects.create(name="Perfumes")
+        cls.accessories = Category.objects.create(name="Accessories")
+
+    def _perfume(self, barcode, cost=None, remaining=5, locked=False):
+        from stock.models import Product, Purchase
+        p = Product.objects.create(name="P", barcode=barcode, brand="B",
+                                   category=self.perfumes, price_locked=locked)
+        if cost is not None:
+            Purchase.objects.create(product=p, quantity=remaining, remaining=remaining,
+                                    cost_price=Decimal(str(cost)))
+        return p
+
+    def test_formula_rounds_up(self):
+        from stock.services.pricing import sync_perfume_price
+        p = self._perfume("8100000000001", cost="12.34")
+        # Purchase.post_save already synced the price (Task 3 trigger); the
+        # explicit call here is idempotent and returns False (no change).
+        self.assertFalse(sync_perfume_price(p))
+        self.assertEqual(p.wholesale_price, Decimal("23"))   # ceil(12.34+10)=23
+        self.assertEqual(p.default_price, Decimal("35"))      # 23+12
+
+    def test_ceil_boundary(self):
+        from stock.services.pricing import sync_perfume_price
+        exact = self._perfume("8100000000002", cost="12.00")
+        sync_perfume_price(exact)
+        self.assertEqual(exact.wholesale_price, Decimal("22"))  # ceil(22.00)=22
+        over = self._perfume("8100000000003", cost="12.01")
+        sync_perfume_price(over)
+        self.assertEqual(over.wholesale_price, Decimal("23"))   # ceil(22.01)=23
+
+    def test_no_cost_skips(self):
+        from stock.services.pricing import sync_perfume_price
+        p = self._perfume("8100000000004", cost=None)   # no purchase -> cost 0
+        p.default_price = Decimal("99")
+        p.save(update_fields=["default_price"])
+        self.assertFalse(sync_perfume_price(p))
+        p.refresh_from_db()
+        self.assertEqual(p.default_price, Decimal("99"))
+
+    def test_locked_skips(self):
+        from stock.services.pricing import sync_perfume_price
+        p = self._perfume("8100000000005", cost="12.34", locked=True)
+        p.default_price = Decimal("99")
+        p.save(update_fields=["default_price"])
+        self.assertFalse(sync_perfume_price(p))
+        p.refresh_from_db()
+        self.assertEqual(p.default_price, Decimal("99"))
+
+    def test_non_perfume_skips(self):
+        from stock.models import Product, Purchase
+        from stock.services.pricing import sync_perfume_price
+        p = Product.objects.create(name="A", barcode="8100000000006", brand="B",
+                                   category=self.accessories, default_price=Decimal("5"))
+        Purchase.objects.create(product=p, quantity=3, remaining=3, cost_price=Decimal("12.34"))
+        self.assertFalse(sync_perfume_price(p))
+        p.refresh_from_db()
+        self.assertEqual(p.default_price, Decimal("5"))
+
+    def test_idempotent(self):
+        from stock.services.pricing import sync_perfume_price
+        p = self._perfume("8100000000007", cost="12.34")
+        # Purchase.post_save already synced the price (Task 3 trigger).
+        self.assertFalse(sync_perfume_price(p))   # already correct: no change
+        self.assertFalse(sync_perfume_price(p))   # second call: still no change
+
+
+class PerfumePricingTriggerTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.perfumes = Category.objects.create(name="Perfumes")
+
+    def _perfume(self, barcode):
+        from stock.models import Product
+        return Product.objects.create(name="P", barcode=barcode, brand="B", category=self.perfumes)
+
+    def test_inbound_first_batch_sets_price(self):
+        from stock.models import Purchase
+        p = self._perfume("8200000000001")
+        Purchase.objects.create(product=p, quantity=5, remaining=5, cost_price=Decimal("12.34"))
+        p.refresh_from_db()
+        self.assertEqual(p.wholesale_price, Decimal("23"))
+        self.assertEqual(p.default_price, Decimal("35"))
+
+    def _two_batches(self, product, cheap_cost, cheap_qty, pricey_cost, pricey_qty):
+        # Purchase.date is auto_now_add=True, so create(date=...) is IGNORED.
+        # Force distinct dates with .update() (bypasses auto_now_add) so the
+        # cheap batch is unambiguously the oldest (current FIFO), then re-sync
+        # because the create-time signal ran before the dates were fixed.
+        from stock.models import Purchase
+        from stock.services.pricing import sync_perfume_price
+        cheap = Purchase.objects.create(product=product, quantity=cheap_qty, remaining=cheap_qty,
+                                        cost_price=Decimal(str(cheap_cost)))
+        pricey = Purchase.objects.create(product=product, quantity=pricey_qty, remaining=pricey_qty,
+                                         cost_price=Decimal(str(pricey_cost)))
+        Purchase.objects.filter(pk=cheap.pk).update(date=timezone.now() - timedelta(days=2))
+        Purchase.objects.filter(pk=pricey.pk).update(date=timezone.now())
+        sync_perfume_price(product)
+        return cheap, pricey
+
+    def test_sale_batch_transition_changes_price(self):
+        from stock.services.stock_ops import consume_stock_fifo
+        p = self._perfume("8200000000002")
+        self._two_batches(p, cheap_cost="10.00", cheap_qty=1, pricey_cost="20.00", pricey_qty=5)
+        p.refresh_from_db()
+        self.assertEqual(p.wholesale_price, Decimal("20"))   # current = cheap batch: ceil(10+10)
+        consume_stock_fifo(p, 1)                              # deplete the cheap batch
+        p.refresh_from_db()
+        self.assertEqual(p.wholesale_price, Decimal("30"))   # now current = pricier: ceil(20+10)
+        self.assertEqual(p.default_price, Decimal("42"))
+
+    def test_adjust_purchase_stock_reprices(self):
+        p = self._perfume("8200000000003")
+        cheap, _ = self._two_batches(p, cheap_cost="10.00", cheap_qty=2, pricey_cost="20.00", pricey_qty=5)
+        p.refresh_from_db()
+        self.assertEqual(p.wholesale_price, Decimal("20"))
+        user_model = get_user_model()
+        user_model.objects.create_user(username="adj_mgr", password="pw123456", is_staff=True)
+        self.client.login(username="adj_mgr", password="pw123456")
+        self.client.post(reverse("api_adjust_purchase_stock"),
+                         data={"purchase_id": cheap.id, "new_remaining": 0},
+                         content_type="application/json")
+        p.refresh_from_db()
+        self.assertEqual(p.wholesale_price, Decimal("30"))   # cheap batch emptied -> pricier current
+
+    def test_deleting_current_batch_reprices(self):
+        p = self._perfume("8200000000004")
+        cheap, _ = self._two_batches(p, cheap_cost="10.00", cheap_qty=2, pricey_cost="20.00", pricey_qty=5)
+        p.refresh_from_db()
+        self.assertEqual(p.wholesale_price, Decimal("20"))   # current = cheap batch
+        cheap.delete()                                        # remove the current batch
+        p.refresh_from_db()
+        self.assertEqual(p.wholesale_price, Decimal("30"))   # now current = pricier: ceil(20+10)
+        self.assertEqual(p.default_price, Decimal("42"))
+
+
+class PerfumePriceLockFormTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.perfumes = Category.objects.create(name="Perfumes")
+
+    def test_manager_can_lock_and_lock_prevents_reprice(self):
+        from stock.models import Product, Purchase
+        user_model = get_user_model()
+        user_model.objects.create_user(username="lock_mgr", password="pw123456", is_staff=True)
+        self.client.login(username="lock_mgr", password="pw123456")
+        p = Product.objects.create(name="P", barcode="8300000000001", brand="B",
+                                   category=self.perfumes, default_price=Decimal("99"),
+                                   wholesale_price=Decimal("88"))
+        resp = self.client.post(reverse("edit_product", args=[p.pk]), {
+            "barcode": "8300000000001", "category": self.perfumes.id,
+            "new_brand_name": "B", "name": "P", "default_price": "99",
+            "wholesale_price": "88", "price_locked": "on",
+        })
+        self.assertIn(resp.status_code, (200, 302))
+        p.refresh_from_db()
+        self.assertTrue(p.price_locked)
+        # An inbound must NOT overwrite the locked prices.
+        Purchase.objects.create(product=p, quantity=5, remaining=5, cost_price=Decimal("12.34"))
+        p.refresh_from_db()
+        self.assertEqual(p.default_price, Decimal("99"))
+        self.assertEqual(p.wholesale_price, Decimal("88"))
+
+
+class EmployeePriceReadOnlyTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.category = Category.objects.create(name="Accessories")
+
+    def _product(self):
+        from stock.models import Product
+        return Product.objects.create(name="Item", barcode="8500000000001", brand="B",
+                                      category=self.category, default_price=Decimal("50"),
+                                      wholesale_price=Decimal("40"))
+
+    def test_employee_cannot_change_prices_even_by_tampering(self):
+        from stock.models import Product
+        user_model = get_user_model()
+        user_model.objects.create_user(username="ro_emp", password="pw123456")
+        self.client.login(username="ro_emp", password="pw123456")
+        p = self._product()
+        # Employee submits the edit form with tampered prices + a legit name change.
+        resp = self.client.post(reverse("edit_product", args=[p.pk]), {
+            "barcode": "8500000000001", "category": self.category.id,
+            "new_brand_name": "B", "name": "Renamed",
+            "default_price": "1", "wholesale_price": "1",
+        })
+        self.assertIn(resp.status_code, (200, 302))
+        p.refresh_from_db()
+        self.assertEqual(p.name, "Renamed")              # non-price edit still works
+        self.assertEqual(p.default_price, Decimal("50"))  # price change ignored
+        self.assertEqual(p.wholesale_price, Decimal("40"))
+
+    def test_manager_can_change_prices(self):
+        user_model = get_user_model()
+        user_model.objects.create_user(username="ro_mgr", password="pw123456", is_staff=True)
+        self.client.login(username="ro_mgr", password="pw123456")
+        p = self._product()
+        resp = self.client.post(reverse("edit_product", args=[p.pk]), {
+            "barcode": "8500000000001", "category": self.category.id,
+            "new_brand_name": "B", "name": "Item",
+            "default_price": "77", "wholesale_price": "66",
+        })
+        self.assertIn(resp.status_code, (200, 302))
+        p.refresh_from_db()
+        self.assertEqual(p.default_price, Decimal("77"))
+        self.assertEqual(p.wholesale_price, Decimal("66"))
+
+    def test_employee_sees_price_field_disabled(self):
+        user_model = get_user_model()
+        user_model.objects.create_user(username="ro_emp2", password="pw123456")
+        self.client.login(username="ro_emp2", password="pw123456")
+        p = self._product()
+        resp = self.client.get(reverse("edit_product", args=[p.pk]))
+        self.assertEqual(resp.status_code, 200)
+        # The price inputs render as disabled for employees (visible but not editable).
+        self.assertContains(resp, "disabled")
+
+    def test_employee_cannot_lock_price_by_tampering(self):
+        from stock.models import Product
+        user_model = get_user_model()
+        user_model.objects.create_user(username="ro_emp3", password="pw123456")
+        self.client.login(username="ro_emp3", password="pw123456")
+        p = Product.objects.create(name="Item", barcode="8500000000009", brand="B",
+                                   category=self.category, default_price=Decimal("50"),
+                                   wholesale_price=Decimal("40"))
+        self.client.post(reverse("edit_product", args=[p.pk]), {
+            "barcode": "8500000000009", "category": self.category.id, "new_brand_name": "B",
+            "name": "Item", "default_price": "50", "wholesale_price": "40", "price_locked": "on",
+        })
+        p.refresh_from_db()
+        self.assertFalse(p.price_locked)   # employee POST cannot lock it
+
+
+class PerfumeBackfillCommandTests(TestCase):
+    def test_backfill_prices_unlocked_perfumes(self):
+        from django.core.management import call_command
+        perfumes = Category.objects.create(name="Perfumes")
+        p = Product.objects.create(name="P", barcode="8400000000001", brand="B", category=perfumes)
+        # Create the batch WITHOUT triggering the signal path would be hard; instead
+        # set price back to a stale value, then let the command recompute.
+        Purchase.objects.create(product=p, quantity=5, remaining=5, cost_price=Decimal("12.34"))
+        Product.objects.filter(pk=p.pk).update(default_price=Decimal("1"), wholesale_price=Decimal("1"))
+        call_command("sync_perfume_prices")
+        p.refresh_from_db()
+        self.assertEqual(p.wholesale_price, Decimal("23"))
+        self.assertEqual(p.default_price, Decimal("35"))

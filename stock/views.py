@@ -1245,13 +1245,13 @@ def export_product_list_excel(request):
 
                 if price_mode in {'retail', 'both'}:
                     retail_cell = ws.cell(row=row_idx, column=col_idx, value=float(product.default_price) if product.default_price is not None else None)
-                    retail_cell.number_format = 'EUR #,##0.00'
+                    retail_cell.number_format = '"EUR" #,##0.00'
                     retail_cell.border = border
                     col_idx += 1
 
                 if price_mode in {'wholesale', 'both'}:
                     wholesale_cell = ws.cell(row=row_idx, column=col_idx, value=float(product.wholesale_price) if product.wholesale_price is not None else None)
-                    wholesale_cell.number_format = 'EUR #,##0.00'
+                    wholesale_cell.number_format = '"EUR" #,##0.00'
                     wholesale_cell.border = border
                     col_idx += 1
 
@@ -1395,14 +1395,14 @@ def export_shopify_inventory_csv(request):
 @login_required
 def add_product_view(request):
     if request.method == 'POST':
-        form = ProductForm(request.POST)
+        form = ProductForm(request.POST, can_edit_prices=has_manager_access(request.user))
         if form.is_valid():
             product = form.save()
             for img in request.FILES.getlist('images'):
                 ProductImage.objects.create(product=product, image=img)
             return redirect('product_detail', pk=product.pk)
     else:
-        form = ProductForm()
+        form = ProductForm(can_edit_prices=has_manager_access(request.user))
     return render(request, 'stock/add_product.html', {
         'form': form,
         'brand_series_map_json': json.dumps(build_brand_series_map()),
@@ -1473,7 +1473,8 @@ def edit_product_view(request, pk):
     )
 
     if request.method == 'POST':
-        form = ProductForm(request.POST, request.FILES, instance=product)
+        form = ProductForm(request.POST, request.FILES, instance=product,
+                           can_edit_prices=has_manager_access(request.user))
         if form.is_valid():
             form.save()
 
@@ -1510,7 +1511,7 @@ def edit_product_view(request, pk):
         else:
             messages.error(request, "Please fix the highlighted fields.")
     else:
-        form = ProductForm(instance=product)
+        form = ProductForm(instance=product, can_edit_prices=has_manager_access(request.user))
 
     images = product.images.all()
     purchases = product.purchase_set.all().order_by('-date')
@@ -5464,6 +5465,9 @@ def api_adjust_purchase_stock(request):
             )
             inventory_snapshot = build_inventory_snapshot(purchase.product)
 
+            from .services.pricing import sync_perfume_price
+            sync_perfume_price(purchase.product)
+
         return JsonResponse({
             'success': True,
             'message': f'Updated remaining from {old_remaining} to {new_remaining}',
@@ -5525,6 +5529,9 @@ def api_adjust_total_stock(request):
                 # consume_stock_fifo 用条件 UPDATE 保证并发安全
                 consume_stock_fifo(product, abs(difference))
                 message = f'Decreased stock by {abs(difference)}'
+
+            from .services.pricing import sync_perfume_price
+            sync_perfume_price(product)
 
             StockAdjustmentLog.objects.create(
                 user=request.user,

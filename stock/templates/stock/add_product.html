@@ -1,5 +1,6 @@
 {% extends 'stock/base.html' %}
 {% load widget_tweaks %}
+{% load access_tags %}
 {% block title %}Add Product{% endblock %}
 
 {% block content %}
@@ -149,6 +150,13 @@
           <label class="form-label">Wholesale Price (€)</label>
           {% render_field form.wholesale_price class="form-control js-money" type="text" inputmode="decimal" step="0.01" placeholder="0.00" %}
         </div>
+
+        {% if user|is_manager_user %}
+        <div class="mb-2 form-check">
+          <input type="checkbox" class="form-check-input" id="price_locked" name="price_locked" {% if form.price_locked.value %}checked{% endif %}>
+          <label class="form-check-label" for="price_locked">Lock price (don't auto-update from cost)</label>
+        </div>
+        {% endif %}
 
         <div class="col-12">
           <label class="form-label">Description</label>
