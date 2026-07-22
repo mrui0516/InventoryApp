@@ -29,3 +29,4 @@ Thumbs.db
 tmp_*.xlsx
 tmp_*.txt
 *.tmp
+db.sqlite3.*

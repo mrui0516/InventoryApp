@@ -1245,13 +1245,13 @@ def export_product_list_excel(request):
 
                 if price_mode in {'retail', 'both'}:
                     retail_cell = ws.cell(row=row_idx, column=col_idx, value=float(product.default_price) if product.default_price is not None else None)
-                    retail_cell.number_format = 'EUR #,##0.00'
+                    retail_cell.number_format = '"EUR" #,##0.00'
                     retail_cell.border = border
                     col_idx += 1
 
                 if price_mode in {'wholesale', 'both'}:
                     wholesale_cell = ws.cell(row=row_idx, column=col_idx, value=float(product.wholesale_price) if product.wholesale_price is not None else None)
-                    wholesale_cell.number_format = 'EUR #,##0.00'
+                    wholesale_cell.number_format = '"EUR" #,##0.00'
                     wholesale_cell.border = border
                     col_idx += 1
 

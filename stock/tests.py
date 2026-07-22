@@ -1,7 +1,9 @@
 import csv
 import json
 import tempfile
-from io import StringIO
+from io import BytesIO, StringIO
+from xml.etree import ElementTree
+from zipfile import ZipFile
 from datetime import timedelta
 from decimal import Decimal
 
@@ -1382,6 +1384,21 @@ class EmployeeProductEditExportTests(TestCase):
         resp = self.client.get(reverse("export_product_list_excel"))
         self.assertEqual(resp.status_code, 200)
         self.assertIn("spreadsheet", resp["Content-Type"])
+
+    def test_product_excel_uses_excel_safe_currency_number_format(self):
+        self.client.login(username="edit_emp", password="pw123456")
+
+        resp = self.client.get(reverse("export_product_list_excel"))
+
+        workbook_bytes = b"".join(resp.streaming_content)
+        with ZipFile(BytesIO(workbook_bytes)) as workbook_zip:
+            styles = ElementTree.fromstring(workbook_zip.read("xl/styles.xml"))
+        namespace = {"main": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+        format_codes = {
+            node.attrib["formatCode"]
+            for node in styles.findall("main:numFmts/main:numFmt", namespace)
+        }
+        self.assertIn('"EUR" #,##0.00', format_codes)
 
     def test_employee_still_blocked_from_deletes_and_shopify_export(self):
         self.client.login(username="edit_emp", password="pw123456")
