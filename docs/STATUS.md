@@ -99,6 +99,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-07-23：产品性别分类上线——`Product.gender`（men/women/unisex，迁移 0035）+ 表单下拉 + Shopify 导出自动带 Homem/Mulher/Unissexo tag；存量 229 香水自动回填（男 47/女 45/中性 137）；Shopify 全部 227 产品打 tag、建 3 个性别智能 collection、主菜单加 Categorias 下拉（Homem/Mulher/Unissexo/Novidades）。199 测试通过。副本主题另新增：品牌走马灯、Top 5 月销区块（本地销量，可切线上）、Novidades 无限循环聚焦轮播、实体店版块、白色产品卡配色。
 - 2026-07-22：Shopify 全量香水同步——228 个有图香水全部上架（112 已有 + 116 新建，CSV 导入 + Cloudinary 图链），品牌 collection 全配齐（9 个手动填满 + 5 个新智能 vendor 规则 + Novidades）；主菜单/footer/Contactos/Revendedor 页重建（葡语）；副本主题 "Copy of Dawn" 按 auryaperfumes.com 结构重排（首页/产品页/分类页/品牌走马灯/淡黄黑配色），待预览发布。ARD AL ZAFRAN→ARD AL ZAAFARAN 品牌拼写合并、1Ooml 笔误修正（本地+Shopify）。
 - 2026-07-21：香水自动定价上线并合并（Perfumes 分类：批发=⌈当前 FIFO 成本+10⌉、零售=批发+12；成本变动自动重算；`price_locked` 经理锁价；价格对员工只读 server 端强制；`sync_perfume_prices` 回填实跑 4 更新）。195 测试通过。
 - 2026-07-16：员工界面收窄（可见页面 Dashboard/Outbound/Products/Sales/Customers；AR/进货/考勤/Today/Catalog 对员工整页 302 拦截）。Products 对员工开放查看/搜索/新增/**编辑**/下载客户 Excel（隐藏成本/供应商比价/销售历史；进货、删产品/图、Shopify 导出仍仅经理）。Sales/Customers 员工视图为单日订单/无分析的精简版（按订单号搜索直达详情；按客户查订单对账；每单 **View 弹窗 + Print 按钮**；订单详情按店铺隔离）。样式与经理页统一。登录/登出自动开关考勤班次（免手动打卡）。178 测试通过。

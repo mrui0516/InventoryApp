@@ -69,6 +69,19 @@ class Product(models.Model):
     wholesale_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, db_index=True)
     price_locked = models.BooleanField(default=False)
 
+    GENDER_CHOICES = [
+        ('men', 'Men'),
+        ('women', 'Women'),
+        ('unisex', 'Unisex'),
+    ]
+    # Shopify tag per gender (Portuguese storefront; drives the smart collections).
+    GENDER_SHOPIFY_TAGS = {'men': 'Homem', 'women': 'Mulher', 'unisex': 'Unissexo'}
+    gender = models.CharField(max_length=10, choices=GENDER_CHOICES, blank=True, default='', db_index=True)
+
+    @property
+    def gender_shopify_tag(self):
+        return self.GENDER_SHOPIFY_TAGS.get(self.gender, '')
+
     def __str__(self):
         return f'{self.barcode} - {self.display_name}'
 

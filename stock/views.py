@@ -305,6 +305,7 @@ def _build_shopify_tags(group_products):
             product.name,
             product.spec,
             product.color,
+            product.gender_shopify_tag,
         ]
         for value in values:
             cleaned = _clean_csv_text(value)

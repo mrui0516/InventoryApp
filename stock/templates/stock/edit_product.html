@@ -201,14 +201,19 @@
           {% render_field form.name class="form-control" placeholder="e.g. EDP / Clear Case / Charger" %}
         </div>
 
-        <div class="col-md-3">
+        <div class="col-md-4">
           <label class="form-label">Specification</label>
           {% render_field form.spec class="form-control" placeholder="Optional" %}
         </div>
 
-        <div class="col-md-3">
+        <div class="col-md-4">
           <label class="form-label">Color</label>
           {% render_field form.color class="form-control" placeholder="Optional" %}
+        </div>
+
+        <div class="col-md-4">
+          <label class="form-label">Gender</label>
+          {% render_field form.gender class="form-select" %}
         </div>
 
         <div class="col-md-6">

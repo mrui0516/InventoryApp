@@ -55,12 +55,14 @@ class ProductForm(forms.ModelForm):
             'name',
             'spec',
             'color',
+            'gender',
             'default_price',
             'wholesale_price',
             'price_locked',
             'description',
         ]
         widgets = {
+            'gender': forms.Select(attrs={'class': 'form-select'}),
             'description': forms.Textarea(attrs={'rows': 3, 'class': 'form-control'}),
             'default_price': forms.NumberInput(attrs={
                 'step': '0.01',

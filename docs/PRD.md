@@ -154,6 +154,7 @@
 - **F2.5.2.6** 编辑页展示"是否可删除"标志（`can_delete_product`）及"是否可强制删除"标志（`can_force_delete_product`，仅超级管理员为真），供前端控制按钮显隐。
 - **F2.5.2.7 香水自动定价（Perfume auto-pricing）**：分类为 **Perfumes** 的产品，其批发价/零售价按当前 FIFO 成本自动计算——`批发价 = ⌈当前 FIFO 成本 + 10⌉`（向上取整）、`零售价 = 批发价 + 12`（例：成本 12.34 → 批发 23、零售 35）。每当该产品"当前正在售卖"的批次成本可能变化时（进货入库、出货/归还切换到下一批次、库存调整 API 改动批次）自动重新计算并写入；只有价格确实变化时才写入（幂等）。产品可勾选 **"Lock price"**（`price_locked`，仅经理及以上表单可见/可改）锁定手动设定的价格，锁定后自动定价对其永久跳过。已存量的香水产品可通过 `sync_perfume_prices` 管理命令批量补算（支持 `--dry-run` 预览）。
 - **F2.5.2.8 员工价格只读**：`default_price`（零售价）、`wholesale_price`（批发价）与 `price_locked`（锁价勾选）三个字段对非经理角色（员工）在新增/编辑产品表单中均为**禁用只读**（可见其当前值，但不可修改）——服务端强制（`ProductForm` 对应字段 `disabled=True`，即使构造篡改的 POST 提交也会被表单忽略，不会写入），适用于全部产品，不限于 Perfumes。
+- **F2.5.2.9 产品性别分类（gender）**：`Product.gender`（`men`/`women`/`unisex`，可留空），新增/编辑表单下拉可选。Shopify 导出（CSV 与 `productSet` 同步）自动携带对应葡语 tag：Homem / Mulher / Unissexo（`Product.GENDER_SHOPIFY_TAGS`），驱动 Shopify 侧按 tag 的性别智能 collection 自动归类。存量香水已按"标题关键词 > 描述关键词 > 已知产品线 > 默认 unisex"一次性回填（2026-07-23）。
 
 #### 2.5.3 条码查询 / 自动补全 API
 - **F2.5.3.1** `check_barcode`：按条码精确查询产品，返回展示名、品牌/型号/规格/颜色、当前库存、最近一次进价、零售价、批发价、首图 URL；用于进货/出货页扫码联想填充。

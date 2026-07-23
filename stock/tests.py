@@ -3724,3 +3724,28 @@ class PerfumeBackfillCommandTests(TestCase):
         p.refresh_from_db()
         self.assertEqual(p.wholesale_price, Decimal("23"))
         self.assertEqual(p.default_price, Decimal("35"))
+
+
+class ProductGenderTests(TestCase):
+    def test_gender_shopify_tag_mapping(self):
+        cat = Category.objects.create(name="Perfumes")
+        p = Product.objects.create(name="P", barcode="8300000000001", brand="B",
+                                   category=cat, gender="men")
+        self.assertEqual(p.gender_shopify_tag, "Homem")
+        Product.objects.filter(pk=p.pk).update(gender="women")
+        p.refresh_from_db()
+        self.assertEqual(p.gender_shopify_tag, "Mulher")
+        Product.objects.filter(pk=p.pk).update(gender="")
+        p.refresh_from_db()
+        self.assertEqual(p.gender_shopify_tag, "")
+
+    def test_gender_tag_included_in_shopify_sync_tags(self):
+        from stock.services.shopify_sync import _shopify_tags
+        cat = Category.objects.create(name="Perfumes")
+        p = Product.objects.create(name="Asad", barcode="8300000000002", brand="LATTAFA",
+                                   category=cat, gender="unisex")
+        self.assertIn("Unissexo", _shopify_tags(p))
+
+    def test_product_form_includes_gender_field(self):
+        from stock.forms import ProductForm
+        self.assertIn("gender", ProductForm().fields)

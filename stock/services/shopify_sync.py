@@ -56,7 +56,8 @@ def _shopify_title(product):
 
 def _shopify_tags(product):
     category = getattr(product.category, 'name', '') if product.category_id else ''
-    raw = [product.brand, getattr(product, 'model', ''), category, getattr(product, 'spec', ''), 'Scentory']
+    gender_tag = getattr(product, 'gender_shopify_tag', '')
+    raw = [product.brand, getattr(product, 'model', ''), category, getattr(product, 'spec', ''), gender_tag, 'Scentory']
     seen, tags = set(), []
     for tag in raw:
         tag = (tag or '').strip()
