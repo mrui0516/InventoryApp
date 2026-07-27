@@ -1293,7 +1293,12 @@ class ProductArchitectureTests(TestCase):
         self.assertEqual(rows[0]["URL handle"], "lattafa-asad-edp")
         self.assertEqual(rows[0]["Description"], "Evening fragrance")
         self.assertEqual(rows[0]["Vendor"], "Lattafa")
-        self.assertEqual(rows[0]["Product category"], "Perfumes")
+        # "Product category" must be a valid Shopify taxonomy path (not the bare local
+        # name, which Shopify can't map and would ML-mis-categorize). Type keeps the name.
+        self.assertEqual(
+            rows[0]["Product category"],
+            "Health & Beauty > Personal Care > Cosmetics > Perfumes & Colognes > Eaux de Parfum",
+        )
         self.assertEqual(rows[0]["Type"], "Perfumes")
         self.assertEqual(rows[0]["Published on online store"], "TRUE")
         self.assertEqual(rows[0]["Status"], "Active")
@@ -3749,3 +3754,37 @@ class ProductGenderTests(TestCase):
     def test_product_form_includes_gender_field(self):
         from stock.forms import ProductForm
         self.assertIn("gender", ProductForm().fields)
+
+
+class ShopifyCsvCategoryTaxonomyTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.mgr = user_model.objects.create_superuser(username="cat_mgr", password="pw123456")
+        self.client.login(username="cat_mgr", password="pw123456")
+        self.perfumes = Category.objects.create(name="Perfumes")
+
+    def _export_rows(self):
+        import csv, io
+        p = Product.objects.create(name="Asad Elixir", barcode="8200000000001", brand="LATTAFA",
+                                   category=self.perfumes, default_price=Decimal("35"))
+        Purchase.objects.create(product=p, quantity=3, remaining=3, cost_price=Decimal("12"))
+        resp = self.client.get(reverse("export_shopify_inventory_csv"))
+        self.assertEqual(resp.status_code, 200)
+        text = resp.content.decode("utf-8-sig")
+        return list(csv.DictReader(io.StringIO(text)))
+
+    def test_product_category_column_uses_full_shopify_taxonomy_path(self):
+        rows = self._export_rows()
+        first = rows[0]
+        self.assertEqual(
+            first["Product category"],
+            "Health & Beauty > Personal Care > Cosmetics > Perfumes & Colognes > Eaux de Parfum",
+        )
+        # Type keeps the local category name (free-text custom product type).
+        self.assertEqual(first["Type"], "Perfumes")
+        # Google column uses Google's own perfume taxonomy, not the bare name.
+        self.assertEqual(
+            first["Google Shopping / Google product category"],
+            "Health & Beauty > Personal Care > Cosmetics > Perfume & Cologne",
+        )
+        self.assertNotEqual(first["Product category"], "Perfumes")

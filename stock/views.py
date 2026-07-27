@@ -248,6 +248,20 @@ SHOPIFY_PRODUCT_CSV_HEADERS = [
     'Google Shopping / Custom label 4',
 ]
 
+# The CSV "Product category" column feeds Shopify's *Standard Product Taxonomy*, which
+# expects a valid taxonomy path — NOT our local category name. A bare name like
+# "Perfumes" is unmatched, so Shopify silently drops it and ML-auto-categorizes the
+# product (which mis-filed everything under a Pet node). Map our category → the full
+# Shopify taxonomy path so imports land correctly. Unknown categories stay blank.
+SHOPIFY_TAXONOMY_BY_CATEGORY = {
+    'Perfumes': 'Health & Beauty > Personal Care > Cosmetics > Perfumes & Colognes > Eaux de Parfum',
+}
+# The Google Shopping column uses Google's *separate* product taxonomy, also unmatched
+# by a bare "Perfumes"; map it to Google's perfume node.
+GOOGLE_CATEGORY_BY_CATEGORY = {
+    'Perfumes': 'Health & Beauty > Personal Care > Cosmetics > Perfume & Cologne',
+}
+
 
 def _clean_csv_text(value):
     return (str(value).strip() if value is not None else '')
@@ -1336,6 +1350,8 @@ def export_shopify_inventory_csv(request):
         handle = _build_unique_shopify_handle(base_title, first_product.barcode or first_product.id, used_handles)
         product_description = _first_clean_product_value(group_products, 'description')
         product_category = _clean_csv_text(getattr(first_product.category, 'name', ''))
+        shopify_taxonomy = SHOPIFY_TAXONOMY_BY_CATEGORY.get(product_category, '')
+        google_category = GOOGLE_CATEGORY_BY_CATEGORY.get(product_category, '')
         product_image_url = _first_shopify_image_url(request, group_products)
         color_metafield = _build_shopify_color_metafield(group_products)
         tags = _build_shopify_tags(group_products)
@@ -1366,7 +1382,7 @@ def export_shopify_inventory_csv(request):
                     'Title': base_title,
                     'Description': product_description,
                     'Vendor': _clean_csv_text(first_product.brand),
-                    'Product category': product_category,
+                    'Product category': shopify_taxonomy,
                     'Type': product_category,
                     'Tags': tags,
                     'Published on online store': 'TRUE',
@@ -1378,7 +1394,7 @@ def export_shopify_inventory_csv(request):
                     'SEO title': base_title,
                     'SEO description': product_description,
                     'Color (product.metafields.shopify.color-pattern)': color_metafield,
-                    'Google Shopping / Google product category': product_category,
+                    'Google Shopping / Google product category': google_category,
                     'Google Shopping / Condition': 'New',
                     'Google Shopping / Custom product': 'FALSE',
                 })
