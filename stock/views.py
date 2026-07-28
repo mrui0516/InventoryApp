@@ -8,7 +8,7 @@ from collections import defaultdict
 from datetime import timedelta, datetime, date
 import qrcode
 import base64
-from calendar import monthrange
+from calendar import monthrange, Calendar
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
@@ -3849,6 +3849,9 @@ def record_view(request):
         return _employee_sales_day_view(request)
     start_str = request.GET.get('start_date', '').strip()
     end_str = request.GET.get('end_date', '').strip()
+    view_mode = request.GET.get('view', '').strip()
+    month_str = request.GET.get('month', '').strip()
+    product_q = request.GET.get('product_q', '').strip()
     show_sensitive = has_manager_access(request.user)
     show_sales_sensitive = has_sales_sensitive_access(request.user)
     show_order_financials = has_order_reconciliation_access(request.user)
@@ -3887,8 +3890,8 @@ def record_view(request):
         except Exception:
             end_date = None
 
-    if not start_date and not end_date:
-        # No range selected -> yearly trend overview (drill into a range/month for detail).
+    if view_mode == 'year':
+        # Yearly trend overview (drill into a month calendar for detail).
         view_today = timezone.localdate()
         year = resolve_year(request.GET.get('year'), view_today)
         selected_cat_ids_int = [int(x) for x in request.GET.getlist('cat') if str(x).isdigit()]
@@ -3909,16 +3912,15 @@ def record_view(request):
         year_chart = []
         for row in overview['monthly_rows']:
             month = row['month']
-            m_start = date(year, month, 1)
-            m_end = date(year, month, monthrange(year, month)[1])
-            drill_url = _records_url({'start_date': m_start.isoformat(), 'end_date': m_end.isoformat()})
+            # Drill into the month's calendar view (not a flat range list).
+            drill_url = _records_url({'month': f'{year:04d}-{month:02d}'})
             row['detail_url'] = drill_url
             year_chart.append({'label': row['label'], 'amount': float(row['amount']), 'url': drill_url})
 
         year_nav = {
-            'prev': _records_url({'year': overview['prev_year']}),
-            'next': _records_url({'year': overview['next_year']}) if overview['next_year'] else '',
-            'current': _records_url({'year': view_today.year}),
+            'prev': _records_url({'view': 'year', 'year': overview['prev_year']}),
+            'next': _records_url({'view': 'year', 'year': overview['next_year']}) if overview['next_year'] else '',
+            'current': _records_url({'view': 'year', 'year': view_today.year}),
         }
 
         return render(request, 'stock/sales_records.html', {
@@ -3928,6 +3930,23 @@ def record_view(request):
             'year_chart': year_chart,
             **overview,
         })
+
+    calendar_mode = False
+    cal_year = cal_month = None
+    if not start_date and not end_date:
+        # Default landing: this month's sales calendar (drill a day open in a modal).
+        calendar_mode = True
+        today_local = timezone.localdate()
+        cal_year, cal_month = today_local.year, today_local.month
+        if month_str:
+            try:
+                yy, mm = month_str.split('-')[:2]
+                cal_year, cal_month = int(yy), int(mm)
+                date(cal_year, cal_month, 1)
+            except Exception:
+                cal_year, cal_month = today_local.year, today_local.month
+        start_date = date(cal_year, cal_month, 1)
+        end_date = date(cal_year, cal_month, monthrange(cal_year, cal_month)[1])
 
     if start_date and not end_date:
         end_date = start_date
@@ -3981,10 +4000,17 @@ def record_view(request):
             Q(order__created_at__date__gte=start_date, order__created_at__date__lte=end_date) |
             Q(order__isnull=True, date__date__gte=start_date, date__date__lte=end_date)
         )
-        .select_related('order__customer', 'product', 'customer')
+        .select_related('order__customer', 'order__store', 'product', 'customer')
         .prefetch_related('product__images')
         .order_by('-business_at', '-order_id', '-id')
     )
+    if product_q:
+        sales_qs = sales_qs.filter(
+            Q(product__name__icontains=product_q)
+            | Q(product__barcode__icontains=product_q)
+            | Q(product__model__icontains=product_q)
+            | Q(product__brand__icontains=product_q)
+        )
     active_store, store_is_all = resolve_active_store(request)
     sales_qs = scope_sales_by_store(sales_qs, active_store, store_is_all)
     sale_profit_map = sale_profit_map_for_sale_ids(sales_qs.values_list('id', flat=True)) if show_profit else {}
@@ -4013,6 +4039,7 @@ def record_view(request):
                 'detail_url': reverse('sale_order_detail', args=[order.id]) if order else None,
                 'customer_name': customer_obj.name if customer_obj else 'Walk-in / No customer',
                 'customer_detail_url': reverse('customer_detail', args=[customer_obj.id]) if customer_obj else None,
+                'store_name': order.store.name if order and order.store_id else '',
                 'created_at': created_at,
                 'created_hhmm': created_at.strftime('%H:%M'),
                 'items_today': [],
@@ -4078,6 +4105,7 @@ def record_view(request):
         order_count = len(orders)
         day_blocks.append({
             'date': day,
+            'cal_id': f"cal-{day.strftime('%Y%m%d')}",
             'orders': orders,
             'totals': totals,
             'order_count': order_count,
@@ -4242,7 +4270,54 @@ def record_view(request):
         for s in stats_list[:8]
     ]
 
+    # Month-calendar presentation (default landing): a grid of day cells with per-day
+    # order count + amount; each active day opens a modal (rendered from day_blocks).
+    calendar_context = {'calendar_mode': calendar_mode}
+    if calendar_mode:
+        by_date = {block['date']: block for block in day_blocks}
+        today_local = timezone.localdate()
+        weeks = []
+        for week in Calendar(firstweekday=0).monthdatescalendar(cal_year, cal_month):
+            cells = []
+            for cell_date in week:
+                block = by_date.get(cell_date)
+                cells.append({
+                    'day': cell_date.day,
+                    'in_month': cell_date.month == cal_month,
+                    'is_today': cell_date == today_local,
+                    'has_sales': bool(block),
+                    'order_count': block['order_count'] if block else 0,
+                    'qty': block['totals']['qty'] if block else 0,
+                    'amount': block['totals']['amount'] if block else Decimal('0.00'),
+                    'cal_id': f"cal-{cell_date.strftime('%Y%m%d')}",
+                })
+            weeks.append(cells)
+
+        prev_month = (start_date - timedelta(days=1)).replace(day=1)
+        next_month_first = (end_date + timedelta(days=1))
+
+        def _cal_url(**extra):
+            params = {}
+            if product_q:
+                params['product_q'] = product_q
+            params.update(extra)
+            return f"{reverse('sales_records')}?{urlencode(params)}" if params else reverse('sales_records')
+
+        calendar_context.update({
+            'calendar_weeks': weeks,
+            'calendar_month_label': start_date.strftime('%B %Y'),
+            'calendar_weekdays': ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+            'prev_month_url': _cal_url(month=prev_month.strftime('%Y-%m')),
+            'next_month_url': _cal_url(month=next_month_first.strftime('%Y-%m')),
+            'this_month_url': _cal_url(),
+            'clear_product_url': f"{reverse('sales_records')}?{urlencode({'month': start_date.strftime('%Y-%m')})}",
+            'year_view_url': f"{reverse('sales_records')}?view=year",
+            'product_q': product_q,
+            'calendar_month_value': start_date.strftime('%Y-%m'),
+        })
+
     return render(request, 'stock/sales_records.html', {
+        **calendar_context,
         'trend_data': trend_data,
         'payment_chart': payment_chart,
         'top_products': top_products,

@@ -832,10 +832,11 @@ class DashboardViewTests(TestCase):
         self.assertIn(reverse("dashboard"), response.headers["Location"])
 
     def test_sales_page_shows_year_trend_by_default(self):
-        # Sales Trend was merged into the Sales (records) page as its no-range state.
+        # Sales Trend lives on the Sales (records) page via ?view=year
+        # (the no-param default is now the month calendar).
         self.client.login(username="dashboard_admin", password="pw123456")
 
-        response = self.client.get(reverse("sales_records"))
+        response = self.client.get(reverse("sales_records"), {"view": "year"})
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.context["show_trend"])
@@ -2259,7 +2260,7 @@ class MultiStoreTests(TestCase):
         self.assertEqual(dash.context["month_sales_amount"], Decimal("10.00"))
 
         cache.clear()
-        trend = self.client.get(reverse("sales_records"))
+        trend = self.client.get(reverse("sales_records"), {"view": "year"})
         self.assertEqual(trend.context["year_sales_amount"], Decimal("10.00"))
 
     def test_dashboard_all_stores_shows_store_comparison(self):
@@ -3788,3 +3789,53 @@ class ShopifyCsvCategoryTaxonomyTests(TestCase):
             "Health & Beauty > Personal Care > Cosmetics > Perfume & Cologne",
         )
         self.assertNotEqual(first["Product category"], "Perfumes")
+
+
+class SalesCalendarViewTests(TestCase):
+    def setUp(self):
+        from stock.models import Store
+        user_model = get_user_model()
+        self.mgr = user_model.objects.create_superuser(username="cal_mgr", password="pw123456")
+        self.client.login(username="cal_mgr", password="pw123456")
+        self.cat = Category.objects.create(name="Perfumes")
+        self.customer = Customer.objects.create(name="Dona Ana")
+        self.store = Store.objects.create(name="Amadora", code="AMD")
+        self.product = Product.objects.create(name="Asad", barcode="8100000000001",
+                                              brand="LATTAFA", category=self.cat,
+                                              default_price=Decimal("35"))
+        Purchase.objects.create(product=self.product, quantity=10, remaining=10,
+                                cost_price=Decimal("12"))
+        order = SaleOrder.objects.create(customer=self.customer, store=self.store)
+        with self.captureOnCommitCallbacks(execute=True):
+            Sale.objects.create(order=order, product=self.product, customer=self.customer,
+                                quantity=1, unit_price=Decimal("35"), payment_method="cash")
+
+    def test_default_is_month_calendar_with_day_modal_and_store(self):
+        resp = self.client.get(reverse("sales_records"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.context["calendar_mode"])
+        self.assertIn("calendar_weeks", resp.context)
+        html = resp.content.decode("utf-8")
+        # calendar grid + product search present
+        self.assertIn('class="calendar"', html)
+        self.assertIn("Filter by product", html)
+        # today's sale -> a clickable day cell + a matching modal, with the store name inside
+        today_id = "cal-" + timezone.localdate().strftime("%Y%m%d")
+        self.assertIn('data-day-modal="%s"' % today_id, html)
+        self.assertIn('id="%s-modal"' % today_id, html)
+        self.assertIn("Amadora", html)
+        # the old long stacked list heading must NOT render in calendar mode
+        self.assertNotIn("orders in this range", html)
+
+    def test_product_filter_narrows_the_page(self):
+        resp = self.client.get(reverse("sales_records"), {"product_q": "zzz-nomatch"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.context["calendar_mode"])
+        self.assertEqual(resp.context["day_blocks"], [])
+        self.assertIn("No sales this month", resp.content.decode("utf-8"))
+
+    def test_year_view_shows_trend(self):
+        resp = self.client.get(reverse("sales_records"), {"view": "year"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.context.get("show_trend"))
+        self.assertFalse(resp.context.get("calendar_mode"))

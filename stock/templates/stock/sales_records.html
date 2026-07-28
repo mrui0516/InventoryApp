@@ -815,12 +815,44 @@
         margin-bottom:.1rem;
       }
     }
+
+    /* --- Month calendar --- */
+    .cal-toolbar{display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;justify-content:space-between;margin:.25rem 0 1rem;}
+    .cal-nav{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;}
+    .cal-nav .cal-month{font-weight:900;font-size:1.15rem;color:var(--text);min-width:10rem;text-align:center;}
+    .cal-nav a,.cal-link{display:inline-flex;align-items:center;justify-content:center;height:2.25rem;padding:0 .8rem;border:1px solid var(--border,#d9dee6);border-radius:.6rem;background:#fff;color:var(--text);text-decoration:none;font-weight:700;}
+    .cal-nav a:hover,.cal-link:hover{background:#f3f5f9;}
+    .cal-search{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;}
+    .cal-search input[type=search]{height:2.25rem;border:1px solid var(--border,#d9dee6);border-radius:.6rem;padding:0 .7rem;min-width:15rem;}
+    .cal-chip{display:inline-flex;align-items:center;gap:.45rem;background:#eef2ff;border:1px solid #c7d2fe;color:#3730a3;border-radius:2rem;padding:.15rem .7rem;font-weight:800;font-size:.85rem;}
+    .cal-chip a{color:#3730a3;text-decoration:none;font-weight:900;}
+    .calendar{width:100%;border-collapse:separate;border-spacing:6px;table-layout:fixed;}
+    .calendar th{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#6b7280);font-weight:800;padding:.2rem 0;text-align:center;}
+    .cal-cell{vertical-align:top;height:5.4rem;border:1px solid var(--border,#e5e7eb);border-radius:.6rem;background:#fff;padding:.35rem;}
+    .cal-cell.out{background:#fafbfc;}
+    .cal-cell.out .cal-daynum{color:#c3c9d2;}
+    .cal-cell.today{border-color:#2563eb;box-shadow:inset 0 0 0 1px #2563eb;}
+    .cal-daynum{font-weight:800;font-size:.85rem;color:var(--text);}
+    .cal-btn{display:flex;flex-direction:column;gap:.15rem;width:100%;height:100%;border:0;background:transparent;text-align:left;cursor:pointer;padding:0;}
+    .cal-btn:hover .cal-badge{background:#1d4ed8;}
+    .cal-amount{font-weight:900;font-size:.88rem;color:var(--text);margin-top:.3rem;}
+    .cal-badge{align-self:flex-start;margin-top:.25rem;background:#2563eb;color:#fff;font-size:.7rem;font-weight:800;border-radius:.4rem;padding:.05rem .4rem;}
+    .cal-empty{color:#cdd2da;font-size:.75rem;margin-top:.35rem;}
+    .day-modal[hidden]{display:none;}
+    .day-modal{position:fixed;inset:0;z-index:1080;display:flex;align-items:flex-start;justify-content:center;padding:3vh 1rem;overflow:auto;}
+    .day-modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.55);}
+    .day-modal-dialog{position:relative;background:#fff;border-radius:1rem;max-width:940px;width:100%;box-shadow:0 24px 60px rgba(0,0,0,.25);}
+    .day-modal-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:1rem 1.25rem;border-bottom:1px solid var(--border,#e5e7eb);position:sticky;top:0;background:#fff;border-radius:1rem 1rem 0 0;}
+    .day-modal-title{font-weight:900;font-size:1.05rem;color:var(--text);}
+    .day-modal-close{border:0;background:transparent;font-size:1.7rem;line-height:1;cursor:pointer;color:#64748b;}
+    .day-modal-body{padding:1rem 1.25rem 1.25rem;}
+    @media (max-width:640px){.cal-cell{height:auto;min-height:3.6rem;}.calendar{border-spacing:3px;}.cal-search input[type=search]{min-width:11rem;}}
   </style>
 
   <div class="page-head">
     <div>
       <h2>Sales & Purchase Records</h2>
-      {% if date_filter %}<div class="page-sub">Showing records for {{ date_filter }}</div>{% endif %}
+      {% if date_filter and not calendar_mode %}<div class="page-sub">Showing records for {{ date_filter }}</div>{% endif %}
     </div>
     <div class="page-actions">
       {% if show_sales_sensitive %}
@@ -862,6 +894,24 @@
       <div id="search-history-empty" class="history-empty">Your recent date ranges will appear here.</div>
     </div>
   </form>
+
+  {% if calendar_mode %}
+    <div class="cal-toolbar">
+      <div class="cal-nav">
+        <a href="{{ prev_month_url }}" aria-label="Previous month">&#10094;</a>
+        <span class="cal-month">{{ calendar_month_label }}</span>
+        <a href="{{ next_month_url }}" aria-label="Next month">&#10095;</a>
+        <a class="cal-link" href="{{ this_month_url }}">This month</a>
+        <a class="cal-link" href="{{ year_view_url }}">Year view</a>
+      </div>
+      <form method="get" class="cal-search">
+        <input type="hidden" name="month" value="{{ calendar_month_value }}">
+        <input type="search" name="product_q" value="{{ product_q }}" placeholder="Filter by product / barcode">
+        <button class="btn btn-primary btn-sm" type="submit">Filter</button>
+        {% if product_q %}<span class="cal-chip">{{ product_q }} <a href="{{ clear_product_url }}" title="Clear filter">&times;</a></span>{% endif %}
+      </form>
+    </div>
+  {% endif %}
 
   {% if show_trend %}
     <div class="section-title">
@@ -991,6 +1041,37 @@
     </div>
   {% endif %}
 
+  {% if calendar_mode %}
+    <section class="viz-card" style="padding:1rem;margin-bottom:1rem;">
+      <table class="calendar">
+        <thead>
+          <tr>{% for wd in calendar_weekdays %}<th>{{ wd }}</th>{% endfor %}</tr>
+        </thead>
+        <tbody>
+          {% for week in calendar_weeks %}
+            <tr>
+              {% for cell in week %}
+                <td class="cal-cell{% if not cell.in_month %} out{% endif %}{% if cell.is_today %} today{% endif %}">
+                  {% if cell.has_sales and cell.in_month %}
+                    <button type="button" class="cal-btn js-open-day" data-day-modal="{{ cell.cal_id }}">
+                      <span class="cal-daynum">{{ cell.day }}</span>
+                      {% if show_order_financials %}<span class="cal-amount">EUR {{ cell.amount|floatformat:2 }}</span>{% endif %}
+                      <span class="cal-badge">{{ cell.order_count }} order{{ cell.order_count|pluralize }}</span>
+                    </button>
+                  {% else %}
+                    <span class="cal-daynum">{{ cell.day }}</span>
+                    {% if cell.in_month %}<div class="cal-empty">&mdash;</div>{% endif %}
+                  {% endif %}
+                </td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if not day_blocks %}<div class="cal-empty" style="text-align:center;margin-top:.5rem;">No sales this month{% if product_q %} for &ldquo;{{ product_q }}&rdquo;{% endif %}.</div>{% endif %}
+    </section>
+  {% endif %}
+
   {% if show_order_financials and trend_data %}
     {{ trend_data|json_script:"trendData" }}
     {% if payment_chart %}{{ payment_chart|json_script:"payMixData" }}{% endif %}
@@ -1034,6 +1115,7 @@
     </section>
   {% endif %}
 
+  {% if not calendar_mode %}
   {% if day_blocks %}
     <div class="section-title">
       <h3>Sales Orders</h3>
@@ -1187,6 +1269,26 @@
     {% endfor %}
   {% elif start_date or end_date %}
     <div class="empty-card">No sales records found in the selected range.</div>
+  {% endif %}
+  {% endif %}{# /not calendar_mode #}
+
+  {% if calendar_mode %}
+    {% for day in day_blocks %}
+      <div class="day-modal" id="{{ day.cal_id }}-modal" hidden>
+        <div class="day-modal-backdrop" data-day-close="true"></div>
+        <div class="day-modal-dialog" role="dialog" aria-modal="true" aria-label="Sales for {{ day.date }}">
+          <div class="day-modal-head">
+            <div class="day-modal-title">{{ day.date }} &middot; {{ day.order_count }} order{{ day.order_count|pluralize }}{% if show_order_financials %} &middot; EUR {{ day.totals.amount|floatformat:2 }}{% endif %}</div>
+            <button type="button" class="day-modal-close" data-day-close="true" aria-label="Close">&times;</button>
+          </div>
+          <div class="day-modal-body">
+            {% for row in day.orders %}
+              {% include 'stock/_sales_order_entry.html' with entry_open=forloop.first %}
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    {% endfor %}
   {% endif %}
 
   {% if show_purchases %}
@@ -1469,9 +1571,34 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // --- Sales-day calendar modals ---
+  const closeDayModal = (modal) => {
+    if (!modal) return;
+    modal.hidden = true;
+    if (!document.querySelector('.day-modal:not([hidden])')) {
+      document.body.style.overflow = '';
+    }
+  };
+  document.querySelectorAll('.js-open-day').forEach((button) => {
+    button.addEventListener('click', () => {
+      const modal = document.getElementById(button.dataset.dayModal + '-modal');
+      if (modal) {
+        modal.hidden = false;
+        document.body.style.overflow = 'hidden';
+      }
+    });
+  });
+  document.querySelectorAll('.day-modal [data-day-close]').forEach((el) => {
+    el.addEventListener('click', () => closeDayModal(el.closest('.day-modal')));
+  });
+
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && imageModal && !imageModal.hidden) {
-      closeImageModal();
+    if (event.key === 'Escape') {
+      const openDay = document.querySelector('.day-modal:not([hidden])');
+      if (openDay) { closeDayModal(openDay); return; }
+      if (imageModal && !imageModal.hidden) {
+        closeImageModal();
+      }
     }
   });
 

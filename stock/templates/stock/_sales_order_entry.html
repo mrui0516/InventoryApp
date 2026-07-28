@@ -1,0 +1,108 @@
+{% load static %}
+<details class="order-entry" id="{{ row.detail_id }}"{% if entry_open %} open{% endif %}>
+  <summary class="order-summary">
+    <div class="order-summary-main">
+      <div class="order-summary-text">
+        <div class="order-identity">
+          <span class="identity-label">Customer</span>
+          {% if row.customer_detail_url %}
+            <a href="{{ row.customer_detail_url }}" class="order-customer-main">{{ row.customer_name }}</a>
+          {% else %}
+            <span class="order-customer-main">{{ row.customer_name }}</span>
+          {% endif %}
+        </div>
+        {% if row.store_name %}
+          <div class="order-identity">
+            <span class="identity-label">Store</span>
+            <span class="order-customer-main">{{ row.store_name }}</span>
+          </div>
+        {% endif %}
+        <div class="order-top">
+          <span class="order-badge">{% if row.order_id %}Order #{{ row.order_id }}{% else %}Legacy Sale{% endif %}</span>
+          <span class="order-time">{{ row.created_at|date:"Y-m-d H:i" }}</span>
+        </div>
+      </div>
+    </div>
+    <div class="order-summary-end">
+      {% if show_order_financials %}
+        <div class="order-side">
+          <div class="order-total">EUR {{ row.total_amount|floatformat:2 }}</div>
+          {% if show_profit %}
+            <div class="profit-note {% if row.total_profit < 0 %}negative{% endif %}">Profit EUR {{ row.total_profit|floatformat:2 }}</div>
+          {% endif %}
+        </div>
+      {% endif %}
+      <div class="expand-control">
+        <span class="expand-label">Details</span>
+        <span class="order-arrow" aria-hidden="true"></span>
+      </div>
+    </div>
+  </summary>
+
+  <div class="order-body">
+    {% if row.detail_url %}
+      <div class="order-tools" style="justify-content:flex-end;">
+        <a href="{{ row.detail_url }}" class="btn btn-sm btn-outline-secondary">Print</a>
+      </div>
+    {% endif %}
+    <div class="table-responsive">
+      <table class="table item-table">
+        <thead>
+          <tr>
+            <th>Image</th>
+            <th>Product</th>
+            <th>Barcode</th>
+            <th>Qty</th>
+            {% if show_order_financials %}
+              <th>Unit Price</th>
+              <th>Payment</th>
+              <th>Subtotal</th>
+            {% endif %}
+            {% if show_profit %}
+              <th>Net Profit</th>
+            {% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in row.items_today %}
+            <tr>
+              <td data-label="Image" class="item-photo-cell">
+                {% if item.image_url %}
+                  <button type="button" class="item-photo-btn js-open-image-modal" data-image-url="{{ item.image_url }}" data-image-label="{{ item.display_name }}">
+                    <img src="{{ item.image_url }}" alt="{{ item.display_name }}">
+                    <span class="zoom-label">Zoom</span>
+                  </button>
+                {% else %}
+                  <div class="item-photo-placeholder">No image</div>
+                {% endif %}
+              </td>
+              <td data-label="Product">
+                <div class="item-name">
+                  {% if item.product %}
+                    <a href="{% url 'product_detail' item.product.id %}">{{ item.display_name }}</a>
+                  {% else %}
+                    {{ item.display_name }}
+                  {% endif %}
+                </div>
+              </td>
+              <td data-label="Barcode">
+                <div class="item-code">{% if item.product %}{{ item.product.barcode }}{% else %}-{% endif %}</div>
+              </td>
+              <td data-label="Qty"><span class="num">{{ item.quantity }}</span></td>
+              {% if show_order_financials %}
+                <td data-label="Unit Price"><span class="num">EUR {{ item.unit_price|floatformat:2 }}</span></td>
+                <td data-label="Payment"><span class="pay-pill">{{ item.payment_label }}</span></td>
+                <td data-label="Subtotal"><span class="num">EUR {{ item.line_total|floatformat:2 }}</span></td>
+              {% endif %}
+              {% if show_profit %}
+                <td data-label="Net Profit">
+                  <span class="num {% if item.line_profit < 0 %}text-danger{% endif %}">EUR {{ item.line_profit|floatformat:2 }}</span>
+                </td>
+              {% endif %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</details>
