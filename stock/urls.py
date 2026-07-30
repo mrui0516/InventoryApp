@@ -21,6 +21,7 @@ urlpatterns = [
     path('check_barcode/', views.check_barcode, name='check_barcode'),
     path('add-product/', views.add_product_view, name='add_product'),
     path('products/<int:pk>/', views.product_detail_view, name='product_detail'),
+    path('sales-history/', views.product_sales_history_view, name='product_sales_history'),
     path('products/<int:pk>/edit/', views.edit_product_view, name='edit_product'),
     path('products/<int:pk>/delete/', views.delete_product_view, name='delete_product'),
 

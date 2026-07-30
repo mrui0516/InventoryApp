@@ -1,0 +1,193 @@
+{% extends 'stock/base.html' %}
+{% block title %}Product Sales History{% endblock %}
+
+{% block content %}
+<style>
+  .psh-head{display:flex;flex-wrap:wrap;gap:1rem;align-items:flex-end;justify-content:space-between;margin-bottom:1rem;}
+  .psh-search{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;}
+  .psh-search input[type=search]{height:2.4rem;border:1px solid var(--border,#d9dee6);border-radius:.6rem;padding:0 .8rem;min-width:18rem;}
+  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr));gap:.75rem;margin:1rem 0;}
+  .kpi{background:#fff;border:1px solid var(--border,#e5e7eb);border-radius:.7rem;padding:.8rem .9rem;}
+  .kpi .k-label{font-size:.72rem;letter-spacing:.05em;text-transform:uppercase;color:var(--muted,#6b7280);font-weight:800;}
+  .kpi .k-value{font-size:1.3rem;font-weight:900;color:var(--text);margin-top:.15rem;}
+  .kpi .k-sub{font-size:.75rem;color:var(--muted,#6b7280);}
+  .psh-two{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
+  @media (max-width:820px){.psh-two{grid-template-columns:1fr;}.psh-search input[type=search]{min-width:12rem;}}
+  .psh-prodhead{display:flex;gap:1rem;align-items:center;flex-wrap:wrap;}
+  .psh-thumb{width:64px;height:64px;object-fit:contain;background:#fff;border:1px solid var(--border,#e5e7eb);border-radius:.6rem;}
+  .recon-chip{display:inline-block;font-weight:800;font-size:.8rem;border-radius:2rem;padding:.1rem .7rem;}
+  .recon-chip.ok{background:#dcfce7;color:#166534;}
+  .recon-chip.warn{background:#fee2e2;color:#991b1b;}
+  .psh-detail .num{font-variant-numeric:tabular-nums;}
+  .psh-detail tr.nostock{opacity:.55;}
+</style>
+
+<div class="product-detail-page">
+  <div class="psh-head">
+    <div>
+      <h2 style="margin:0;">Product Sales History</h2>
+      <div class="muted small">Search a product to see its complete sales path — store, date/time, orders and the full stock ledger.</div>
+    </div>
+    <form method="get" class="psh-search">
+      <input type="search" name="q" value="{{ q }}" placeholder="Product name or barcode" autofocus>
+      <button class="btn btn-primary" type="submit">Search</button>
+      {% if product %}<a class="btn btn-outline-secondary" href="{% url 'product_sales_history' %}">Change product</a>{% endif %}
+    </form>
+  </div>
+
+  {% if not product %}
+    {% if q %}
+      <div class="card-shell p-4">
+        {% if matches %}
+          <div class="table-shell">
+            <table class="table table-sm align-middle">
+              <thead><tr><th>Brand</th><th>Product</th><th>Barcode</th><th class="text-end">Total sold</th><th></th></tr></thead>
+              <tbody>
+                {% for m in matches %}
+                  <tr>
+                    <td>{{ m.brand }}</td>
+                    <td>{{ m.display_name }}</td>
+                    <td class="muted small">{{ m.barcode }}</td>
+                    <td class="text-end num">{{ m.sold }}</td>
+                    <td class="text-end"><a class="btn btn-sm btn-primary" href="?product={{ m.id }}">View history</a></td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="text-center py-4 muted">No products match &ldquo;{{ q }}&rdquo;.</p>
+        {% endif %}
+      </div>
+    {% else %}
+      <div class="card-shell p-4"><p class="text-center py-5 muted">Type a product name or barcode above to begin.</p></div>
+    {% endif %}
+  {% else %}
+
+    <div class="card-shell p-4">
+      <div class="psh-prodhead">
+        {% with img=product.images.first %}
+          {% if img %}<img class="psh-thumb" src="{{ img.image.url }}" alt="{{ product.display_name }}">{% endif %}
+        {% endwith %}
+        <div style="flex:1 1 16rem;">
+          <h3 style="margin:0;">{{ product.display_name }}</h3>
+          <div class="muted small">{{ product.brand }} · Barcode {{ product.barcode }}{% if product.category %} · {{ product.category.name }}{% endif %}</div>
+        </div>
+        <div class="text-end">
+          <div class="muted small">On hand</div>
+          <div style="font-size:1.4rem;font-weight:900;">{{ on_hand }}</div>
+          {% if stock_ledger.has_discrepancy %}
+            <span class="recon-chip warn">{{ stock_ledger.unexplained }} unexplained</span>
+          {% else %}
+            <span class="recon-chip ok">Reconciled</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <form method="get" class="row g-2 align-items-end mt-3">
+        <input type="hidden" name="product" value="{{ product.id }}">
+        <div class="col-auto">
+          <label class="form-label small">Start</label>
+          <input type="date" name="start_date" value="{{ start_date }}" class="form-control form-control-sm">
+        </div>
+        <div class="col-auto">
+          <label class="form-label small">End</label>
+          <input type="date" name="end_date" value="{{ end_date }}" class="form-control form-control-sm">
+        </div>
+        <div class="col-auto">
+          <label class="form-label small">Store</label>
+          <select name="store" class="form-select form-select-sm">
+            <option value="">All stores</option>
+            {% for st in stores %}
+              <option value="{{ st.id }}"{% if selected_store_id == st.id|stringformat:'s' %} selected{% endif %}>{{ st.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-auto">
+          <button class="btn btn-primary btn-sm" type="submit">Apply</button>
+          <a class="btn btn-outline-secondary btn-sm" href="?product={{ product.id }}">Reset</a>
+        </div>
+      </form>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi"><div class="k-label">Units sold</div><div class="k-value">{{ total_qty }}</div><div class="k-sub">across {{ order_count }} order{{ order_count|pluralize }}</div></div>
+      <div class="kpi"><div class="k-label">Revenue</div><div class="k-value">EUR {{ total_rev|floatformat:2 }}</div><div class="k-sub">avg EUR {{ avg_unit|floatformat:2 }}/unit</div></div>
+      {% if show_profit %}<div class="kpi"><div class="k-label">Net profit</div><div class="k-value">EUR {{ total_profit|floatformat:2 }}</div><div class="k-sub">Admin only</div></div>{% endif %}
+      <div class="kpi"><div class="k-label">On hand</div><div class="k-value">{{ on_hand }}</div><div class="k-sub">Σ batch remaining</div></div>
+      <div class="kpi"><div class="k-label">First sale</div><div class="k-value" style="font-size:1rem;">{% if first_sale %}{{ first_sale|date:"Y-m-d" }}{% else %}—{% endif %}</div></div>
+      <div class="kpi"><div class="k-label">Last sale</div><div class="k-value" style="font-size:1rem;">{% if last_sale %}{{ last_sale|date:"Y-m-d" }}{% else %}—{% endif %}</div></div>
+    </div>
+
+    <div class="psh-two">
+      <div class="card-shell p-4">
+        <div class="panel-head"><div><h3>By store</h3></div></div>
+        <div class="table-shell">
+          <table class="table table-sm align-middle">
+            <thead><tr><th>Store</th><th class="text-end">Units</th><th class="text-end">Revenue</th></tr></thead>
+            <tbody>
+              {% for r in store_breakdown %}
+                <tr><td>{{ r.store }}</td><td class="text-end num">{{ r.qty }}</td><td class="text-end num">EUR {{ r.rev|floatformat:2 }}</td></tr>
+              {% empty %}
+                <tr><td colspan="3" class="text-center py-3 muted">No sales in range.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card-shell p-4">
+        <div class="panel-head"><div><h3>By month</h3></div></div>
+        <div class="table-shell">
+          <table class="table table-sm align-middle">
+            <thead><tr><th>Month</th><th class="text-end">Units</th><th class="text-end">Revenue</th></tr></thead>
+            <tbody>
+              {% for r in month_breakdown %}
+                <tr><td>{{ r.month }}</td><td class="text-end num">{{ r.qty }}</td><td class="text-end num">EUR {{ r.rev|floatformat:2 }}</td></tr>
+              {% empty %}
+                <tr><td colspan="3" class="text-center py-3 muted">No sales in range.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-shell p-4">
+      <div class="panel-head"><div><h3>Sales Detail</h3><p>Every sale line for this product{% if start_date or end_date or selected_store_id %} in the current filter{% endif %}.</p></div></div>
+      <div class="table-shell">
+        <table class="table table-sm align-middle psh-detail">
+          <thead>
+            <tr>
+              <th>When</th><th>Store</th><th>Order</th><th>Customer</th>
+              <th class="text-end">Qty</th><th class="text-end">Unit</th><th class="text-end">Subtotal</th>
+              <th>Payment</th>{% if show_profit %}<th class="text-end">Profit</th>{% endif %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in rows %}
+              <tr class="{% if not r.affects_stock %}nostock{% endif %}">
+                <td class="small">{% if r.at %}{{ r.at|date:"Y-m-d H:i" }}{% else %}—{% endif %}</td>
+                <td>{{ r.store }}</td>
+                <td>{% if r.order_id %}<a href="{{ r.detail_url }}">#{{ r.order_id }}</a>{% else %}<span class="muted">Legacy</span>{% endif %}</td>
+                <td>{% if r.customer_url %}<a href="{{ r.customer_url }}">{{ r.customer }}</a>{% else %}{{ r.customer }}{% endif %}</td>
+                <td class="text-end num">{{ r.qty }}</td>
+                <td class="text-end num">EUR {{ r.unit_price|floatformat:2 }}</td>
+                <td class="text-end num">EUR {{ r.line_total|floatformat:2 }}</td>
+                <td><span class="pay-pill">{{ r.payment }}</span>{% if not r.affects_stock %} <span class="muted small">(no stock)</span>{% endif %}</td>
+                {% if show_profit %}<td class="text-end num {% if r.profit < 0 %}text-danger{% endif %}">EUR {{ r.profit|floatformat:2 }}</td>{% endif %}
+              </tr>
+            {% empty %}
+              <tr><td colspan="{% if show_profit %}9{% else %}8{% endif %}" class="text-center py-4 muted">No sales for this product in the current filter.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {% if stock_ledger %}{% include 'stock/_stock_ledger.html' %}{% endif %}
+
+    <div class="mt-2"><a href="{% url 'product_detail' product.id %}" class="btn btn-outline-secondary btn-sm">&larr; Back to product</a></div>
+
+  {% endif %}
+</div>
+{% endblock %}

@@ -3914,3 +3914,89 @@ class StockLedgerServiceTests(TestCase):
         html = resp.content.decode("utf-8")
         self.assertIn("Stock Ledger", html)
         self.assertIn("Reconciled", html)
+
+
+class ProductSalesHistoryPageTests(TestCase):
+    def setUp(self):
+        from stock.models import Store
+        user_model = get_user_model()
+        self.mgr = user_model.objects.create_superuser(username="psh_mgr", password="pw123456")
+        self.client.login(username="psh_mgr", password="pw123456")
+        self.cat = Category.objects.create(name="Perfumes")
+        self.customer = Customer.objects.create(name="Dona Ana")
+        self.store = Store.objects.create(name="Amadora", code="AMD")
+        self.product = Product.objects.create(name="Asad Elixir", barcode="8400000009001",
+                                              brand="LATTAFA", category=self.cat,
+                                              default_price=Decimal("35"))
+        Purchase.objects.create(product=self.product, quantity=10, remaining=10, cost_price=Decimal("12"))
+        order = SaleOrder.objects.create(customer=self.customer, store=self.store)
+        with self.captureOnCommitCallbacks(execute=True):
+            Sale.objects.create(order=order, product=self.product, customer=self.customer,
+                                quantity=2, unit_price=Decimal("35"), payment_method="cash")
+
+    def test_search_lists_matching_products(self):
+        resp = self.client.get(reverse("product_sales_history"), {"q": "Asad"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertIsNone(resp.context.get("product"))
+        html = resp.content.decode("utf-8")
+        self.assertIn("Asad Elixir", html)
+        self.assertIn("?product=%d" % self.product.id, html)
+
+    def test_product_detail_shows_store_qty_and_ledger(self):
+        resp = self.client.get(reverse("product_sales_history"), {"product": self.product.id})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context["product"].id, self.product.id)
+        self.assertEqual(resp.context["total_qty"], 2)
+        self.assertEqual(resp.context["order_count"], 1)
+        html = resp.content.decode("utf-8")
+        self.assertIn("Amadora", html)          # store shown
+        self.assertIn("Sales Detail", html)
+        self.assertIn("Stock Ledger", html)     # ledger component included
+        self.assertIn("By store", html)
+
+    def test_store_filter_narrows_rows(self):
+        from stock.models import Store
+        other = Store.objects.create(name="Sintra", code="SIN")
+        resp = self.client.get(reverse("product_sales_history"),
+                               {"product": self.product.id, "store": other.id})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context["total_qty"], 0)  # sale was in Amadora, not Sintra
+
+    def test_employee_is_redirected(self):
+        user_model = get_user_model()
+        user_model.objects.create_user(username="psh_emp", password="pw123456")
+        self.client.logout()
+        self.client.login(username="psh_emp", password="pw123456")
+        resp = self.client.get(reverse("product_sales_history"), {"product": self.product.id})
+        self.assertEqual(resp.status_code, 302)
+
+
+class ProductDetailRecentSalesTests(TestCase):
+    def test_sales_history_limited_to_10_days_with_link(self):
+        user_model = get_user_model()
+        user_model.objects.create_superuser(username="pd_mgr", password="pw123456")
+        self.client.login(username="pd_mgr", password="pw123456")
+        cat = Category.objects.create(name="Perfumes")
+        customer = Customer.objects.create(name="Ana")
+        product = Product.objects.create(name="Yara", barcode="8400000009002", brand="B",
+                                         category=cat, default_price=Decimal("28"))
+        Purchase.objects.create(product=product, quantity=20, remaining=20, cost_price=Decimal("10"))
+        # a recent sale (today) and an old sale (40 days ago)
+        recent = SaleOrder.objects.create(customer=customer)
+        with self.captureOnCommitCallbacks(execute=True):
+            Sale.objects.create(order=recent, product=product, customer=customer,
+                                quantity=1, unit_price=Decimal("28"), payment_method="cash")
+        old = SaleOrder.objects.create(customer=customer)
+        old_sale = Sale.objects.create(order=old, product=product, customer=customer,
+                                       quantity=1, unit_price=Decimal("28"), payment_method="cash")
+        old_dt = timezone.now() - timezone.timedelta(days=40)
+        Sale.objects.filter(pk=old_sale.pk).update(date=old_dt)
+        SaleOrder.objects.filter(pk=old.pk).update(created_at=old_dt)
+
+        resp = self.client.get(reverse("product_detail", args=[product.id]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(resp.context["sales"]), 1)          # only the recent one
+        self.assertEqual(resp.context["sales_older_count"], 1)   # the 40-day-old one hidden
+        html = resp.content.decode("utf-8")
+        self.assertIn("View full sales history", html)
+        self.assertIn(reverse("product_sales_history"), html)

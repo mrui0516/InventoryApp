@@ -1436,7 +1436,20 @@ def product_detail_view(request, pk):
     )
 
     purchases = product.purchase_set.select_related('supplier').order_by('-date')
-    sales = product.sale_set.select_related('customer').order_by('-date')
+
+    # Sales History on this page shows only the last 10 days; the rest lives on the
+    # dedicated product sales-history page (linked via full_sales_url).
+    sales_base = (
+        product.sale_set
+        .annotate(business_at=Coalesce('order__created_at', 'date'))
+        .select_related('customer', 'order', 'order__store', 'store', 'order__customer')
+        .order_by('-business_at', '-id')
+    )
+    sales_total_count = sales_base.count()
+    recent_cutoff = timezone.localdate() - timedelta(days=10)
+    sales = list(sales_base.filter(business_at__date__gte=recent_cutoff))
+    sales_older_count = sales_total_count - len(sales)
+    full_sales_url = f"{reverse('product_sales_history')}?product={product.id}"
 
     total_stock = sum(p.remaining for p in purchases if p.remaining > 0)
     fifo_purchase = product.purchase_set.filter(remaining__gt=0).order_by('date').first()
@@ -1480,6 +1493,8 @@ def product_detail_view(request, pk):
         'product': product,
         'purchases': purchases,
         'sales': sales,
+        'sales_older_count': sales_older_count,
+        'full_sales_url': full_sales_url,
         'total_stock': total_stock,
         'fifo_price': fifo_price,
         'supplier_costs': supplier_costs,
@@ -1488,6 +1503,133 @@ def product_detail_view(request, pk):
         'show_sensitive': is_manager,
         'show_sales_sensitive': has_sales_sensitive_access(request.user),
     })
+
+
+@login_required
+def product_sales_history_view(request):
+    """Dedicated, deep sales page for one product: search by name, then show the
+    complete sales detail (store / date-time / order / customer / qty / price /
+    payment / profit*) plus the full stock ledger and per-store / per-month rollups."""
+    if not has_manager_access(request.user):
+        return redirect('sales_records')
+
+    q = request.GET.get('q', '').strip()
+    product_id = request.GET.get('product', '').strip()
+    start_str = request.GET.get('start_date', '').strip()
+    end_str = request.GET.get('end_date', '').strip()
+    store_id = request.GET.get('store', '').strip()
+    show_profit = bool(getattr(request.user, 'is_superuser', False))
+    payment_labels = dict(Sale.PAYMENT_METHOD_CHOICES)
+
+    context = {
+        'q': q,
+        'show_profit': show_profit,
+        'stores': Store.objects.order_by('name'),
+        'selected_store_id': store_id,
+        'start_date': start_str,
+        'end_date': end_str,
+    }
+
+    product = None
+    if product_id.isdigit():
+        product = (
+            Product.objects.filter(pk=int(product_id))
+            .select_related('category', 'brand_master').prefetch_related('images').first()
+        )
+
+    if not product:
+        matches = []
+        if q:
+            matches = list(
+                Product.objects.filter(
+                    Q(name__icontains=q) | Q(barcode__icontains=q)
+                    | Q(model__icontains=q) | Q(brand__icontains=q)
+                ).annotate(sold=Coalesce(Sum('sale__quantity'), 0)).order_by('brand', 'name')[:50]
+            )
+        context['matches'] = matches
+        return render(request, 'stock/product_sales_history.html', context)
+
+    context['product'] = product
+    context['stock_ledger'] = build_stock_ledger(product)
+    context['on_hand'] = sum(p.remaining for p in product.purchase_set.all())
+
+    sales_qs = (
+        Sale.objects.filter(product=product)
+        .annotate(business_at=Coalesce('order__created_at', 'date'))
+        .select_related('order', 'order__store', 'order__customer', 'customer', 'store')
+        .order_by('-business_at', '-id')
+    )
+
+    def _parse(s):
+        try:
+            return datetime.strptime(s, '%Y-%m-%d').date()
+        except Exception:
+            return None
+
+    sd, ed = _parse(start_str), _parse(end_str)
+    if sd:
+        sales_qs = sales_qs.filter(business_at__date__gte=sd)
+    if ed:
+        sales_qs = sales_qs.filter(business_at__date__lte=ed)
+    if store_id.isdigit():
+        sid = int(store_id)
+        sales_qs = sales_qs.filter(Q(order__store_id=sid) | Q(order__isnull=True, store_id=sid))
+
+    sales = list(sales_qs)
+    profit_map = sale_profit_map_for_sale_ids([s.id for s in sales]) if show_profit else {}
+
+    rows, store_agg, month_agg, order_ids = [], {}, {}, set()
+    total_qty, total_rev, total_profit = 0, Decimal('0.00'), Decimal('0.00')
+    for s in sales:
+        order = s.order
+        line_total = (s.unit_price or Decimal('0.00')) * s.quantity
+        store = order.store if (order and order.store_id) else s.store
+        store_name = store.name if store else '—'
+        cust = order.customer if (order and order.customer_id) else s.customer
+        at = timezone.localtime(s.business_at) if s.business_at else None
+        profit = profit_map.get(s.id, {}).get('profit', Decimal('0.00')) if show_profit else Decimal('0.00')
+        rows.append({
+            'at': at,
+            'store': store_name,
+            'order_id': order.id if order else None,
+            'detail_url': reverse('sale_order_detail', args=[order.id]) if order else None,
+            'customer': cust.name if cust else 'Walk-in / No customer',
+            'customer_url': reverse('customer_detail', args=[cust.id]) if cust else None,
+            'qty': s.quantity,
+            'unit_price': s.unit_price,
+            'line_total': line_total,
+            'payment': payment_labels.get(s.payment_method, (s.payment_method or 'Other').title()),
+            'profit': profit,
+            'affects_stock': order.affects_stock if order else True,
+        })
+        total_qty += s.quantity
+        total_rev += line_total
+        total_profit += profit
+        order_ids.add(order.id if order else f'legacy-{s.id}')
+        st = store_agg.setdefault(store_name, {'qty': 0, 'rev': Decimal('0.00')})
+        st['qty'] += s.quantity
+        st['rev'] += line_total
+        if at:
+            mm = month_agg.setdefault(at.strftime('%Y-%m'), {'qty': 0, 'rev': Decimal('0.00')})
+            mm['qty'] += s.quantity
+            mm['rev'] += line_total
+
+    context.update({
+        'rows': rows,
+        'total_qty': total_qty,
+        'total_rev': total_rev,
+        'total_profit': total_profit,
+        'order_count': len(order_ids),
+        'avg_unit': (total_rev / total_qty) if total_qty else Decimal('0.00'),
+        'store_breakdown': sorted(
+            ({'store': k, **v} for k, v in store_agg.items()), key=lambda r: -r['rev']),
+        'month_breakdown': sorted(
+            ({'month': k, **v} for k, v in month_agg.items()), key=lambda r: r['month'], reverse=True),
+        'first_sale': rows[-1]['at'] if rows else None,
+        'last_sale': rows[0]['at'] if rows else None,
+    })
+    return render(request, 'stock/product_sales_history.html', context)
+
 
 @login_required
 def edit_product_view(request, pk):

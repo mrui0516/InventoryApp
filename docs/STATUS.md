@@ -99,6 +99,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-07-28：新增**产品销售历史专页** `/sales-history/`（经理）——按产品名/条码搜索→选中后展示完整销售明细(时间/**店铺**/订单#/客户/数量/单价/小计/支付/利润*)+按店铺/按月汇总+KPI+复用的 Stock Ledger 完整流水;支持日期区间/店铺过滤。产品详情页 Sales History 精简为**仅最近 10 天**,其余通过"View full sales history →"跳转该专页(附旧单条数)。Stock Ledger 抽为共享片段 `_stock_ledger.html`。5 测试,213 通过。PRD F2.2.17。
 - 2026-07-28：产品详情新增 **Stock Ledger（完整库存流水，Layer 1 重建账）**——合并采购(+)/销售(−,尊重 `affects_stock`)/手动调整(±) 为一条时间线并算运行余额,与实际在库(Σremaining)对账;不符时红色横幅指出"X 件无法用已登记事件解释"(多为批次数量编辑/删除等未留痕的漏洞)。修正 total-stock 上调的双计(建批次+日志)。无迁移,只读;经理可见。5 测试,208 通过。往后记录"销售吃了哪个批次"的 StockMovement(Layer 2)为下一步。PRD F2.5.2.10。
 - 2026-07-28：销售记录页(经理)默认改为**本月销售日历**——月网格显示有销售的天(订单数+金额),点击弹窗看当日订单详情(含对应店铺,复用新片段 `_sales_order_entry.html`);顶部切月/年度视图/**按产品过滤整页**;年度趋势移到 `?view=year`,月柱点击进入该月日历;区间列表仅非日历模式渲染。KPI/图表沿用。新增 3 测试;更新 2 个旧测试(默认视图改变)。203 测试通过。PRD F2.2.16。
 - 2026-07-27：修复 Shopify 导出 CSV 的 `Product category` 列——原来写的是本地分类裸名 "Perfumes"，Shopify 标准分类法匹配不到 → 触发 ML 自动分类把香水误归到 Pet 节点。改为映射到全路径 `Health & Beauty > … > Perfumes & Colognes > Eaux de Parfum`（Google 列同理映射到 Perfume & Cologne）；`Type` 保持本地名不变。存量 203 个香水已通过 API 批量改为 Eaux de Parfum。200 测试通过。
