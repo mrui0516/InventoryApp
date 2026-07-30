@@ -83,6 +83,7 @@ from .services.order_corrections import (
 )
 from .services.profit import sale_profit_map_for_sale_ids
 from .services.stock_ops import consume_stock_fifo
+from .services.stock_ledger import build_stock_ledger
 from .services import rebuild_all_daily_summaries
 
 from openpyxl import Workbook
@@ -1470,6 +1471,11 @@ def product_detail_view(request, pk):
     priced = [e for e in supplier_costs if e['last_cost'] is not None]
     cheapest_supplier_id = min(priced, key=lambda e: e['last_cost'])['supplier_id'] if len(priced) > 1 else None
 
+    is_manager = has_manager_access(request.user)
+    # Full reconstructed stock ledger (managers only): every +/- with a running
+    # balance so a quantity discrepancy can be traced to where it leaked.
+    stock_ledger = build_stock_ledger(product) if is_manager else None
+
     return render(request, 'stock/product_detail.html', {
         'product': product,
         'purchases': purchases,
@@ -1478,7 +1484,8 @@ def product_detail_view(request, pk):
         'fifo_price': fifo_price,
         'supplier_costs': supplier_costs,
         'cheapest_supplier_id': cheapest_supplier_id,
-        'show_sensitive': has_manager_access(request.user),
+        'stock_ledger': stock_ledger,
+        'show_sensitive': is_manager,
         'show_sales_sensitive': has_sales_sensitive_access(request.user),
     })
 

@@ -468,6 +468,79 @@
           </div>
         </div>
       {% endif %}
+
+      {% if stock_ledger %}
+        <style>
+          .ledger-recon{border-radius:.7rem;padding:.75rem 1rem;margin:.25rem 0 1rem;font-size:.92rem;line-height:1.5;}
+          .ledger-recon.ok{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;}
+          .ledger-recon.warn{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;}
+          .ledger-table td,.ledger-table th{vertical-align:middle;}
+          .lp{display:inline-block;font-size:.72rem;font-weight:800;border-radius:.35rem;padding:.05rem .4rem;letter-spacing:.02em;}
+          .lp-in{background:#dcfce7;color:#166534;}
+          .lp-out{background:#fee2e2;color:#991b1b;}
+          .lp-adj{background:#e0e7ff;color:#3730a3;}
+          .ledger-table .pos{color:#16a34a;font-weight:800;}
+          .ledger-table .neg{color:#dc2626;font-weight:800;}
+          .ledger-table tr.ledger-nostock{opacity:.6;}
+        </style>
+        <div class="card-shell p-4">
+          <div class="panel-head">
+            <div>
+              <h3>Stock Ledger &middot; Full Path</h3>
+              <p>Every change to on-hand quantity with a running balance, to trace where a count drifts.</p>
+            </div>
+          </div>
+
+          {% if stock_ledger.has_discrepancy %}
+            <div class="ledger-recon warn">
+              <strong>{{ stock_ledger.unexplained }} unit{{ stock_ledger.unexplained|pluralize }} unexplained.</strong>
+              Logged events reconstruct to <b>{{ stock_ledger.reconstructed_balance }}</b>, but actual on-hand is <b>{{ stock_ledger.actual_onhand }}</b>
+              (difference {{ stock_ledger.difference }}). This gap has no matching purchase, sale, or adjustment &mdash; most likely a batch-quantity edit or a deleted row that left no log.
+            </div>
+          {% else %}
+            <div class="ledger-recon ok">
+              <strong>Reconciled.</strong> Running balance {{ stock_ledger.reconstructed_balance }} matches on-hand {{ stock_ledger.actual_onhand }} &mdash; every unit is accounted for.
+            </div>
+          {% endif %}
+
+          <div class="table-shell">
+            <table class="table table-sm align-middle ledger-table">
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Type</th>
+                  <th>Reference</th>
+                  <th class="text-end">In</th>
+                  <th class="text-end">Out</th>
+                  <th class="text-end">Balance</th>
+                  <th>Note</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for e in stock_ledger.events %}
+                  <tr class="ledger-{{ e.kind }}{% if e.no_stock %} ledger-nostock{% endif %}">
+                    <td class="small">{{ e.at|date:"Y-m-d H:i" }}</td>
+                    <td>
+                      {% if e.kind == 'purchase' %}<span class="lp lp-in">Purchase</span>
+                      {% elif e.kind == 'sale' %}<span class="lp lp-out">Sale</span>
+                      {% else %}<span class="lp lp-adj">Adjust</span>{% endif %}
+                      <div class="muted small">{{ e.label }}</div>
+                    </td>
+                    <td class="small">{{ e.ref }}{% if e.who %}<div class="muted">{{ e.who }}</div>{% endif %}</td>
+                    <td class="text-end">{% if e.in_qty %}<span class="pos">+{{ e.in_qty }}</span>{% endif %}</td>
+                    <td class="text-end">{% if e.out_qty %}<span class="neg">-{{ e.out_qty }}</span>{% endif %}</td>
+                    <td class="text-end fw-bold">{{ e.balance }}</td>
+                    <td class="small muted">{{ e.note }}{% if e.kind == 'purchase' and e.batch_remaining is not None %}{% if e.note %} &middot; {% endif %}remaining {{ e.batch_remaining }}{% endif %}</td>
+                  </tr>
+                {% empty %}
+                  <tr><td colspan="7" class="text-center py-4 muted">No stock movements yet.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <p class="muted small mt-2">Per-batch attribution of each sale (which batch it consumed) will be recorded going forward.</p>
+        </div>
+      {% endif %}
     </div>
   </div>
 </div>

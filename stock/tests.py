@@ -3839,3 +3839,78 @@ class SalesCalendarViewTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.context.get("show_trend"))
         self.assertFalse(resp.context.get("calendar_mode"))
+
+
+class StockLedgerServiceTests(TestCase):
+    def setUp(self):
+        self.cat = Category.objects.create(name="Perfumes")
+        self.customer = Customer.objects.create(name="Ana")
+        self.product = Product.objects.create(name="Asad", barcode="8300000009001",
+                                              brand="B", category=self.cat,
+                                              default_price=Decimal("30"))
+
+    def _sale(self, qty, affects=True):
+        order = SaleOrder.objects.create(customer=self.customer, affects_stock=affects)
+        with self.captureOnCommitCallbacks(execute=True):
+            Sale.objects.create(order=order, product=self.product, customer=self.customer,
+                                quantity=qty, unit_price=Decimal("30"), payment_method="cash")
+        return order
+
+    def _set_remaining(self, purchase, r):
+        Purchase.objects.filter(pk=purchase.pk).update(remaining=r)
+
+    def test_reconciles_when_everything_is_logged(self):
+        from stock.services.stock_ledger import build_stock_ledger
+        p = Purchase.objects.create(product=self.product, quantity=10, remaining=10, cost_price=Decimal("10"))
+        self._sale(3, affects=True)
+        self._set_remaining(p, 7)
+        led = build_stock_ledger(self.product)
+        self.assertEqual(led["reconstructed_balance"], 7)
+        self.assertEqual(led["actual_onhand"], 7)
+        self.assertFalse(led["has_discrepancy"])
+
+    def test_untracked_leak_shows_discrepancy(self):
+        from stock.services.stock_ledger import build_stock_ledger
+        p = Purchase.objects.create(product=self.product, quantity=10, remaining=10, cost_price=Decimal("10"))
+        self._sale(3, affects=True)
+        # someone edited the batch remaining/quantity with no log -> 2 units vanish
+        self._set_remaining(p, 5)
+        led = build_stock_ledger(self.product)
+        self.assertEqual(led["reconstructed_balance"], 7)
+        self.assertEqual(led["actual_onhand"], 5)
+        self.assertEqual(led["difference"], -2)
+        self.assertEqual(led["unexplained"], 2)
+        self.assertTrue(led["has_discrepancy"])
+
+    def test_no_stock_sale_flagged_and_not_subtracted(self):
+        from stock.services.stock_ledger import build_stock_ledger
+        Purchase.objects.create(product=self.product, quantity=10, remaining=10, cost_price=Decimal("10"))
+        self._sale(3, affects=False)
+        led = build_stock_ledger(self.product)
+        self.assertEqual(led["reconstructed_balance"], 10)
+        self.assertFalse(led["has_discrepancy"])
+        sale_events = [e for e in led["events"] if e["kind"] == "sale"]
+        self.assertTrue(sale_events[0]["no_stock"])
+        self.assertEqual(sale_events[0]["out_qty"], 0)
+
+    def test_total_stock_increase_not_double_counted(self):
+        from stock.models import StockAdjustmentLog
+        from stock.services.stock_ledger import build_stock_ledger
+        Purchase.objects.create(product=self.product, quantity=10, remaining=10, cost_price=Decimal("0"))
+        StockAdjustmentLog.objects.create(product=self.product, adjustment_type="total_stock",
+                                          old_value=0, new_value=10)
+        led = build_stock_ledger(self.product)
+        self.assertEqual(led["reconstructed_balance"], 10)  # not 20
+        self.assertEqual(led["actual_onhand"], 10)
+        self.assertFalse(led["has_discrepancy"])
+
+    def test_product_detail_renders_ledger_for_manager(self):
+        Purchase.objects.create(product=self.product, quantity=4, remaining=4, cost_price=Decimal("10"))
+        user_model = get_user_model()
+        user_model.objects.create_superuser(username="led_mgr", password="pw123456")
+        self.client.login(username="led_mgr", password="pw123456")
+        resp = self.client.get(reverse("product_detail", args=[self.product.id]))
+        self.assertEqual(resp.status_code, 200)
+        html = resp.content.decode("utf-8")
+        self.assertIn("Stock Ledger", html)
+        self.assertIn("Reconciled", html)
