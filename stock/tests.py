@@ -3949,9 +3949,10 @@ class ProductSalesHistoryPageTests(TestCase):
         self.assertEqual(resp.context["total_qty"], 2)
         self.assertEqual(resp.context["order_count"], 1)
         html = resp.content.decode("utf-8")
-        self.assertIn("Amadora", html)          # store shown
-        self.assertIn("Sales Detail", html)
-        self.assertIn("Stock Ledger", html)     # ledger component included
+        self.assertIn("Amadora", html)          # store shown on the merged ledger row
+        # Sales Detail is merged into the ledger: one timeline carrying store + running balance
+        self.assertIn("Sales &amp; Stock Ledger", html)
+        self.assertIn("Balance", html)          # running balance column present
         self.assertIn("By store", html)
 
     def test_store_filter_narrows_rows(self):

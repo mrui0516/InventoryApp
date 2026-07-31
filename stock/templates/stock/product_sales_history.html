@@ -18,8 +18,6 @@
   .recon-chip{display:inline-block;font-weight:800;font-size:.8rem;border-radius:2rem;padding:.1rem .7rem;}
   .recon-chip.ok{background:#dcfce7;color:#166534;}
   .recon-chip.warn{background:#fee2e2;color:#991b1b;}
-  .psh-detail .num{font-variant-numeric:tabular-nums;}
-  .psh-detail tr.nostock{opacity:.55;}
 </style>
 
 <div class="product-detail-page">
@@ -149,38 +147,6 @@
             </tbody>
           </table>
         </div>
-      </div>
-    </div>
-
-    <div class="card-shell p-4">
-      <div class="panel-head"><div><h3>Sales Detail</h3><p>Every sale line for this product{% if start_date or end_date or selected_store_id %} in the current filter{% endif %}.</p></div></div>
-      <div class="table-shell">
-        <table class="table table-sm align-middle psh-detail">
-          <thead>
-            <tr>
-              <th>When</th><th>Store</th><th>Order</th><th>Customer</th>
-              <th class="text-end">Qty</th><th class="text-end">Unit</th><th class="text-end">Subtotal</th>
-              <th>Payment</th>{% if show_profit %}<th class="text-end">Profit</th>{% endif %}
-            </tr>
-          </thead>
-          <tbody>
-            {% for r in rows %}
-              <tr class="{% if not r.affects_stock %}nostock{% endif %}">
-                <td class="small">{% if r.at %}{{ r.at|date:"Y-m-d H:i" }}{% else %}—{% endif %}</td>
-                <td>{{ r.store }}</td>
-                <td>{% if r.order_id %}<a href="{{ r.detail_url }}">#{{ r.order_id }}</a>{% else %}<span class="muted">Legacy</span>{% endif %}</td>
-                <td>{% if r.customer_url %}<a href="{{ r.customer_url }}">{{ r.customer }}</a>{% else %}{{ r.customer }}{% endif %}</td>
-                <td class="text-end num">{{ r.qty }}</td>
-                <td class="text-end num">EUR {{ r.unit_price|floatformat:2 }}</td>
-                <td class="text-end num">EUR {{ r.line_total|floatformat:2 }}</td>
-                <td><span class="pay-pill">{{ r.payment }}</span>{% if not r.affects_stock %} <span class="muted small">(no stock)</span>{% endif %}</td>
-                {% if show_profit %}<td class="text-end num {% if r.profit < 0 %}text-danger{% endif %}">EUR {{ r.profit|floatformat:2 }}</td>{% endif %}
-              </tr>
-            {% empty %}
-              <tr><td colspan="{% if show_profit %}9{% else %}8{% endif %}" class="text-center py-4 muted">No sales for this product in the current filter.</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
       </div>
     </div>
 

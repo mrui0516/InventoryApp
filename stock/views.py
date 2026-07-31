@@ -1550,8 +1550,19 @@ def product_sales_history_view(request):
         return render(request, 'stock/product_sales_history.html', context)
 
     context['product'] = product
-    context['stock_ledger'] = build_stock_ledger(product)
+    ledger = build_stock_ledger(product)
+    context['stock_ledger'] = ledger
+    context['ledger_detailed'] = True  # merged Sales Detail + Stock Ledger view
     context['on_hand'] = sum(p.remaining for p in product.purchase_set.all())
+
+    # Profit for the whole ledger (every sale, unfiltered) computed once and reused
+    # both for the merged ledger rows and the filtered KPI totals below.
+    ledger_sale_ids = [e['id'] for e in ledger['events'] if e['kind'] == 'sale']
+    profit_map = sale_profit_map_for_sale_ids(ledger_sale_ids) if show_profit else {}
+    if show_profit:
+        for e in ledger['events']:
+            if e['kind'] == 'sale':
+                e['profit'] = profit_map.get(e['id'], {}).get('profit')
 
     sales_qs = (
         Sale.objects.filter(product=product)
@@ -1576,7 +1587,6 @@ def product_sales_history_view(request):
         sales_qs = sales_qs.filter(Q(order__store_id=sid) | Q(order__isnull=True, store_id=sid))
 
     sales = list(sales_qs)
-    profit_map = sale_profit_map_for_sale_ids([s.id for s in sales]) if show_profit else {}
 
     rows, store_agg, month_agg, order_ids = [], {}, {}, set()
     total_qty, total_rev, total_profit = 0, Decimal('0.00'), Decimal('0.00')

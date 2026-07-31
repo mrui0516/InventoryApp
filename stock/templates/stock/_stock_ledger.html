@@ -9,13 +9,16 @@
   .lp-adj{background:#e0e7ff;color:#3730a3;}
   .ledger-table .pos{color:#16a34a;font-weight:800;}
   .ledger-table .neg{color:#dc2626;font-weight:800;}
+  .ledger-table .num{font-variant-numeric:tabular-nums;}
   .ledger-table tr.ledger-nostock{opacity:.6;}
+  .ledger-table tbody tr.ledger-sale td{background:#fcfdff;}
+  .ledger-bal{font-weight:800;background:#f8fafc;}
 </style>
 <div class="card-shell p-4">
   <div class="panel-head">
     <div>
-      <h3>Stock Ledger &middot; Full Path</h3>
-      <p>Every change to on-hand quantity with a running balance, to trace where a count drifts.</p>
+      <h3>{% if ledger_detailed %}Sales &amp; Stock Ledger &middot; Full Path{% else %}Stock Ledger &middot; Full Path{% endif %}</h3>
+      <p>{% if ledger_detailed %}Every purchase, sale and adjustment on one timeline with a running balance &mdash; sale rows carry store, customer, price{% if show_profit %}, payment and profit{% else %} and payment{% endif %}. Complete path (filters above narrow the summary, not this table).{% else %}Every change to on-hand quantity with a running balance, to trace where a count drifts.{% endif %}</p>
     </div>
   </div>
 
@@ -37,10 +40,16 @@
         <tr>
           <th>When</th>
           <th>Type</th>
-          <th>Reference</th>
+          {% if ledger_detailed %}<th>Store</th><th>Party</th>{% else %}<th>Reference</th>{% endif %}
           <th class="text-end">In</th>
           <th class="text-end">Out</th>
           <th class="text-end">Balance</th>
+          {% if ledger_detailed %}
+            <th class="text-end">Unit</th>
+            <th class="text-end">Subtotal</th>
+            <th>Payment</th>
+            {% if show_profit %}<th class="text-end">Profit</th>{% endif %}
+          {% endif %}
           <th>Note</th>
         </tr>
       </thead>
@@ -52,16 +61,31 @@
               {% if e.kind == 'purchase' %}<span class="lp lp-in">Purchase</span>
               {% elif e.kind == 'sale' %}<span class="lp lp-out">Sale</span>
               {% else %}<span class="lp lp-adj">Adjust</span>{% endif %}
-              <div class="muted small">{{ e.label }}</div>
+              <div class="muted small">
+                {% if ledger_detailed and e.order_id %}<a href="{% url 'sale_order_detail' e.order_id %}">{{ e.label }}</a>{% else %}{{ e.label }}{% endif %}
+              </div>
             </td>
-            <td class="small">{{ e.ref }}{% if e.who %}<div class="muted">{{ e.who }}</div>{% endif %}</td>
+            {% if ledger_detailed %}
+              <td class="small">{{ e.store|default:"—" }}</td>
+              <td class="small">
+                {% if e.customer_id %}<a href="{% url 'customer_detail' e.customer_id %}">{{ e.party }}</a>{% else %}{{ e.party|default:"—" }}{% endif %}
+              </td>
+            {% else %}
+              <td class="small">{{ e.ref }}{% if e.who %}<div class="muted">{{ e.who }}</div>{% endif %}</td>
+            {% endif %}
             <td class="text-end">{% if e.in_qty %}<span class="pos">+{{ e.in_qty }}</span>{% endif %}</td>
             <td class="text-end">{% if e.out_qty %}<span class="neg">-{{ e.out_qty }}</span>{% endif %}</td>
-            <td class="text-end fw-bold">{{ e.balance }}</td>
+            <td class="text-end ledger-bal num">{{ e.balance }}</td>
+            {% if ledger_detailed %}
+              <td class="text-end num">{% if e.unit_price is not None %}EUR {{ e.unit_price|floatformat:2 }}{% else %}—{% endif %}</td>
+              <td class="text-end num">{% if e.line_total is not None %}EUR {{ e.line_total|floatformat:2 }}{% else %}—{% endif %}</td>
+              <td class="small">{% if e.payment %}<span class="pay-pill">{{ e.payment }}</span>{% else %}—{% endif %}</td>
+              {% if show_profit %}<td class="text-end num {% if e.profit and e.profit < 0 %}text-danger{% endif %}">{% if e.profit is not None %}EUR {{ e.profit|floatformat:2 }}{% else %}—{% endif %}</td>{% endif %}
+            {% endif %}
             <td class="small muted">{{ e.note }}{% if e.kind == 'purchase' and e.batch_remaining is not None %}{% if e.note %} &middot; {% endif %}remaining {{ e.batch_remaining }}{% endif %}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="7" class="text-center py-4 muted">No stock movements yet.</td></tr>
+          <tr><td colspan="{% if ledger_detailed %}{% if show_profit %}11{% else %}10{% endif %}{% else %}7{% endif %}" class="text-center py-4 muted">No stock movements yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>

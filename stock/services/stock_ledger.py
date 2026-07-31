@@ -26,6 +26,7 @@ from ..models import Purchase, Sale, StockAdjustmentLog
 
 def build_stock_ledger(product):
     events = []
+    pay_labels = dict(Sale.PAYMENT_METHOD_CHOICES)
 
     for p in product.purchase_set.select_related('supplier', 'inbound_order').all():
         events.append({
@@ -43,12 +44,21 @@ def build_stock_ledger(product):
             'batch_remaining': p.remaining,
             'note': '',
             'no_stock': False,
+            # merged sales/stock columns
+            'store': '',
+            'party': p.supplier.name if p.supplier_id else '',
+            'unit_price': p.cost_price,
+            'line_total': (p.cost_price * p.quantity) if p.cost_price is not None else None,
+            'payment': '',
+            'profit': None,
+            'order_id': None,
+            'customer_id': None,
         })
 
     sales = (
         Sale.objects
         .filter(product=product)
-        .select_related('order', 'order__customer', 'customer')
+        .select_related('order', 'order__store', 'order__customer', 'customer', 'store')
         .all()
     )
     for s in sales:
@@ -56,6 +66,8 @@ def build_stock_ledger(product):
         affects = order.affects_stock if order else True
         at = order.created_at if (order and order.created_at) else s.date
         cust = order.customer if (order and order.customer_id) else s.customer
+        store = order.store if (order and order.store_id) else s.store
+        line_total = (s.unit_price or 0) * s.quantity
         events.append({
             'at': at,
             'kind': 'sale',
@@ -71,6 +83,15 @@ def build_stock_ledger(product):
             'batch_remaining': None,
             'note': ('' if affects else 'Recorded — did NOT affect stock'),
             'no_stock': not affects,
+            # merged sales/stock columns
+            'store': store.name if store else '',
+            'party': cust.name if cust else 'Walk-in / No customer',
+            'unit_price': s.unit_price,
+            'line_total': line_total,
+            'payment': pay_labels.get(s.payment_method, (s.payment_method or 'Other').title()),
+            'profit': None,  # attached by the caller when profit is shown
+            'order_id': order.id if order else None,
+            'customer_id': cust.id if cust else None,
         })
 
     for a in (
@@ -100,6 +121,15 @@ def build_stock_ledger(product):
             'note': (f'{a.old_value} → {a.new_value}'
                      + (' (created batch)' if created_batch else '')),
             'no_stock': created_batch,
+            # merged sales/stock columns
+            'store': '',
+            'party': a.user.get_username() if a.user_id else '',
+            'unit_price': None,
+            'line_total': None,
+            'payment': '',
+            'profit': None,
+            'order_id': None,
+            'customer_id': None,
         })
 
     now = timezone.now()
