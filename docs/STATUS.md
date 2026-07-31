@@ -99,6 +99,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-07-31：产品详情页移除 **Stock Ledger · Full Path** 分区(已融合进 `/sales-history/` 专页,产品页仅保留"View full sales history"链接,不再重复);产品详情视图不再计算台账。213 通过。
 - 2026-07-31：产品销售历史专页 `/sales-history/` 将 **Sales Detail 与 Stock Ledger 融合成一条时间线**——销售明细(店铺/客户/单价/小计/支付/利润*)内联进 Stock Ledger 的销售行,配运行余额+对账横幅,便于一眼观察"卖了什么、库存怎么走";明细的独立表格移除。利润改为对全量流水一次性计算并复用。共享片段 `_stock_ledger.html` 新增 `ledger_detailed` 详细模式(产品详情页仍用精简模式)。213 通过。PRD F2.2.17。
 - 2026-07-28：新增**产品销售历史专页** `/sales-history/`（经理）——按产品名/条码搜索→选中后展示完整销售明细(时间/**店铺**/订单#/客户/数量/单价/小计/支付/利润*)+按店铺/按月汇总+KPI+复用的 Stock Ledger 完整流水;支持日期区间/店铺过滤。产品详情页 Sales History 精简为**仅最近 10 天**,其余通过"View full sales history →"跳转该专页(附旧单条数)。Stock Ledger 抽为共享片段 `_stock_ledger.html`。5 测试,213 通过。PRD F2.2.17。
 - 2026-07-28：产品详情新增 **Stock Ledger（完整库存流水，Layer 1 重建账）**——合并采购(+)/销售(−,尊重 `affects_stock`)/手动调整(±) 为一条时间线并算运行余额,与实际在库(Σremaining)对账;不符时红色横幅指出"X 件无法用已登记事件解释"(多为批次数量编辑/删除等未留痕的漏洞)。修正 total-stock 上调的双计(建批次+日志)。无迁移,只读;经理可见。5 测试,208 通过。往后记录"销售吃了哪个批次"的 StockMovement(Layer 2)为下一步。PRD F2.5.2.10。

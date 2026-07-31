@@ -3904,7 +3904,9 @@ class StockLedgerServiceTests(TestCase):
         self.assertEqual(led["actual_onhand"], 10)
         self.assertFalse(led["has_discrepancy"])
 
-    def test_product_detail_renders_ledger_for_manager(self):
+    def test_product_detail_links_to_full_sales_history(self):
+        # The full Stock Ledger moved to the dedicated /sales-history/ page; the
+        # product page no longer renders it and instead links there.
         Purchase.objects.create(product=self.product, quantity=4, remaining=4, cost_price=Decimal("10"))
         user_model = get_user_model()
         user_model.objects.create_superuser(username="led_mgr", password="pw123456")
@@ -3912,8 +3914,8 @@ class StockLedgerServiceTests(TestCase):
         resp = self.client.get(reverse("product_detail", args=[self.product.id]))
         self.assertEqual(resp.status_code, 200)
         html = resp.content.decode("utf-8")
-        self.assertIn("Stock Ledger", html)
-        self.assertIn("Reconciled", html)
+        self.assertNotIn("Stock Ledger", html)
+        self.assertIn("?product=%d" % self.product.id, html)
 
 
 class ProductSalesHistoryPageTests(TestCase):
