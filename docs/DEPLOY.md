@@ -11,7 +11,7 @@
 ---
 
 ## 阶段 0 · 准备
-1. 注册 **eu.pythonanywhere.com** 账号,选 **付费档**(最低 Hacker $5/月即可,免费档不能绑自己的域名 + HTTPS)。
+1. 注册 **eu.pythonanywhere.com** 账号,选 **Developer 档($10/月,当前最便宜的付费档)**。免费档不行:不能绑自定义域名、外网只给白名单(会挡掉 Shopify/Cloudinary 调用)、没有定时任务(备份)。可先用免费档试跑,确认能登录后再升级。不需要更贵的 Custom 档。
 2. **给 PythonAnywhere 账号本身开 2FA**(Account → Security)。这个账号被盗比系统被攻破更致命。
 3. 确认 **Amen 上的 `scentory.pt` 会自动续费**、绑好付款卡 —— 域名一旦被回收,店铺和后台一起没。
 
