@@ -13,6 +13,12 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 import os
 import socket
+import sys
+
+# True while running the test suite (`manage.py test`). Django forces DEBUG=False
+# during tests, which would otherwise switch on the production block below and make
+# the test client's http requests redirect to https — so guard SSL redirect on it.
+TESTING = 'test' in sys.argv
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -65,6 +71,39 @@ if _lan_ip and _lan_ip not in ALLOWED_HOSTS:
 #   CSRF_TRUSTED_ORIGINS=https://pos.example.com
 ALLOWED_HOSTS += [h.strip() for h in os.environ.get('ALLOWED_HOSTS', '').split(',') if h.strip()]
 CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',') if o.strip()]
+
+
+# ---------------------------------------------------------------------------
+# Production security hardening.
+# Applied whenever DEBUG is False — i.e. on the public site (PythonAnywhere EU),
+# never in local dev. Assumes the app is served over HTTPS behind a proxy
+# (PythonAnywhere / Cloudflare) that sets the X-Forwarded-Proto header.
+# Anything below can be tuned via env without a code change.
+# https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
+# ---------------------------------------------------------------------------
+if not DEBUG:
+    # Trust the proxy's X-Forwarded-Proto so Django knows the request came in over
+    # HTTPS (otherwise SSL redirect + secure cookies never trigger behind a proxy).
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    # Send any plain-http request straight to https. Env-overridable so a redirect
+    # loop (e.g. a misconfigured proxy) can be disabled without redeploying code.
+    SECURE_SSL_REDIRECT = (not TESTING) and os.environ.get('SECURE_SSL_REDIRECT', 'True') == 'True'
+    # Cookies (login session + CSRF) only ever travel over HTTPS.
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    # HSTS: tell browsers to always use HTTPS for this host. Ramp up — start at 1h
+    # so a mistake is short-lived; raise to 31536000 (1 year) once confident.
+    SECURE_HSTS_SECONDS = int(os.environ.get('SECURE_HSTS_SECONDS', '3600'))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = os.environ.get('SECURE_HSTS_INCLUDE_SUBDOMAINS', 'False') == 'True'
+    SECURE_HSTS_PRELOAD = os.environ.get('SECURE_HSTS_PRELOAD', 'False') == 'True'
+    # Don't let browsers MIME-sniff; block framing (clickjacking).
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY'
+    # Auto-logout: expire the session after a period of inactivity (sliding), so a
+    # forgotten login on a shared/personal device doesn't stay open forever.
+    SESSION_COOKIE_AGE = int(os.environ.get('SESSION_COOKIE_AGE', '43200'))  # 12h
+    SESSION_SAVE_EVERY_REQUEST = True
 
 
 # Application definition

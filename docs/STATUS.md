@@ -99,6 +99,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-08-04：**上线准备(第一阶段:生产安全加固)**——`settings.py` 新增 `if not DEBUG` 生产块:`SECURE_PROXY_SSL_HEADER`、强制 HTTPS(可环境变量关、测试运行时自动跳过避免重定向)、安全+HttpOnly Cookie、HSTS(3600s 起步渐进)、防嗅探、`X_FRAME_OPTIONS=DENY`、12h 滑动会话自动登出。只在线上 `DEBUG=False` 生效,本地/测试不受影响(`check --deploy` 已验证,213 通过)。新增 **docs/DEPLOY.md**——PythonAnywhere 欧盟区分步上线手册(域名 `gestao.scentory.pt` 走 Amen CNAME、环境变量、WSGI、静态文件、备份 3-2-1)。下一阶段:django-axes 登录锁定 + 2FA。
 - 2026-07-31：产品详情页移除 **Stock Ledger · Full Path** 分区(已融合进 `/sales-history/` 专页,产品页仅保留"View full sales history"链接,不再重复);产品详情视图不再计算台账。213 通过。
 - 2026-07-31：产品销售历史专页 `/sales-history/` 将 **Sales Detail 与 Stock Ledger 融合成一条时间线**——销售明细(店铺/客户/单价/小计/支付/利润*)内联进 Stock Ledger 的销售行,配运行余额+对账横幅,便于一眼观察"卖了什么、库存怎么走";明细的独立表格移除。利润改为对全量流水一次性计算并复用。共享片段 `_stock_ledger.html` 新增 `ledger_detailed` 详细模式(产品详情页仍用精简模式)。213 通过。PRD F2.2.17。
 - 2026-07-28：新增**产品销售历史专页** `/sales-history/`（经理）——按产品名/条码搜索→选中后展示完整销售明细(时间/**店铺**/订单#/客户/数量/单价/小计/支付/利润*)+按店铺/按月汇总+KPI+复用的 Stock Ledger 完整流水;支持日期区间/店铺过滤。产品详情页 Sales History 精简为**仅最近 10 天**,其余通过"View full sales history →"跳转该专页(附旧单条数)。Stock Ledger 抽为共享片段 `_stock_ledger.html`。5 测试,213 通过。PRD F2.2.17。
