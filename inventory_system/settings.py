@@ -201,7 +201,10 @@ USE_I18N = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = '/static/'
-STATICFILES_DIRS = [ BASE_DIR / "static" ]
+# Only include the top-level static/ dir if it actually has files. It's empty in
+# the repo (real assets live in each app's static/), and an empty/absent dir makes
+# collectstatic emit a W004 warning on the server — avoid the noise.
+STATICFILES_DIRS = [BASE_DIR / "static"] if (BASE_DIR / "static").exists() else []
 # collectstatic target; WhiteNoise serves from here when DEBUG=False.
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
