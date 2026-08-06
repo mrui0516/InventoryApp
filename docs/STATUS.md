@@ -99,7 +99,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
-- 2026-08-06：**已上线到 PythonAnywhere 欧盟区**(scentory.eu.pythonanywhere.com,Python 3.13,数据+图片已迁移,PA 为准数据源)。新增**备份体系**:`manage.py backup_db`(SQLite 在线备份 API,一致性快照+完整性校验+保留N份)供 PA 每日定时任务用;`scripts/pull_backup_from_pa.py`(纯标准库,PA API 拉最新快照到 U盘,含"错过即补跑",U盘没插则安全跳过)。docs/BACKUP.md 重写为云端模型;`backups/`+`scripts/.pa_backup.ini` 已 gitignore。修复:requirements 缺 `qrcode`;STATICFILES_DIRS 空目录守卫。1 测试。下一步:Shopify 库存双向同步。
+- 2026-08-06：**已上线到 PythonAnywhere 欧盟区**(scentory.eu.pythonanywhere.com,Python 3.13,数据+图片已迁移,PA 为准数据源)。新增**备份体系**:`manage.py backup_db`(SQLite 在线备份 API,一致性快照+完整性校验+保留N份)供 PA 每日定时任务用;`scripts/pull_backup_from_pa.py`(纯标准库,PA API 拉最新快照到 U盘,含"错过即补跑",U盘没插则安全跳过)。docs/BACKUP.md 重写为云端模型;`backups/`+`scripts/.pa_backup.ini` 已 gitignore。另加**仪表盘一键下载按钮**(经理可见,`download_db_backup` 视图 → 一致性快照直接下载,可配合浏览器下载目录=U盘)。修复:requirements 缺 `qrcode`;STATICFILES_DIRS 空目录守卫。3 测试。下一步:Shopify 库存双向同步。
 - 2026-08-04：**上线准备(第一阶段:生产安全加固)**——`settings.py` 新增 `if not DEBUG` 生产块:`SECURE_PROXY_SSL_HEADER`、强制 HTTPS(可环境变量关、测试运行时自动跳过避免重定向)、安全+HttpOnly Cookie、HSTS(3600s 起步渐进)、防嗅探、`X_FRAME_OPTIONS=DENY`、12h 滑动会话自动登出。只在线上 `DEBUG=False` 生效,本地/测试不受影响(`check --deploy` 已验证,213 通过)。新增 **docs/DEPLOY.md**——PythonAnywhere 欧盟区分步上线手册(域名 `gestao.scentory.pt` 走 Amen CNAME、环境变量、WSGI、静态文件、备份 3-2-1)。下一阶段:django-axes 登录锁定 + 2FA。
 - 2026-07-31：产品详情页移除 **Stock Ledger · Full Path** 分区(已融合进 `/sales-history/` 专页,产品页仅保留"View full sales history"链接,不再重复);产品详情视图不再计算台账。213 通过。
 - 2026-07-31：产品销售历史专页 `/sales-history/` 将 **Sales Detail 与 Stock Ledger 融合成一条时间线**——销售明细(店铺/客户/单价/小计/支付/利润*)内联进 Stock Ledger 的销售行,配运行余额+对账横幅,便于一眼观察"卖了什么、库存怎么走";明细的独立表格移除。利润改为对全量流水一次性计算并复用。共享片段 `_stock_ledger.html` 新增 `ledger_detailed` 详细模式(产品详情页仍用精简模式)。213 通过。PRD F2.2.17。

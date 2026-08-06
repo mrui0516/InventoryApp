@@ -11,6 +11,7 @@
     </div>
     <div class="dash-actions">
       {% if isManger %}<a class="btn btn-outline-primary" href="{{ sales_records_month_url }}">Open month history</a>{% endif %}
+      {% if isManger %}<a class="btn btn-outline-secondary" href="{% url 'download_db_backup' %}">Download DB backup</a>{% endif %}
       <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#mobileAccessModal">Mobile access</button>
     </div>
   </div>

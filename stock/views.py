@@ -1640,6 +1640,47 @@ def product_sales_history_view(request):
 
 
 @login_required
+def download_db_backup(request):
+    """Manager-only one-click download of a consistent SQLite snapshot.
+
+    Lets the owner grab a full backup on demand (e.g. straight onto a USB by
+    pointing the browser's download folder at it). Uses SQLite's online backup
+    API against the live connection, so it's consistent even mid-write. The whole
+    database is a single file, so this file *is* the backup — restoring is just
+    putting it back and reloading."""
+    if not has_manager_access(request.user):
+        return redirect('dashboard')
+    from django.db import connection
+    if connection.vendor != 'sqlite':
+        return HttpResponse('Backup is only supported on SQLite.', status=400)
+
+    import sqlite3
+    import tempfile
+    import os
+    fd, tmp_path = tempfile.mkstemp(suffix='.sqlite3')
+    os.close(fd)
+    try:
+        connection.ensure_connection()
+        target = sqlite3.connect(tmp_path)
+        try:
+            connection.connection.backup(target)
+        finally:
+            target.close()
+        with open(tmp_path, 'rb') as fh:
+            data = fh.read()
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+    stamp = timezone.localtime().strftime('%Y%m%d-%H%M%S')
+    resp = HttpResponse(data, content_type='application/octet-stream')
+    resp['Content-Disposition'] = f'attachment; filename="scentory-db-{stamp}.sqlite3"'
+    return resp
+
+
+@login_required
 def edit_product_view(request, pk):
     product = get_object_or_404(
         Product.objects.select_related('category', 'brand_master', 'series_master'),

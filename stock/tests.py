@@ -10,7 +10,7 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import Client, TestCase
+from django.test import Client, TestCase, TransactionTestCase
 from django.urls import reverse
 from django.utils import timezone
 
@@ -4003,6 +4003,42 @@ class ProductDetailRecentSalesTests(TestCase):
         html = resp.content.decode("utf-8")
         self.assertIn("View full sales history", html)
         self.assertIn(reverse("product_sales_history"), html)
+
+
+class DownloadDbBackupViewTests(TransactionTestCase):
+    # TransactionTestCase (not TestCase): the view runs SQLite's online backup on
+    # the live connection. Under TestCase, the outer atomic block leaves the
+    # test-created user uncommitted, and backing up an in-memory DB with a pending
+    # write transaction spins on SQLITE_BUSY (hangs). Committing writes avoids it;
+    # production uses a file DB in autocommit, where the backup runs fine.
+    def test_manager_downloads_valid_sqlite(self):
+        import os
+        import sqlite3
+        get_user_model().objects.create_superuser(username="bk_mgr", password="pw123456")
+        self.client.login(username="bk_mgr", password="pw123456")
+        resp = self.client.get(reverse("download_db_backup"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("attachment", resp["Content-Disposition"])
+        self.assertIn(".sqlite3", resp["Content-Disposition"])
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "dl.sqlite3")
+            with open(p, "wb") as f:
+                f.write(resp.content)
+            con = sqlite3.connect(p)
+            try:
+                self.assertEqual(con.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+                # it's really our DB: a known table is present
+                names = {r[0] for r in con.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'")}
+                self.assertIn("stock_product", names)
+            finally:
+                con.close()
+
+    def test_employee_is_redirected(self):
+        get_user_model().objects.create_user(username="bk_emp", password="pw123456")
+        self.client.login(username="bk_emp", password="pw123456")
+        resp = self.client.get(reverse("download_db_backup"))
+        self.assertEqual(resp.status_code, 302)  # not a manager -> redirected, no download
 
 
 class BackupDbCommandTests(TestCase):
