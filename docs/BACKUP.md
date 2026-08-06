@@ -1,55 +1,72 @@
-# 数据备份
+# 数据备份（云上线后）
 
-> 目标：U 盘（`F:`）是 db.sqlite3 + media/ 的唯一活动副本，U 盘损坏/丢失即数据全失。
-> 本方案在**这台电脑**留一份每日副本，挡住最常见的 U 盘故障。
+> **系统已上线到 PythonAnywhere,PA 上的 `db.sqlite3` 是唯一的准数据(source of truth)。**
+> 备份目标:PA 每天自动生成一致性快照;你的电脑再把最新快照拉到 **U 盘**。
+> 达成 **3-2-1**:PA 实时库 + PA 每日快照 + U 盘离线副本。
 
-## 现状
+> ⚠️ 旧的"本地 app + Downloads 每日备份"方案**已退役**(那是本地 USB 当主库时代的)。现在数据在 PA,只在网站上录入,别再用本地 app 记数据。
 
-**已启用：本地每日备份（Downloads 文件夹）。**
+## 架构
 
-| 项 | 值 |
-|---|---|
-| 备份位置 | `C:\Users\maoru\Downloads\InventoryApp-Backups\`（`db\` 快照 + `media\` 镜像 + `backup.log` + 脚本本身） |
-| 脚本 | 同目录下 `backup_inventory.py` |
-| 调度 | Windows 计划任务 `InventoryDailyBackup`，每天 21:00（`pythonw` 静默跑），关机错过则开机补跑 |
-| 数据库 | 每天一个带时间戳的**一致性快照**（SQLite 在线备份 API，边写边备也安全），保留 30 天 |
-| 图片 | robocopy `/MIR` 镜像，始终等于当前 media/（单份，非逐日复制） |
-| 防呆 | U 盘没插 / 源为空时**跳过、绝不动**已有备份（避免把好备份反向清空） |
+| 层 | 在哪 | 做什么 | 频率/保留 |
+|---|---|---|---|
+| 1. 云端快照 | PythonAnywhere | `manage.py backup_db` → `~/InventoryApp/backups/db-<时间戳>.sqlite3`(SQLite 在线备份 API,边写边备也一致;自带完整性校验) | 每天,保留 30 份 |
+| 2. U 盘拉取 | 你的 Windows 电脑 | `scripts/pull_backup_from_pa.py` → 用 PA API 把**最新快照**下载到 U 盘 | 每天,保留 30 份;**没开机就下次开机补跑** |
 
-⚠ **别清空这个文件夹**：Downloads 是常被整理清空的地方，若你全选清理会把备份一起删掉。
-清理 Downloads 时绕开 `InventoryApp-Backups` 子文件夹即可。
+## 一、PA 端:每日快照(一次性设置)
 
-## 手动跑一次
-
+先在 Bash 控制台把最新代码拉下来(含 `backup_db` 命令):
+```bash
+cd ~/InventoryApp && git pull
 ```
-"C:\Users\maoru\AppData\Local\Programs\Python\Python313\python.exe" "C:\Users\maoru\Downloads\InventoryApp-Backups\backup_inventory.py"
+手动测一次:
+```bash
+/home/scentory/.virtualenvs/inventory/bin/python manage.py backup_db --keep 30
+```
+应看到 `Backup OK: .../backups/db-YYYYMMDD-HHMMSS.sqlite3`。
+
+然后 PA 顶部 **Tasks** → 新建一个 **Scheduled task**,每天某个时间(如 UTC 时间,换算好你的当地时间),命令填:
+```
+cd /home/scentory/InventoryApp && /home/scentory/.virtualenvs/inventory/bin/python manage.py backup_db --keep 30
 ```
 
-## 恢复步骤（重要）
+## 二、本地端:把最新快照拉到 U 盘(一次性设置)
 
-**恢复数据库：**
-1. 关掉服务器（关 `start.bat` 的窗口）——不能在服务器运行时覆盖数据库。
-2. 从 `...\Downloads\InventoryApp-Backups\db\` 选一个 `db-YYYY-MM-DD_HHMM.sqlite3`。
-3. 复制它覆盖 `F:\APP\InventoryApp\db.sqlite3`（覆盖前建议把当前那个先改名留底）。
-4. 重新双击 `start.bat`。
+1. 先 `git pull` 一下你本地仓库(拿到 `scripts/` 里的脚本)。
+2. **拿 PA API token**:PythonAnywhere → **Account** → **API token** 标签 → 创建并复制。
+3. **配置**:把 `scripts/.pa_backup.ini.example` 复制成 `scripts/.pa_backup.ini`,填入:
+   - `token` = 上面那个 API token
+   - `dest` = 你的 U 盘目录,例如 `F:\InventoryApp-Backups\db`
+   （`.pa_backup.ini` 已被 git 忽略,token 不会进仓库。）
+4. **手动测一次**(用你系统的 Python):
+   ```
+   "C:\Users\maoru\AppData\Local\Programs\Python\Python313\python.exe" "F:\APP\InventoryApp\scripts\pull_backup_from_pa.py"
+   ```
+   应打印 `Downloaded db-... -> F:\...`。
+5. **挂到 Windows 任务计划程序**:
+   - 任务计划程序 → 创建任务 → 触发器:每天(你选个时间);
+   - 操作:程序 = 上面那个 `python.exe`,参数 = `"F:\APP\InventoryApp\scripts\pull_backup_from_pa.py"`;
+   - ⚠️ 常规选项里勾上 **"错过计划的开始时间后,尽快启动任务"(Run task as soon as possible after a scheduled start is missed)** → 那天没开机,下次开机自动补跑;
+   - 可勾"使用最高权限运行",避免 U 盘权限问题。
 
-**恢复图片：**
-- 把 `...\Downloads\InventoryApp-Backups\media\` 里的内容复制回 `F:\APP\InventoryApp\media\`。
+> U 盘没插 / 目标盘不可用时,脚本会**跳过、绝不删已有备份**,不会报错破坏。
 
-**验证**（可选）：用备份库查条数是否合理
+## 三、恢复(重要)
+
+**从某个快照恢复 PA:**
+1. 从 U 盘(或 PA 的 `backups/`)选一个 `db-YYYYMMDD-HHMMSS.sqlite3`。
+2. PA → Files → `/home/scentory/InventoryApp/` → 删掉当前 `db.sqlite3`(先改名留底更稳)→ 上传选中的快照 → **改名成 `db.sqlite3`**。
+3. Web 标签 → **Reload**。
+
+**验证快照是否完好**(可选):
 ```
-python -c "import sqlite3;c=sqlite3.connect(r'<备份库路径>');print(c.execute('PRAGMA integrity_check').fetchone(), c.execute('SELECT COUNT(*) FROM stock_saleorder').fetchone())"
+python -c "import sqlite3;c=sqlite3.connect(r'<快照路径>');print(c.execute('PRAGMA integrity_check').fetchone(), c.execute('SELECT COUNT(*) FROM stock_saleorder').fetchone())"
 ```
 
 ## 调整
+- **改保留份数**:两处的 `--keep 30` / `.pa_backup.ini` 的 `keep`。
+- **改时间**:PA 的 Scheduled task 触发时间 / Windows 任务计划触发器。
 
-- **改时间**：任务计划程序 → `InventoryDailyBackup` → 触发器。
-- **改保留天数**：脚本顶部 `KEEP_DAYS`（默认 30）。
-- **换备份盘**：把整个 `InventoryApp-Backups` 文件夹移到别处，并在计划任务里改脚本路径即可（备份就落在脚本所在目录）。
-
-## 局限与可选增强
-
-- **只在本机**：备份和 U 盘在同一台电脑/同一地点，能防 U 盘坏，但防不了这台电脑失火/被偷。
-- **异地副本（可选）**：本机已装 Google Drive 桌面版。若把 Downloads 文件夹设为同步到
-  Google Drive（Drive 设置 → 「我的电脑」→ 添加 Downloads 文件夹），备份就会自动上云 = 本地 + 异地。
-  ⚠ 云端**未加密**，库里含客户姓名/电话/NIF，那个云盘请保持私有、不分享。要加密可用 rclone crypt。
+## 局限 / 可选增强
+- **图片(media)** 目前不在此备份内(体积大、且大多能重获)。以后需要可扩展脚本一并拉 media,或让新图上传时镜像到 Cloudinary 作二次副本。
+- **异地加密副本(可选)**:U 盘那个目录可再同步到 Backblaze B2 / 加密云盘,防电脑失窃/失火。库里含客户姓名/电话/NIF,云端务必加密(如 rclone crypt)且不分享。

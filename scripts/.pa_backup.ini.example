@@ -1,0 +1,12 @@
+; Copy this file to ".pa_backup.ini" (same folder) and fill in your values.
+; The real .pa_backup.ini is git-ignored — never commit your API token.
+[pa]
+host = eu.pythonanywhere.com
+username = scentory
+; PythonAnywhere -> Account -> "API token" tab -> create/copy the token:
+token = PUT-YOUR-PYTHONANYWHERE-API-TOKEN-HERE
+remote_dir = /home/scentory/InventoryApp/backups
+; Where to save the downloaded snapshots — point this at your USB drive:
+dest = F:\InventoryApp-Backups\db
+; How many daily snapshots to keep on the USB:
+keep = 30

@@ -14,9 +14,11 @@ db.sqlite3.bak*
 *.sqlite3.bak*
 media/
 staticfiles/
+backups/
 
 # Environment / secrets
 .env
+scripts/.pa_backup.ini
 
 # Claude Code local settings
 .claude/settings.local.json

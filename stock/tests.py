@@ -4003,3 +4003,27 @@ class ProductDetailRecentSalesTests(TestCase):
         html = resp.content.decode("utf-8")
         self.assertIn("View full sales history", html)
         self.assertIn(reverse("product_sales_history"), html)
+
+
+class BackupDbCommandTests(TestCase):
+    def test_backup_creates_valid_snapshot_and_prunes(self):
+        import os
+        import sqlite3
+        with tempfile.TemporaryDirectory() as d:
+            # Pre-seed three old snapshot filenames so pruning has something to cut.
+            for name in ("db-20200101-000000.sqlite3",
+                         "db-20200102-000000.sqlite3",
+                         "db-20200103-000000.sqlite3"):
+                open(os.path.join(d, name), "w").close()
+
+            call_command("backup_db", "--dir", d, "--keep", "2")
+
+            snaps = sorted(f for f in os.listdir(d) if f.startswith("db-"))
+            self.assertEqual(len(snaps), 2)                       # kept newest 2
+            newest = snaps[-1]                                    # the real snapshot (today's timestamp)
+            self.assertTrue(newest > "db-2020")                  # sorts after the seeded 2020 ones
+            con = sqlite3.connect(os.path.join(d, newest))
+            try:
+                self.assertEqual(con.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+            finally:
+                con.close()
