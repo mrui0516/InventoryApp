@@ -247,6 +247,10 @@ SHOPIFY_NEW_PRODUCT_STATUS = os.environ.get('SHOPIFY_NEW_PRODUCT_STATUS', 'DRAFT
 # on-hand, set the matching Shopify variant's available quantity (by barcode=SKU)
 # after the DB commit. Off by default so dev/tests never call out.
 SHOPIFY_INVENTORY_SYNC = os.environ.get('SHOPIFY_INVENTORY_SYNC', '') in {'1', 'true', 'True', 'yes', 'on'}
+# Which Shopify location to set inventory at (a Location GID). Set this when the
+# store has more than one location so the sync targets the right one; empty =
+# fall back to the store's first location.
+SHOPIFY_LOCATION_ID = os.environ.get('SHOPIFY_LOCATION_ID', '').strip()
 
 # --- Cloudinary (product image mirror) ---
 CLOUDINARY_CLOUD_NAME = os.environ.get('CLOUDINARY_CLOUD_NAME', 'bulvpmzg')

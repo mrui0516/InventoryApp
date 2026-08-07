@@ -4193,6 +4193,17 @@ class ShopifyInventorySignalTests(TestCase):
         push.assert_not_called()
 
 
+class ShopifyLocationConfigTests(SimpleTestCase):
+    def test_uses_configured_location_id_without_api_call(self):
+        from unittest import mock
+        from stock.services.shopify_client import ShopifyClient
+        with override_settings(SHOPIFY_LOCATION_ID="gid://shopify/Location/999"):
+            c = ShopifyClient(domain="x.myshopify.com", token="t")
+            with mock.patch.object(c, "graphql") as g:
+                self.assertEqual(c.get_location_id(), "gid://shopify/Location/999")
+                g.assert_not_called()
+
+
 class DecantInventoryLogicTests(SimpleTestCase):
     def test_targets_reserve_and_decant(self):
         from stock.services.shopify_sync import _inventory_targets

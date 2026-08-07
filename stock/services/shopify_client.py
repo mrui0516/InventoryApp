@@ -329,8 +329,14 @@ class ShopifyClient:
         return target['resourceUrl']
 
     def get_location_id(self):
-        """The store's first location GID (cached), for setting inventory."""
+        """The location GID to set inventory at (cached). Prefers the configured
+        ``SHOPIFY_LOCATION_ID`` (so a multi-location store targets the right one);
+        otherwise falls back to the store's first location."""
         if self._location_id:
+            return self._location_id
+        configured = (getattr(settings, 'SHOPIFY_LOCATION_ID', '') or '').strip()
+        if configured:
+            self._location_id = configured
             return self._location_id
         data = self.graphql('{ locations(first: 1) { edges { node { id } } } }')
         edges = data.get('locations', {}).get('edges', [])
