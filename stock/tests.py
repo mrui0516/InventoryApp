@@ -4193,6 +4193,43 @@ class ShopifyInventorySignalTests(TestCase):
         push.assert_not_called()
 
 
+class DecantInventoryLogicTests(SimpleTestCase):
+    def test_targets_reserve_and_decant(self):
+        from stock.services.shopify_sync import _inventory_targets
+        present = {"B1", "B1-10ML", "B1-5ML"}
+        self.assertEqual(_inventory_targets("B1", 5, present), {"B1": 3, "B1-10ML": 99, "B1-5ML": 99})
+        self.assertEqual(_inventory_targets("B1", 3, present), {"B1": 1, "B1-10ML": 99, "B1-5ML": 99})
+        self.assertEqual(_inventory_targets("B1", 2, present), {"B1": 0, "B1-10ML": 99, "B1-5ML": 99})
+        self.assertEqual(_inventory_targets("B1", 1, present), {"B1": 0, "B1-10ML": 99, "B1-5ML": 99})
+        self.assertEqual(_inventory_targets("B1", 0, present), {"B1": 0, "B1-10ML": 0, "B1-5ML": 0})
+
+    def test_targets_no_decant_uses_full_onhand(self):
+        from stock.services.shopify_sync import _inventory_targets
+        self.assertEqual(_inventory_targets("B1", 5, {"B1"}), {"B1": 5})
+        self.assertEqual(_inventory_targets("B1", 0, {"B1"}), {"B1": 0})
+
+
+class DecantInventoryPushTests(TestCase):
+    def test_sets_each_variant_by_reserve_rules(self):
+        from unittest import mock
+        from stock.services import shopify_sync
+        cat = Category.objects.create(name="P")
+        p = Product.objects.create(name="Asad", barcode="B1", brand="L",
+                                   category=cat, default_price=Decimal("10"))
+        Purchase.objects.create(product=p, quantity=5, remaining=5, cost_price=Decimal("1"))
+        sv = {
+            "B1": {"product_id": "P", "variant_id": "V0", "inventory_item_id": "I0", "price": "10.00", "available": 0},
+            "B1-10ML": {"product_id": "P", "variant_id": "V1", "inventory_item_id": "I1", "price": "2.00", "available": 0},
+            "B1-5ML": {"product_id": "P", "variant_id": "V2", "inventory_item_id": "I2", "price": "1.50", "available": 0},
+        }
+        client = mock.Mock()
+        code, _ = shopify_sync.sync_product_price_inventory(
+            p, client, do_price=False, do_inventory=True, shop_variants=sv, location_id="L")
+        self.assertEqual(code, shopify_sync.INV_UPDATED)
+        calls = {c.args[0]: c.args[2] for c in client.set_inventory_available.call_args_list}
+        self.assertEqual(calls, {"I0": 3, "I1": 99, "I2": 99})  # 100ml=5-2=3, decants=99
+
+
 class BackupDbCommandTests(TestCase):
     def test_backup_creates_valid_snapshot_and_prunes(self):
         import os

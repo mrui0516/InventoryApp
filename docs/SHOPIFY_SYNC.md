@@ -140,9 +140,19 @@ python manage.py sync_shopify_inventory --inventory-only --apply
 python manage.py sync_shopify_inventory --price-only --brand Lattafa --apply
 ```
 
-All Shopify variants are fetched once; only real changes write. Inventory sets the
-variant's **available** quantity at the store location to `Σ purchase.remaining`;
-price sets it to `Product.default_price`.
+All Shopify variants are fetched once; only real changes write. Price sets the
+100ml variant to `Product.default_price`.
+
+**Decant-aware inventory.** Shopify variant SKUs are `<barcode>` (100ml),
+`<barcode>-10ML`, `<barcode>-5ML`. Given `N = Σ purchase.remaining` full bottles:
+
+| Variant | Available set to |
+|---|---|
+| 100ml | `max(N − 2, 0)` — the last 2 bottles are reserved for decanting (so ≤2 → out of stock) |
+| 10ml / 5ml | `99` while `N ≥ 1`, else `0` |
+
+Products without decant variants just get 100ml = `N`. The reserve (2) and decant
+availability (99) are `DECANT_RESERVE` / `DECANT_AVAILABLE` in `shopify_sync.py`.
 
 **Real-time:** set `SHOPIFY_INVENTORY_SYNC=1` in the environment. Then, after the
 DB commit:

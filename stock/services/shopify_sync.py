@@ -43,49 +43,100 @@ def _price_str(value):
     return f'{Decimal(value):.2f}' if value is not None else '0.00'
 
 
-def sync_product_price_inventory(product, client=None, *, do_price=True, do_inventory=True,
-                                 dry_run=False, shop_rec=None, location_id=None):
-    """Push the app's price and/or on-hand to the matching Shopify variant
-    (by barcode = SKU). The app is authoritative. Returns ``(code, detail)``.
+# Decant rules. Shopify variant SKUs: 100ml = <barcode>, 10ml = <barcode>-10ML,
+# 5ml = <barcode>-5ML. When a product has decant variants, the last few full
+# bottles are reserved for decanting (100ml hidden) while the 10ml/5ml stay
+# available as long as any bottle exists.
+DECANT_RESERVE = 2          # full bottles kept back; 100ml shows on-hand minus this
+DECANT_AVAILABLE = 99       # 10ml/5ml available quantity while any bottle exists
+DECANT_SUFFIXES = ('-10ML', '-5ML')
 
-    A bulk caller may pass ``shop_rec`` (from ``all_variants_by_sku``) and
-    ``location_id`` to avoid a per-product lookup; the real-time signal passes
-    neither, so the variant is looked up on the fly."""
+
+def _variant_label(barcode, sku):
+    return '100ml' if sku == barcode else sku[len(barcode):].lstrip('-').lower()
+
+
+def _inventory_targets(barcode, on_hand, present_skus):
+    """``{sku: target_available}`` for a product's variants given ``on_hand`` full
+    bottles. With decant variants: 100ml = max(on_hand - reserve, 0), 10ml/5ml =
+    DECANT_AVAILABLE while on_hand >= 1 else 0. Without decants: 100ml = on_hand.
+    Only includes SKUs that actually exist in ``present_skus``."""
+    has_decant = any((barcode + s) in present_skus for s in DECANT_SUFFIXES)
+    targets = {}
+    if has_decant:
+        if barcode in present_skus:
+            targets[barcode] = max(on_hand - DECANT_RESERVE, 0)
+        for suffix in DECANT_SUFFIXES:
+            sku = barcode + suffix
+            if sku in present_skus:
+                targets[sku] = DECANT_AVAILABLE if on_hand >= 1 else 0
+    elif barcode in present_skus:
+        targets[barcode] = on_hand
+    return targets
+
+
+def sync_product_price_inventory(product, client=None, *, do_price=True, do_inventory=True,
+                                 dry_run=False, shop_variants=None, location_id=None):
+    """Push the app's price and/or on-hand to Shopify (app authoritative).
+
+    Price goes to the 100ml variant (sku == barcode). Inventory is decant-aware:
+    100ml, 10ml and 5ml variants are set per the reserve rules above. Returns
+    ``(code, detail)``.
+
+    A bulk caller may pass ``shop_variants`` ({sku: rec} for this product's
+    variants, from ``all_variants_by_sku``) and ``location_id`` to avoid per-
+    product lookups; the real-time signal passes neither, so the variants are
+    looked up on the fly."""
     client = client or ShopifyClient()
     barcode = (product.barcode or '').strip()
     if not barcode:
         return INV_NO_BARCODE, 'product has no barcode'
     try:
-        rec = shop_rec if shop_rec is not None else client.find_variant_by_sku(barcode)
-        if not rec:
+        if shop_variants is None:
+            shop_variants = {}
+            for sku in (barcode, barcode + '-10ML', barcode + '-5ML'):
+                rec = client.find_variant_by_sku(sku)
+                if rec:
+                    shop_variants[sku] = rec
+        if not shop_variants:
             return INV_NOT_IN_SHOPIFY, f'no Shopify variant with sku {barcode}'
 
-        app_price = _price_str(product.default_price)
-        try:
-            app_qty = int(product.total_stock() or 0)
-        except Exception:
-            app_qty = 0
+        parts, writes = [], []
 
-        need_price = (do_price and rec.get('price') is not None
-                      and Decimal(rec['price']) != Decimal(app_price))
-        need_inv = do_inventory and rec.get('available') != app_qty
-        if not (need_price or need_inv):
+        if do_price:
+            main = shop_variants.get(barcode)
+            if main is not None and main.get('price') is not None:
+                app_price = _price_str(product.default_price)
+                if Decimal(main['price']) != Decimal(app_price):
+                    parts.append(f"price {main.get('price')}->{app_price}")
+                    writes.append(('price', main['product_id'], main['variant_id'], app_price))
+
+        if do_inventory:
+            try:
+                on_hand = int(product.total_stock() or 0)
+            except Exception:
+                on_hand = 0
+            targets = _inventory_targets(barcode, on_hand, set(shop_variants))
+            for sku, target in targets.items():
+                rec = shop_variants.get(sku)
+                if rec is None or rec.get('available') == target:
+                    continue
+                parts.append(f"{_variant_label(barcode, sku)} qty {rec.get('available')}->{target}")
+                writes.append(('inv', rec['inventory_item_id'], target))
+
+        if not writes:
             return INV_UNCHANGED, ''
-
-        parts = []
-        if need_price:
-            parts.append(f"price {rec.get('price')}->{app_price}")
-        if need_inv:
-            parts.append(f"qty {rec.get('available')}->{app_qty}")
         detail = ', '.join(parts)
         if dry_run:
             return INV_WOULD_UPDATE, detail
 
-        if need_price:
-            client.update_variant_price(rec['product_id'], rec['variant_id'], app_price)
-        if need_inv:
-            loc = location_id or client.get_location_id()
-            client.set_inventory_available(rec['inventory_item_id'], loc, app_qty)
+        loc = None
+        for w in writes:
+            if w[0] == 'price':
+                client.update_variant_price(w[1], w[2], w[3])
+            else:
+                loc = loc or location_id or client.get_location_id()
+                client.set_inventory_available(w[1], loc, w[2])
         return INV_UPDATED, detail
     except ShopifyError as exc:
         return INV_ERROR, str(exc)

@@ -65,13 +65,16 @@ class Command(BaseCommand):
 
         counts = {}
         for product in qs:
-            rec = by_sku.get((product.barcode or '').strip())
-            if rec is None:
+            barcode = (product.barcode or '').strip()
+            shop_variants = {sku: by_sku[sku]
+                             for sku in (barcode, barcode + '-10ML', barcode + '-5ML')
+                             if sku in by_sku}
+            if not shop_variants:
                 counts[shopify_sync.INV_NOT_IN_SHOPIFY] = counts.get(shopify_sync.INV_NOT_IN_SHOPIFY, 0) + 1
                 continue
             code, detail = shopify_sync.sync_product_price_inventory(
                 product, client, do_price=do_price, do_inventory=do_inv,
-                dry_run=dry_run, shop_rec=rec, location_id=location_id)
+                dry_run=dry_run, shop_variants=shop_variants, location_id=location_id)
             counts[code] = counts.get(code, 0) + 1
             if code in (shopify_sync.INV_WOULD_UPDATE, shopify_sync.INV_UPDATED, shopify_sync.INV_ERROR):
                 style = self.style.ERROR if code == shopify_sync.INV_ERROR else self.style.SUCCESS
