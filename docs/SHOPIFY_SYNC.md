@@ -108,9 +108,30 @@ request (failures logged, never block the save):
 
 ---
 
+## Re-align barcodes after fixing EANs (`sync_shopify_barcodes`)
+
+If you corrected barcodes **in the app**, Shopify's SKU/barcode no longer match
+(the match key changed). This command re-aligns them by matching each product to
+its Shopify product by **title** (the stable key — titles didn't change) and
+pushing the app's current barcode into the Shopify variant's SKU + barcode.
+
+```
+python manage.py sync_shopify_barcodes                  # preview every change (dry run)
+python manage.py sync_shopify_barcodes --brand Lattafa  # scope by brand
+python manage.py sync_shopify_barcodes --apply          # write to Shopify
+```
+
+All Shopify products are fetched once and matched locally, so the dry run is a
+few API calls; only real changes write. **Always dry-run and review first.**
+Titles that occur on more than one Shopify product are treated as ambiguous and
+skipped. Run the barcode re-align **before** the image/product sync so those keep
+matching by SKU. After this, re-run `sync_cloudinary_images --apply` so Cloudinary
+assets live under the corrected barcodes too.
+
 ## Behaviour & limitations
 
-- **Match key is barcode = SKU.** A product whose barcode doesn't match any
+- **Match key is barcode = SKU** (except `sync_shopify_barcodes`, which matches by
+  title to *repair* the barcode). A product whose barcode doesn't match any
   Shopify variant SKU is skipped (`not in Shopify`). Placeholder/fake barcodes
   (e.g. `7777777777777`) won't match — fix the SKU in Shopify or the barcode in
   the app, then re-run.

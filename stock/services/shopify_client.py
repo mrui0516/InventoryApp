@@ -95,6 +95,71 @@ class ShopifyClient:
                 }
         return None
 
+    def all_products_by_title(self):
+        """Map exact product ``title`` -> ``{product_id, variant_id, sku, barcode}``
+        for the whole store, paginated. Used to re-align products whose barcode/SKU
+        changed in the app (title is the stable key). A title that occurs on more
+        than one product maps to ``None`` so the caller skips ambiguous matches."""
+        query = """
+        query($cursor: String) {
+          products(first: 100, after: $cursor) {
+            pageInfo { hasNextPage endCursor }
+            edges { node {
+              id title
+              variants(first: 1) { edges { node { id sku barcode } } }
+            } }
+          }
+        }
+        """
+        out, dup, cursor = {}, set(), None
+        while True:
+            data = self.graphql(query, {'cursor': cursor}).get('products', {})
+            for edge in data.get('edges', []):
+                node = edge['node']
+                title = node.get('title', '')
+                variants = node.get('variants', {}).get('edges', [])
+                if not variants:
+                    continue
+                v = variants[0]['node']
+                if title in out:
+                    dup.add(title)
+                out[title] = {
+                    'product_id': node['id'],
+                    'variant_id': v['id'],
+                    'sku': v.get('sku'),
+                    'barcode': v.get('barcode'),
+                }
+            page = data.get('pageInfo', {})
+            if not page.get('hasNextPage'):
+                break
+            cursor = page.get('endCursor')
+        for title in dup:
+            out[title] = None  # ambiguous — don't touch
+        return out
+
+    def update_variant_barcode_sku(self, product_id, variant_id, sku, barcode):
+        """Set a variant's SKU + barcode (pushes a corrected EAN to Shopify)."""
+        data = self.graphql(
+            """
+            mutation($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+              productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+                productVariants { id barcode inventoryItem { sku } }
+                userErrors { field message }
+              }
+            }
+            """,
+            {'productId': product_id, 'variants': [{
+                'id': variant_id,
+                'barcode': barcode,
+                'inventoryItem': {'sku': sku},
+            }]},
+        )
+        result = data.get('productVariantsBulkUpdate', {})
+        if result.get('userErrors'):
+            raise ShopifyError(f'productVariantsBulkUpdate: {result["userErrors"]}')
+        variants = result.get('productVariants') or []
+        return variants[0]['id'] if variants else None
+
     # --------------------------------------------------------------- image upload
     def stage_and_upload_image(self, filepath, filename=None):
         """Upload a local image file to Shopify's staged storage; return the

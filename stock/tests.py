@@ -4041,6 +4041,51 @@ class DownloadDbBackupViewTests(TransactionTestCase):
         self.assertEqual(resp.status_code, 302)  # not a manager -> redirected, no download
 
 
+class SyncShopifyBarcodesCommandTests(TestCase):
+    def _run(self, product_barcode, shopify_rec, apply=False):
+        from io import StringIO
+        from unittest import mock
+        from stock.services.shopify_sync import _shopify_title
+        cat = Category.objects.create(name="P")
+        product = Product.objects.create(name="Asad", barcode=product_barcode, brand="Lattafa",
+                                         category=cat, default_price=Decimal("10"))
+        title = _shopify_title(product)
+        client = mock.Mock()
+        client.is_configured.return_value = True
+        client.all_products_by_title.return_value = {title: shopify_rec} if shopify_rec else {}
+        args = ["sync_shopify_barcodes", "--brand", "Lattafa"]
+        if apply:
+            args.append("--apply")
+        out = StringIO()
+        with mock.patch("stock.management.commands.sync_shopify_barcodes.ShopifyClient",
+                        return_value=client):
+            call_command(*args, stdout=out)
+        return client, out.getvalue()
+
+    def _rec(self, sku, barcode):
+        return {"product_id": "gid://P/1", "variant_id": "gid://V/1", "sku": sku, "barcode": barcode}
+
+    def test_dry_run_reports_change_but_writes_nothing(self):
+        client, output = self._run("NEW123", self._rec("OLD999", "OLD999"), apply=False)
+        self.assertIn("DRY RUN", output)
+        self.assertIn("-> NEW123", output)
+        client.update_variant_barcode_sku.assert_not_called()
+
+    def test_apply_updates_when_barcode_differs(self):
+        client, _ = self._run("NEW123", self._rec("OLD999", "OLD999"), apply=True)
+        client.update_variant_barcode_sku.assert_called_once_with(
+            "gid://P/1", "gid://V/1", "NEW123", "NEW123")
+
+    def test_no_write_when_already_correct(self):
+        client, _ = self._run("SAME1", self._rec("SAME1", "SAME1"), apply=True)
+        client.update_variant_barcode_sku.assert_not_called()
+
+    def test_skips_when_not_on_shopify(self):
+        client, output = self._run("NEW123", None, apply=True)
+        client.update_variant_barcode_sku.assert_not_called()
+        self.assertIn("not on Shopify", output)
+
+
 class BackupDbCommandTests(TestCase):
     def test_backup_creates_valid_snapshot_and_prunes(self):
         import os
