@@ -7,7 +7,7 @@ from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 from django.utils import timezone
 
-from .models import AttendanceRecord, ProductImage, Purchase, Sale
+from .models import AttendanceRecord, Product, ProductImage, Purchase, Sale
 from .permissions import has_manager_access
 from .services import schedule_summary_recalc
 
@@ -105,11 +105,11 @@ def mirror_product_image_on_delete(sender, instance, **kwargs):
     _mirror_to_cloudinary(instance.product)
 
 
-def _push_inventory_to_shopify(product):
-    """Set the product's Shopify available quantity to its current on-hand, after
-    commit. Gated by ``SHOPIFY_INVENTORY_SYNC``; idempotent (sets an absolute
-    quantity) so firing more than once for the same product is harmless; never
-    raises — a Shopify hiccup must not break the sale/purchase save."""
+def _push_shopify(product, *, do_price=False, do_inventory=False):
+    """Push the product's price and/or on-hand to Shopify after commit. Gated by
+    ``SHOPIFY_INVENTORY_SYNC``; idempotent (sets absolute values) so firing more
+    than once for the same product is harmless; never raises — a Shopify hiccup
+    must not break the local save."""
     if not product:
         return
     if not getattr(settings, 'SHOPIFY_INVENTORY_SYNC', False):
@@ -119,32 +119,55 @@ def _push_inventory_to_shopify(product):
         try:
             from .services import shopify_sync
             code, detail = shopify_sync.sync_product_price_inventory(
-                product, do_price=False, do_inventory=True)
-            logger.info('Shopify inventory %s for %s (%s)', code, getattr(product, 'barcode', '?'), detail)
+                product, do_price=do_price, do_inventory=do_inventory)
+            logger.info('Shopify sync %s for %s (%s)', code, getattr(product, 'barcode', '?'), detail)
         except Exception:  # never let a sync problem break the local save
-            logger.exception('Shopify inventory push crashed for %s', getattr(product, 'barcode', '?'))
+            logger.exception('Shopify sync crashed for %s', getattr(product, 'barcode', '?'))
 
     transaction.on_commit(_sync)
 
 
 @receiver(post_save, sender=Sale)
 def push_inventory_on_sale(sender, instance, **kwargs):
-    _push_inventory_to_shopify(instance.product)
+    _push_shopify(instance.product, do_inventory=True)
 
 
 @receiver(post_delete, sender=Sale)
 def push_inventory_on_sale_delete(sender, instance, **kwargs):
-    _push_inventory_to_shopify(instance.product)
+    _push_shopify(instance.product, do_inventory=True)
 
 
 @receiver(post_save, sender=Purchase)
 def push_inventory_on_purchase(sender, instance, **kwargs):
-    _push_inventory_to_shopify(instance.product)
+    _push_shopify(instance.product, do_inventory=True)
 
 
 @receiver(post_delete, sender=Purchase)
 def push_inventory_on_purchase_delete(sender, instance, **kwargs):
-    _push_inventory_to_shopify(instance.product)
+    _push_shopify(instance.product, do_inventory=True)
+
+
+@receiver(pre_save, sender=Product)
+def _capture_old_default_price(sender, instance, **kwargs):
+    """Remember the pre-save price so post_save can tell if it changed. Only when
+    real-time sync is on, to avoid an extra query otherwise."""
+    if not getattr(settings, 'SHOPIFY_INVENTORY_SYNC', False):
+        return
+    if not instance.pk:
+        instance._old_default_price = None
+        return
+    instance._old_default_price = (
+        Product.objects.filter(pk=instance.pk).values_list('default_price', flat=True).first())
+
+
+@receiver(post_save, sender=Product)
+def push_price_on_change(sender, instance, created, **kwargs):
+    """When a product's price changes in the app, push the new price to Shopify."""
+    if created or not hasattr(instance, '_old_default_price'):
+        return
+    if instance._old_default_price == instance.default_price:
+        return
+    _push_shopify(instance, do_price=True)
 
 
 @receiver(user_logged_in)

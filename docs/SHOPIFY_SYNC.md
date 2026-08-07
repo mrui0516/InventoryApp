@@ -144,13 +144,15 @@ All Shopify variants are fetched once; only real changes write. Inventory sets t
 variant's **available** quantity at the store location to `Σ purchase.remaining`;
 price sets it to `Product.default_price`.
 
-**Real-time:** set `SHOPIFY_INVENTORY_SYNC=1` in the environment. Then every
-**sale / purchase / stock change** pushes that product's on-hand to Shopify
-*after the DB commit* (idempotent — it sets an absolute quantity; never breaks the
-save; ~1–2 Shopify API calls per event). Off by default. Run the bulk
-`sync_shopify_inventory --apply` once first to align everything, then turn the
-flag on so it stays in sync. (Price is pushed by the bulk command; the real-time
-hook pushes inventory only.)
+**Real-time:** set `SHOPIFY_INVENTORY_SYNC=1` in the environment. Then, after the
+DB commit:
+
+- a **sale / purchase / stock adjustment** pushes that product's **on-hand** to Shopify;
+- changing a product's **price** in the app pushes the new **price** to Shopify.
+
+Idempotent (absolute set), never breaks the local save, ~1–2 Shopify API calls per
+event, off by default. Run the bulk `sync_shopify_inventory --apply` once first to
+align everything, then turn the flag on so it stays in sync.
 
 ## Behaviour & limitations
 

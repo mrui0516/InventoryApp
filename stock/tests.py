@@ -4167,6 +4167,31 @@ class ShopifyInventorySignalTests(TestCase):
                                     unit_price=Decimal("10"), payment_method="cash")
         push.assert_not_called()
 
+    def test_price_change_pushes_price_when_enabled(self):
+        from unittest import mock
+        p = self._make_product("B3")  # created while sync is OFF
+        with override_settings(SHOPIFY_INVENTORY_SYNC=True), \
+             mock.patch("stock.services.shopify_sync.sync_product_price_inventory",
+                        return_value=("inv_updated", "")) as push:
+            with self.captureOnCommitCallbacks(execute=True):
+                p.default_price = Decimal("99.00")
+                p.save()
+        push.assert_called()
+        args, kwargs = push.call_args
+        self.assertEqual(args[0], p)
+        self.assertTrue(kwargs.get("do_price"))       # price only, not inventory
+        self.assertFalse(kwargs.get("do_inventory"))
+
+    def test_price_unchanged_no_push(self):
+        from unittest import mock
+        p = self._make_product("B4")
+        with override_settings(SHOPIFY_INVENTORY_SYNC=True), \
+             mock.patch("stock.services.shopify_sync.sync_product_price_inventory") as push:
+            with self.captureOnCommitCallbacks(execute=True):
+                p.name = "Renamed"   # save without touching price
+                p.save()
+        push.assert_not_called()
+
 
 class BackupDbCommandTests(TestCase):
     def test_backup_creates_valid_snapshot_and_prunes(self):
