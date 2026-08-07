@@ -137,6 +137,132 @@ class ShopifyClient:
             out[title] = None  # ambiguous — don't touch
         return out
 
+    def all_variants_by_sku(self):
+        """Map variant ``sku`` -> ``{product_id, variant_id, inventory_item_id,
+        price, available}`` for the whole store, paginated. For pushing price and
+        inventory to Shopify by barcode = SKU."""
+        query = """
+        query($cursor: String) {
+          products(first: 100, after: $cursor) {
+            pageInfo { hasNextPage endCursor }
+            edges { node {
+              id
+              variants(first: 1) { edges { node {
+                id sku price inventoryQuantity inventoryItem { id }
+              } } }
+            } }
+          }
+        }
+        """
+        out, cursor = {}, None
+        while True:
+            data = self.graphql(query, {'cursor': cursor}).get('products', {})
+            for edge in data.get('edges', []):
+                node = edge['node']
+                variants = node.get('variants', {}).get('edges', [])
+                if not variants:
+                    continue
+                v = variants[0]['node']
+                sku = (v.get('sku') or '').strip()
+                if not sku:
+                    continue
+                inv = v.get('inventoryItem') or {}
+                out[sku] = {
+                    'product_id': node['id'],
+                    'variant_id': v['id'],
+                    'inventory_item_id': inv.get('id'),
+                    'price': v.get('price'),
+                    'available': v.get('inventoryQuantity'),
+                }
+            page = data.get('pageInfo', {})
+            if not page.get('hasNextPage'):
+                break
+            cursor = page.get('endCursor')
+        return out
+
+    def find_variant_by_sku(self, sku):
+        """Single-product form of ``all_variants_by_sku``: returns
+        ``{product_id, variant_id, inventory_item_id, price, available}`` for the
+        variant whose SKU matches, or ``None``. Used by the real-time push."""
+        sku = (sku or '').strip()
+        if not sku:
+            return None
+        data = self.graphql(
+            """
+            query($q: String!) {
+              products(first: 10, query: $q) {
+                edges { node {
+                  id
+                  variants(first: 25) { edges { node {
+                    id sku price inventoryQuantity inventoryItem { id }
+                  } } }
+                } }
+              }
+            }
+            """,
+            {'q': f'sku:{sku}'},
+        )
+        for edge in data.get('products', {}).get('edges', []):
+            node = edge['node']
+            for ve in node.get('variants', {}).get('edges', []):
+                v = ve['node']
+                if (v.get('sku') or '').strip() == sku:
+                    inv = v.get('inventoryItem') or {}
+                    return {
+                        'product_id': node['id'],
+                        'variant_id': v['id'],
+                        'inventory_item_id': inv.get('id'),
+                        'price': v.get('price'),
+                        'available': v.get('inventoryQuantity'),
+                    }
+        return None
+
+    def update_variant_price(self, product_id, variant_id, price):
+        """Set a variant's price (a string like '12.00')."""
+        data = self.graphql(
+            """
+            mutation($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+              productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+                productVariants { id price }
+                userErrors { field message }
+              }
+            }
+            """,
+            {'productId': product_id, 'variants': [{'id': variant_id, 'price': price}]},
+        )
+        result = data.get('productVariantsBulkUpdate', {})
+        if result.get('userErrors'):
+            raise ShopifyError(f'productVariantsBulkUpdate(price): {result["userErrors"]}')
+        variants = result.get('productVariants') or []
+        return variants[0]['id'] if variants else None
+
+    def set_inventory_available(self, inventory_item_id, location_id, quantity):
+        """Set the 'available' quantity for an inventory item at a location."""
+        data = self.graphql(
+            """
+            mutation($input: InventorySetQuantitiesInput!) {
+              inventorySetQuantities(input: $input) {
+                inventoryAdjustmentGroup { createdAt }
+                userErrors { field message }
+              }
+            }
+            """,
+            {'input': {
+                'name': 'available',
+                'reason': 'correction',
+                'ignoreCompareQuantity': True,
+                'quantities': [{
+                    'inventoryItemId': inventory_item_id,
+                    'locationId': location_id,
+                    'quantity': int(quantity),
+                }],
+            }},
+        )
+        result = data.get('inventorySetQuantities', {})
+        if result.get('userErrors'):
+            raise ShopifyError(f'inventorySetQuantities: {result["userErrors"]}')
+        return True
+
     def update_variant_barcode_sku(self, product_id, variant_id, sku, barcode):
         """Set a variant's SKU + barcode (pushes a corrected EAN to Shopify)."""
         data = self.graphql(

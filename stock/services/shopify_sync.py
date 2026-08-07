@@ -13,6 +13,7 @@ ProductImage signal.
 import logging
 import os
 import re
+from decimal import Decimal
 
 from .shopify_client import ShopifyClient, ShopifyError
 
@@ -28,6 +29,66 @@ WOULD_CREATE = 'would_create'
 UPLOADED = 'uploaded'
 CREATED = 'created'
 ERROR = 'error'
+
+# Price/inventory push result codes.
+INV_NO_BARCODE = 'inv_no_barcode'
+INV_NOT_IN_SHOPIFY = 'inv_not_in_shopify'
+INV_UNCHANGED = 'inv_unchanged'
+INV_WOULD_UPDATE = 'inv_would_update'
+INV_UPDATED = 'inv_updated'
+INV_ERROR = 'inv_error'
+
+
+def _price_str(value):
+    return f'{Decimal(value):.2f}' if value is not None else '0.00'
+
+
+def sync_product_price_inventory(product, client=None, *, do_price=True, do_inventory=True,
+                                 dry_run=False, shop_rec=None, location_id=None):
+    """Push the app's price and/or on-hand to the matching Shopify variant
+    (by barcode = SKU). The app is authoritative. Returns ``(code, detail)``.
+
+    A bulk caller may pass ``shop_rec`` (from ``all_variants_by_sku``) and
+    ``location_id`` to avoid a per-product lookup; the real-time signal passes
+    neither, so the variant is looked up on the fly."""
+    client = client or ShopifyClient()
+    barcode = (product.barcode or '').strip()
+    if not barcode:
+        return INV_NO_BARCODE, 'product has no barcode'
+    try:
+        rec = shop_rec if shop_rec is not None else client.find_variant_by_sku(barcode)
+        if not rec:
+            return INV_NOT_IN_SHOPIFY, f'no Shopify variant with sku {barcode}'
+
+        app_price = _price_str(product.default_price)
+        try:
+            app_qty = int(product.total_stock() or 0)
+        except Exception:
+            app_qty = 0
+
+        need_price = (do_price and rec.get('price') is not None
+                      and Decimal(rec['price']) != Decimal(app_price))
+        need_inv = do_inventory and rec.get('available') != app_qty
+        if not (need_price or need_inv):
+            return INV_UNCHANGED, ''
+
+        parts = []
+        if need_price:
+            parts.append(f"price {rec.get('price')}->{app_price}")
+        if need_inv:
+            parts.append(f"qty {rec.get('available')}->{app_qty}")
+        detail = ', '.join(parts)
+        if dry_run:
+            return INV_WOULD_UPDATE, detail
+
+        if need_price:
+            client.update_variant_price(rec['product_id'], rec['variant_id'], app_price)
+        if need_inv:
+            loc = location_id or client.get_location_id()
+            client.set_inventory_available(rec['inventory_item_id'], loc, app_qty)
+        return INV_UPDATED, detail
+    except ShopifyError as exc:
+        return INV_ERROR, str(exc)
 
 
 

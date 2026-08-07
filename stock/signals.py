@@ -105,6 +105,48 @@ def mirror_product_image_on_delete(sender, instance, **kwargs):
     _mirror_to_cloudinary(instance.product)
 
 
+def _push_inventory_to_shopify(product):
+    """Set the product's Shopify available quantity to its current on-hand, after
+    commit. Gated by ``SHOPIFY_INVENTORY_SYNC``; idempotent (sets an absolute
+    quantity) so firing more than once for the same product is harmless; never
+    raises — a Shopify hiccup must not break the sale/purchase save."""
+    if not product:
+        return
+    if not getattr(settings, 'SHOPIFY_INVENTORY_SYNC', False):
+        return
+
+    def _sync():
+        try:
+            from .services import shopify_sync
+            code, detail = shopify_sync.sync_product_price_inventory(
+                product, do_price=False, do_inventory=True)
+            logger.info('Shopify inventory %s for %s (%s)', code, getattr(product, 'barcode', '?'), detail)
+        except Exception:  # never let a sync problem break the local save
+            logger.exception('Shopify inventory push crashed for %s', getattr(product, 'barcode', '?'))
+
+    transaction.on_commit(_sync)
+
+
+@receiver(post_save, sender=Sale)
+def push_inventory_on_sale(sender, instance, **kwargs):
+    _push_inventory_to_shopify(instance.product)
+
+
+@receiver(post_delete, sender=Sale)
+def push_inventory_on_sale_delete(sender, instance, **kwargs):
+    _push_inventory_to_shopify(instance.product)
+
+
+@receiver(post_save, sender=Purchase)
+def push_inventory_on_purchase(sender, instance, **kwargs):
+    _push_inventory_to_shopify(instance.product)
+
+
+@receiver(post_delete, sender=Purchase)
+def push_inventory_on_purchase_delete(sender, instance, **kwargs):
+    _push_inventory_to_shopify(instance.product)
+
+
 @receiver(user_logged_in)
 def open_attendance_on_login(sender, request, user, **kwargs):
     """Employees: opening a shift on login. Reuse today's open shift; close a

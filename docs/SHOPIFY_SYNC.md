@@ -128,6 +128,30 @@ skipped. Run the barcode re-align **before** the image/product sync so those kee
 matching by SKU. After this, re-run `sync_cloudinary_images --apply` so Cloudinary
 assets live under the corrected barcodes too.
 
+## Price + inventory (`sync_shopify_inventory`) + real-time push
+
+Push the app's **price** and **on-hand** to Shopify — the app is the source of
+truth — matched by barcode = SKU:
+
+```
+python manage.py sync_shopify_inventory                    # preview (dry run)
+python manage.py sync_shopify_inventory --apply            # write price + inventory
+python manage.py sync_shopify_inventory --inventory-only --apply
+python manage.py sync_shopify_inventory --price-only --brand Lattafa --apply
+```
+
+All Shopify variants are fetched once; only real changes write. Inventory sets the
+variant's **available** quantity at the store location to `Σ purchase.remaining`;
+price sets it to `Product.default_price`.
+
+**Real-time:** set `SHOPIFY_INVENTORY_SYNC=1` in the environment. Then every
+**sale / purchase / stock change** pushes that product's on-hand to Shopify
+*after the DB commit* (idempotent — it sets an absolute quantity; never breaks the
+save; ~1–2 Shopify API calls per event). Off by default. Run the bulk
+`sync_shopify_inventory --apply` once first to align everything, then turn the
+flag on so it stays in sync. (Price is pushed by the bulk command; the real-time
+hook pushes inventory only.)
+
 ## Behaviour & limitations
 
 - **Match key is barcode = SKU** (except `sync_shopify_barcodes`, which matches by

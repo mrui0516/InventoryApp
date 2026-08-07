@@ -243,6 +243,10 @@ SHOPIFY_AUTO_CREATE = os.environ.get('SHOPIFY_AUTO_CREATE', '') in {'1', 'true',
 # Status for products the sync creates. DRAFT (default) so new products are
 # reviewed before going live; set to ACTIVE to publish immediately.
 SHOPIFY_NEW_PRODUCT_STATUS = os.environ.get('SHOPIFY_NEW_PRODUCT_STATUS', 'DRAFT').upper()
+# Real-time inventory push: when a sale/purchase/adjustment changes a product's
+# on-hand, set the matching Shopify variant's available quantity (by barcode=SKU)
+# after the DB commit. Off by default so dev/tests never call out.
+SHOPIFY_INVENTORY_SYNC = os.environ.get('SHOPIFY_INVENTORY_SYNC', '') in {'1', 'true', 'True', 'yes', 'on'}
 
 # --- Cloudinary (product image mirror) ---
 CLOUDINARY_CLOUD_NAME = os.environ.get('CLOUDINARY_CLOUD_NAME', 'bulvpmzg')

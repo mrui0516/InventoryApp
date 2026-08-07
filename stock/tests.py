@@ -4086,6 +4086,88 @@ class SyncShopifyBarcodesCommandTests(TestCase):
         self.assertIn("not on Shopify", output)
 
 
+class SyncShopifyInventoryCommandTests(TestCase):
+    def _setup(self, price, qty, rec):
+        from unittest import mock
+        cat = Category.objects.create(name="P")
+        p = Product.objects.create(name="Asad", barcode="B1", brand="Lattafa",
+                                   category=cat, default_price=Decimal(price))
+        if qty:
+            Purchase.objects.create(product=p, quantity=qty, remaining=qty, cost_price=Decimal("1"))
+        client = mock.Mock()
+        client.is_configured.return_value = True
+        client.all_variants_by_sku.return_value = {"B1": rec} if rec else {}
+        client.get_location_id.return_value = "gid://L/1"
+        return p, client
+
+    def _rec(self, price, available):
+        return {"product_id": "P", "variant_id": "V", "inventory_item_id": "I",
+                "price": price, "available": available}
+
+    def _run(self, client, *extra):
+        from io import StringIO
+        from unittest import mock
+        out = StringIO()
+        with mock.patch("stock.management.commands.sync_shopify_inventory.ShopifyClient",
+                        return_value=client):
+            call_command("sync_shopify_inventory", "--brand", "Lattafa", *extra, stdout=out)
+        return out.getvalue()
+
+    def test_dry_run_writes_nothing(self):
+        _, client = self._setup("35.00", 5, self._rec("20.00", 2))
+        out = self._run(client)
+        self.assertIn("DRY RUN", out)
+        client.update_variant_price.assert_not_called()
+        client.set_inventory_available.assert_not_called()
+
+    def test_apply_pushes_price_and_inventory(self):
+        _, client = self._setup("35.00", 5, self._rec("20.00", 2))
+        self._run(client, "--apply")
+        client.update_variant_price.assert_called_once_with("P", "V", "35.00")
+        client.set_inventory_available.assert_called_once_with("I", "gid://L/1", 5)
+
+    def test_no_write_when_matching(self):
+        _, client = self._setup("35.00", 5, self._rec("35.00", 5))
+        self._run(client, "--apply")
+        client.update_variant_price.assert_not_called()
+        client.set_inventory_available.assert_not_called()
+
+
+class ShopifyInventorySignalTests(TestCase):
+    def _make_product(self, barcode):
+        cat = Category.objects.create(name="P")
+        p = Product.objects.create(name="Asad", barcode=barcode, brand="Lattafa",
+                                   category=cat, default_price=Decimal("10"))
+        Purchase.objects.create(product=p, quantity=10, remaining=10, cost_price=Decimal("1"))
+        return p
+
+    def test_sale_pushes_inventory_when_enabled(self):
+        from unittest import mock
+        p = self._make_product("B1")  # created while sync is OFF -> no push yet
+        with override_settings(SHOPIFY_INVENTORY_SYNC=True), \
+             mock.patch("stock.services.shopify_sync.sync_product_price_inventory",
+                        return_value=("inv_updated", "")) as push:
+            with self.captureOnCommitCallbacks(execute=True):
+                order = SaleOrder.objects.create()
+                Sale.objects.create(order=order, product=p, quantity=1,
+                                    unit_price=Decimal("10"), payment_method="cash")
+        push.assert_called()
+        args, kwargs = push.call_args
+        self.assertEqual(args[0], p)
+        self.assertFalse(kwargs.get("do_price"))     # inventory only, not price
+        self.assertTrue(kwargs.get("do_inventory"))
+
+    def test_no_push_when_disabled(self):
+        from unittest import mock
+        p = self._make_product("B2")
+        with mock.patch("stock.services.shopify_sync.sync_product_price_inventory") as push:
+            with self.captureOnCommitCallbacks(execute=True):
+                order = SaleOrder.objects.create()
+                Sale.objects.create(order=order, product=p, quantity=1,
+                                    unit_price=Decimal("10"), payment_method="cash")
+        push.assert_not_called()
+
+
 class BackupDbCommandTests(TestCase):
     def test_backup_creates_valid_snapshot_and_prunes(self):
         import os
