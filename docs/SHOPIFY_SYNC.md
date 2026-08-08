@@ -164,6 +164,16 @@ Idempotent (absolute set), never breaks the local save, ~1–2 Shopify API calls
 event, off by default. Run the bulk `sync_shopify_inventory --apply` once first to
 align everything, then turn the flag on so it stays in sync.
 
+## Per-product button (product page)
+
+Perfume product pages show a manager-only **"Sync to Shopify"** button
+(`sync_product_to_shopify`). One click: creates the product on Shopify if it's
+missing (ACTIVE, with variant/price/inventory/image/SEO), then pushes its price +
+decant-aware inventory. Only shown for products whose category contains "perfum".
+A reliable manual alternative to the real-time signals — good for listing a new
+perfume or a one-off re-sync. (Newly created products get a single 100ml variant;
+the 10ml/5ml decant variants are added separately.)
+
 ## Behaviour & limitations
 
 - **Match key is barcode = SKU** (except `sync_shopify_barcodes`, which matches by

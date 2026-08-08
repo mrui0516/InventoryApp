@@ -239,6 +239,12 @@
       {% if show_sensitive %}
         <a href="{% url 'edit_product' product.id %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="btn btn-primary">Edit product</a>
       {% endif %}
+      {% if show_sensitive and is_perfume %}
+        <form method="post" action="{% url 'sync_product_to_shopify' product.id %}" class="d-inline">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-outline-primary">Sync to Shopify</button>
+        </form>
+      {% endif %}
     </div>
   </div>
 

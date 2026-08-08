@@ -99,6 +99,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-08-08：产品页(仅香水、经理)加 **"Sync to Shopify" 按钮**(`sync_product_to_shopify`)——一键把该产品推到 Shopify:没有则创建(ACTIVE,含变体/价/库存/图/SEO),然后按分装规则推价格+库存。可靠的手动替代实时信号,也用于新品上架。香水口径 = category 含 "perfum"。另加 `SHOPIFY_LOCATION_ID` 可配置库存地点(多地点时指定 Amadora)。4 测试,234 通过。
 - 2026-08-07：Shopify 库存同步改为**分装感知**——变体 SKU 约定 `条码/条码-10ML/条码-5ML`;整瓶在库 N 下:**100ml = max(N−2,0)**(预留 2 瓶给分装,≤2 断货)、**10ml/5ml = 99(N≥1)/0(N=0)**;无分装的产品 100ml=N。`_inventory_targets` + `DECANT_RESERVE=2`/`DECANT_AVAILABLE=99`;命令与实时(售出/进货/调整)都走这套。3 测试,230 通过。
 - 2026-08-07：新增 **Shopify 价格+库存同步(app 为准)**——`sync_shopify_inventory` 命令按 barcode=SKU 把 `default_price` 和在库(Σremaining)推到 Shopify(一次拉全部变体本地比对,dry-run 默认,支持 `--price-only/--inventory-only/--brand`);外加**实时**:`SHOPIFY_INVENTORY_SYNC=1` 时,售出/进货/库存变动在提交后把该产品在库推到 Shopify;**改价格也实时推价**(Product pre/post_save 检测 default_price 变化)。幂等、不阻断保存、默认关。client 加 `all_variants_by_sku/find_variant_by_sku/update_variant_price/set_inventory_available`,shopify_sync 加 `sync_product_price_inventory`,signals 加 Sale/Purchase 库存推送。5 测试,225 通过。
 - 2026-08-06：新增 **`sync_shopify_barcodes`** 命令——EAN 在 app 改过后,按**产品标题**(稳定键,标题没变)匹配 Shopify 产品,把当前条码写回 Shopify 变体的 SKU+barcode;一次性拉全部 Shopify 产品在本地匹配(dry-run 只几次 API),重复标题视为歧义跳过;默认 dry-run,`--apply` 才写。配套 client 加 `all_products_by_title` / `update_variant_barcode_sku`。Cloudinary 侧用现有 `sync_cloudinary_images --apply` 按新条码重传。4 测试。验证过 token(216 产品,标题零重复,标题匹配可靠)。

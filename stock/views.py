@@ -1487,6 +1487,7 @@ def product_detail_view(request, pk):
     is_manager = has_manager_access(request.user)
     # The full reconstructed Stock Ledger lives on the dedicated /sales-history/
     # page (merged with sales detail); the product page just links there.
+    is_perfume = bool(product.category and 'perfum' in (product.category.name or '').lower())
 
     return render(request, 'stock/product_detail.html', {
         'product': product,
@@ -1499,6 +1500,7 @@ def product_detail_view(request, pk):
         'supplier_costs': supplier_costs,
         'cheapest_supplier_id': cheapest_supplier_id,
         'show_sensitive': is_manager,
+        'is_perfume': is_perfume,
         'show_sales_sensitive': has_sales_sensitive_access(request.user),
     })
 
@@ -1678,6 +1680,53 @@ def download_db_backup(request):
     resp = HttpResponse(data, content_type='application/octet-stream')
     resp['Content-Disposition'] = f'attachment; filename="scentory-db-{stamp}.sqlite3"'
     return resp
+
+
+@login_required
+def sync_product_to_shopify(request, pk):
+    """Manager-only button on the product page (perfumes only): push this product
+    to Shopify — create it if missing, then set its price + decant-aware inventory.
+    Handy for listing a new perfume, or a one-off manual re-sync."""
+    product = get_object_or_404(Product, pk=pk)
+    if request.method != 'POST' or not has_manager_access(request.user):
+        return redirect('product_detail', pk=pk)
+    if not (product.category and 'perfum' in (product.category.name or '').lower()):
+        messages.error(request, 'Shopify sync is for perfumes only.')
+        return redirect('product_detail', pk=pk)
+
+    from .services.shopify_client import ShopifyClient
+    from .services import shopify_sync
+    client = ShopifyClient()
+    if not client.is_configured():
+        messages.error(request, 'Shopify is not configured (SHOPIFY_ADMIN_TOKEN missing).')
+        return redirect('product_detail', pk=pk)
+
+    try:
+        code, detail = shopify_sync.sync_product(product, client, create_missing=True, status='ACTIVE')
+        if code == shopify_sync.SKIP_NO_BARCODE:
+            messages.error(request, 'Product has no barcode — cannot match it on Shopify.')
+            return redirect('product_detail', pk=pk)
+        if code == shopify_sync.ERROR:
+            messages.error(request, f'Shopify: {detail}')
+            return redirect('product_detail', pk=pk)
+        if code == shopify_sync.CREATED:
+            messages.success(request, f'Created on Shopify: {detail}.')
+
+        inv_code, inv_detail = shopify_sync.sync_product_price_inventory(
+            product, client, do_price=True, do_inventory=True)
+    except Exception as exc:  # keep the button from 500-ing on a Shopify hiccup
+        messages.error(request, f'Shopify sync failed: {exc}')
+        return redirect('product_detail', pk=pk)
+
+    if inv_code == shopify_sync.INV_UPDATED:
+        messages.success(request, f'Synced to Shopify — {inv_detail}.')
+    elif inv_code == shopify_sync.INV_UNCHANGED:
+        messages.info(request, 'Already up to date on Shopify.')
+    elif inv_code == shopify_sync.INV_NOT_IN_SHOPIFY:
+        messages.warning(request, 'Not found on Shopify to set price/inventory.')
+    elif inv_code == shopify_sync.INV_ERROR:
+        messages.error(request, f'Inventory sync: {inv_detail}')
+    return redirect('product_detail', pk=pk)
 
 
 @login_required

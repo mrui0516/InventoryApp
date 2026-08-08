@@ -4193,6 +4193,51 @@ class ShopifyInventorySignalTests(TestCase):
         push.assert_not_called()
 
 
+class SyncProductToShopifyButtonTests(TestCase):
+    def _perfume(self):
+        cat = Category.objects.create(name="Perfumes")
+        return Product.objects.create(name="Asad", barcode="B1", brand="L",
+                                      category=cat, default_price=Decimal("10"))
+
+    def test_manager_syncs_perfume(self):
+        from unittest import mock
+        from stock.services import shopify_sync
+        p = self._perfume()
+        get_user_model().objects.create_superuser("shopmgr", password="pw123456")
+        self.client.login(username="shopmgr", password="pw123456")
+        with mock.patch("stock.services.shopify_client.ShopifyClient") as Client, \
+             mock.patch("stock.services.shopify_sync.sync_product",
+                        return_value=(shopify_sync.CREATED, "T")) as sp, \
+             mock.patch("stock.services.shopify_sync.sync_product_price_inventory",
+                        return_value=(shopify_sync.INV_UPDATED, "d")) as spi:
+            Client.return_value.is_configured.return_value = True
+            resp = self.client.post(reverse("sync_product_to_shopify", args=[p.id]))
+        self.assertEqual(resp.status_code, 302)
+        sp.assert_called_once()
+        spi.assert_called_once()
+
+    def test_non_perfume_blocked(self):
+        from unittest import mock
+        cat = Category.objects.create(name="Accessories")
+        p = Product.objects.create(name="Bag", barcode="B2", brand="L",
+                                   category=cat, default_price=Decimal("10"))
+        get_user_model().objects.create_superuser("shopmgr2", password="pw123456")
+        self.client.login(username="shopmgr2", password="pw123456")
+        with mock.patch("stock.services.shopify_sync.sync_product") as sp:
+            self.client.post(reverse("sync_product_to_shopify", args=[p.id]))
+        sp.assert_not_called()
+
+    def test_employee_blocked(self):
+        from unittest import mock
+        p = self._perfume()
+        get_user_model().objects.create_user("shopemp", password="pw123456")
+        self.client.login(username="shopemp", password="pw123456")
+        with mock.patch("stock.services.shopify_sync.sync_product") as sp:
+            resp = self.client.post(reverse("sync_product_to_shopify", args=[p.id]))
+        self.assertEqual(resp.status_code, 302)
+        sp.assert_not_called()
+
+
 class ShopifyLocationConfigTests(SimpleTestCase):
     def test_uses_configured_location_id_without_api_call(self):
         from unittest import mock
