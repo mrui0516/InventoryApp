@@ -1707,9 +1707,10 @@ def sync_all_perfumes_to_shopify(request):
         # Run the command in-process in a background thread (avoids the uwsgi
         # 'which python' problem of spawning a subprocess). Output -> log file.
         try:
-            with open(log_path, 'a', encoding='utf-8') as f:
+            # buffering=1 -> line-buffered, so progress is visible live in the log
+            # and survives if the worker is recycled mid-run.
+            with open(log_path, 'a', encoding='utf-8', buffering=1) as f:
                 f.write(f'\n=== sync started {timezone.now():%Y-%m-%d %H:%M} ===\n')
-                f.flush()
                 call_command('sync_shopify_perfumes', apply=True, stdout=f, stderr=f)
         except Exception as exc:  # noqa: BLE001 — record any crash to the log
             try:
