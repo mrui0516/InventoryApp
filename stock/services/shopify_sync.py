@@ -15,6 +15,8 @@ import os
 import re
 from decimal import Decimal
 
+from django.utils.html import linebreaks
+
 from .shopify_client import ShopifyClient, ShopifyError
 
 logger = logging.getLogger(__name__)
@@ -184,6 +186,14 @@ def _truncate(text, limit):
     return text if len(text) <= limit else text[:limit - 1].rstrip() + '…'
 
 
+def _shopify_description_html(product):
+    """The product description as HTML, preserving the saved formatting (blank
+    lines -> paragraphs, single newlines -> <br>) instead of collapsing it into
+    one run of text. Content is escaped by ``linebreaks``."""
+    text = (product.description or '').strip()
+    return linebreaks(text) if text else ''
+
+
 def _attach_image(product, client, match, *, overwrite, dry_run):
     """Attach the product's photo to an already-found Shopify product."""
     image_path = _local_image_path(product)
@@ -250,10 +260,11 @@ def create_product_in_shopify(product, client=None, *, status='DRAFT', dry_run=F
         }
 
         description = (product.description or '').strip() or title
+        description_html = _shopify_description_html(product) or title
         product_type = (getattr(product.category, 'name', '') if product.category_id else '') or 'Perfume'
         product_input = {
             'title': title,
-            'descriptionHtml': description,
+            'descriptionHtml': description_html,
             'vendor': (product.brand or '').strip(),
             'productType': product_type,
             'tags': _shopify_tags(product),
@@ -289,6 +300,10 @@ def sync_product(product, client=None, *, create_missing=False, overwrite_image=
 
     if match:
         try:
+            if not dry_run:
+                desc = _shopify_description_html(product)
+                if desc:
+                    client.update_product_description(match['id'], desc)
             return _attach_image(product, client, match, overwrite=overwrite_image, dry_run=dry_run)
         except ShopifyError as exc:
             return ERROR, str(exc)

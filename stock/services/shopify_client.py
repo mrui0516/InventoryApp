@@ -367,6 +367,24 @@ class ShopifyClient:
         product = result.get('product')
         return product['id'] if product else None
 
+    def update_product_description(self, product_gid, description_html):
+        """Set a product's description (HTML), preserving the app's formatting."""
+        data = self.graphql(
+            """
+            mutation($product: ProductUpdateInput!) {
+              productUpdate(product: $product) {
+                product { id }
+                userErrors { field message }
+              }
+            }
+            """,
+            {'product': {'id': product_gid, 'descriptionHtml': description_html}},
+        )
+        result = data.get('productUpdate', {})
+        if result.get('userErrors'):
+            raise ShopifyError(f'productUpdate(description): {result["userErrors"]}')
+        return (result.get('product') or {}).get('id')
+
     def attach_image(self, product_gid, resource_url, alt=''):
         """Attach a staged (or public) image URL to a product as media."""
         data = self.graphql(

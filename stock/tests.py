@@ -4238,6 +4238,49 @@ class SyncProductToShopifyButtonTests(TestCase):
         sp.assert_not_called()
 
 
+class SyncAllPerfumesButtonTests(TestCase):
+    def test_manager_launches_background_sync(self):
+        from unittest import mock
+        get_user_model().objects.create_superuser("allmgr", password="pw123456")
+        self.client.login(username="allmgr", password="pw123456")
+        with mock.patch("stock.services.shopify_client.ShopifyClient") as Client, \
+             mock.patch("subprocess.Popen") as popen:
+            Client.return_value.is_configured.return_value = True
+            resp = self.client.post(reverse("sync_all_perfumes_to_shopify"))
+        self.assertEqual(resp.status_code, 302)
+        popen.assert_called_once()
+
+    def test_employee_blocked(self):
+        from unittest import mock
+        get_user_model().objects.create_user("allemp", password="pw123456")
+        self.client.login(username="allemp", password="pw123456")
+        with mock.patch("subprocess.Popen") as popen:
+            self.client.post(reverse("sync_all_perfumes_to_shopify"))
+        popen.assert_not_called()
+
+    def test_get_does_not_launch(self):
+        from unittest import mock
+        get_user_model().objects.create_superuser("allmgr2", password="pw123456")
+        self.client.login(username="allmgr2", password="pw123456")
+        with mock.patch("subprocess.Popen") as popen:
+            self.client.get(reverse("sync_all_perfumes_to_shopify"))
+        popen.assert_not_called()
+
+
+class ShopifyDescriptionFormatTests(SimpleTestCase):
+    def test_linebreaks_preserved(self):
+        from types import SimpleNamespace
+        from stock.services.shopify_sync import _shopify_description_html
+        html = _shopify_description_html(SimpleNamespace(description="Line one\nLine two\n\nNew para"))
+        self.assertIn("<br>", html)    # single newline -> <br>
+        self.assertIn("<p>", html)     # blank line -> paragraph
+
+    def test_empty_description(self):
+        from types import SimpleNamespace
+        from stock.services.shopify_sync import _shopify_description_html
+        self.assertEqual(_shopify_description_html(SimpleNamespace(description="")), "")
+
+
 class ShopifyLocationConfigTests(SimpleTestCase):
     def test_uses_configured_location_id_without_api_call(self):
         from unittest import mock

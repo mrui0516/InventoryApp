@@ -9,7 +9,16 @@
       <div>
         <h1 class="page-title">Products</h1>
       </div>
-      <a href="{% url 'add_product' %}" class="btn btn-primary">Add Product</a>
+      <div class="d-flex flex-wrap gap-2">
+        {% if can_manage %}
+          <form method="post" action="{% url 'sync_all_perfumes_to_shopify' %}" class="d-inline"
+                onsubmit="return confirm('Sync ALL perfumes to Shopify? This runs in the background and updates prices, inventory and descriptions.');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-primary">Sync all perfumes to Shopify</button>
+          </form>
+        {% endif %}
+        <a href="{% url 'add_product' %}" class="btn btn-primary">Add Product</a>
+      </div>
     </div>
   </section>
 

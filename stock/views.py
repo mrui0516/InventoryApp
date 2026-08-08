@@ -1683,6 +1683,40 @@ def download_db_backup(request):
 
 
 @login_required
+def sync_all_perfumes_to_shopify(request):
+    """Manager-only product-list button: sync every perfume to Shopify. The job
+    (200+ products) runs in a detached background process so the request returns
+    immediately; progress goes to logs/shopify_perfumes_sync.log."""
+    if request.method != 'POST' or not has_manager_access(request.user):
+        return redirect('product_list')
+
+    from .services.shopify_client import ShopifyClient
+    if not ShopifyClient().is_configured():
+        messages.error(request, 'Shopify is not configured (SHOPIFY_ADMIN_TOKEN missing).')
+        return redirect('product_list')
+
+    import os
+    import subprocess
+    import sys
+    from django.conf import settings
+    log_dir = os.path.join(settings.BASE_DIR, 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, 'shopify_perfumes_sync.log')
+    try:
+        logf = open(log_path, 'ab')
+        subprocess.Popen(
+            [sys.executable, 'manage.py', 'sync_shopify_perfumes', '--apply'],
+            cwd=str(settings.BASE_DIR), stdout=logf, stderr=logf, start_new_session=True,
+        )
+    except Exception as exc:
+        messages.error(request, f'Could not start the sync: {exc}')
+        return redirect('product_list')
+    messages.success(request, 'Syncing all perfumes to Shopify in the background — '
+                              'this takes a few minutes. Progress: logs/shopify_perfumes_sync.log')
+    return redirect('product_list')
+
+
+@login_required
 def sync_product_to_shopify(request, pk):
     """Manager-only button on the product page (perfumes only): push this product
     to Shopify — create it if missing, then set its price + decant-aware inventory.

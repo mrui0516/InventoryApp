@@ -164,6 +164,19 @@ Idempotent (absolute set), never breaks the local save, ~1–2 Shopify API calls
 event, off by default. Run the bulk `sync_shopify_inventory --apply` once first to
 align everything, then turn the flag on so it stays in sync.
 
+## Bulk button (product list)
+
+The product list has a manager-only **"Sync all perfumes to Shopify"** button. It
+launches `manage.py sync_shopify_perfumes --apply` in a detached background
+process (200+ products would time out a web request), writing progress to
+`logs/shopify_perfumes_sync.log`. It creates missing perfumes, updates
+descriptions (formatted), and pushes price + decant-aware inventory for all
+perfumes (category contains "perfum").
+
+**Descriptions** are uploaded as HTML that preserves the saved formatting (blank
+lines → paragraphs, single newlines → `<br>`) instead of collapsing into one run
+of text — applied on create and on every sync of an existing product.
+
 ## Per-product button (product page)
 
 Perfume product pages show a manager-only **"Sync to Shopify"** button
