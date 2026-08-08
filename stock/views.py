@@ -1699,13 +1699,20 @@ def sync_all_perfumes_to_shopify(request):
     import subprocess
     import sys
     from django.conf import settings
+    # Under the web app, sys.executable is the server (uwsgi), not Python — use the
+    # virtualenv's interpreter (sys.prefix) so `manage.py` runs correctly.
+    python_exe = os.path.join(sys.prefix, 'bin', 'python')
+    if not os.path.exists(python_exe):
+        python_exe = os.path.join(sys.prefix, 'Scripts', 'python.exe')  # Windows
+    if not os.path.exists(python_exe):
+        python_exe = sys.executable
     log_dir = os.path.join(settings.BASE_DIR, 'logs')
     os.makedirs(log_dir, exist_ok=True)
     log_path = os.path.join(log_dir, 'shopify_perfumes_sync.log')
     try:
         logf = open(log_path, 'ab')
         subprocess.Popen(
-            [sys.executable, 'manage.py', 'sync_shopify_perfumes', '--apply'],
+            [python_exe, 'manage.py', 'sync_shopify_perfumes', '--apply'],
             cwd=str(settings.BASE_DIR), stdout=logf, stderr=logf, start_new_session=True,
         )
     except Exception as exc:
