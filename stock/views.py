@@ -1696,28 +1696,29 @@ def sync_all_perfumes_to_shopify(request):
         return redirect('product_list')
 
     import os
-    import subprocess
-    import sys
+    import threading
     from django.conf import settings
-    # Under the web app, sys.executable is the server (uwsgi), not Python — use the
-    # virtualenv's interpreter (sys.prefix) so `manage.py` runs correctly.
-    python_exe = os.path.join(sys.prefix, 'bin', 'python')
-    if not os.path.exists(python_exe):
-        python_exe = os.path.join(sys.prefix, 'Scripts', 'python.exe')  # Windows
-    if not os.path.exists(python_exe):
-        python_exe = sys.executable
+    from django.core.management import call_command
     log_dir = os.path.join(settings.BASE_DIR, 'logs')
     os.makedirs(log_dir, exist_ok=True)
     log_path = os.path.join(log_dir, 'shopify_perfumes_sync.log')
-    try:
-        logf = open(log_path, 'ab')
-        subprocess.Popen(
-            [python_exe, 'manage.py', 'sync_shopify_perfumes', '--apply'],
-            cwd=str(settings.BASE_DIR), stdout=logf, stderr=logf, start_new_session=True,
-        )
-    except Exception as exc:
-        messages.error(request, f'Could not start the sync: {exc}')
-        return redirect('product_list')
+
+    def _run():
+        # Run the command in-process in a background thread (avoids the uwsgi
+        # 'which python' problem of spawning a subprocess). Output -> log file.
+        try:
+            with open(log_path, 'a', encoding='utf-8') as f:
+                f.write(f'\n=== sync started {timezone.now():%Y-%m-%d %H:%M} ===\n')
+                f.flush()
+                call_command('sync_shopify_perfumes', apply=True, stdout=f, stderr=f)
+        except Exception as exc:  # noqa: BLE001 — record any crash to the log
+            try:
+                with open(log_path, 'a', encoding='utf-8') as f:
+                    f.write(f'\nSync crashed: {exc}\n')
+            except OSError:
+                pass
+
+    threading.Thread(target=_run, daemon=True).start()
     messages.success(request, 'Syncing all perfumes to Shopify in the background — '
                               'this takes a few minutes. Progress: logs/shopify_perfumes_sync.log')
     return redirect('product_list')

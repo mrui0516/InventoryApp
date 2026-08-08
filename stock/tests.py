@@ -4244,27 +4244,28 @@ class SyncAllPerfumesButtonTests(TestCase):
         get_user_model().objects.create_superuser("allmgr", password="pw123456")
         self.client.login(username="allmgr", password="pw123456")
         with mock.patch("stock.services.shopify_client.ShopifyClient") as Client, \
-             mock.patch("subprocess.Popen") as popen:
+             mock.patch("threading.Thread") as Thread:
             Client.return_value.is_configured.return_value = True
             resp = self.client.post(reverse("sync_all_perfumes_to_shopify"))
         self.assertEqual(resp.status_code, 302)
-        popen.assert_called_once()
+        Thread.assert_called_once()
+        Thread.return_value.start.assert_called_once()
 
     def test_employee_blocked(self):
         from unittest import mock
         get_user_model().objects.create_user("allemp", password="pw123456")
         self.client.login(username="allemp", password="pw123456")
-        with mock.patch("subprocess.Popen") as popen:
+        with mock.patch("threading.Thread") as Thread:
             self.client.post(reverse("sync_all_perfumes_to_shopify"))
-        popen.assert_not_called()
+        Thread.assert_not_called()
 
     def test_get_does_not_launch(self):
         from unittest import mock
         get_user_model().objects.create_superuser("allmgr2", password="pw123456")
         self.client.login(username="allmgr2", password="pw123456")
-        with mock.patch("subprocess.Popen") as popen:
+        with mock.patch("threading.Thread") as Thread:
             self.client.get(reverse("sync_all_perfumes_to_shopify"))
-        popen.assert_not_called()
+        Thread.assert_not_called()
 
 
 class ShopifyDescriptionFormatTests(SimpleTestCase):
