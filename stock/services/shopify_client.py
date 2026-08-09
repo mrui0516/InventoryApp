@@ -146,7 +146,7 @@ class ShopifyClient:
           products(first: 100, after: $cursor) {
             pageInfo { hasNextPage endCursor }
             edges { node {
-              id
+              id status
               variants(first: 1) { edges { node {
                 id sku price inventoryQuantity inventoryItem { id }
               } } }
@@ -169,6 +169,7 @@ class ShopifyClient:
                 inv = v.get('inventoryItem') or {}
                 out[sku] = {
                     'product_id': node['id'],
+                    'status': node.get('status'),
                     'variant_id': v['id'],
                     'inventory_item_id': inv.get('id'),
                     'price': v.get('price'),
@@ -366,6 +367,112 @@ class ShopifyClient:
             raise ShopifyError(f'productSet: {result["userErrors"]}')
         product = result.get('product')
         return product['id'] if product else None
+
+    def set_product_status(self, product_gid, status):
+        """Set a product's status to 'ACTIVE' or 'DRAFT' (used to hide/show it)."""
+        data = self.graphql(
+            """
+            mutation($product: ProductUpdateInput!) {
+              productUpdate(product: $product) {
+                product { id status }
+                userErrors { field message }
+              }
+            }
+            """,
+            {'product': {'id': product_gid, 'status': status}},
+        )
+        result = data.get('productUpdate', {})
+        if result.get('userErrors'):
+            raise ShopifyError(f'productUpdate(status): {result["userErrors"]}')
+        return (result.get('product') or {}).get('id')
+
+    def find_collection_by_title(self, title):
+        """The GID of the manual collection with this exact title, or None."""
+        esc = (title or '').replace('\\', '\\\\').replace('"', '\\"')
+        data = self.graphql(
+            'query($q: String!) { collections(first: 10, query: $q) { edges { node { id title } } } }',
+            {'q': f'title:"{esc}"'},
+        )
+        for edge in data.get('collections', {}).get('edges', []):
+            if edge['node'].get('title') == title:
+                return edge['node']['id']
+        return None
+
+    def create_collection(self, title):
+        """Create a manual collection (MANUAL sort so we can order it), return GID."""
+        data = self.graphql(
+            """
+            mutation($input: CollectionInput!) {
+              collectionCreate(input: $input) {
+                collection { id }
+                userErrors { field message }
+              }
+            }
+            """,
+            {'input': {'title': title, 'sortOrder': 'MANUAL'}},
+        )
+        result = data.get('collectionCreate', {})
+        if result.get('userErrors'):
+            raise ShopifyError(f'collectionCreate: {result["userErrors"]}')
+        return (result.get('collection') or {}).get('id')
+
+    def collection_product_ids(self, collection_gid):
+        """All product GIDs currently in the collection (paginated)."""
+        ids, cursor = [], None
+        query = """
+        query($id: ID!, $cursor: String) {
+          collection(id: $id) {
+            products(first: 100, after: $cursor) {
+              pageInfo { hasNextPage endCursor }
+              edges { node { id } }
+            }
+          }
+        }
+        """
+        while True:
+            coll = self.graphql(query, {'id': collection_gid, 'cursor': cursor}).get('collection') or {}
+            prods = coll.get('products', {})
+            for edge in prods.get('edges', []):
+                ids.append(edge['node']['id'])
+            page = prods.get('pageInfo', {})
+            if not page.get('hasNextPage'):
+                break
+            cursor = page.get('endCursor')
+        return ids
+
+    def set_collection_products(self, collection_gid, ordered_gids):
+        """Make the manual collection contain exactly ``ordered_gids`` in that order
+        (add missing, remove extras, then reorder). Returns {added, removed}."""
+        desired = list(dict.fromkeys(ordered_gids))  # de-dup, keep order
+        current = self.collection_product_ids(collection_gid)
+        to_add = [g for g in desired if g not in current]
+        to_remove = [g for g in current if g not in desired]
+        if to_add:
+            data = self.graphql(
+                'mutation($id: ID!, $ids: [ID!]!) { collectionAddProducts(id: $id, productIds: $ids) '
+                '{ userErrors { field message } } }',
+                {'id': collection_gid, 'ids': to_add})
+            errs = data.get('collectionAddProducts', {}).get('userErrors')
+            if errs:
+                raise ShopifyError(f'collectionAddProducts: {errs}')
+        if to_remove:
+            data = self.graphql(
+                'mutation($id: ID!, $ids: [ID!]!) { collectionRemoveProducts(id: $id, productIds: $ids) '
+                '{ job { id } userErrors { field message } } }',
+                {'id': collection_gid, 'ids': to_remove})
+            errs = data.get('collectionRemoveProducts', {}).get('userErrors')
+            if errs:
+                raise ShopifyError(f'collectionRemoveProducts: {errs}')
+        if desired:
+            moves = [{'id': g, 'newPosition': str(i)} for i, g in enumerate(desired)]
+            data = self.graphql(
+                'mutation($id: ID!, $moves: [MoveInput!]!) { collectionReorderProducts(id: $id, moves: $moves) '
+                '{ job { id } userErrors { field message } } }',
+                {'id': collection_gid, 'moves': moves})
+            errs = data.get('collectionReorderProducts', {}).get('userErrors')
+            if errs:
+                raise ShopifyError(f'collectionReorderProducts: {errs}')
+        return {'added': len(to_add), 'removed': len(to_remove)}
 
     def update_product_description(self, product_gid, description_html):
         """Set a product's description (HTML), preserving the app's formatting."""

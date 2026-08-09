@@ -4282,6 +4282,55 @@ class ShopifyDescriptionFormatTests(SimpleTestCase):
         self.assertEqual(_shopify_description_html(SimpleNamespace(description="")), "")
 
 
+class SyncShopifyStorefrontTests(TestCase):
+    def test_hides_soldout_shows_restocked_and_sets_collections(self):
+        from io import StringIO
+        from unittest import mock
+        cat = Category.objects.create(name="Perfumes")
+        Product.objects.create(name="Out", barcode="OUT", brand="L",
+                               category=cat, default_price=Decimal("10"))
+        p_in = Product.objects.create(name="In", barcode="IN", brand="L",
+                                      category=cat, default_price=Decimal("10"))
+        Purchase.objects.create(product=p_in, quantity=5, remaining=5, cost_price=Decimal("1"))
+
+        client = mock.Mock()
+        client.is_configured.return_value = True
+        client.all_variants_by_sku.return_value = {
+            "OUT": {"product_id": "gid://P/out", "status": "ACTIVE", "variant_id": "v",
+                    "inventory_item_id": "i", "price": "10.00", "available": 0},
+            "IN": {"product_id": "gid://P/in", "status": "DRAFT", "variant_id": "v",
+                   "inventory_item_id": "i", "price": "10.00", "available": 5},
+        }
+        client.find_collection_by_title.return_value = "gid://C/x"
+
+        with mock.patch("stock.management.commands.sync_shopify_storefront.ShopifyClient",
+                        return_value=client):
+            call_command("sync_shopify_storefront", "--apply", stdout=StringIO())
+
+        status_calls = {c.args[0]: c.args[1] for c in client.set_product_status.call_args_list}
+        self.assertEqual(status_calls, {"gid://P/out": "DRAFT", "gid://P/in": "ACTIVE"})
+        self.assertTrue(client.set_collection_products.called)
+
+    def test_dry_run_writes_nothing(self):
+        from io import StringIO
+        from unittest import mock
+        cat = Category.objects.create(name="Perfumes")
+        Product.objects.create(name="Out", barcode="OUT", brand="L", category=cat, default_price=Decimal("10"))
+        client = mock.Mock()
+        client.is_configured.return_value = True
+        client.all_variants_by_sku.return_value = {
+            "OUT": {"product_id": "gid://P/out", "status": "ACTIVE", "variant_id": "v",
+                    "inventory_item_id": "i", "price": "10.00", "available": 0},
+        }
+        client.find_collection_by_title.return_value = None
+        with mock.patch("stock.management.commands.sync_shopify_storefront.ShopifyClient",
+                        return_value=client):
+            call_command("sync_shopify_storefront", stdout=StringIO())
+        client.set_product_status.assert_not_called()
+        client.set_collection_products.assert_not_called()
+        client.create_collection.assert_not_called()
+
+
 class ShopifyLocationConfigTests(SimpleTestCase):
     def test_uses_configured_location_id_without_api_call(self):
         from unittest import mock

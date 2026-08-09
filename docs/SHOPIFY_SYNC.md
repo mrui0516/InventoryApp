@@ -164,6 +164,28 @@ Idempotent (absolute set), never breaks the local save, ~1–2 Shopify API calls
 event, off by default. Run the bulk `sync_shopify_inventory --apply` once first to
 align everything, then turn the flag on so it stays in sync.
 
+## Daily storefront automation (`sync_shopify_storefront`)
+
+Meant for a daily PythonAnywhere **Scheduled task**. Dry-run by default.
+
+```
+python manage.py sync_shopify_storefront            # preview
+python manage.py sync_shopify_storefront --apply    # write to Shopify
+```
+
+1. **Hide sold-out / show restocked** — a perfume with on-hand `N == 0` is set to
+   `DRAFT` (off the storefront); `N >= 1` is set back to `ACTIVE`. (At `N <= 2` the
+   100ml is out of stock but decants remain, so the product stays visible.)
+2. **"Novidades"** — the existing manual collection is set to the **20 newest
+   perfumes** (by `created_at`, newest first).
+3. **"O Mais Vendido do Mês"** — created if missing, set to the **top 5 perfumes by
+   units sold this calendar month** (from app sales).
+
+Collections are matched by exact title; you wire the theme's homepage sections to
+them in Shopify (theme edits are manual). *Back-in-stock (a collection of perfumes
+whose 100ml recently returned to stock) is a separate follow-up — it needs to
+track the out→in transition.*
+
 ## Bulk button (product list)
 
 The product list has a manager-only **"Sync all perfumes to Shopify"** button. It
