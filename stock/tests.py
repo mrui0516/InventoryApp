@@ -1401,6 +1401,16 @@ class EmployeeProductEditExportTests(TestCase):
         self.assertIn("EAN", values)                 # the new header
         self.assertIn("7400000000001", values)       # the product's barcode value
 
+    def test_product_excel_appends_spec_to_name(self):
+        from openpyxl import load_workbook
+        Product.objects.filter(pk=self.product.pk).update(spec="77ml")
+        self.client.login(username="edit_emp", password="pw123456")
+        resp = self.client.get(reverse("export_product_list_excel"))
+        wb = load_workbook(BytesIO(b"".join(resp.streaming_content)))
+        values = [str(v) for ws in wb.worksheets for row in ws.iter_rows(values_only=True)
+                  for v in row if v is not None]
+        self.assertTrue(any(v.endswith("77ml") for v in values))  # name column ends with the spec
+
     def test_product_excel_uses_excel_safe_currency_number_format(self):
         self.client.login(username="edit_emp", password="pw123456")
 
@@ -4290,6 +4300,32 @@ class ShopifyDescriptionFormatTests(SimpleTestCase):
         from types import SimpleNamespace
         from stock.services.shopify_sync import _shopify_description_html
         self.assertEqual(_shopify_description_html(SimpleNamespace(description="")), "")
+
+
+class BackfillPerfumeSpecTests(TestCase):
+    def test_fills_blank_perfume_spec_only(self):
+        from io import StringIO
+        cat = Category.objects.create(name="Perfumes")
+        acc = Category.objects.create(name="Accessories")
+        blank = Product.objects.create(name="A", barcode="S1", brand="L", category=cat, default_price=Decimal("1"))
+        has_spec = Product.objects.create(name="B", barcode="S2", brand="L", category=cat,
+                                          default_price=Decimal("1"), spec="90ml")
+        non_perfume = Product.objects.create(name="C", barcode="S3", brand="L", category=acc, default_price=Decimal("1"))
+
+        call_command("backfill_perfume_spec", "--apply", stdout=StringIO())
+
+        blank.refresh_from_db(); has_spec.refresh_from_db(); non_perfume.refresh_from_db()
+        self.assertEqual(blank.spec, "100ml")            # blank perfume filled
+        self.assertEqual(has_spec.spec, "90ml")          # existing spec kept
+        self.assertIn(non_perfume.spec, (None, ""))      # non-perfume untouched
+
+    def test_dry_run_writes_nothing(self):
+        from io import StringIO
+        cat = Category.objects.create(name="Perfumes")
+        p = Product.objects.create(name="A", barcode="S9", brand="L", category=cat, default_price=Decimal("1"))
+        call_command("backfill_perfume_spec", stdout=StringIO())
+        p.refresh_from_db()
+        self.assertIn(p.spec, (None, ""))
 
 
 class SyncShopifyStorefrontTests(TestCase):

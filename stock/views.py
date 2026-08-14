@@ -1116,6 +1116,10 @@ def export_product_list_excel(request):
     products = list(products_qs)
     for product in products:
         product.export_title = build_customer_product_title(product)
+        # Append the Specification (volume, e.g. "100ml") after the product name.
+        spec = (product.spec or '').strip()
+        if spec:
+            product.export_title = f'{product.export_title} {spec}'
         product.export_brand = customer_catalog_case((product.brand or '').strip()) or 'No Brand'
         product.export_model = customer_catalog_case((product.model or '').strip()) or 'Other Selections'
         product.export_category_name = customer_catalog_case(getattr(product.category, 'name', ''))
