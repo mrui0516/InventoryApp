@@ -99,6 +99,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-08-09：客户产品清单 Excel 导出新增 **EAN 列**(在 Product 与 Category 之间,文本格式保留完整位数)。1 测试。
 - 2026-08-09：新增 **`sync_shopify_storefront`**(每日 PA 定时任务,dry-run 默认)——① 断货隐藏:香水在库 N=0→产品设 DRAFT、N≥1→ACTIVE(N≤2 时 100ml 断货但分装在售,产品仍可见);② **Novidades** 合集设为最新 20 个香水(按 created_at);③ **O Mais Vendido do Mês** 合集(缺则创建)设为当月 app 销量前 5。client 加 `set_product_status/find_collection_by_title/create_collection/collection_product_ids/set_collection_products`,`all_variants_by_sku` 增 status。合集按标题匹配,主题区块由用户在 Shopify 手动接。**Back in stock(需 Product 加断货/补货状态字段)= Phase 2 待做**。2 测试,241 通过。
 - 2026-08-08：产品列表加 **"Sync all perfumes to Shopify" 批量按钮**(经理)——后台跑 `sync_shopify_perfumes --apply`(分离进程,避免 web 请求超时;日志 `logs/shopify_perfumes_sync.log`):对所有香水创建缺失/更新描述/推价格+分装库存。**产品描述按保存格式上传**(空行→段落、换行→`<br>`,不再合成一坨;创建和每次同步已有产品都应用)——`_shopify_description_html` + client `update_product_description`。库存分装规则已是 100ml=max(N−2,0)/分装 99·0,按 sku 识别整瓶变体(与 ml 标签无关)。5 测试,239 通过。
 - 2026-08-08：产品页(仅香水、经理)加 **"Sync to Shopify" 按钮**(`sync_product_to_shopify`)——一键把该产品推到 Shopify:没有则创建(ACTIVE,含变体/价/库存/图/SEO),然后按分装规则推价格+库存。可靠的手动替代实时信号,也用于新品上架。香水口径 = category 含 "perfum"。另加 `SHOPIFY_LOCATION_ID` 可配置库存地点(多地点时指定 Amadora)。4 测试,234 通过。

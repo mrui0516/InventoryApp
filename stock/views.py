@@ -1187,6 +1187,7 @@ def export_product_list_excel(request):
             columns.append(('Image', 16))
         columns.extend([
             ('Product', 34),
+            ('EAN', 16),
             ('Category', 18),
         ])
         if price_mode in {'retail', 'both'}:
@@ -1253,6 +1254,13 @@ def export_product_list_excel(request):
 
                 ws.cell(row=row_idx, column=col_idx, value=product.export_title).alignment = wrap
                 ws.cell(row=row_idx, column=col_idx).border = border
+                col_idx += 1
+
+                # EAN (barcode) — stored as text so long codes keep every digit.
+                ean_cell = ws.cell(row=row_idx, column=col_idx, value=(product.barcode or '-'))
+                ean_cell.border = border
+                ean_cell.alignment = center
+                ean_cell.number_format = '@'
                 col_idx += 1
 
                 ws.cell(row=row_idx, column=col_idx, value=product.export_category_name or '-').alignment = wrap

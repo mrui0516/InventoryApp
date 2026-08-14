@@ -1391,6 +1391,16 @@ class EmployeeProductEditExportTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn("spreadsheet", resp["Content-Type"])
 
+    def test_product_excel_includes_ean_column(self):
+        from openpyxl import load_workbook
+        self.client.login(username="edit_emp", password="pw123456")
+        resp = self.client.get(reverse("export_product_list_excel"))
+        wb = load_workbook(BytesIO(b"".join(resp.streaming_content)))
+        values = {str(v) for ws in wb.worksheets for row in ws.iter_rows(values_only=True)
+                  for v in row if v is not None}
+        self.assertIn("EAN", values)                 # the new header
+        self.assertIn("7400000000001", values)       # the product's barcode value
+
     def test_product_excel_uses_excel_safe_currency_number_format(self):
         self.client.login(username="edit_emp", password="pw123456")
 
