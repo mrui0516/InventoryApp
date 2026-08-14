@@ -2543,6 +2543,15 @@ class ShopifySyncTests(TestCase):
         self.assertIn("seo", payload)
         self.assertIn("files", payload)
 
+    def test_create_sets_eau_de_parfum_category_for_perfume(self):
+        from unittest import mock
+        from stock.services import shopify_sync
+        client = self._create_client()
+        with mock.patch.object(shopify_sync, "_local_image_path", return_value=None):
+            shopify_sync.create_product_in_shopify(self.product, client)
+        payload = client.product_set.call_args[0][0]
+        self.assertEqual(payload.get("category"), shopify_sync.EAU_DE_PARFUM_TAXONOMY_GID)
+
     def test_sync_product_does_not_create_when_disabled(self):
         from unittest import mock
         from stock.services import shopify_sync
@@ -4300,6 +4309,33 @@ class ShopifyDescriptionFormatTests(SimpleTestCase):
         from types import SimpleNamespace
         from stock.services.shopify_sync import _shopify_description_html
         self.assertEqual(_shopify_description_html(SimpleNamespace(description="")), "")
+
+
+class SyncShopifyPerfumesCollectionTests(TestCase):
+    def test_adds_perfume_to_its_brand_manual_collection(self):
+        from io import StringIO
+        from unittest import mock
+        from stock.services import shopify_sync
+        cat = Category.objects.create(name="Perfumes")
+        Product.objects.create(name="Khamrah", barcode="BC1", brand="Lattafa",
+                               category=cat, default_price=Decimal("10"))
+        client = mock.Mock()
+        client.is_configured.return_value = True
+        client.all_variants_by_sku.return_value = {
+            "BC1": {"product_id": "gid://P/1", "status": "ACTIVE", "variant_id": "v",
+                    "inventory_item_id": "i", "price": "10.00", "available": 5}}
+        client.all_collections.return_value = [
+            {"id": "gid://C/lattafa", "title": "Lattafa - Perfumes Árabes", "smart": False},
+            {"id": "gid://C/rayhaan", "title": "Rayhaan - Perfumes Árabes", "smart": True},
+        ]
+        with mock.patch("stock.management.commands.sync_shopify_perfumes.ShopifyClient",
+                        return_value=client), \
+             mock.patch("stock.services.shopify_sync.sync_product",
+                        return_value=(shopify_sync.SKIP_HAS_IMAGE, "")), \
+             mock.patch("stock.services.shopify_sync.sync_product_price_inventory",
+                        return_value=(shopify_sync.INV_UNCHANGED, "")):
+            call_command("sync_shopify_perfumes", "--apply", stdout=StringIO())
+        client.collection_add_products.assert_called_once_with("gid://C/lattafa", ["gid://P/1"])
 
 
 class BackfillPerfumeSpecTests(TestCase):

@@ -76,12 +76,40 @@ class Command(BaseCommand):
             elif code != shopify_sync.CREATED:
                 not_found += 1
 
+        # --- add each perfume to its brand's manual collection --------------
+        # (smart brand collections auto-join by vendor; only manual ones need it)
+        manual_by_brand = {}
+        for col in client.all_collections():
+            if col['smart']:
+                continue
+            prefix = col['title'].split(' - ')[0].strip().lower()
+            manual_by_brand.setdefault(prefix, col['id'])
+        coll_groups = {}
+        for product in qs:
+            rec = by_sku.get((product.barcode or '').strip())
+            if not rec:
+                continue
+            coll_id = manual_by_brand.get((product.brand or '').strip().lower())
+            if coll_id:
+                coll_groups.setdefault(coll_id, []).append(rec['product_id'])
+        collection_adds = 0
+        for coll_id, gids in coll_groups.items():
+            gids = list(dict.fromkeys(gids))
+            if not dry_run:
+                try:
+                    client.collection_add_products(coll_id, gids)
+                except Exception as exc:
+                    self.stdout.write(self.style.ERROR(f'  collection add failed: {exc}'))
+                    continue
+            collection_adds += len(gids)
+
         self.stdout.write('')
         self.stdout.write(self.style.MIGRATE_HEADING('Summary:'))
         self.stdout.write(f'  created: {created}')
         self.stdout.write(f'  price/inventory changed: {updated}')
         self.stdout.write(f'  already correct: {unchanged}')
         self.stdout.write(f'  not on Shopify (skipped): {not_found}')
+        self.stdout.write(f'  brand-collection memberships: {collection_adds}')
         if errors:
             self.stdout.write(self.style.ERROR(f'  errors: {errors}'))
         if dry_run:

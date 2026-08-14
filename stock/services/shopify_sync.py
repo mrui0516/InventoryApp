@@ -32,6 +32,10 @@ UPLOADED = 'uploaded'
 CREATED = 'created'
 ERROR = 'error'
 
+# Standard Product Taxonomy node for "Eaux de Parfum"
+# (Health & Beauty > Personal Care > Cosmetics > Perfumes & Colognes > Eaux de Parfum).
+EAU_DE_PARFUM_TAXONOMY_GID = 'gid://shopify/TaxonomyCategory/hb-3-2-8-3'
+
 # Price/inventory push result codes.
 INV_NO_BARCODE = 'inv_no_barcode'
 INV_NOT_IN_SHOPIFY = 'inv_not_in_shopify'
@@ -273,6 +277,10 @@ def create_product_in_shopify(product, client=None, *, status='DRAFT', dry_run=F
             'productOptions': [{'name': 'Title', 'values': [{'name': 'Default Title'}]}],
             'variants': [variant],
         }
+
+        # Perfumes get the "Eaux de Parfum" standard category.
+        if product.category_id and 'perfum' in (getattr(product.category, 'name', '') or '').lower():
+            product_input['category'] = EAU_DE_PARFUM_TAXONOMY_GID
 
         image_path = _local_image_path(product)
         if image_path:

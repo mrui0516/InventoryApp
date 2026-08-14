@@ -416,6 +416,43 @@ class ShopifyClient:
             raise ShopifyError(f'collectionCreate: {result["userErrors"]}')
         return (result.get('collection') or {}).get('id')
 
+    def all_collections(self):
+        """[{id, title, smart}] for every collection (smart = rule-based)."""
+        out, cursor = [], None
+        query = """
+        query($cursor: String) {
+          collections(first: 100, after: $cursor) {
+            pageInfo { hasNextPage endCursor }
+            edges { node { id title ruleSet { appliedDisjunctively } } }
+          }
+        }
+        """
+        while True:
+            data = self.graphql(query, {'cursor': cursor}).get('collections', {})
+            for edge in data.get('edges', []):
+                node = edge['node']
+                out.append({'id': node['id'], 'title': node.get('title', ''),
+                            'smart': node.get('ruleSet') is not None})
+            page = data.get('pageInfo', {})
+            if not page.get('hasNextPage'):
+                break
+            cursor = page.get('endCursor')
+        return out
+
+    def collection_add_products(self, collection_gid, product_gids):
+        """Add products to a manual collection (a no-op for ones already in it).
+        Fails on smart collections — the caller should only pass manual ones."""
+        ids = list(dict.fromkeys(product_gids))
+        if not ids:
+            return
+        data = self.graphql(
+            'mutation($id: ID!, $ids: [ID!]!) { collectionAddProducts(id: $id, productIds: $ids) '
+            '{ userErrors { field message } } }',
+            {'id': collection_gid, 'ids': ids})
+        errs = data.get('collectionAddProducts', {}).get('userErrors')
+        if errs:
+            raise ShopifyError(f'collectionAddProducts: {errs}')
+
     def collection_product_ids(self, collection_gid):
         """All product GIDs currently in the collection (paginated)."""
         ids, cursor = [], None
