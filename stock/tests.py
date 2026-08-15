@@ -4337,6 +4337,22 @@ class SyncShopifyPerfumesCollectionTests(TestCase):
             call_command("sync_shopify_perfumes", "--apply", stdout=StringIO())
         client.collection_add_products.assert_called_once_with("gid://C/lattafa", ["gid://P/1"])
 
+    def test_missing_product_not_created_without_create_flag(self):
+        from io import StringIO
+        from unittest import mock
+        cat = Category.objects.create(name="Perfumes")
+        Product.objects.create(name="New", barcode="NEW", brand="Lattafa",
+                               category=cat, default_price=Decimal("10"))
+        client = mock.Mock()
+        client.is_configured.return_value = True
+        client.all_variants_by_sku.return_value = {}      # not on Shopify
+        client.all_collections.return_value = []
+        with mock.patch("stock.management.commands.sync_shopify_perfumes.ShopifyClient",
+                        return_value=client), \
+             mock.patch("stock.services.shopify_sync.sync_product") as sp:
+            call_command("sync_shopify_perfumes", "--apply", stdout=StringIO())
+        sp.assert_not_called()                             # default: don't create missing
+
 
 class BackfillPerfumeSpecTests(TestCase):
     def test_fills_blank_perfume_spec_only(self):
