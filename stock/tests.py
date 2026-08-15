@@ -4354,6 +4354,40 @@ class SyncShopifyPerfumesCollectionTests(TestCase):
         sp.assert_not_called()                             # default: don't create missing
 
 
+class PruneShopifyProductsTests(TestCase):
+    def test_deletes_only_products_not_in_app(self):
+        from io import StringIO
+        from unittest import mock
+        cat = Category.objects.create(name="Perfumes")
+        Product.objects.create(name="Keep", barcode="INAPP", brand="L",
+                               category=cat, default_price=Decimal("10"))
+        client = mock.Mock()
+        client.is_configured.return_value = True
+        client.all_products_by_title.return_value = {
+            "Keep": {"product_id": "gid://P/keep", "variant_id": "v", "sku": "INAPP", "barcode": "INAPP"},
+            "Gone": {"product_id": "gid://P/gone", "variant_id": "v", "sku": "NOTINAPP", "barcode": "NOTINAPP"},
+            "Ambiguous": None,   # duplicate title -> skip
+            "NoSku": {"product_id": "gid://P/nosku", "variant_id": "v", "sku": "", "barcode": ""},
+        }
+        with mock.patch("stock.management.commands.prune_shopify_products.ShopifyClient",
+                        return_value=client):
+            call_command("prune_shopify_products", "--apply", stdout=StringIO())
+        client.delete_product.assert_called_once_with("gid://P/gone")
+
+    def test_dry_run_deletes_nothing(self):
+        from io import StringIO
+        from unittest import mock
+        client = mock.Mock()
+        client.is_configured.return_value = True
+        client.all_products_by_title.return_value = {
+            "Gone": {"product_id": "gid://P/gone", "variant_id": "v", "sku": "X", "barcode": "X"},
+        }
+        with mock.patch("stock.management.commands.prune_shopify_products.ShopifyClient",
+                        return_value=client):
+            call_command("prune_shopify_products", stdout=StringIO())
+        client.delete_product.assert_not_called()
+
+
 class BackfillPerfumeSpecTests(TestCase):
     def test_fills_blank_perfume_spec_only(self):
         from io import StringIO

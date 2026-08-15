@@ -443,6 +443,24 @@ class ShopifyClient:
             raise ShopifyError(f'collectionCreate: {result["userErrors"]}')
         return (result.get('collection') or {}).get('id')
 
+    def delete_product(self, product_gid):
+        """Delete a product from Shopify. Returns the deleted product's GID."""
+        data = self.graphql(
+            """
+            mutation($input: ProductDeleteInput!) {
+              productDelete(input: $input) {
+                deletedProductId
+                userErrors { field message }
+              }
+            }
+            """,
+            {'input': {'id': product_gid}},
+        )
+        result = data.get('productDelete', {})
+        if result.get('userErrors'):
+            raise ShopifyError(f'productDelete: {result["userErrors"]}')
+        return result.get('deletedProductId')
+
     def all_collections(self):
         """[{id, title, smart}] for every collection (smart = rule-based)."""
         out, cursor = [], None
