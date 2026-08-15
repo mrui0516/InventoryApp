@@ -4444,10 +4444,11 @@ class DecantInventoryLogicTests(SimpleTestCase):
     def test_targets_reserve_and_decant(self):
         from stock.services.shopify_sync import _inventory_targets
         present = {"B1", "B1-10ML", "B1-5ML"}
+        # decants track the 100ml: available only when 100ml (max(N-2,0)) > 0
         self.assertEqual(_inventory_targets("B1", 5, present), {"B1": 3, "B1-10ML": 99, "B1-5ML": 99})
         self.assertEqual(_inventory_targets("B1", 3, present), {"B1": 1, "B1-10ML": 99, "B1-5ML": 99})
-        self.assertEqual(_inventory_targets("B1", 2, present), {"B1": 0, "B1-10ML": 99, "B1-5ML": 99})
-        self.assertEqual(_inventory_targets("B1", 1, present), {"B1": 0, "B1-10ML": 99, "B1-5ML": 99})
+        self.assertEqual(_inventory_targets("B1", 2, present), {"B1": 0, "B1-10ML": 0, "B1-5ML": 0})
+        self.assertEqual(_inventory_targets("B1", 1, present), {"B1": 0, "B1-10ML": 0, "B1-5ML": 0})
         self.assertEqual(_inventory_targets("B1", 0, present), {"B1": 0, "B1-10ML": 0, "B1-5ML": 0})
 
     def test_targets_no_decant_uses_full_onhand(self):
@@ -4475,6 +4476,29 @@ class DecantInventoryPushTests(TestCase):
         self.assertEqual(code, shopify_sync.INV_UPDATED)
         calls = {c.args[0]: c.args[2] for c in client.set_inventory_available.call_args_list}
         self.assertEqual(calls, {"I0": 3, "I1": 99, "I2": 99})  # 100ml=5-2=3, decants=99
+
+    def test_per_product_path_looks_up_variants_and_is_correct(self):
+        # The product-page button path: shop_variants=None -> find_variant_by_sku.
+        # Proves it computes the same targets as the bulk path (no separate bug).
+        from unittest import mock
+        from stock.services import shopify_sync
+        cat = Category.objects.create(name="Perfumes")
+        p = Product.objects.create(name="Asad", barcode="B1", brand="L",
+                                   category=cat, default_price=Decimal("10"))
+        Purchase.objects.create(product=p, quantity=5, remaining=5, cost_price=Decimal("1"))  # N=5
+        variants = {
+            "B1": {"product_id": "P", "variant_id": "v0", "inventory_item_id": "I0", "price": "10.00", "available": 0},
+            "B1-10ML": {"product_id": "P", "variant_id": "v1", "inventory_item_id": "I1", "price": "2.00", "available": 0},
+            "B1-5ML": {"product_id": "P", "variant_id": "v2", "inventory_item_id": "I2", "price": "1.50", "available": 0},
+        }
+        client = mock.Mock()
+        client.find_variant_by_sku.side_effect = lambda sku: variants.get(sku)
+        client.get_location_id.return_value = "L"
+        code, _ = shopify_sync.sync_product_price_inventory(
+            p, client, do_price=False, do_inventory=True)  # shop_variants=None -> lookup
+        self.assertEqual(code, shopify_sync.INV_UPDATED)
+        calls = {c.args[0]: c.args[2] for c in client.set_inventory_available.call_args_list}
+        self.assertEqual(calls, {"I0": 3, "I1": 99, "I2": 99})  # N=5 -> 100ml=3, decants=99
 
 
 class BackupDbCommandTests(TestCase):

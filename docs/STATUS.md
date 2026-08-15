@@ -99,6 +99,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-08-15：分装库存规则改为**分装跟随 100ml**——100ml 有货(N>2)时 5ml/10ml=99,**100ml 为 0(N≤2)时分装也=0**(整个产品显示断货),不再在 N≤2 时把分装留 99。`_inventory_targets` 用 `full=max(N-2,0)`;新增测试证明产品页按钮路径(`find_variant_by_sku`)与批量算出的目标一致(无独立 bug,"变成 0"是该产品在库≤2)。2 测试。
 - 2026-08-15：`sync_shopify_perfumes` **提速**——已存在产品直接用 `all_variants_by_sku` 拿到的 GID,只推**有变化的库存 + 品牌合集**(不再逐个 `find_product_by_sku` / 每次重推 description);`--create` 才建缺失产品(避免误建 decant/mix)、`--full` 才重推描述。默认几十次调用、秒级。按钮走默认快速版。1 测试。
 - 2026-08-09：同步创建香水时 Shopify **标准分类设为 Eaux de Parfum**(`hb-3-2-8-3`,仅香水);批量 `sync_shopify_perfumes` 额外**把每个香水加入其品牌的手动合集**(智能合集按 vendor 自动归类,不动);client 加 `all_collections/collection_add_products`。2 测试。
 - 2026-08-09：客户产品清单 Excel 导出新增 **EAN 列**(在 Product 与 Category 之间,文本格式保留完整位数);**产品名后追加 Specification(容量)**。新增 **`backfill_perfume_spec`** 命令:给缺 Specification 的香水补 `100ml`(已有容量的不动;非香水不动;dry-run 默认)。3 测试。
