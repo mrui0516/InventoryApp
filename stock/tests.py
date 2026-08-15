@@ -4477,6 +4477,27 @@ class DecantInventoryPushTests(TestCase):
         calls = {c.args[0]: c.args[2] for c in client.set_inventory_available.call_args_list}
         self.assertEqual(calls, {"I0": 3, "I1": 99, "I2": 99})  # 100ml=5-2=3, decants=99
 
+    def test_untracked_decant_is_made_tracked_and_deny(self):
+        # French Avenue case: decant is untracked + CONTINUE at qty 0, so it stays
+        # buyable. Even though the quantity already matches, flip it to track+deny.
+        from unittest import mock
+        from stock.services import shopify_sync
+        cat = Category.objects.create(name="Perfumes")
+        p = Product.objects.create(name="X", barcode="B1", brand="L",
+                                   category=cat, default_price=Decimal("10"))  # N=0
+        sv = {
+            "B1": {"product_id": "P", "variant_id": "v0", "inventory_item_id": "I0",
+                   "price": "10.00", "available": 0, "tracked": True, "policy": "DENY"},
+            "B1-10ML": {"product_id": "P", "variant_id": "v1", "inventory_item_id": "I1",
+                        "price": "2.00", "available": 0, "tracked": False, "policy": "CONTINUE"},
+        }
+        client = mock.Mock()
+        code, _ = shopify_sync.sync_product_price_inventory(
+            p, client, do_price=False, do_inventory=True, shop_variants=sv, location_id="L")
+        self.assertEqual(code, shopify_sync.INV_UPDATED)
+        client.set_variant_stocked.assert_called_once_with("P", "v1")   # decant fixed
+        client.set_inventory_available.assert_not_called()              # qtys already 0
+
     def test_per_product_path_looks_up_variants_and_is_correct(self):
         # The product-page button path: shop_variants=None -> find_variant_by_sku.
         # Proves it computes the same targets as the bulk path (no separate bug).

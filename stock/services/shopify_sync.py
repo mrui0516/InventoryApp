@@ -128,10 +128,19 @@ def sync_product_price_inventory(product, client=None, *, do_price=True, do_inve
             targets = _inventory_targets(barcode, on_hand, set(shop_variants))
             for sku, target in targets.items():
                 rec = shop_variants.get(sku)
-                if rec is None or rec.get('available') == target:
+                if rec is None:
                     continue
-                parts.append(f"{_variant_label(barcode, sku)} qty {rec.get('available')}->{target}")
-                writes.append(('inv', rec['inventory_item_id'], target))
+                # A variant must track inventory and refuse overselling, or its
+                # quantity is ignored and it stays buyable (the decant bug).
+                needs_policy = (rec.get('tracked') is False) or (rec.get('policy') not in (None, 'DENY'))
+                needs_qty = rec.get('available') != target
+                if not (needs_policy or needs_qty):
+                    continue
+                bits = (['track+deny'] if needs_policy else []) + \
+                       ([f"qty {rec.get('available')}->{target}"] if needs_qty else [])
+                parts.append(f"{_variant_label(barcode, sku)} {' '.join(bits)}")
+                writes.append(('inv', rec['product_id'], rec['variant_id'],
+                               rec['inventory_item_id'], target, needs_policy, needs_qty))
 
         if not writes:
             return INV_UNCHANGED, ''
@@ -144,8 +153,12 @@ def sync_product_price_inventory(product, client=None, *, do_price=True, do_inve
             if w[0] == 'price':
                 client.update_variant_price(w[1], w[2], w[3])
             else:
-                loc = loc or location_id or client.get_location_id()
-                client.set_inventory_available(w[1], loc, w[2])
+                _, product_id, variant_id, inv_item_id, target, needs_policy, needs_qty = w
+                if needs_policy:
+                    client.set_variant_stocked(product_id, variant_id)
+                if needs_qty:
+                    loc = loc or location_id or client.get_location_id()
+                    client.set_inventory_available(inv_item_id, loc, target)
         return INV_UPDATED, detail
     except ShopifyError as exc:
         return INV_ERROR, str(exc)

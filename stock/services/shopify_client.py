@@ -147,8 +147,9 @@ class ShopifyClient:
             pageInfo { hasNextPage endCursor }
             edges { node {
               id status
-              variants(first: 1) { edges { node {
-                id sku price inventoryQuantity inventoryItem { id }
+              variants(first: 10) { edges { node {
+                id sku price inventoryQuantity inventoryPolicy
+                inventoryItem { id tracked }
               } } }
             } }
           }
@@ -159,22 +160,22 @@ class ShopifyClient:
             data = self.graphql(query, {'cursor': cursor}).get('products', {})
             for edge in data.get('edges', []):
                 node = edge['node']
-                variants = node.get('variants', {}).get('edges', [])
-                if not variants:
-                    continue
-                v = variants[0]['node']
-                sku = (v.get('sku') or '').strip()
-                if not sku:
-                    continue
-                inv = v.get('inventoryItem') or {}
-                out[sku] = {
-                    'product_id': node['id'],
-                    'status': node.get('status'),
-                    'variant_id': v['id'],
-                    'inventory_item_id': inv.get('id'),
-                    'price': v.get('price'),
-                    'available': v.get('inventoryQuantity'),
-                }
+                for ve in node.get('variants', {}).get('edges', []):
+                    v = ve['node']
+                    sku = (v.get('sku') or '').strip()
+                    if not sku:
+                        continue
+                    inv = v.get('inventoryItem') or {}
+                    out[sku] = {
+                        'product_id': node['id'],
+                        'status': node.get('status'),
+                        'variant_id': v['id'],
+                        'inventory_item_id': inv.get('id'),
+                        'tracked': inv.get('tracked'),
+                        'policy': v.get('inventoryPolicy'),
+                        'price': v.get('price'),
+                        'available': v.get('inventoryQuantity'),
+                    }
             page = data.get('pageInfo', {})
             if not page.get('hasNextPage'):
                 break
@@ -195,7 +196,7 @@ class ShopifyClient:
                 edges { node {
                   id
                   variants(first: 25) { edges { node {
-                    id sku price inventoryQuantity inventoryItem { id }
+                    id sku price inventoryQuantity inventoryPolicy inventoryItem { id tracked }
                   } } }
                 } }
               }
@@ -213,10 +214,36 @@ class ShopifyClient:
                         'product_id': node['id'],
                         'variant_id': v['id'],
                         'inventory_item_id': inv.get('id'),
+                        'tracked': inv.get('tracked'),
+                        'policy': v.get('inventoryPolicy'),
                         'price': v.get('price'),
                         'available': v.get('inventoryQuantity'),
                     }
         return None
+
+    def set_variant_stocked(self, product_id, variant_id):
+        """Make a variant track inventory and refuse overselling (tracked + DENY),
+        so its quantity actually controls whether it can be bought. Without this a
+        variant with tracked=False / policy=CONTINUE stays buyable at quantity 0."""
+        data = self.graphql(
+            """
+            mutation($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+              productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+                productVariants { id }
+                userErrors { field message }
+              }
+            }
+            """,
+            {'productId': product_id, 'variants': [{
+                'id': variant_id,
+                'inventoryPolicy': 'DENY',
+                'inventoryItem': {'tracked': True},
+            }]},
+        )
+        result = data.get('productVariantsBulkUpdate', {})
+        if result.get('userErrors'):
+            raise ShopifyError(f'productVariantsBulkUpdate(policy): {result["userErrors"]}')
+        return (result.get('productVariants') or [{}])[0].get('id')
 
     def update_variant_price(self, product_id, variant_id, price):
         """Set a variant's price (a string like '12.00')."""

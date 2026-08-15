@@ -99,6 +99,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-08-15：**修复分装"数量0仍可购买"的根因**——分装变体是 `tracked=False`+`policy=CONTINUE`,Shopify 当它无限有货。库存同步现在会把要动的变体强制成 `tracked=True`+`inventoryPolicy=DENY`(数量才生效),即使数量没变也修策略。另修 `all_variants_by_sku` 只取首个变体的 bug → 改 `variants(first:10)`,批量同步现在真正管理分装(之前只动 100ml)。client 加 `set_variant_stocked`;记录含 tracked/policy。1 测试。
 - 2026-08-15：**分装规则最终确定**——预留的 2 瓶=两店样品;100ml=max(N−2,0);**分装(5ml/10ml)只要有货(N≥1,样品可分装)就=99,完全没货(N=0)才=0**。(撤销当天早些时候"分装跟随100ml"的误改。)N=0 产品要真正变 0 需**完整跑一次**库存同步(之前中断过);若某"没货"产品同步后分装仍显示,是 app 在库≠0(库存数据要补正)。
 - 2026-08-15：分装库存规则改为**分装跟随 100ml**——100ml 有货(N>2)时 5ml/10ml=99,**100ml 为 0(N≤2)时分装也=0**(整个产品显示断货),不再在 N≤2 时把分装留 99。`_inventory_targets` 用 `full=max(N-2,0)`;新增测试证明产品页按钮路径(`find_variant_by_sku`)与批量算出的目标一致(无独立 bug,"变成 0"是该产品在库≤2)。2 测试。
 - 2026-08-15：`sync_shopify_perfumes` **提速**——已存在产品直接用 `all_variants_by_sku` 拿到的 GID,只推**有变化的库存 + 品牌合集**(不再逐个 `find_product_by_sku` / 每次重推 description);`--create` 才建缺失产品(避免误建 decant/mix)、`--full` 才重推描述。默认几十次调用、秒级。按钮走默认快速版。1 测试。
