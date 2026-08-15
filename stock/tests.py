@@ -4444,11 +4444,11 @@ class DecantInventoryLogicTests(SimpleTestCase):
     def test_targets_reserve_and_decant(self):
         from stock.services.shopify_sync import _inventory_targets
         present = {"B1", "B1-10ML", "B1-5ML"}
-        # decants track the 100ml: available only when 100ml (max(N-2,0)) > 0
+        # decants available while any stock (a sample) exists; only N=0 hides them
         self.assertEqual(_inventory_targets("B1", 5, present), {"B1": 3, "B1-10ML": 99, "B1-5ML": 99})
         self.assertEqual(_inventory_targets("B1", 3, present), {"B1": 1, "B1-10ML": 99, "B1-5ML": 99})
-        self.assertEqual(_inventory_targets("B1", 2, present), {"B1": 0, "B1-10ML": 0, "B1-5ML": 0})
-        self.assertEqual(_inventory_targets("B1", 1, present), {"B1": 0, "B1-10ML": 0, "B1-5ML": 0})
+        self.assertEqual(_inventory_targets("B1", 2, present), {"B1": 0, "B1-10ML": 99, "B1-5ML": 99})
+        self.assertEqual(_inventory_targets("B1", 1, present), {"B1": 0, "B1-10ML": 99, "B1-5ML": 99})
         self.assertEqual(_inventory_targets("B1", 0, present), {"B1": 0, "B1-10ML": 0, "B1-5ML": 0})
 
     def test_targets_no_decant_uses_full_onhand(self):

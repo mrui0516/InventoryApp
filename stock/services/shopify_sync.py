@@ -64,20 +64,21 @@ def _variant_label(barcode, sku):
 
 def _inventory_targets(barcode, on_hand, present_skus):
     """``{sku: target_available}`` for a product's variants given ``on_hand`` full
-    bottles. With decant variants: 100ml = max(on_hand - reserve, 0); the 10ml/5ml
-    decants **track the 100ml** — available only while the 100ml is in stock, so a
-    sold-out 100ml shows the whole product out of stock. Without decants:
+    bottles. The last ``DECANT_RESERVE`` bottles are the shop samples: full-bottle
+    (100ml) sales only start beyond them, but decants can be made from a sample.
+    So: 100ml = max(on_hand - reserve, 0); 10ml/5ml = DECANT_AVAILABLE while any
+    stock exists (on_hand >= 1, i.e. a sample is still there) else 0 — a fully
+    empty product (0) can't be decanted and shows out of stock. Without decants:
     100ml = on_hand. Only includes SKUs that exist in ``present_skus``."""
     has_decant = any((barcode + s) in present_skus for s in DECANT_SUFFIXES)
     targets = {}
     if has_decant:
-        full = max(on_hand - DECANT_RESERVE, 0)
         if barcode in present_skus:
-            targets[barcode] = full
+            targets[barcode] = max(on_hand - DECANT_RESERVE, 0)
         for suffix in DECANT_SUFFIXES:
             sku = barcode + suffix
             if sku in present_skus:
-                targets[sku] = DECANT_AVAILABLE if full > 0 else 0
+                targets[sku] = DECANT_AVAILABLE if on_hand >= 1 else 0
     elif barcode in present_skus:
         targets[barcode] = on_hand
     return targets
