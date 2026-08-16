@@ -2068,92 +2068,6 @@ def dashboard_view(request):
         })
 
     payment_labels = dict(Sale.PAYMENT_METHOD_CHOICES)
-    today_sale_ids_qs = Sale.objects.filter(
-        Q(order__created_at__date=today) |
-        Q(order__isnull=True, date__date=today)
-    )
-    today_sale_ids_qs = scope_sales_by_store(today_sale_ids_qs, store_scope, store_is_all)
-    if selected_cat_ids_int:
-        today_sale_ids_qs = today_sale_ids_qs.filter(product__category_id__in=selected_cat_ids_int)
-    today_profit_map = sale_profit_map_for_sale_ids(today_sale_ids_qs.values_list('id', flat=True)) if isManger else {}
-
-    orders_qs = (
-        SaleOrder.objects
-        .filter(created_at__date=today)
-        .select_related('customer')
-        .prefetch_related('items__product', 'items__product__images', 'payments')
-        .order_by('-created_at')
-        .distinct()
-    )
-    orders_qs = scope_sales_by_store(orders_qs, store_scope, store_is_all)
-    if selected_cat_ids_int:
-        orders_qs = orders_qs.filter(items__product__category_id__in=selected_cat_ids_int).distinct()
-
-    sale_orders_today = []
-    today_sales_qty = 0
-    total_sales_today = Decimal('0.00')
-    total_profit_today = Decimal('0.00')
-    today_payment_totals = defaultdict(Decimal)
-    today_payment_qty = defaultdict(int)
-
-    for order in orders_qs:
-        view_total_qty = 0
-        view_total_amount = Decimal('0.00')
-        items_today = []
-
-        for item in order.items.all():
-            if selected_cat_ids_int and item.product.category_id not in selected_cat_ids_int:
-                continue
-
-            item.line_total = (item.unit_price or Decimal('0.00')) * item.quantity
-            item.payment_label = payment_labels.get(item.payment_method, (item.payment_method or 'Other').title())
-            item.image_url = get_product_image_url(item.product)
-            items_today.append(item)
-
-            view_total_qty += item.quantity
-            view_total_amount += item.line_total
-
-            today_sales_qty += item.quantity
-            total_sales_today += item.line_total
-            total_profit_today += today_profit_map.get(item.id, {}).get('profit', Decimal('0.00'))
-            today_payment_qty[item.payment_method] += item.quantity
-
-        if items_today:
-            # Payment amounts come from the order-level tender (SaleOrderPayment)
-            # so split payments show correctly; scaled to the filtered subtotal.
-            for method, amount in order_tender_amounts(order, view_total_amount, items_today).items():
-                today_payment_totals[method] += amount
-            order.view_total_qty = view_total_qty
-            order.view_total_amount = view_total_amount
-            order.view_items_today = items_today
-            sale_orders_today.append(order)
-
-    total_cost_today = total_sales_today - total_profit_today
-
-    today_payment_breakdown = []
-    for code, amount in sorted(today_payment_totals.items(), key=lambda kv: (-kv[1], kv[0] or '')):
-        today_payment_breakdown.append({
-            'code': code,
-            'label': payment_labels.get(code, (code or 'Other').title()),
-            'amount': amount,
-            'qty': today_payment_qty.get(code, 0),
-            'share_pct': (amount / total_sales_today * Decimal('100')) if total_sales_today else Decimal('0.00'),
-        })
-
-    purchases_today_records = (
-        Purchase.objects
-        .filter(date__date=today)
-        .select_related('product', 'supplier')
-        .prefetch_related('product__images')
-        .order_by('-date')
-    )
-    if selected_cat_ids_int:
-        purchases_today_records = purchases_today_records.filter(product__category_id__in=selected_cat_ids_int)
-
-    for purchase in purchases_today_records:
-        purchase.view_total_cost = (purchase.cost_price or Decimal('0.00')) * purchase.quantity
-        purchase.image_url = get_product_image_url(purchase.product)
-
     stock_subq = (
         Purchase.objects
         .filter(product=OuterRef('pk'))
@@ -2251,8 +2165,6 @@ def dashboard_view(request):
     total_products = prod_for_totals.count()
     total_stock = monthly_overview['current_stock_units']
 
-    today_purchases = sum(purchase.quantity for purchase in purchases_today_records)
-    today_purchase_amount = sum((purchase.view_total_cost for purchase in purchases_today_records), Decimal('0.00'))
 
     return render(request, 'stock/dashboard.html', {
         'categories': categories,
@@ -2272,17 +2184,6 @@ def dashboard_view(request):
             f"{urlencode({'start_date': month_context['month_start'].isoformat(), 'end_date': month_context['period_end'].isoformat()})}"
         ),
         'today': today,
-        'today_sales': today_sales_qty,
-        'today_sales_qty': today_sales_qty,
-        'today_order_count': len(sale_orders_today),
-        'total_sales_today': total_sales_today,
-        'total_profit_today': total_profit_today,
-        'total_cost_today': total_cost_today,
-        'today_payment_breakdown': today_payment_breakdown,
-        'today_purchases': today_purchases,
-        'today_purchase_amount': today_purchase_amount,
-        'sale_orders_today': sale_orders_today,
-        'purchases_today_records': purchases_today_records,
         'low_brand_blocks': low_brand_blocks,
         'low_stock_primary_blocks': low_stock_primary_blocks,
         'low_stock_extra_blocks': low_stock_extra_blocks,

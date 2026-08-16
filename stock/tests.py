@@ -809,15 +809,6 @@ class DashboardViewTests(TestCase):
         self.assertContains(response, "Slow movers")
         self.assertContains(response, "Oud Reserve")
 
-    def test_dashboard_today_payment_breakdown(self):
-        self.client.login(username="dashboard_admin", password="pw123456")
-
-        response = self.client.get(reverse("dashboard"), {"month": self.current_month})
-
-        breakdown = response.context["today_payment_breakdown"]
-        self.assertTrue(any(r["code"] == "cash" and r["amount"] == Decimal("30.00") for r in breakdown))
-        self.assertContains(response, "Payment methods today")
-
     def test_catalog_page_renders(self):
         self.client.login(username="dashboard_admin", password="pw123456")
         response = self.client.get(reverse("catalog"))
