@@ -911,11 +911,15 @@ class DashboardViewTests(TestCase):
         )
         Sale.objects.filter(pk=drift_sale.pk).update(date=timezone.now())
 
-        self.client.login(username="dashboard_admin", password="pw123456")
+        # Today's orders live in the employee dashboard (managers use /today).
+        self.client.login(username="dashboard_user", password="pw123456")
         response = self.client.get(reverse("dashboard"), {"month": self.current_month})
 
         self.assertEqual(response.status_code, 200)
         today_order_ids = [order.id for order in response.context["sale_orders_today"]]
+        # Real same-day order is present; an order dated yesterday is bucketed out
+        # even though its sale row was touched today.
+        self.assertIn(self.current_order.id, today_order_ids)
         self.assertNotIn(drift_order.id, today_order_ids)
 
 
@@ -2386,6 +2390,11 @@ class MultiStoreTests(TestCase):
         self.assertEqual(daily_rows.get("Card"), Decimal("30.00"))
         self.assertEqual(daily_rows.get("Cash"), Decimal("20.00"))
 
+        # The dashboard's today breakdown is the employee view (managers use
+        # /today); scope the employee to the store holding the split order.
+        StoreProfile.objects.update_or_create(user=self.employee, defaults={'store': self.store_a})
+        self.client.logout()
+        self.client.login(username="store_emp", password="pw123456")
         cache.clear()
         dash = self.client.get(reverse("dashboard"))
         self.assertEqual(dash.status_code, 200)

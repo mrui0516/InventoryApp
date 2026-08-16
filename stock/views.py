@@ -2068,6 +2068,63 @@ def dashboard_view(request):
         })
 
     payment_labels = dict(Sale.PAYMENT_METHOD_CHOICES)
+
+    # Employees have no access to the manager-only /today page, so give them
+    # today's sales here. Managers keep the clean dashboard + /today, so this is
+    # only computed for employees (no profit replay — they never see profit).
+    sale_orders_today = []
+    today_sales_qty = 0
+    total_sales_today = Decimal('0.00')
+    today_payment_breakdown = []
+    if not isManger:
+        orders_qs = (
+            SaleOrder.objects
+            .filter(created_at__date=today)
+            .select_related('customer')
+            .prefetch_related('items__product', 'items__product__images', 'payments')
+            .order_by('-created_at')
+            .distinct()
+        )
+        orders_qs = scope_sales_by_store(orders_qs, store_scope, store_is_all)
+        if selected_cat_ids_int:
+            orders_qs = orders_qs.filter(items__product__category_id__in=selected_cat_ids_int).distinct()
+
+        today_payment_totals = defaultdict(Decimal)
+        today_payment_qty = defaultdict(int)
+        for order in orders_qs:
+            view_total_qty = 0
+            view_total_amount = Decimal('0.00')
+            items_today = []
+            for item in order.items.all():
+                if selected_cat_ids_int and item.product.category_id not in selected_cat_ids_int:
+                    continue
+                item.line_total = (item.unit_price or Decimal('0.00')) * item.quantity
+                item.payment_label = payment_labels.get(item.payment_method, (item.payment_method or 'Other').title())
+                item.image_url = get_product_image_url(item.product)
+                items_today.append(item)
+                view_total_qty += item.quantity
+                view_total_amount += item.line_total
+                today_sales_qty += item.quantity
+                total_sales_today += item.line_total
+                today_payment_qty[item.payment_method] += item.quantity
+            if items_today:
+                # Order-level tender (split payments), scaled to the filtered subtotal.
+                for method, amount in order_tender_amounts(order, view_total_amount, items_today).items():
+                    today_payment_totals[method] += amount
+                order.view_total_qty = view_total_qty
+                order.view_total_amount = view_total_amount
+                order.view_items_today = items_today
+                sale_orders_today.append(order)
+
+        for code, amount in sorted(today_payment_totals.items(), key=lambda kv: (-kv[1], kv[0] or '')):
+            today_payment_breakdown.append({
+                'code': code,
+                'label': payment_labels.get(code, (code or 'Other').title()),
+                'amount': amount,
+                'qty': today_payment_qty.get(code, 0),
+                'share_pct': (amount / total_sales_today * Decimal('100')) if total_sales_today else Decimal('0.00'),
+            })
+
     # Low-stock section — cached (per store + category); the sold subquery over all
     # products is the main per-load cost, so recompute at most every few minutes.
     THUMB = 'c_fill,w_96,h_96,q_auto,f_auto'
@@ -2164,6 +2221,11 @@ def dashboard_view(request):
             f"{urlencode({'start_date': month_context['month_start'].isoformat(), 'end_date': month_context['period_end'].isoformat()})}"
         ),
         'today': today,
+        'today_sales_qty': today_sales_qty,
+        'today_order_count': len(sale_orders_today),
+        'total_sales_today': total_sales_today,
+        'today_payment_breakdown': today_payment_breakdown,
+        'sale_orders_today': sale_orders_today,
         'low_brand_blocks': low_brand_blocks,
         'low_stock_primary_blocks': low_stock_primary_blocks,
         'low_stock_extra_blocks': low_stock_extra_blocks,

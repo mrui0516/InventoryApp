@@ -453,6 +453,115 @@
     </div>
   {% endif %}
 
+  {% if employee_daily_only %}
+    <div class="dash-card pad">
+      <div class="section-head">
+        <div><h2>Today operations</h2></div>
+        <div class="quick-tags"><span class="note-pill">Today focus</span></div>
+      </div>
+
+      <div class="today-grid">
+        <div class="snapshot-card"><div class="metric-label">Sold Today</div><div class="metric-value">{{ today_sales_qty }}</div><div class="metric-sub">Items sold today</div></div>
+        <div class="snapshot-card highlight">
+          <div class="metric-label">Sales Today</div>
+          <div class="metric-value">EUR {{ total_sales_today|floatformat:2 }}</div>
+          <div class="metric-sub">{{ today_order_count }} order{{ today_order_count|pluralize }} completed today</div>
+        </div>
+        <div class="snapshot-card"><div class="metric-label">Orders Today</div><div class="metric-value">{{ today_order_count }}</div><div class="metric-sub">Counter transactions</div></div>
+      </div>
+
+      {% if today_payment_breakdown %}
+      <div class="dash-card pad mt-3">
+        <div class="section-top"><div><h3>Payment methods today</h3></div></div>
+        <div class="today-grid mt-2">
+          {% for row in today_payment_breakdown %}
+            <div class="snapshot-card">
+              <div class="metric-label">{{ row.label }}</div>
+              <div class="metric-value">EUR {{ row.amount|floatformat:2 }}</div>
+              <div class="metric-sub">{{ row.qty }} item{{ row.qty|pluralize }} · {{ row.share_pct|floatformat:1 }}% of today</div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="dash-card pad mt-3">
+        <div class="section-head"><div><h3>Today&apos;s sales orders</h3></div></div>
+        <div class="table-wrap">
+          <table class="table table-hover mb-0">
+            <thead>
+              <tr>
+                <th>Order</th>
+                <th>Customer</th>
+                <th>Time</th>
+                <th class="text-center">Qty</th>
+                {% if show_order_financials %}<th class="text-end">Amount</th>{% endif %}
+                <th class="text-end">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for o in sale_orders_today %}
+                <tr>
+                  <td>#{{ o.id }}</td>
+                  <td>{% if o.customer %}{{ o.customer.name }}{% else %}<span class="text-muted">Walk-in / no customer</span>{% endif %}</td>
+                  <td>{{ o.created_at|date:"H:i" }}</td>
+                  <td class="text-center"><span class="pill">{{ o.view_total_qty }}</span></td>
+                  {% if show_order_financials %}<td class="text-end fw-bold">EUR {{ o.view_total_amount|floatformat:2 }}</td>{% endif %}
+                  <td class="text-end"><div class="d-flex justify-content-end gap-2"><a class="btn btn-sm btn-outline-primary" href="{% url 'sale_order_detail' o.id %}">Print</a><button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#today-order-{{ o.id }}">Details</button></div></td>
+                </tr>
+                <tr class="order-detail collapse" id="today-order-{{ o.id }}">
+                  <td colspan="{% if show_order_financials %}6{% else %}5{% endif %}" class="p-0">
+                    <div class="table-wrap" style="border:0;border-radius:0">
+                      <table class="table mb-0">
+                        <thead>
+                          <tr>
+                            <th>Product</th>
+                            <th class="text-center">Qty</th>
+                            {% if show_order_financials %}
+                              <th class="text-end">Unit</th>
+                              <th class="text-end">Total</th>
+                              <th class="text-end">Payment</th>
+                            {% endif %}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {% for it in o.view_items_today %}
+                            <tr>
+                              <td>
+                                <div class="inline-product">
+                                  {% if it.image_url %}
+                                    <button type="button" class="inline-product-thumb-wrap" data-product-preview-url="{{ it.image_url }}" data-product-preview-title="{{ it.product.display_name }}">
+                                      <img src="{{ it.image_url }}" alt="{{ it.product.display_name }}" class="inline-product-thumb" loading="lazy">
+                                    </button>
+                                  {% else %}
+                                    <div class="inline-product-thumb-empty">No img</div>
+                                  {% endif %}
+                                  <div>{{ it.product.display_name }}</div>
+                                </div>
+                              </td>
+                              <td class="text-center">{{ it.quantity }}</td>
+                              {% if show_order_financials %}
+                                <td class="text-end">EUR {{ it.unit_price|floatformat:2 }}</td>
+                                <td class="text-end fw-bold">EUR {{ it.line_total|floatformat:2 }}</td>
+                                <td class="text-end">{{ it.payment_label }}</td>
+                              {% endif %}
+                            </tr>
+                          {% endfor %}
+                        </tbody>
+                      </table>
+                    </div>
+                  </td>
+                </tr>
+              {% empty %}
+                <tr><td colspan="{% if show_order_financials %}6{% else %}5{% endif %}" class="text-center py-4 text-muted">No sales orders today.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
 </div>
 
 {% if isManger %}
