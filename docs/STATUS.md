@@ -99,6 +99,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-08-16：**仪表盘再提速**——低库存那块(每次都跑的 sold 相关子查询)改为**按店铺+分类缓存 5 分钟**、且产品改成轻量 dict(不再缓存模型实例);月度/环比缓存 60s→**300s**(减少重算频率);低库存缩略图改用 **Cloudinary CDN 小图**(96px、边缘缓存,取不到回退本地)+ `loading=lazy`。256 通过。
 - 2026-08-16：**仪表盘提速 + 删除 "Today operations" 区块**(已有 /today 页)。① `sale_profit_map_for_sale_ids` 加**快速路径**:销售有 `cost_basis` 就直接算利润,全部有则**完全跳过整库 FIFO 重放**(回填后仪表盘/各页利润不再重算历史)。② 删掉仪表盘 Today operations(模板 + 视图里今日销售/进货/利润的未缓存重活),保留月度总览和低库存预警。移除一个过时测试。256 通过。
 - 2026-08-16：**修复利润用错批次成本的 bug(根因:事后 FIFO 重放因无留痕的库存改动而错位)**。改为**销售当下记录真实成本**:`consume_stock_fifo` 返回本次消耗的 FIFO 成本,存进新字段 `Sale.cost_basis`(迁移 0036);利润优先用 `cost_basis`,无则回退重放。新增 `backfill_sale_cost_basis` 命令给历史销售回填成本——用"实际每批消耗(qty−remaining)+ 销售按最新优先匹配"的**倒序 FIFO**,让近期销售锚定到真正来源的最新批次(例:近单从旧批 21.95 修正为新批 15.50)。3 测试,257 通过。
 - 2026-08-15：**修复分装"数量0仍可购买"的根因**——分装变体是 `tracked=False`+`policy=CONTINUE`,Shopify 当它无限有货。库存同步现在会把要动的变体强制成 `tracked=True`+`inventoryPolicy=DENY`(数量才生效),即使数量没变也修策略。另修 `all_variants_by_sku` 只取首个变体的 bug → 改 `variants(first:10)`,批量同步现在真正管理分装(之前只动 100ml)。client 加 `set_variant_stocked`;记录含 tracked/policy。1 测试。

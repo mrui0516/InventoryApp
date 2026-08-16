@@ -2019,7 +2019,7 @@ def dashboard_view(request):
             show_profit=show_profit,
             store=store_scope,
         )
-        cache.set(snapshot_cache_key, monthly_overview, 60)
+        cache.set(snapshot_cache_key, monthly_overview, 300)
 
     current_headline = {
         'sales_amount': monthly_overview['month_sales_amount'],
@@ -2036,7 +2036,7 @@ def dashboard_view(request):
             show_profit=show_profit,
             store=store_scope,
         )
-        cache.set(comparison_cache_key, mom_comparison, 60)
+        cache.set(comparison_cache_key, mom_comparison, 300)
 
     target_progress = build_target_progress(
         month_context, monthly_overview['month_sales_amount'],
@@ -2068,91 +2068,71 @@ def dashboard_view(request):
         })
 
     payment_labels = dict(Sale.PAYMENT_METHOD_CHOICES)
-    stock_subq = (
-        Purchase.objects
-        .filter(product=OuterRef('pk'))
-        .values('product')
-        .annotate(s=Sum('remaining'))
-        .values('s')[:1]
-    )
-    sold_subq = (
-        Sale.objects
-        .filter(product=OuterRef('pk'))
-        .values('product')
-        .annotate(s=Sum('quantity'))
-        .values('s')[:1]
-    )
-    prod_base = Product.objects
-    if selected_cat_ids_int:
-        prod_base = prod_base.filter(category_id__in=selected_cat_ids_int)
-
-    low_qs = (
-        prod_base
-        .annotate(
-            stock=Subquery(stock_subq, output_field=IntegerField()),
-            sold=Subquery(sold_subq, output_field=IntegerField()),
+    # Low-stock section — cached (per store + category); the sold subquery over all
+    # products is the main per-load cost, so recompute at most every few minutes.
+    THUMB = 'c_fill,w_96,h_96,q_auto,f_auto'
+    low_cache_key = f"dash:low:{cache_scope}:store{store_cache_key}"
+    low_data = cache.get(low_cache_key)
+    if low_data is None:
+        stock_subq = (
+            Purchase.objects.filter(product=OuterRef('pk')).values('product')
+            .annotate(s=Sum('remaining')).values('s')[:1]
         )
-        .annotate(
-            stock=Coalesce(F('stock'), 0),
-            sold=Coalesce(F('sold'), 0),
+        sold_subq = (
+            Sale.objects.filter(product=OuterRef('pk')).values('product')
+            .annotate(s=Sum('quantity')).values('s')[:1]
         )
-        .filter(stock__lt=5)
-        .only('id', 'brand', 'model', 'name', 'category')
-        .prefetch_related('images')
-    )
-
-    low_by_brand = defaultdict(list)
-    for product in low_qs:
-        product.stock = int(product.stock or 0)
-        product.sold = int(product.sold or 0)
-        low_by_brand[(product.brand or 'Unknown brand')].append(product)
-
-    for brand, products in low_by_brand.items():
-        products.sort(key=lambda item: (-item.sold, item.stock, (item.model or '') + (item.name or '')))
-
-    low_brand_blocks = [
-        {
-            'brand': brand,
-            'products': products,
-            'count': len(products),
-            'out_count': sum(1 for product in products if product.stock == 0),
+        prod_base = Product.objects
+        if selected_cat_ids_int:
+            prod_base = prod_base.filter(category_id__in=selected_cat_ids_int)
+        low_qs = (
+            prod_base
+            .annotate(stock=Subquery(stock_subq, output_field=IntegerField()),
+                      sold=Subquery(sold_subq, output_field=IntegerField()))
+            .annotate(stock=Coalesce(F('stock'), 0), sold=Coalesce(F('sold'), 0))
+            .filter(stock__lt=5)
+            .only('id', 'brand', 'model', 'name', 'category')
+            .prefetch_related('images')
+        )
+        low_by_brand = defaultdict(list)
+        for product in low_qs:
+            stock = int(product.stock or 0)
+            low_by_brand[(product.brand or 'Unknown brand')].append({
+                'id': product.id,
+                'display_name': product.display_name,
+                'brand': product.brand or 'Unknown brand',
+                'stock': stock,
+                'sold': int(product.sold or 0),
+                # small CDN thumbnail (edge-cached, resized) with local fallback
+                'image_url': product_image_cdn_url(product, THUMB) or get_product_image_url(product),
+            })
+        for _brand, _products in low_by_brand.items():
+            _products.sort(key=lambda it: (-it['sold'], it['stock'], it['display_name'].lower()))
+        blocks = [
+            {'brand': brand, 'products': products, 'count': len(products),
+             'out_count': sum(1 for it in products if it['stock'] == 0)}
+            for brand, products in low_by_brand.items()
+        ]
+        blocks.sort(key=lambda it: (-it['count'], it['brand'].lower()))
+        all_low = [it for b in blocks for it in b['products']]
+        focus = sorted(all_low, key=lambda it: (
+            0 if it['stock'] == 0 else 1, it['stock'], -it['sold'], it['display_name'].lower()))[:8]
+        low_data = {
+            'blocks': blocks,
+            'count': len(all_low),
+            'out_of_stock_count': sum(1 for it in all_low if it['stock'] == 0),
+            'low_stock_1_2_count': sum(1 for it in all_low if 1 <= it['stock'] <= 2),
+            'low_stock_3_4_count': sum(1 for it in all_low if 3 <= it['stock'] <= 4),
+            'focus': focus,
         }
-        for brand, products in low_by_brand.items()
-    ]
-    low_brand_blocks.sort(key=lambda item: (-item['count'], item['brand'].lower()))
-    low_stock_count = sum(len(block['products']) for block in low_brand_blocks)
-    out_of_stock_count = sum(
-        1
-        for block in low_brand_blocks
-        for product in block['products']
-        if product.stock == 0
-    )
-    low_stock_1_2_count = sum(
-        1
-        for block in low_brand_blocks
-        for product in block['products']
-        if 1 <= product.stock <= 2
-    )
-    low_stock_3_4_count = sum(
-        1
-        for block in low_brand_blocks
-        for product in block['products']
-        if 3 <= product.stock <= 4
-    )
-    low_stock_focus_products = []
-    for block in low_brand_blocks:
-        for product in block['products']:
-            product.image_url = get_product_image_url(product)
-            low_stock_focus_products.append(product)
-    low_stock_focus_products.sort(
-        key=lambda item: (
-            0 if item.stock == 0 else 1,
-            item.stock,
-            -item.sold,
-            item.display_name.lower(),
-        )
-    )
-    low_stock_focus_products = low_stock_focus_products[:8]
+        cache.set(low_cache_key, low_data, 300)
+
+    low_brand_blocks = low_data['blocks']
+    low_stock_count = low_data['count']
+    out_of_stock_count = low_data['out_of_stock_count']
+    low_stock_1_2_count = low_data['low_stock_1_2_count']
+    low_stock_3_4_count = low_data['low_stock_3_4_count']
+    low_stock_focus_products = low_data['focus']
     low_stock_primary_blocks = low_brand_blocks[:6]
     low_stock_extra_blocks = low_brand_blocks[6:]
     low_stock_extra_brand_count = len(low_stock_extra_blocks)

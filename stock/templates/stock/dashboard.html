@@ -505,7 +505,7 @@
                       data-product-preview-url="{{ p.image_url }}"
                       data-product-preview-title="{{ p.display_name }}"
                     >
-                      <img src="{{ p.image_url }}" alt="{{ p.display_name }}" class="inline-product-thumb">
+                      <img src="{{ p.image_url }}" alt="{{ p.display_name }}" class="inline-product-thumb" loading="lazy">
                     </button>
                   {% else %}
                     <div class="inline-product-thumb-empty">No img</div>
