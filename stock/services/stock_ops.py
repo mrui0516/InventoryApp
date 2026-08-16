@@ -9,6 +9,8 @@ conditional-update pattern below is safe on SQLite and remains correct if the
 project is ever migrated to a database that does support row locking.
 """
 
+from decimal import Decimal
+
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import F
@@ -29,12 +31,15 @@ class StockConflictError(ValidationError):
 def consume_stock_fifo(product, quantity):
     """Decrement ``Purchase.remaining`` for ``product`` by ``quantity``, oldest batch first.
 
+    Returns the actual FIFO **cost** of the consumed units (Σ used × batch cost) so
+    the caller can store it on the sale as its true cost basis.
+
     Raises:
         ValidationError: not enough current stock to cover ``quantity``.
         StockConflictError: a batch's ``remaining`` changed concurrently.
     """
     if quantity <= 0:
-        return
+        return Decimal('0.00')
 
     batches = list(
         Purchase.objects.filter(product=product, remaining__gt=0).order_by('date', 'id')
@@ -47,6 +52,7 @@ def consume_stock_fifo(product, quantity):
         )
 
     left = quantity
+    cost_basis = Decimal('0.00')
     for batch in batches:
         if left <= 0:
             break
@@ -58,6 +64,7 @@ def consume_stock_fifo(product, quantity):
             raise StockConflictError(
                 f"Stock for {product.display_name} changed during this operation. Please retry."
             )
+        cost_basis += Decimal(used) * (batch.cost_price or Decimal('0.00'))
         left -= used
 
     if left > 0:
@@ -67,6 +74,7 @@ def consume_stock_fifo(product, quantity):
 
     from .pricing import sync_perfume_price
     sync_perfume_price(product)
+    return cost_basis.quantize(Decimal('0.01'))
 
 
 @transaction.atomic

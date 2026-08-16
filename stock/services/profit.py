@@ -14,10 +14,14 @@ def sale_profit_map_for_sale_ids(sale_ids):
         return {}
 
     relevant_sales = list(
-        Sale.objects.filter(id__in=relevant_sale_ids).only("id", "date")
+        Sale.objects.filter(id__in=relevant_sale_ids).only("id", "date", "cost_basis")
     )
     if not relevant_sales:
         return {}
+
+    # Sales that captured their true FIFO cost at sale time use it directly; the
+    # rest fall back to the reconstructed cost below.
+    cost_basis_map = {s.id: s.cost_basis for s in relevant_sales if s.cost_basis is not None}
 
     end_day = max(make_naive(sale.date).date() for sale in relevant_sales)
 
@@ -51,12 +55,15 @@ def sale_profit_map_for_sale_ids(sale_ids):
             continue
 
         if event_id in no_stock_sale_ids:
-            # Backfill order: does not consume FIFO batches; flat margin.
+            # Backfill order: does not consume FIFO batches; flat margin (unless a
+            # real cost basis was captured).
             if event_id in relevant_sale_ids:
                 revenue = (amount or Decimal("0.00")) * quantity
-                cost = (revenue * (Decimal("1") - BACKFILL_MARGIN)).quantize(
-                    Decimal("0.01"), rounding=ROUND_HALF_UP
-                )
+                cost = cost_basis_map.get(event_id)
+                if cost is None:
+                    cost = (revenue * (Decimal("1") - BACKFILL_MARGIN)).quantize(
+                        Decimal("0.01"), rounding=ROUND_HALF_UP
+                    )
                 profit_map[event_id] = {"revenue": revenue, "cost": cost, "profit": revenue - cost}
             continue
 
@@ -77,10 +84,11 @@ def sale_profit_map_for_sale_ids(sale_ids):
 
         if event_id in relevant_sale_ids:
             revenue = (amount or Decimal("0.00")) * quantity
+            cost = cost_basis_map.get(event_id, line_cost)  # captured cost wins over reconstruction
             profit_map[event_id] = {
                 "revenue": revenue,
-                "cost": line_cost,
-                "profit": revenue - line_cost,
+                "cost": cost,
+                "profit": revenue - cost,
             }
 
     return profit_map

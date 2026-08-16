@@ -42,6 +42,10 @@ class Sale(models.Model):  # 可保留表名不改
     quantity = models.PositiveIntegerField(validators=[MaxValueValidator(1000), MinValueValidator(1)])
     # ✅ 字段更名：sale_price -> unit_price（语义更清晰）
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    # True FIFO cost of the units this line consumed, captured at sale time so profit
+    # is exact (not re-derived afterward). Null on old rows / backfill / non-stock
+    # sales — those fall back to the reconstructed cost.
+    cost_basis = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     payment_method = models.CharField(max_length=10, choices=PAYMENT_METHOD_CHOICES)
     date = models.DateTimeField(auto_now_add=True, db_index=True)
 

@@ -4389,6 +4389,43 @@ class FixDecantSkusTests(TestCase):
         client.fix_variant_sku.assert_not_called()
 
 
+class SaleCostBasisTests(TestCase):
+    def _perfume(self, price="40"):
+        cat = Category.objects.create(name="P")
+        return Product.objects.create(name="X", barcode="B", brand="L",
+                                      category=cat, default_price=Decimal(price))
+
+    def test_consume_returns_fifo_cost(self):
+        from stock.services.stock_ops import consume_stock_fifo
+        p = self._perfume()
+        Purchase.objects.create(product=p, quantity=2, remaining=2, cost_price=Decimal("20"))
+        Purchase.objects.create(product=p, quantity=2, remaining=2, cost_price=Decimal("15"))
+        self.assertEqual(consume_stock_fifo(p, 3), Decimal("55.00"))  # 2@20 + 1@15
+
+    def test_profit_prefers_stored_cost_basis_over_reconstruction(self):
+        from stock.services.profit import sale_profit_map_for_sale_ids
+        p = self._perfume()
+        Purchase.objects.create(product=p, quantity=5, remaining=5, cost_price=Decimal("21.95"))
+        order = SaleOrder.objects.create()
+        s = Sale.objects.create(order=order, product=p, quantity=1, unit_price=Decimal("40"),
+                                cost_basis=Decimal("15.50"), payment_method="cash")
+        m = sale_profit_map_for_sale_ids([s.id])
+        self.assertEqual(m[s.id]["cost"], Decimal("15.50"))
+        self.assertEqual(m[s.id]["profit"], Decimal("24.50"))
+
+    def test_backfill_anchors_recent_sale_to_newest_batch(self):
+        from io import StringIO
+        p = self._perfume()
+        Purchase.objects.create(product=p, quantity=6, remaining=0, cost_price=Decimal("21.95"))   # old, gone
+        Purchase.objects.create(product=p, quantity=12, remaining=11, cost_price=Decimal("15.50"))  # new
+        order = SaleOrder.objects.create()
+        recent = Sale.objects.create(order=order, product=p, quantity=1, unit_price=Decimal("40"),
+                                     payment_method="cash")
+        call_command("backfill_sale_cost_basis", "--apply", stdout=StringIO())
+        recent.refresh_from_db()
+        self.assertEqual(recent.cost_basis, Decimal("15.50"))  # newest batch, not old 21.95
+
+
 class PruneShopifyProductsTests(TestCase):
     def test_deletes_only_products_not_in_app(self):
         from io import StringIO

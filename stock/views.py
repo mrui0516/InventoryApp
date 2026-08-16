@@ -824,7 +824,8 @@ def outbound_view(request):
                     raise ValueError(f"Product not found by barcode: {row['barcode']}")
 
                 # FIFO 扣减（原子条件更新；select_for_update 在 SQLite 上是 no-op，见 stock_ops）
-                consume_stock_fifo(product, row['qty'])
+                # 返回本次消耗的真实成本，作为这笔销售的成本基准存下来。
+                line_cost = consume_stock_fifo(product, row['qty'])
 
                 # 行支付方式：旧格式用行内值，新格式（订单级拆分）用主支付方式
                 line_method = row['payment'] if row['payment'] in valid_methods else primary_method
@@ -835,6 +836,7 @@ def outbound_view(request):
                     store=active_store,
                     quantity=row['qty'],
                     unit_price=row['price'],
+                    cost_basis=line_cost,
                     payment_method=line_method,
                     date=timezone.now(),
                 )
