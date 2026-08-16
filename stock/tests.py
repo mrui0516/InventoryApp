@@ -4354,6 +4354,41 @@ class SyncShopifyPerfumesCollectionTests(TestCase):
         sp.assert_not_called()                             # default: don't create missing
 
 
+class FixDecantSkusTests(TestCase):
+    def test_rekeys_mismatched_decant_skus(self):
+        from io import StringIO
+        from unittest import mock
+        client = mock.Mock()
+        client.is_configured.return_value = True
+        client.all_products_full_variants.return_value = [{
+            "product_id": "gid://P/1",
+            "title": "Maison Alhambra Yeah!Man",
+            "variants": [
+                {"id": "v0", "sku": "6290360590745"},          # 100ml (base)
+                {"id": "v1", "sku": "1213454656777-10ML"},     # wrong base
+                {"id": "v2", "sku": "6290360590745-5ML"},      # already correct
+            ],
+        }]
+        with mock.patch("stock.management.commands.fix_decant_skus.ShopifyClient",
+                        return_value=client):
+            call_command("fix_decant_skus", "--apply", stdout=StringIO())
+        client.fix_variant_sku.assert_called_once_with("gid://P/1", "v1", "6290360590745-10ML")
+
+    def test_dry_run_writes_nothing(self):
+        from io import StringIO
+        from unittest import mock
+        client = mock.Mock()
+        client.is_configured.return_value = True
+        client.all_products_full_variants.return_value = [{
+            "product_id": "gid://P/1", "title": "X",
+            "variants": [{"id": "v0", "sku": "AAA"}, {"id": "v1", "sku": "BBB-10ML"}],
+        }]
+        with mock.patch("stock.management.commands.fix_decant_skus.ShopifyClient",
+                        return_value=client):
+            call_command("fix_decant_skus", stdout=StringIO())
+        client.fix_variant_sku.assert_not_called()
+
+
 class PruneShopifyProductsTests(TestCase):
     def test_deletes_only_products_not_in_app(self):
         from io import StringIO

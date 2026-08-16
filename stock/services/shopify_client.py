@@ -443,6 +443,54 @@ class ShopifyClient:
             raise ShopifyError(f'collectionCreate: {result["userErrors"]}')
         return (result.get('collection') or {}).get('id')
 
+    def all_products_full_variants(self):
+        """[{product_id, title, variants: [{id, sku}]}] for every product."""
+        out, cursor = [], None
+        query = """
+        query($cursor: String) {
+          products(first: 100, after: $cursor) {
+            pageInfo { hasNextPage endCursor }
+            edges { node { id title variants(first: 10) { edges { node { id sku } } } } }
+          }
+        }
+        """
+        while True:
+            data = self.graphql(query, {'cursor': cursor}).get('products', {})
+            for edge in data.get('edges', []):
+                node = edge['node']
+                variants = [{'id': ve['node']['id'], 'sku': (ve['node'].get('sku') or '').strip()}
+                            for ve in node.get('variants', {}).get('edges', [])]
+                out.append({'product_id': node['id'], 'title': node.get('title', ''),
+                            'variants': variants})
+            page = data.get('pageInfo', {})
+            if not page.get('hasNextPage'):
+                break
+            cursor = page.get('endCursor')
+        return out
+
+    def fix_variant_sku(self, product_id, variant_id, sku):
+        """Set a variant's SKU and make it tracked + DENY. Used to re-key decant
+        variants whose SKU still carries an old barcode base."""
+        data = self.graphql(
+            """
+            mutation($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+              productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+                productVariants { id }
+                userErrors { field message }
+              }
+            }
+            """,
+            {'productId': product_id, 'variants': [{
+                'id': variant_id,
+                'inventoryPolicy': 'DENY',
+                'inventoryItem': {'sku': sku, 'tracked': True},
+            }]},
+        )
+        result = data.get('productVariantsBulkUpdate', {})
+        if result.get('userErrors'):
+            raise ShopifyError(f'productVariantsBulkUpdate(sku): {result["userErrors"]}')
+        return (result.get('productVariants') or [{}])[0].get('id')
+
     def delete_product(self, product_gid):
         """Delete a product from Shopify. Returns the deleted product's GID."""
         data = self.graphql(
