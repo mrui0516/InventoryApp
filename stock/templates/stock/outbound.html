@@ -733,55 +733,64 @@
     }
   }
 
-  /* ============ 移动端 <576px：卡片化表格 ============ */
+  /* ============ Mobile (<576px): compact POS ============ */
   @media (max-width: 576px){
+    .pos-title{ font-size:1.2rem; margin-bottom:.75rem !important; }
     .operation-layout,
-    .review-modal-grid{
-      grid-template-columns:1fr;
-    }
+    .review-modal-grid{ grid-template-columns:1fr; }
+    .operation-layout{ gap:.7rem; }
+    .operation-main, .operation-side{ gap:.7rem; }
+    .operation-card{ padding:.8rem .85rem; }
+    .operation-card-head{ margin-bottom:.55rem; }
+    .operation-title{ font-size:.98rem; }
+    .operation-card-head .btn{ padding:.42rem .7rem; font-size:.85rem; }
     #checkout-form .form-control, #checkout-form .form-select{
-      padding:.8rem .95rem; font-size:1rem;
+      padding:.7rem .85rem; font-size:1rem;   /* keep >=16px so iOS doesn't auto-zoom */
     }
-    .sticky-review{
-      position:static;
-    }
+    .sticky-review{ position:static; }
     #product-suggest, #customer-suggestions{ border-radius:.6rem; }
+
+    /* Cart line = compact card: product on line 1, a wrapping meta row of
+       small labelled chips on line 2, edit/delete on a trailing line. */
+    #cart-table{ border:0; background:transparent; }
     #cart-table thead{ display:none; }
     #cart-table tbody tr{
-      display:block; margin:.6rem 0; border:1px solid var(--ds-border);
-      border-radius:var(--app-radius-sm); background:var(--app-surface); box-shadow:0 1px 6px rgba(0,0,0,.06); overflow:hidden;
+      display:flex; flex-wrap:wrap; align-items:center; gap:.1rem .55rem;
+      margin:.5rem 0; padding:.6rem .7rem; border:1px solid var(--app-border);
+      border-radius:var(--app-radius-sm); background:var(--app-surface);
+      box-shadow:0 1px 5px rgba(16,24,40,.05);
     }
     #cart-table tbody td{
-      display:grid; grid-template-columns: 8rem 1fr;
-      align-items:center; gap:.6rem;
-      padding:.85rem 1rem !important; border:0 !important; font-size:1.02rem;
-      text-align:right; word-break:break-word; overflow-wrap:anywhere;
+      border:0 !important; padding:.1rem 0 !important; font-size:.86rem;
+      text-align:left; white-space:nowrap; font-variant-numeric:tabular-nums;
     }
-    #cart-table tbody td:nth-child(1)::before{ content:'Product'; font-weight:600; color:var(--ds-muted); text-align:left; }
-    #cart-table tbody td:nth-child(2)::before{ content:'Qty'; font-weight:600; color:var(--ds-muted); text-align:left; }
-    #cart-table tbody td:nth-child(3)::before{ content:'Unit Price (EUR)'; font-weight:600; color:var(--ds-muted); text-align:left; }
-    #cart-table tbody td:nth-child(4)::before{ content:'Payment'; font-weight:600; color:var(--ds-muted); text-align:left; }
-    #cart-table tbody td:nth-child(5)::before{ content:'Subtotal (EUR)'; font-weight:600; color:var(--ds-muted); text-align:left; }
-    #cart-table tbody td:nth-child(6)::before{ content:'Actions'; font-weight:600; color:var(--ds-muted); text-align:left; }
-    #cart-table tbody td:nth-child(1){ text-align:left; }
-    #cart-table .qty, #cart-table .price, #cart-table .pay{ width:100%; min-width:0; }
-    #cart-table .js-edit, #cart-table .js-del{ min-height:44px; padding-inline:1rem; }
+    #cart-table tbody td:nth-child(1){ flex:1 0 100%; white-space:normal; font-size:.95rem; }
+    #cart-table tbody td:nth-child(2)::before{ content:'Qty '; color:var(--app-muted); }
+    #cart-table tbody td:nth-child(3)::before{ content:'Unit €'; color:var(--app-muted); }
+    #cart-table tbody td:nth-child(4)::before{ content:'Disc '; color:var(--app-muted); }
+    #cart-table tbody td:nth-child(5)::before{ content:'Pay '; color:var(--app-muted); }
+    #cart-table tbody td:nth-child(6){ font-weight:800; }
+    #cart-table tbody td:nth-child(6)::before{ content:'= €'; color:var(--app-muted); font-weight:600; }
+    #cart-table tbody td:nth-child(7){
+      flex:1 0 100%; display:flex; justify-content:flex-end; gap:.5rem; margin-top:.3rem;
+    }
+    #cart-table .js-edit, #cart-table .js-del{ min-height:40px; padding-inline:1rem; }
     #cart-table .js-del{ min-width:44px; }
-    #cart-table tfoot{ display:block; }
-    #cart-table tfoot tr{
-      display:block; margin:.6rem 0 0; border:1px solid var(--ds-border);
-      border-radius:var(--app-radius-sm); background:var(--app-surface); overflow:hidden;
-    }
-    #cart-table tfoot th{
-      display:grid; grid-template-columns: 1fr auto; gap:.6rem;
-      padding:.9rem 1rem !important; text-align:right; border:0 !important;
-    }
+    .cart-product{ grid-template-columns:44px minmax(0,1fr); gap:.6rem; }
+    .cart-product-thumb-wrap, .cart-product-thumb-empty{ width:44px; height:44px; }
+    .line-flags{ margin-top:.2rem; }
+
+    /* Review block: tighter */
+    .review-stat{ padding:.4rem .1rem; }
+    .review-stat.highlight{ padding:.55rem .7rem; }
+    .review-stat.highlight strong{ font-size:1.15rem; }
+    .guardrail-panel{ padding:.6rem .7rem; }
+
+    /* Sticky confirm doubles as the checkout bar (carries the running total) */
     #submitBtn{
-      position: sticky;
-      bottom: .5rem;
-      width: 100%;
-      box-shadow: 0 8px 20px rgba(16,24,40,.12);
-      z-index: 5;
+      position:sticky; bottom:.5rem; width:100%;
+      padding:.85rem 1rem; font-size:1rem; line-height:1.2;
+      box-shadow:0 8px 20px rgba(16,24,40,.18); z-index:5;
     }
   }
 
@@ -1239,6 +1248,13 @@ document.addEventListener('DOMContentLoaded', () => {
     paymentsJson.value = JSON.stringify(METHODS.filter(m => payments[m] > 0).map(m => ({ method: m, amount: payments[m].toFixed(2) })));
 
     submitBtn.disabled = STORE_BLOCKED || !(cart.length > 0 && cart.every(lineValid) && paymentsValid);
+    // The confirm button doubles as the mobile checkout bar — show the running
+    // total so the cashier never has to scroll up to see what they're charging.
+    if (STORE_BLOCKED) {
+      submitBtn.textContent = 'Pick a store to sell';
+    } else {
+      submitBtn.innerHTML = `Review &amp; confirm &middot; <strong>${formatMoney(total)}</strong>`;
+    }
     return { total, disc, qty, paymentsHtml: paySummaryHtml(payments), warnings: uniq };
   }
 
