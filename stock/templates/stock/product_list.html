@@ -2,6 +2,10 @@
 {% block title %}Products{% endblock %}
 
 {% block content %}
+<style>
+  .cat-chips{ display:flex; flex-wrap:wrap; gap:.4rem; }
+  .cat-chips .btn{ font-weight:600; }
+</style>
 
 <div class="page-shell">
   <section class="page-card pad">
@@ -49,14 +53,15 @@
           <label class="form-label fw-bold">Search</label>
           <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Barcode, brand, model, name, spec, or color">
         </div>
-        <div>
-          <label class="form-label fw-bold">Category</label>
-          <select name="category" class="form-select">
-            <option value="">All Categories</option>
+        <div class="cat-quickfilter">
+          <label class="form-label fw-bold d-block">Category</label>
+          <input type="hidden" name="category" id="categoryInput" value="{% if selected_category %}{{ selected_category }}{% endif %}">
+          <div class="cat-chips" role="group" aria-label="Category quick filter">
+            <button type="submit" onclick="document.getElementById('categoryInput').value=''" class="btn btn-sm {% if not selected_category %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</button>
             {% for c in categories %}
-              <option value="{{ c.id }}" {% if selected_category == c.id %}selected{% endif %}>{{ c.name }}</option>
+              <button type="submit" onclick="document.getElementById('categoryInput').value='{{ c.id }}'" class="btn btn-sm {% if selected_category == c.id %}btn-primary{% else %}btn-outline-secondary{% endif %}">{{ c.name }}</button>
             {% endfor %}
-          </select>
+          </div>
         </div>
         <div>
           <label class="form-label fw-bold">Brand</label>
@@ -105,77 +110,81 @@
     {% endif %}
 
     <div class="export-panel">
-        <div class="strip-head mb-3">
-          <div>
-            <h3 class="h6 mb-1">Export For Client</h3>
-          </div>
-        </div>
-        <form method="get" action="{% url 'export_product_list_excel' %}">
-          <input type="hidden" name="q" value="{{ query }}">
-          {% if selected_category %}<input type="hidden" name="category" value="{{ selected_category }}">{% endif %}
-          {% if selected_brand %}<input type="hidden" name="brand" value="{{ selected_brand }}">{% endif %}
-          {% if stock_status %}<input type="hidden" name="stock_status" value="{{ stock_status }}">{% endif %}
-          <input type="hidden" name="sort" value="{{ sort_by }}">
+      <ul class="nav nav-tabs" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link active" id="exp-client-tab" data-bs-toggle="tab" data-bs-target="#exp-client" type="button" role="tab" aria-controls="exp-client" aria-selected="true">Export For Client</button>
+        </li>
+        {% if can_manage %}
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="exp-shopify-tab" data-bs-toggle="tab" data-bs-target="#exp-shopify" type="button" role="tab" aria-controls="exp-shopify" aria-selected="false">Export For Shopify</button>
+        </li>
+        {% endif %}
+      </ul>
+      <div class="tab-content pt-3">
+        <div class="tab-pane fade show active" id="exp-client" role="tabpanel" aria-labelledby="exp-client-tab">
+          <form method="get" action="{% url 'export_product_list_excel' %}">
+            <input type="hidden" name="q" value="{{ query }}">
+            {% if selected_category %}<input type="hidden" name="category" value="{{ selected_category }}">{% endif %}
+            {% if selected_brand %}<input type="hidden" name="brand" value="{{ selected_brand }}">{% endif %}
+            {% if stock_status %}<input type="hidden" name="stock_status" value="{{ stock_status }}">{% endif %}
+            <input type="hidden" name="sort" value="{{ sort_by }}">
 
-          <div class="export-grid">
-            <div>
-              <label class="form-label fw-bold">Price In Export</label>
-              <select name="price_mode" class="form-select">
-                <option value="retail" {% if export_defaults.price_mode == 'retail' %}selected{% endif %}>Retail price only</option>
-                <option value="wholesale">Wholesale price only</option>
-                <option value="both">Retail + wholesale</option>
-              </select>
-            </div>
-            <div style="grid-column:span 2">
-              <label class="form-label fw-bold">Extra Options</label>
-              <div class="check-row">
-                <div class="form-check">
-                  <input class="form-check-input" type="checkbox" name="only_in_stock" id="onlyInStockExport" value="1" {% if export_defaults.only_in_stock %}checked{% endif %}>
-                  <label class="form-check-label" for="onlyInStockExport">Only export products with stock</label>
-                </div>
-                <div class="form-check">
-                  <input class="form-check-input" type="checkbox" name="include_images" id="includeImagesExport" value="1" {% if export_defaults.include_images %}checked{% endif %}>
-                  <label class="form-check-label" for="includeImagesExport">Include product photos</label>
+            <div class="export-grid">
+              <div>
+                <label class="form-label fw-bold">Price In Export</label>
+                <select name="price_mode" class="form-select">
+                  <option value="retail" {% if export_defaults.price_mode == 'retail' %}selected{% endif %}>Retail price only</option>
+                  <option value="wholesale">Wholesale price only</option>
+                  <option value="both">Retail + wholesale</option>
+                </select>
+              </div>
+              <div style="grid-column:span 2">
+                <label class="form-label fw-bold">Extra Options</label>
+                <div class="check-row">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="only_in_stock" id="onlyInStockExport" value="1" {% if export_defaults.only_in_stock %}checked{% endif %}>
+                    <label class="form-check-label" for="onlyInStockExport">Only export products with stock</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="include_images" id="includeImagesExport" value="1" {% if export_defaults.include_images %}checked{% endif %}>
+                    <label class="form-check-label" for="includeImagesExport">Include product photos</label>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div class="d-flex align-items-end">
-              <button type="submit" class="btn btn-success w-100">Export Excel</button>
-            </div>
-          </div>
-        </form>
-      </div>
-    {% if can_manage %}
-      <div class="export-panel">
-        <div class="strip-head mb-3">
-          <div>
-            <h3 class="h6 mb-1">Export For Shopify</h3>
-          </div>
-        </div>
-        <form method="get" action="{% url 'export_shopify_inventory_csv' %}">
-          <input type="hidden" name="q" value="{{ query }}">
-          {% if selected_category %}<input type="hidden" name="category" value="{{ selected_category }}">{% endif %}
-          {% if selected_brand %}<input type="hidden" name="brand" value="{{ selected_brand }}">{% endif %}
-          {% if stock_status %}<input type="hidden" name="stock_status" value="{{ stock_status }}">{% endif %}
-          <input type="hidden" name="sort" value="{{ sort_by }}">
-
-          <div class="export-grid">
-            <div>
-              <label class="form-label fw-bold">Rows</label>
-              <div class="check-row">
-                <div class="form-check">
-                  <input class="form-check-input" type="checkbox" name="only_in_stock" id="shopifyOnlyInStockExport" value="1" {% if shopify_export_defaults.only_in_stock %}checked{% endif %}>
-                  <label class="form-check-label" for="shopifyOnlyInStockExport">Only in stock</label>
-                </div>
+              <div class="d-flex align-items-end">
+                <button type="submit" class="btn btn-success w-100">Export Excel</button>
               </div>
             </div>
-            <div class="d-flex align-items-end">
-              <button type="submit" class="btn btn-dark w-100">Export Shopify Product CSV</button>
+          </form>
+        </div>
+        {% if can_manage %}
+        <div class="tab-pane fade" id="exp-shopify" role="tabpanel" aria-labelledby="exp-shopify-tab">
+          <form method="get" action="{% url 'export_shopify_inventory_csv' %}">
+            <input type="hidden" name="q" value="{{ query }}">
+            {% if selected_category %}<input type="hidden" name="category" value="{{ selected_category }}">{% endif %}
+            {% if selected_brand %}<input type="hidden" name="brand" value="{{ selected_brand }}">{% endif %}
+            {% if stock_status %}<input type="hidden" name="stock_status" value="{{ stock_status }}">{% endif %}
+            <input type="hidden" name="sort" value="{{ sort_by }}">
+
+            <div class="export-grid">
+              <div>
+                <label class="form-label fw-bold">Rows</label>
+                <div class="check-row">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="only_in_stock" id="shopifyOnlyInStockExport" value="1" {% if shopify_export_defaults.only_in_stock %}checked{% endif %}>
+                    <label class="form-check-label" for="shopifyOnlyInStockExport">Only in stock</label>
+                  </div>
+                </div>
+              </div>
+              <div class="d-flex align-items-end">
+                <button type="submit" class="btn btn-dark w-100">Export Shopify Product CSV</button>
+              </div>
             </div>
-          </div>
-        </form>
+          </form>
+        </div>
+        {% endif %}
       </div>
-    {% endif %}
+    </div>
   </section>
 
   <section class="page-card pad">

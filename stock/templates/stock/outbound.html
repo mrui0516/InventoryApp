@@ -7,6 +7,7 @@
 
 {% if error %}<div class="alert alert-danger mt-3" role="alert">{{ error }}</div>{% endif %}
 {% if success %}<div class="alert alert-success mt-3" role="alert">{{ success }}</div>{% endif %}
+{% if outbound_blocked %}<div class="alert alert-warning mt-3" role="alert"><strong>Pick a store to sell.</strong> You are viewing <strong>All stores</strong>, which has no single target for the sale. Switch to the store you are selling from (store switcher in the top bar), then sell.</div>{% endif %}
 
 <!-- 扫码 / 模糊搜索 -->
 <form id="scan-form" class="mb-3 position-relative">
@@ -118,7 +119,7 @@
           </ul>
         </div>
 
-        <button type="submit" id="submitBtn" class="btn btn-primary w-100" disabled>Review and confirm sale</button>
+        <button type="submit" id="submitBtn" class="btn btn-primary w-100" data-store-blocked="{% if outbound_blocked %}1{% endif %}" disabled>{% if outbound_blocked %}Pick a store to sell{% else %}Review and confirm sale{% endif %}</button>
       </div>
     </aside>
   </div>
@@ -853,6 +854,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const info = document.getElementById('scan-info');
   const cartBody = document.querySelector('#cart-table tbody');
   const submitBtn = document.getElementById('submitBtn');
+  const STORE_BLOCKED = submitBtn.dataset.storeBlocked === '1';
   const itemsJson = document.getElementById('items_json');
   const paymentsJson = document.getElementById('payments_json');
   const cartEmpty = document.getElementById('cart-empty');
@@ -1236,7 +1238,7 @@ document.addEventListener('DOMContentLoaded', () => {
     })));
     paymentsJson.value = JSON.stringify(METHODS.filter(m => payments[m] > 0).map(m => ({ method: m, amount: payments[m].toFixed(2) })));
 
-    submitBtn.disabled = !(cart.length > 0 && cart.every(lineValid) && paymentsValid);
+    submitBtn.disabled = STORE_BLOCKED || !(cart.length > 0 && cart.every(lineValid) && paymentsValid);
     return { total, disc, qty, paymentsHtml: paySummaryHtml(payments), warnings: uniq };
   }
 

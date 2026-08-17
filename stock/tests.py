@@ -2183,6 +2183,26 @@ class MultiStoreTests(TestCase):
         self.assertEqual(order.store_id, self.store_b.id)
         self.assertTrue(all(sale.store_id == self.store_b.id for sale in order.items.all()))
 
+    def test_outbound_blocked_when_viewing_all_stores(self):
+        # A manager with no store chosen defaults to the "All stores" aggregate,
+        # which has no single target for a sale — selling must be blocked so the
+        # order can't silently land on the wrong store.
+        self.client.login(username="store_admin", password="pw123456")
+        before = SaleOrder.objects.count()
+
+        # GET surfaces the block state for the template banner.
+        get_resp = self.client.get(reverse("outbound"))
+        self.assertTrue(get_resp.context["outbound_blocked"])
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(reverse("outbound"), {
+                "items_json": json.dumps([{"barcode": self.product.barcode, "qty": 1, "price": "20.00", "payment": "cash"}]),
+            })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["outbound_blocked"])
+        self.assertEqual(SaleOrder.objects.count(), before)  # nothing was sold
+
     def test_records_totals_filtered_by_active_store(self):
         for store, price in [(self.store_a, Decimal("10.00")), (self.store_b, Decimal("30.00"))]:
             order = SaleOrder.objects.create(customer=self.customer, store=store)

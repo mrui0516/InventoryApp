@@ -716,8 +716,22 @@ def inbound_receive_view(request, order_id):
 # -----------------------------
 @login_required
 def outbound_view(request):
+    # A sale must land on one concrete store. Managers viewing the "All stores"
+    # aggregate have no unambiguous target, so block selling until they pick a
+    # store (employees are always locked to their home store, never blocked).
+    _store, store_is_all = resolve_active_store(request)
     if request.method != 'POST':
-        return render(request, 'stock/outbound.html')
+        return render(request, 'stock/outbound.html', {
+            'outbound_blocked': store_is_all,
+            'active_store_name': _store.name if _store else '',
+        })
+
+    if store_is_all:
+        return render(request, 'stock/outbound.html', {
+            'outbound_blocked': True,
+            'error': 'Select a specific store before selling — you are viewing "All stores". '
+                     'Switch to the store you are selling from, then try again.',
+        })
 
     items_json = request.POST.get('items_json', '[]')
     payments_json = request.POST.get('payments_json', '[]')
@@ -3897,7 +3911,7 @@ def daily_summary_view(request):
         .select_related('customer', 'store')
         .prefetch_related('items__product', 'items__product__images', 'payments'),
         active_store, store_is_all,
-    ).order_by('created_at', 'id')
+    ).order_by('-created_at', '-id')  # most recent sale first
 
     profit_map = {}
     if show_profit:
