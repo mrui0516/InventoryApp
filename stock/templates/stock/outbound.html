@@ -181,10 +181,9 @@
             <button type="button" class="price-opt active" data-kind="retail">Retail <span id="line-modal-retail">€0.00</span></button>
             <button type="button" class="price-opt" data-kind="wholesale">Wholesale <span id="line-modal-wholesale">€0.00</span></button>
           </div>
-          <input type="hidden" id="line-modal-base">
-          <div class="lm-custom d-none" id="line-modal-custom-wrap">
-            <label class="lm-sub-label" for="line-modal-custom">No saved price — enter one</label>
-            <div class="input-group input-group-sm"><span class="input-group-text">€</span><input type="text" inputmode="decimal" class="form-control" id="line-modal-custom" placeholder="0.00"></div>
+          <div class="lm-price">
+            <label class="lm-sub-label" for="line-modal-base">Unit price</label>
+            <div class="input-group input-group-sm"><span class="input-group-text">€</span><input type="text" inputmode="decimal" class="form-control" id="line-modal-base" placeholder="0.00"></div>
           </div>
           <div class="lm-disc">
             <label class="lm-sub-label" for="line-modal-discount">Discount / unit</label>
@@ -811,8 +810,8 @@
   .lm-label{ font-size:.7rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--app-muted); }
   .lm-label-row{ display:flex; align-items:center; justify-content:space-between; gap:.6rem; }
   .lm-sub-label{ font-size:.72rem; font-weight:600; color:var(--app-muted); }
-  .lm-disc,.lm-custom{ display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:.5rem; }
-  .lm-disc .input-group,.lm-custom .input-group{ max-width:11rem; }
+  .lm-disc,.lm-price{ display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:.5rem; }
+  .lm-disc .input-group,.lm-price .input-group{ max-width:11rem; }
   /* product identity: thumb + wrapping brand/name/meta */
   .line-modal-product{
     display:grid; grid-template-columns:48px minmax(0,1fr); gap:.65rem; align-items:center;
@@ -1447,13 +1446,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelector('#line-modal-price-toggle .price-opt[data-kind="wholesale"]').disabled = (wholesale == null);
     const base = item ? item.base : (retail != null ? retail : (wholesale != null ? wholesale : ''));
     document.getElementById('line-modal-base').value = (base !== '' && base != null) ? Number(base).toFixed(2) : '';
-    // The chosen price is fixed — only Discount changes it. A product with no
-    // saved price at all still needs a way in, so reveal a manual field then.
-    const noSavedPrice = (retail == null && wholesale == null);
-    const customWrap = document.getElementById('line-modal-custom-wrap');
-    const customInput = document.getElementById('line-modal-custom');
-    customWrap.classList.toggle('d-none', !noSavedPrice);
-    customInput.value = noSavedPrice && base ? Number(base).toFixed(2) : '';
     document.getElementById('line-modal-discount').value = item ? (Number(item.discount) || 0).toFixed(2) : '0';
     setModalQty(item ? item.qty : 1);
     const isWholesale = (item && wholesale != null && Math.abs(Number(item.base) - wholesale) < 0.001)
@@ -1527,12 +1519,8 @@ document.addEventListener('DOMContentLoaded', () => {
   qtyMoreChip.addEventListener('click', () => {
     if (!qtyMoreChip.disabled) setModalQty((Number(document.getElementById('line-modal-qty').value) || 1) + 1);
   });
-  // Manual price only exists when the product has no saved retail/wholesale.
-  document.getElementById('line-modal-custom').addEventListener('input', (e) => {
-    const v = parseMoney(e.target.value);
-    document.getElementById('line-modal-base').value = isFinite(v) ? v.toFixed(2) : '';
-    updateLineModalPreview();
-  });
+  // Price stays editable: Retail/Wholesale prefill it, the cashier can override.
+  document.getElementById('line-modal-base').addEventListener('input', updateLineModalPreview);
   document.getElementById('line-modal-discount').addEventListener('input', updateLineModalPreview);
   document.querySelectorAll('#line-modal-price-toggle .price-opt').forEach((b) => {
     b.addEventListener('click', () => {

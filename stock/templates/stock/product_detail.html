@@ -136,33 +136,38 @@
     margin:.28rem 0 0;
     color:var(--muted);
   }
-  .product-detail-page .detail-table{
-    width:100%;
-    border-collapse:separate;
-    border-spacing:0;
+  /* Profile fields as a compact multi-column definition grid — the old
+     full-width row-per-field table spread six values over ~450px. */
+  .product-detail-page .spec-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));
+    gap:.1rem .9rem;
+    margin:0;
   }
-  .product-detail-page .detail-table th,
-  .product-detail-page .detail-table td{
-    padding:.88rem 1rem;
+  .product-detail-page .spec-grid > div{
+    padding:.45rem 0;
     border-top:1px solid var(--border);
-    vertical-align:top;
+    min-width:0;
   }
-  .product-detail-page .detail-table tr:first-child th,
-  .product-detail-page .detail-table tr:first-child td{
-    border-top:0;
-  }
-  .product-detail-page .detail-table th{
-    width:190px;
+  .product-detail-page .spec-grid dt,
+  .product-detail-page .spec-desc dt{
     color:var(--muted);
-    font-size:.84rem;
+    font-size:.68rem;
     font-weight:800;
     text-transform:uppercase;
-    letter-spacing:.04em;
-    background:#f8fbff;
+    letter-spacing:.05em;
   }
-  .product-detail-page .detail-table td{
+  .product-detail-page .spec-grid dd,
+  .product-detail-page .spec-desc dd{
+    margin:.12rem 0 0;
     color:var(--text);
     font-weight:600;
+    overflow-wrap:anywhere;
+  }
+  .product-detail-page .spec-desc{
+    margin-top:.7rem;
+    padding-top:.7rem;
+    border-top:1px solid var(--border);
   }
   .product-detail-page .pill-row{
     display:flex;
@@ -204,21 +209,28 @@
     }
   }
   @media (max-width: 575px){
+    /* two-up KPIs and tighter cards instead of a long single column */
     .product-detail-page .summary-grid{
-      grid-template-columns:1fr;
+      grid-template-columns:repeat(2, minmax(0, 1fr));
+      gap:.5rem;
+      margin-bottom:.7rem;
     }
-    .product-detail-page .detail-table th,
-    .product-detail-page .detail-table td{
-      display:block;
-      width:100%;
-    }
-    .product-detail-page .detail-table th{
-      border-bottom:0;
-      padding-bottom:.3rem;
-    }
-    .product-detail-page .detail-table td{
-      padding-top:.1rem;
-    }
+    .product-detail-page .summary-card{ padding:.55rem .65rem; }
+    .product-detail-page .summary-label{ font-size:.62rem; letter-spacing:.03em; }
+    .product-detail-page .summary-value{ font-size:1.1rem; margin-top:.2rem; }
+    .product-detail-page .hero{ margin-bottom:.8rem; }
+    .product-detail-page h1{ font-size:1.25rem; margin:.4rem 0 .2rem; }
+    .product-detail-page .subline{ font-size:.82rem; }
+    .product-detail-page .eyebrow{ padding:.22rem .55rem; font-size:.66rem; }
+    .product-detail-page .hero .btn{ padding:.4rem .65rem; font-size:.8rem; }
+    .product-detail-page .card-shell.p-4{ padding:.8rem !important; }
+    .product-detail-page .panel-head{ margin-bottom:.6rem; }
+    .product-detail-page .panel-head h2,
+    .product-detail-page .panel-head h3{ font-size:1rem; }
+    .product-detail-page .spec-grid{ grid-template-columns:repeat(2, minmax(0,1fr)); }
+    .product-detail-page .gallery-grid{ grid-template-columns:repeat(3, minmax(0,1fr)); gap:.45rem; }
+    .product-detail-page .row.g-4{ --bs-gutter-y:.7rem; }
+    .product-detail-page .card-shell.mb-4{ margin-bottom:.7rem !important; }
   }
 </style>
 
@@ -254,14 +266,12 @@
       <div class="summary-value">
         {% if product.default_price %}EUR {{ product.default_price|floatformat:2 }}{% else %}-{% endif %}
       </div>
-      <div class="summary-note">Default selling price</div>
     </div>
     <div class="card-shell summary-card">
       <div class="summary-label">Wholesale Price</div>
       <div class="summary-value">
         {% if product.wholesale_price %}EUR {{ product.wholesale_price|floatformat:2 }}{% else %}-{% endif %}
       </div>
-      <div class="summary-note">Reference bulk price</div>
     </div>
     {% if show_sensitive %}
       <div class="card-shell summary-card">
@@ -269,7 +279,6 @@
         <div class="summary-value">
           {% if fifo_price %}EUR {{ fifo_price|floatformat:2 }}{% else %}-{% endif %}
         </div>
-        <div class="summary-note">Current oldest in-stock layer</div>
       </div>
     {% endif %}
     <div class="card-shell summary-card">
@@ -283,7 +292,6 @@
           <span class="stock-badge stock-out">Out of stock</span>
         {% endif %}
       </div>
-      <div class="summary-note">Across all active purchase batches</div>
     </div>
   </div>
 
@@ -293,62 +301,29 @@
         <div class="panel-head">
           <div>
             <h2>Product Profile</h2>
-            <p>Structured fields for a cleaner product master.</p>
           </div>
         </div>
-        <table class="detail-table">
-          <tr>
-            <th>Display Name</th>
-            <td>{{ product.display_name }}</td>
-          </tr>
-          <tr>
-            <th>Brand</th>
-            <td>{{ product.brand|default:"-" }}</td>
-          </tr>
-          <tr>
-            <th>Series / Model</th>
-            <td>{{ product.model|default:"-" }}</td>
-          </tr>
-          <tr>
-            <th>Name</th>
-            <td>{{ product.name }}</td>
-          </tr>
-          <tr>
-            <th>Category</th>
-            <td>{{ product.category|default:"-" }}</td>
-          </tr>
-          <tr>
-            <th>Variant Details</th>
-            <td>
-              <div class="pill-row">
-                {% if product.spec %}<span class="meta-pill">Spec: {{ product.spec }}</span>{% endif %}
-                {% if product.color %}<span class="meta-pill">Color: {{ product.color }}</span>{% endif %}
-                {% if not product.spec and not product.color %}<span class="muted">No optional variant details.</span>{% endif %}
-              </div>
-            </td>
-          </tr>
-          <tr>
-            <th>Barcode</th>
-            <td>{{ product.barcode }}</td>
-          </tr>
-          <tr>
-            <th>Created At</th>
-            <td>{{ product.created_at|date:"Y-m-d H:i" }}</td>
-          </tr>
-          {% if product.description %}
-            <tr>
-              <th>Description</th>
-              <td>{{ product.description|linebreaksbr }}</td>
-            </tr>
-          {% endif %}
-        </table>
+        {# Display name, barcode and category already head the page — not repeated here. #}
+        <dl class="spec-grid">
+          <div><dt>Brand</dt><dd>{{ product.brand|default:"-" }}</dd></div>
+          <div><dt>Series / Model</dt><dd>{{ product.model|default:"-" }}</dd></div>
+          <div><dt>Name</dt><dd>{{ product.name }}</dd></div>
+          <div><dt>Spec</dt><dd>{{ product.spec|default:"-" }}</dd></div>
+          <div><dt>Color</dt><dd>{{ product.color|default:"-" }}</dd></div>
+          <div><dt>Created</dt><dd>{{ product.created_at|date:"Y-m-d" }}</dd></div>
+        </dl>
+        {% if product.description %}
+          <div class="spec-desc">
+            <dt>Description</dt>
+            <dd>{{ product.description|linebreaksbr }}</dd>
+          </div>
+        {% endif %}
       </div>
 
       <div class="card-shell p-4">
         <div class="panel-head">
           <div>
             <h2>Product Gallery</h2>
-            <p>Tap any image to inspect it in full size.</p>
           </div>
         </div>
         {% if product.images.all %}
@@ -441,7 +416,7 @@
           <div class="panel-head">
             <div>
               <h3>Sales History</h3>
-              <p>Last 10 days.{% if full_sales_url %} <a href="{{ full_sales_url }}">View full sales history &rarr;</a>{% endif %}</p>
+              {% if full_sales_url %}<p><a href="{{ full_sales_url }}">View full sales history &rarr;</a></p>{% endif %}
             </div>
           </div>
           <div class="table-shell">

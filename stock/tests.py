@@ -1059,8 +1059,8 @@ class ProductArchitectureTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Dior - Sauvage - EDP 100ml Blue")
         self.assertContains(response, "Wholesale Price")
-        self.assertContains(response, "Spec: 100ml")
-        self.assertContains(response, "Color: Blue")
+        self.assertContains(response, "100ml")
+        self.assertContains(response, "Blue")
 
     def test_product_detail_shows_prices_but_hides_sales_history_for_regular_user(self):
         brand = Brand.objects.create(name="Anker")
@@ -1342,14 +1342,16 @@ class EmployeeProductAccessTests(TestCase):
         self.assertEqual(self.client.get(reverse("product_list")).status_code, 200)
         self.assertEqual(self.client.get(reverse("product_detail", args=[self.product.pk])).status_code, 200)
 
-    def test_employee_can_add_product(self):
+    def test_employee_cannot_add_product(self):
+        # Products are read-only for employees: managers own the catalogue.
         self.client.login(username="prod_emp", password="pw123456")
         resp = self.client.post(reverse("add_product"), {
             "barcode": "7100000000002", "category": self.category.id,
             "new_brand_name": "NB", "name": "New Item", "default_price": "12.00",
         })
-        self.assertIn(resp.status_code, (200, 302))
-        self.assertTrue(Product.objects.filter(barcode="7100000000002").exists())
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(reverse("dashboard"), resp.headers["Location"])
+        self.assertFalse(Product.objects.filter(barcode="7100000000002").exists())
 
     def test_employee_still_blocked_from_inbound(self):
         self.client.login(username="prod_emp", password="pw123456")
@@ -1368,16 +1370,18 @@ class EmployeeProductEditExportTests(TestCase):
         cls.product = Product.objects.create(name="Old Name", barcode="7400000000001", brand="B",
                                              default_price=Decimal("9.90"))
 
-    def test_employee_can_open_and_submit_edit(self):
+    def test_employee_cannot_open_or_submit_edit(self):
+        # View-only for employees — the edit form is a manager tool.
         self.client.login(username="edit_emp", password="pw123456")
-        self.assertEqual(self.client.get(reverse("edit_product", args=[self.product.pk])).status_code, 200)
+        self.assertEqual(self.client.get(reverse("edit_product", args=[self.product.pk])).status_code, 302)
         resp = self.client.post(reverse("edit_product", args=[self.product.pk]), {
             "barcode": "7400000000001", "category": self.category.id,
             "new_brand_name": "B", "name": "New Name", "default_price": "10.50",
         })
-        self.assertIn(resp.status_code, (200, 302))
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(reverse("dashboard"), resp.headers["Location"])
         self.product.refresh_from_db()
-        self.assertEqual(self.product.name, "New Name")
+        self.assertEqual(self.product.name, "Old Name")
 
     def test_employee_can_download_product_excel(self):
         self.client.login(username="edit_emp", password="pw123456")
@@ -1427,10 +1431,12 @@ class EmployeeProductEditExportTests(TestCase):
         ]:
             self.assertEqual(resp.status_code, 302)
             self.assertIn(reverse("dashboard"), resp.headers["Location"])
-        # product_list shows Add/Edit/Client-export to employee, not Shopify export
+        # product_list offers the employee viewing + client export only: no
+        # Add/Edit affordances and no Shopify export.
         page = self.client.get(reverse("product_list"))
-        self.assertContains(page, reverse("add_product"))
-        self.assertContains(page, reverse("edit_product", args=[self.product.pk]))
+        self.assertNotContains(page, reverse("add_product"))
+        self.assertNotContains(page, reverse("edit_product", args=[self.product.pk]))
+        self.assertContains(page, reverse("product_detail", args=[self.product.pk]))
         self.assertContains(page, reverse("export_product_list_excel"))
         self.assertNotContains(page, reverse("export_shopify_inventory_csv"))
 
@@ -3708,21 +3714,20 @@ class EmployeePriceReadOnlyTests(TestCase):
                                       wholesale_price=Decimal("40"))
 
     def test_employee_cannot_change_prices_even_by_tampering(self):
-        from stock.models import Product
         user_model = get_user_model()
         user_model.objects.create_user(username="ro_emp", password="pw123456")
         self.client.login(username="ro_emp", password="pw123456")
         p = self._product()
-        # Employee submits the edit form with tampered prices + a legit name change.
+        # Products are manager-owned: a hand-crafted POST changes nothing at all.
         resp = self.client.post(reverse("edit_product", args=[p.pk]), {
             "barcode": "8500000000001", "category": self.category.id,
             "new_brand_name": "B", "name": "Renamed",
             "default_price": "1", "wholesale_price": "1",
         })
-        self.assertIn(resp.status_code, (200, 302))
+        self.assertEqual(resp.status_code, 302)
         p.refresh_from_db()
-        self.assertEqual(p.name, "Renamed")              # non-price edit still works
-        self.assertEqual(p.default_price, Decimal("50"))  # price change ignored
+        self.assertEqual(p.name, "Item")
+        self.assertEqual(p.default_price, Decimal("50"))
         self.assertEqual(p.wholesale_price, Decimal("40"))
 
     def test_manager_can_change_prices(self):
@@ -3740,15 +3745,17 @@ class EmployeePriceReadOnlyTests(TestCase):
         self.assertEqual(p.default_price, Decimal("77"))
         self.assertEqual(p.wholesale_price, Decimal("66"))
 
-    def test_employee_sees_price_field_disabled(self):
+    def test_employee_cannot_open_the_edit_form(self):
         user_model = get_user_model()
         user_model.objects.create_user(username="ro_emp2", password="pw123456")
         self.client.login(username="ro_emp2", password="pw123456")
         p = self._product()
         resp = self.client.get(reverse("edit_product", args=[p.pk]))
-        self.assertEqual(resp.status_code, 200)
-        # The price inputs render as disabled for employees (visible but not editable).
-        self.assertContains(resp, "disabled")
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(reverse("dashboard"), resp.headers["Location"])
+        # Prices stay visible on the read-only detail page.
+        detail = self.client.get(reverse("product_detail", args=[p.pk]))
+        self.assertContains(detail, "50.00")
 
     def test_employee_cannot_lock_price_by_tampering(self):
         from stock.models import Product

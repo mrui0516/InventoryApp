@@ -1439,6 +1439,7 @@ def export_shopify_inventory_csv(request):
 # 产品增/改/详情
 # -----------------------------
 @login_required
+@manager_required
 def add_product_view(request):
     if request.method == 'POST':
         form = ProductForm(request.POST, can_edit_prices=has_manager_access(request.user))
@@ -1801,6 +1802,7 @@ def sync_product_to_shopify(request, pk):
 
 
 @login_required
+@manager_required
 def edit_product_view(request, pk):
     product = get_object_or_404(
         Product.objects.select_related('category', 'brand_master', 'series_master'),
