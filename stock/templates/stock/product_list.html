@@ -3,8 +3,11 @@
 
 {% block content %}
 <style>
-  .cat-chips{ display:flex; flex-wrap:wrap; gap:.4rem; }
-  .cat-chips .btn{ font-weight:600; }
+  /* categories always sit on a single row, sharing the width equally */
+  .cat-chips{ display:flex; flex-wrap:nowrap; gap:.35rem; }
+  .cat-chips .btn{ flex:1 1 0; min-width:0; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  /* the secondary filters collapse on phones but stay inline on desktop */
+  @media (min-width:576px){ #moreFilters.mf-collapse{ display:contents !important; } }
   /* Export is occasional — keep it folded so it never pushes the list down */
   .export-details > summary{ cursor:pointer; font-weight:700; color:var(--app-accent-ink); padding:.5rem .1rem; }
 
@@ -32,10 +35,22 @@
       font-size:.87rem; font-weight:600; color:var(--pl-text); line-height:1.25;
       display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
     }
-    .pm-spec{ color:var(--pl-muted); font-weight:500; }
+    .pm-spec{ font-size:.72rem; color:var(--pl-muted); font-weight:600; line-height:1.25; }
     .pm-sub{ font-size:.7rem; color:var(--pl-muted); line-height:1.25; }
-    .pm-fig{ display:flex; flex-direction:column; align-items:flex-end; gap:.2rem; white-space:nowrap; }
+    /* counters: one compact row instead of three stacked cards */
+    .stat-grid{ grid-template-columns:repeat(3,minmax(0,1fr)); gap:.4rem; }
+    .stat-card{ padding:.4rem .5rem; }
+    .stat-label{ font-size:.58rem; letter-spacing:.03em; }
+    .stat-value{ margin-top:.1rem; font-size:1.05rem; }
+    /* filters: compact labels, collapsed secondary block two-up */
+    .toolbar .form-label{ font-size:.68rem; margin-bottom:.2rem; text-transform:uppercase; letter-spacing:.04em; }
+    .toolbar .form-control,.toolbar .form-select{ padding:.45rem .6rem; }
+    #moreFilters{ grid-column:1 / -1; }
+    #moreFilters.show{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.5rem; }
+    .filter-actions .btn{ flex:1 1 0; min-height:38px; }
+    .pm-fig{ display:flex; flex-direction:column; align-items:flex-end; gap:.15rem; white-space:nowrap; }
     .pm-price{ font-size:.87rem; font-weight:800; color:var(--pl-text); font-variant-numeric:tabular-nums; }
+    .pm-whs{ font-size:.7rem; font-weight:600; color:var(--pl-muted); font-variant-numeric:tabular-nums; }
     .pm-edit{ flex:0 0 44px; display:grid; place-items:center; color:var(--pl-muted); border-left:1px solid var(--pl-border); }
     .pm-edit:active{ background:var(--app-surface-2); }
     /* filters: search + categories full width, the rest two-up */
@@ -66,21 +81,21 @@
 
   <section class="stat-grid">
     <div class="stat-card">
-      <span class="stat-label">Filtered Product Types</span>
+      <span class="stat-label">Products</span>
       <div class="stat-value">{{ total_types }}</div>
     </div>
     <div class="stat-card">
-      <span class="stat-label">In Stock Types</span>
+      <span class="stat-label">In stock</span>
       <div class="stat-value">{{ in_stock_types }}</div>
     </div>
     <div class="stat-card">
-      <span class="stat-label">Stock On This Page</span>
+      <span class="stat-label">Units on page</span>
       <div class="stat-value">{{ total_stock }}</div>
     </div>
   </section>
 
   <section class="page-card pad">
-    <div class="strip-head mb-3">
+    <div class="strip-head mb-3 d-none d-sm-flex">
       <div>
         <h2 class="h5 mb-1">Filter Products</h2>
       </div>
@@ -101,6 +116,7 @@
             {% endfor %}
           </div>
         </div>
+        <div class="collapse mf-collapse" id="moreFilters">
         <div>
           <label class="form-label fw-bold">Brand</label>
           <select name="brand" class="form-select">
@@ -133,8 +149,10 @@
             {% endif %}
           </select>
         </div>
+        </div>
       </div>
-      <div class="d-flex gap-2 flex-wrap mt-3">
+      <div class="d-flex gap-2 flex-wrap mt-2 filter-actions">
+        <button class="btn btn-sm btn-outline-secondary d-sm-none" type="button" data-bs-toggle="collapse" data-bs-target="#moreFilters" aria-controls="moreFilters">More filters</button>
         <button type="submit" class="btn btn-primary">Apply filters</button>
         <a href="{% url 'product_list' %}" class="btn btn-outline-secondary">Reset</a>
       </div>
@@ -290,13 +308,15 @@
                         {% endif %}
                         <div class="pm-body">
                           <div class="pm-brand">{{ product.brand }}</div>
-                          <div class="pm-name">{% if product.model %}{{ product.model }} · {% endif %}{{ product.name }}{% if product.variant_label %} <span class="pm-spec">{{ product.variant_label }}</span>{% endif %}</div>
+                          <div class="pm-name">{% if product.model %}{{ product.model }} · {% endif %}{{ product.name }}</div>
+                          {% if product.variant_label %}<div class="pm-spec">{{ product.variant_label }}</div>{% endif %}
                           {% if show_sales_sensitive %}
                             <div class="pm-sub">Sold {{ product.total_sold_qty }} · 30d {{ product.recent_sold_qty }}</div>
                           {% endif %}
                         </div>
                         <div class="pm-fig">
                           <span class="pm-price">{% if product.default_price %}€{{ product.default_price|floatformat:2 }}{% else %}&mdash;{% endif %}</span>
+                          <span class="pm-whs">Whs {% if product.wholesale_price %}€{{ product.wholesale_price|floatformat:2 }}{% else %}&mdash;{% endif %}</span>
                           {% if product.total_stock > 5 %}
                             <span class="stock-pill ok">{{ product.total_stock }}</span>
                           {% elif product.total_stock > 0 %}
