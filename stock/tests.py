@@ -1448,9 +1448,10 @@ class InboundOutboundPageTests(TestCase):
         response = self.client.get(reverse("outbound"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Review and confirm sale")
-        self.assertContains(response, "Final Sale Review")
-        self.assertContains(response, "Before you confirm")
+        # Sticky checkout bar -> confirm dialog -> its double-check guardrails.
+        self.assertContains(response, "Review &amp; confirm")
+        self.assertContains(response, "Confirm sale")
+        self.assertContains(response, "Please double-check")
 
     def test_inbound_page_renders_review_guardrails(self):
         self.client.login(username="ops_manager", password="pw123456")

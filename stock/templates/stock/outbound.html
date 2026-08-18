@@ -89,89 +89,60 @@
       </section>
 
     </div>
+  </div>
 
-    <aside class="operation-side">
-      <div class="operation-card sticky-review">
-        <h3 class="operation-title">Review &amp; confirm</h3>
-
-        <div class="review-stats">
-          <div class="review-stat">
-            <span class="review-label">Customer</span>
-            <strong id="summary-customer">Walk-in / no customer</strong>
-          </div>
-          <div class="review-stat">
-            <span class="review-label">Items</span>
-            <strong id="summary-total-qty">0 pcs</strong>
-          </div>
-          <div class="review-stat">
-            <span class="review-label">Discount</span>
-            <strong id="summary-discount">EUR 0.00</strong>
-          </div>
-          <div class="review-stat review-stat--stack">
-            <span class="review-label">Payments</span>
-            <div class="pay-summary" id="summary-payment-mix"><span class="text-muted">No payment yet</span></div>
-          </div>
-          <div class="review-stat highlight">
-            <span class="review-label">Total</span>
-            <strong id="summary-total-amount">EUR 0.00</strong>
-          </div>
-        </div>
-
-        <div class="guardrail-panel" id="summary-warning-wrap">
-          <div class="guardrail-title">Before you confirm</div>
-          <ul class="guardrail-list" id="summary-warning-list" aria-live="polite">
-            <li>Add products and choose payment to enable the sale.</li>
-          </ul>
-        </div>
-
-        <button type="submit" id="submitBtn" class="btn btn-primary w-100" data-store-blocked="{% if outbound_blocked %}1{% endif %}" disabled>{% if outbound_blocked %}Pick a store to sell{% else %}Review and confirm sale{% endif %}</button>
+  <div class="checkout-bar">
+    <div class="checkout-bar-info">
+      <span id="bar-count">0 lines · 0 pcs</span>
+      <span class="checkout-warn d-none" id="bar-warn" aria-live="polite"></span>
+    </div>
+    <div class="checkout-bar-right">
+      <div class="checkout-bar-total">
+        <span class="review-label">Total</span>
+        <strong id="summary-total-amount">EUR 0.00</strong>
       </div>
-    </aside>
+      <button type="submit" id="submitBtn" class="btn btn-primary" data-store-blocked="{% if outbound_blocked %}1{% endif %}" disabled>{% if outbound_blocked %}Pick a store to sell{% else %}Review &amp; confirm{% endif %}</button>
+    </div>
   </div>
 </form>
 
 <div class="modal fade" id="checkoutReviewModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered modal-lg">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">Final Sale Review</h5>
+        <h5 class="modal-title">Confirm sale</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body">
-        <div class="review-modal-grid">
-          <div class="review-modal-card">
-            <div class="review-label">Customer</div>
-            <div class="review-modal-value" id="review-customer">Walk-in / no customer</div>
-          </div>
-          <div class="review-modal-card">
-            <div class="review-label">Items</div>
-            <div class="review-modal-value" id="review-qty">0 pcs</div>
-          </div>
-          <div class="review-modal-card">
-            <div class="review-label">Discount</div>
-            <div class="review-modal-value" id="review-discount">EUR 0.00</div>
-          </div>
-          <div class="review-modal-card">
-            <div class="review-label">Total</div>
-            <div class="review-modal-value" id="review-total">EUR 0.00</div>
-          </div>
+      <div class="modal-body lm-body">
+        <div class="rv-total">
+          <span class="review-label">Total</span>
+          <strong id="review-total">EUR 0.00</strong>
         </div>
 
-        <div class="review-modal-card mt-3">
-          <div class="review-label">Payments</div>
+        <div class="rv-facts">
+          <div><span class="review-label">Customer</span><span class="review-modal-value" id="review-customer">Walk-in</span></div>
+          <div><span class="review-label">Items</span><span class="review-modal-value" id="review-qty">0 pcs</span></div>
+          <div><span class="review-label">Discount</span><span class="review-modal-value" id="review-discount">EUR 0.00</span></div>
+        </div>
+
+        <div class="lm-row">
+          <div class="lm-label">Payments</div>
           <div class="pay-summary" id="review-payment"><span class="text-muted">-</span></div>
         </div>
 
-        <div class="guardrail-panel mt-3" id="review-warning-wrap">
+        <div class="guardrail-panel" id="review-warning-wrap">
           <div class="guardrail-title">Please double-check</div>
           <ul class="guardrail-list" id="review-warning-list"></ul>
         </div>
 
-        <div class="review-line-items mt-3" id="review-line-items"></div>
+        <div class="lm-row">
+          <div class="lm-label">Lines</div>
+          <div class="review-line-items" id="review-line-items"></div>
+        </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Back to edit</button>
-        <button type="button" class="btn btn-primary" id="confirmCheckoutBtn">Confirm sale now</button>
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Back</button>
+        <button type="button" class="btn btn-primary" id="confirmCheckoutBtn">Confirm sale</button>
       </div>
     </div>
   </div>
@@ -275,6 +246,13 @@
       </div>
       <div class="modal-body">
         <div id="camera-scan-view" class="camera-view"></div>
+        <div class="cam-tools">
+          <label class="cam-zoom d-none" id="camera-zoom-wrap">
+            <span>Zoom</span>
+            <input type="range" class="form-range" id="camera-zoom" min="1" max="5" step="0.1" value="1">
+          </label>
+          <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="camera-torch">Light</button>
+        </div>
         <div class="small text-muted mt-2" id="camera-scan-msg">Hold the barcode inside the frame.</div>
       </div>
       <div class="modal-footer">
@@ -347,18 +325,26 @@
     color:var(--app-text);
   }
   .checkout-shell{ display:block; }
-  .operation-layout{
-    display:grid;
-    grid-template-columns:minmax(0,1.75fr) minmax(320px,.95fr);
-    gap:1rem;
-    align-items:start;
-  }
-  .operation-main,
-  .operation-side{
+  /* Single column: the cart gets the full width and the running total lives in
+     the sticky checkout bar, so confirming never requires scrolling to the end. */
+  .operation-layout{ display:grid; grid-template-columns:1fr; gap:1rem; align-items:start; }
+  .operation-main{
     display:grid;
     gap:1rem;
     min-width:0;            /* allow the column to shrink so wide tables scroll, not overflow */
   }
+  .checkout-bar{
+    position:sticky; bottom:calc(var(--tabbar-h) + .5rem); z-index:5;
+    display:flex; align-items:center; gap:.9rem; flex-wrap:wrap;
+    margin-top:1rem; padding:.7rem .9rem;
+    background:var(--app-surface); border:1px solid var(--app-border-strong);
+    border-radius:var(--app-radius); box-shadow:0 8px 24px rgba(16,24,40,.14);
+  }
+  .checkout-bar-info{ display:flex; align-items:center; gap:.5rem; color:var(--app-muted); font-weight:600; font-size:.88rem; }
+  .checkout-warn{ padding:.16rem .55rem; border-radius:999px; background:var(--app-warn-soft); color:var(--app-warn); font-size:.74rem; font-weight:800; }
+  .checkout-bar-right{ display:flex; align-items:center; gap:.9rem; margin-left:auto; }
+  .checkout-bar-total strong{ display:block; font-size:1.25rem; font-weight:800; color:var(--app-text); font-variant-numeric:tabular-nums; line-height:1.1; }
+  .checkout-bar .btn{ min-width:11rem; }
   .operation-card{
     background:var(--app-surface);
     border:1px solid var(--app-border);
@@ -406,35 +392,6 @@
     font-size:.88rem;
     font-weight:600;
   }
-  .sticky-review{ position:sticky; top:1rem; }
-  .review-stats{
-    display:grid;
-    gap:0;
-    margin-top:.9rem;
-  }
-  .review-stat{
-    display:flex;
-    justify-content:space-between;
-    align-items:baseline;
-    gap:1rem;
-    padding:.55rem .15rem;
-    border:0;
-    border-bottom:1px solid var(--app-border);
-    background:transparent;
-  }
-  .review-stat.highlight{
-    background:var(--app-accent-soft);
-    border:1px solid var(--app-accent-line);
-    border-radius:var(--app-radius-sm);
-    padding:.7rem .8rem;
-    margin-top:.7rem;
-  }
-  .review-stat--stack{
-    flex-direction:column;
-    align-items:stretch;
-    gap:.4rem;
-  }
-  .review-stat--stack .pay-summary{ justify-content:flex-start; }
   .review-label{
     display:block;
     color:var(--app-muted);
@@ -443,18 +400,12 @@
     letter-spacing:.05em;
     text-transform:uppercase;
   }
-  .review-stat strong,
   .review-modal-value{
     display:block;
     color:var(--app-text);
     font-size:.98rem;
     font-weight:700;
-    text-align:right;
     font-variant-numeric:tabular-nums;
-  }
-  .review-stat.highlight strong{
-    font-size:1.35rem;
-    color:var(--app-accent-ink);
   }
   .review-modal-card .review-modal-value{ text-align:left; margin-top:.2rem; }
   .guardrail-panel{
@@ -479,28 +430,36 @@
     font-size:.86rem;
   }
   .guardrail-list li + li{ margin-top:.35rem; }
-  .review-modal-grid{
-    display:grid;
-    grid-template-columns:repeat(2, minmax(0,1fr));
-    gap:.6rem;
+  /* Confirm dialog: total first, then facts, payments, warnings, lines */
+  .rv-total{
+    display:flex; align-items:baseline; justify-content:space-between; gap:.75rem;
+    padding:.6rem .8rem; border-radius:var(--app-radius-sm);
+    background:var(--app-accent-soft); border:1px solid var(--app-accent-line);
   }
-  .review-modal-card{
-    padding:.7rem .85rem;
-    border-radius:var(--app-radius-sm);
-    background:var(--app-surface-2);
-    border:1px solid var(--app-border);
+  .rv-total strong{ font-size:1.5rem; font-weight:800; color:var(--app-accent-ink); font-variant-numeric:tabular-nums; line-height:1.1; }
+  .rv-facts{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.45rem; }
+  .rv-facts > div{
+    min-width:0; padding:.45rem .6rem; border-radius:var(--app-radius-sm);
+    background:var(--app-surface-2); border:1px solid var(--app-border);
   }
-  .review-line-items{ display:grid; gap:.5rem; }
+  .rv-facts .review-modal-value{ font-size:.88rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .review-line-items{ display:grid; gap:.4rem; }
   .review-line-item{
     display:flex;
     justify-content:space-between;
-    gap:1rem;
+    gap:.75rem;
     align-items:flex-start;
-    padding:.7rem .85rem;
+    padding:.5rem .65rem;
     border-radius:var(--app-radius-sm);
     background:var(--app-surface);
     border:1px solid var(--app-border);
+    font-size:.88rem;
   }
+  /* camera tools */
+  .cam-tools{ display:flex; align-items:center; gap:.75rem; margin-top:.6rem; }
+  .cam-zoom{ flex:1 1 auto; display:flex; align-items:center; gap:.55rem; font-size:.78rem; font-weight:700; color:var(--app-muted); margin:0; }
+  .cam-zoom .form-range{ flex:1 1 auto; }
+  #camera-torch.active{ background:var(--app-accent-soft); border-color:var(--app-accent); color:var(--app-accent-ink); }
   .review-line-item strong{ color:var(--app-text); font-weight:700; }
   .review-line-meta{
     color:var(--app-muted);
@@ -755,22 +714,16 @@
   .modal-header{ background:var(--app-surface-2); }
   .modal-title{ font-weight:700; }
 
-  @media (max-width: 1199.98px){
-    .operation-layout{
-      grid-template-columns:1fr;
-    }
-    .sticky-review{
-      position:static;
-    }
-  }
-
   /* ============ Mobile (<576px): compact POS ============ */
   @media (max-width: 576px){
     .pos-title{ font-size:1.2rem; margin-bottom:.75rem !important; }
-    .operation-layout,
-    .review-modal-grid{ grid-template-columns:1fr; }
     .operation-layout{ gap:.7rem; }
-    .operation-main, .operation-side{ gap:.7rem; }
+    .operation-main{ gap:.7rem; }
+    .checkout-bar{ padding:.6rem .7rem; gap:.5rem; }
+    .checkout-bar-right{ width:100%; gap:.7rem; }
+    .checkout-bar .btn{ flex:1 1 auto; min-width:0; }
+    .rv-facts{ grid-template-columns:1fr; }
+    .rv-facts > div{ display:flex; align-items:baseline; justify-content:space-between; gap:.6rem; }
     .operation-card{ padding:.8rem .85rem; }
     .operation-card-head{ margin-bottom:.55rem; }
     .operation-title{ font-size:.98rem; }
@@ -778,7 +731,6 @@
     #checkout-form .form-control, #checkout-form .form-select{
       padding:.7rem .85rem; font-size:1rem;   /* keep >=16px so iOS doesn't auto-zoom */
     }
-    .sticky-review{ position:static; }
     #product-suggest, #customer-suggestions{ border-radius:.6rem; }
 
     /* Cart line = compact card: product on line 1, a wrapping meta row of
@@ -817,13 +769,8 @@
     .review-stat.highlight strong{ font-size:1.15rem; }
     .guardrail-panel{ padding:.6rem .7rem; }
 
-    /* Sticky confirm doubles as the checkout bar (carries the running total).
-       Sits above the bottom tab bar so both stay tappable. */
-    #submitBtn{
-      position:sticky; bottom:calc(var(--tabbar-h) + .5rem); width:100%;
-      padding:.85rem 1rem; font-size:1rem; line-height:1.2;
-      box-shadow:0 8px 20px rgba(16,24,40,.18); z-index:5;
-    }
+    /* the whole checkout bar is sticky now — the button just needs to be tappable */
+    #submitBtn{ padding:.8rem 1rem; font-size:1rem; line-height:1.2; }
   }
 
   /* ===== Cart table layout (prevent text clipping) ===== */
@@ -955,12 +902,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const reviewWarningList = document.getElementById('review-warning-list');
   const reviewLineItems = document.getElementById('review-line-items');
   const confirmCheckoutBtn = document.getElementById('confirmCheckoutBtn');
-  const summaryCustomer = document.getElementById('summary-customer');
-  const summaryTotalQty = document.getElementById('summary-total-qty');
-  const summaryPaymentMix = document.getElementById('summary-payment-mix');
   const summaryTotalAmount = document.getElementById('summary-total-amount');
   const summaryLineCount = document.getElementById('summary-line-count');
-  const summaryWarningList = document.getElementById('summary-warning-list');
+  const barCount = document.getElementById('bar-count');
+  const barWarn = document.getElementById('bar-warn');
 
   function hidePreview() {
     previewBox.classList.remove('show');
@@ -1300,15 +1245,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (cart.length && !allPaid) warnings.push('Each line needs a complete payment.');
     const uniq = uniqueWarnings(warnings);
 
-    summaryCustomer.textContent = customerIdInput.value ? customerSearch.value : 'Walk-in / no customer';
-    summaryTotalQty.textContent = `${qty} pcs`;
-    document.getElementById('summary-discount').textContent = formatMoney(disc);
-    summaryPaymentMix.innerHTML = paySummaryHtml(payments);
     summaryTotalAmount.textContent = formatMoney(total);
     summaryLineCount.textContent = `${cart.length} ${cart.length === 1 ? 'line' : 'lines'}`;
-    summaryWarningList.innerHTML = uniq.length
-      ? uniq.map(w => `<li>${escapeHtml(w)}</li>`).join('')
-      : '<li>Ready to confirm this sale.</li>';
+    barCount.textContent = `${cart.length} line${cart.length === 1 ? '' : 's'} · ${qty} pcs`;
+    // Details live in the confirm dialog; the bar only flags that there is something to check.
+    barWarn.textContent = uniq.length ? `${uniq.length} to check` : '';
+    barWarn.classList.toggle('d-none', uniq.length === 0);
 
     itemsJson.value = JSON.stringify(cart.map(i => ({
       barcode: i.barcode, qty: i.qty, price: lineFinalUnit(i).toFixed(2),
@@ -1317,19 +1259,13 @@ document.addEventListener('DOMContentLoaded', () => {
     paymentsJson.value = JSON.stringify(METHODS.filter(m => payments[m] > 0).map(m => ({ method: m, amount: payments[m].toFixed(2) })));
 
     submitBtn.disabled = STORE_BLOCKED || !(cart.length > 0 && cart.every(lineValid) && paymentsValid);
-    // The confirm button doubles as the mobile checkout bar — show the running
-    // total so the cashier never has to scroll up to see what they're charging.
-    if (STORE_BLOCKED) {
-      submitBtn.textContent = 'Pick a store to sell';
-    } else {
-      submitBtn.innerHTML = `Review &amp; confirm &middot; <strong>${formatMoney(total)}</strong>`;
-    }
     return { total, disc, qty, paymentsHtml: paySummaryHtml(payments), warnings: uniq };
   }
 
   function openCheckoutReview() {
     const s = recalc();
-    document.getElementById('review-customer').textContent = summaryCustomer.textContent;
+    document.getElementById('review-customer').textContent =
+      customerIdInput.value ? customerSearch.value : 'Walk-in / no customer';
     document.getElementById('review-qty').textContent = `${s.qty} pcs`;
     document.getElementById('review-discount').textContent = formatMoney(s.disc);
     document.getElementById('review-total').textContent = formatMoney(s.total);
@@ -1672,15 +1608,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const F = lib.Html5QrcodeSupportedFormats;
     scanner = new lib.Html5Qrcode('camera-scan-view', {
       formatsToSupport: [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128],
+      // native BarcodeDetector where available (Android) — much faster/sharper
+      experimentalFeatures: { useBarCodeDetectorIfSupported: true },
       verbose: false,
     });
     try {
       await scanner.start(
         { facingMode: 'environment' },
         {
-          fps: 10,
-          // wide, short box — product barcodes are wider than they are tall
-          qrbox: (w, h) => ({ width: Math.floor(Math.min(w * 0.9, 320)), height: Math.floor(Math.min(h * 0.5, 180)) }),
+          fps: 12,
+          // No qrbox: a crop box throws away most of the frame. Scanning the
+          // whole (high-res) frame is what makes small barcodes readable.
+          videoConstraints: {
+            facingMode: 'environment',
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            advanced: [{ focusMode: 'continuous' }],
+          },
         },
         (text) => {
           if (scanBusy) return;
@@ -1692,11 +1636,50 @@ document.addEventListener('DOMContentLoaded', () => {
         },
         () => { /* per-frame miss — ignore */ }
       );
-      cameraMsg.textContent = 'Hold the barcode inside the frame.';
+      cameraMsg.textContent = 'Keep ~15cm away and zoom in — moving closer blurs the lens.';
+      setupCameraControls();
     } catch (e) {
       scanner = null;
       cameraMsg.textContent = 'Cannot open the camera. Allow camera access in the browser, then try again.';
     }
+  }
+
+  // Phone lenses cannot focus closer than ~10cm, so small barcodes must be
+  // zoomed into rather than approached. Expose zoom + torch when supported.
+  function setupCameraControls() {
+    const zoomWrap = document.getElementById('camera-zoom-wrap');
+    const zoomInput = document.getElementById('camera-zoom');
+    const torchBtn = document.getElementById('camera-torch');
+    zoomWrap.classList.add('d-none');
+    torchBtn.classList.add('d-none');
+    let caps = null;
+    try { caps = scanner.getRunningTrackCapabilities(); } catch (e) { return; }
+    if (!caps) return;
+
+    if (caps.zoom && caps.zoom.max > caps.zoom.min) {
+      zoomInput.min = caps.zoom.min;
+      zoomInput.max = caps.zoom.max;
+      zoomInput.step = caps.zoom.step || 0.1;
+      // start slightly zoomed in — that is the sweet spot for retail barcodes
+      const start = Math.min(caps.zoom.max, Math.max(caps.zoom.min, 2));
+      zoomInput.value = start;
+      applyCamera({ zoom: start });
+      zoomWrap.classList.remove('d-none');
+      zoomInput.oninput = () => applyCamera({ zoom: Number(zoomInput.value) });
+    }
+    if (caps.torch) {
+      let on = false;
+      torchBtn.classList.remove('d-none');
+      torchBtn.onclick = () => {
+        on = !on;
+        applyCamera({ torch: on });
+        torchBtn.classList.toggle('active', on);
+      };
+    }
+  }
+  function applyCamera(advanced) {
+    if (!scanner) return;
+    try { scanner.applyVideoConstraints({ advanced: [advanced] }); } catch (e) { /* unsupported */ }
   }
 
   async function stopScanner() {
