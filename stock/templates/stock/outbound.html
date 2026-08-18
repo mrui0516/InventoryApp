@@ -12,14 +12,19 @@
 <!-- 扫码 / 模糊搜索 -->
 <form id="scan-form" class="mb-3 position-relative">
   <label for="barcode" class="form-label">Scan barcode or search product</label>
-  <input
-    type="text"
-    id="barcode"
-    class="form-control"
-    placeholder="Enter barcode / name / brand / model"
-    autofocus
-    autocomplete="off"
-  >
+  <div class="input-group">
+    <input
+      type="text"
+      id="barcode"
+      class="form-control"
+      placeholder="Enter barcode / name / brand / model"
+      autofocus
+      autocomplete="off"
+    >
+    <button type="button" class="btn btn-outline-secondary scan-cam-btn" id="camera-scan-btn" aria-label="Scan barcode with camera" title="Scan with camera">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8V6a1 1 0 0 1 1-1h2"/><path d="M18 5h2a1 1 0 0 1 1 1v2"/><path d="M21 16v2a1 1 0 0 1-1 1h-2"/><path d="M6 19H4a1 1 0 0 1-1-1v-2"/><path d="M7 9v6"/><path d="M10 9v6"/><path d="M13.5 9v6"/><path d="M17 9v6"/></svg>
+    </button>
+  </div>
   <div id="product-suggest"
        class="list-group position-absolute w-100 shadow-sm d-none"
        role="listbox" aria-label="Product suggestions"
@@ -174,50 +179,58 @@
 
 <!-- Add / edit cart line modal -->
 <div class="modal fade" id="lineItemModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title" id="lineItemModalTitle">Add product</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body lm-body">
         <div class="line-modal-product">
-          <div class="fw-semibold" id="line-modal-name">Product</div>
-          <div class="small text-muted" id="line-modal-barcode"></div>
-          <div class="small text-muted" id="line-modal-stock"></div>
+          <div class="lm-thumb" id="line-modal-thumb-wrap"><img id="line-modal-thumb" alt=""></div>
+          <div class="lm-ident">
+            <div class="lm-brand" id="line-modal-brand"></div>
+            <div class="lm-name" id="line-modal-name">Product</div>
+            <div class="lm-meta"><span id="line-modal-barcode"></span><span class="lm-stock" id="line-modal-stock"></span></div>
+          </div>
         </div>
 
-        <div class="mb-3">
-          <label for="line-modal-qty" class="form-label">Quantity</label>
-          <input type="number" min="1" step="1" class="form-control" id="line-modal-qty" value="1">
+        <div class="lm-row">
+          <div class="lm-label">Quantity</div>
+          <div class="qty-chips" id="line-modal-qty-chips">
+            <button type="button" class="qty-chip" data-qty="1">1</button>
+            <button type="button" class="qty-chip" data-qty="2">2</button>
+            <button type="button" class="qty-chip" data-qty="3">3</button>
+            <button type="button" class="qty-chip" data-qty="4">4</button>
+            <button type="button" class="qty-chip" data-qty="5">5</button>
+            <button type="button" class="qty-chip qty-more" id="line-modal-qty-more" aria-label="More quantity">+</button>
+          </div>
+          <input type="hidden" id="line-modal-qty" value="1">
         </div>
 
-        <div class="mb-2">
-          <label for="line-modal-base" class="form-label">Price</label>
+        <div class="lm-row">
+          <div class="lm-label">Price</div>
           <div class="price-toggle" id="line-modal-price-toggle">
             <button type="button" class="price-opt active" data-kind="retail">Retail <span id="line-modal-retail">€0.00</span></button>
             <button type="button" class="price-opt" data-kind="wholesale">Wholesale <span id="line-modal-wholesale">€0.00</span></button>
           </div>
-          <div class="input-group input-group-sm mt-2">
-            <span class="input-group-text">€</span>
-            <input type="text" inputmode="decimal" class="form-control" id="line-modal-base" placeholder="0.00">
+          <input type="hidden" id="line-modal-base">
+          <div class="lm-custom d-none" id="line-modal-custom-wrap">
+            <label class="lm-sub-label" for="line-modal-custom">No saved price — enter one</label>
+            <div class="input-group input-group-sm"><span class="input-group-text">€</span><input type="text" inputmode="decimal" class="form-control" id="line-modal-custom" placeholder="0.00"></div>
+          </div>
+          <div class="lm-disc">
+            <label class="lm-sub-label" for="line-modal-discount">Discount / unit</label>
+            <div class="input-group input-group-sm"><span class="input-group-text">&minus;€</span><input type="text" inputmode="decimal" class="form-control" id="line-modal-discount" placeholder="0.00" value="0"></div>
           </div>
         </div>
 
-        <div class="mb-3">
-          <label for="line-modal-discount" class="form-label">Discount (&euro; off per unit)</label>
-          <div class="input-group input-group-sm">
-            <span class="input-group-text">&minus;€</span>
-            <input type="text" inputmode="decimal" class="form-control" id="line-modal-discount" placeholder="0.00" value="0">
+        <div class="lm-row">
+          <div class="lm-label-row">
+            <span class="lm-label">Payment</span>
+            <label class="split-toggle"><input type="checkbox" id="line-modal-split-toggle"> Split</label>
           </div>
-        </div>
-
-        <div class="mb-3">
-          <div class="d-flex justify-content-between align-items-center">
-            <label class="form-label mb-0">Payment method</label>
-            <label class="split-toggle"><input type="checkbox" id="line-modal-split-toggle"> Split this line</label>
-          </div>
-          <div class="pay-balls mt-2" id="line-modal-pay">
+          <div class="pay-balls" id="line-modal-pay">
             <button type="button" class="pay-ball" data-method="cash"><span class="pay-ball-dot" aria-hidden="true">€</span>Cash</button>
             <button type="button" class="pay-ball" data-method="card"><span class="pay-ball-dot" aria-hidden="true">▭</span>Card</button>
             <button type="button" class="pay-ball" data-method="mbway"><span class="pay-ball-dot" aria-hidden="true">↗</span>MBWay</button>
@@ -240,7 +253,7 @@
         </div>
 
         <div class="line-modal-preview">
-          <div><span class="review-label">Final unit</span><strong id="line-modal-final">EUR 0.00</strong></div>
+          <div><span class="review-label">Unit</span><strong id="line-modal-final">EUR 0.00</strong></div>
           <div><span class="review-label">Line total</span><strong id="line-modal-linetotal">EUR 0.00</strong></div>
         </div>
         <div class="text-danger small mt-2 d-none" id="line-modal-error"></div>
@@ -248,6 +261,24 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
         <button type="button" class="btn btn-primary" id="line-modal-save">Add to cart</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="cameraScanModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Scan barcode</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="camera-scan-view" class="camera-view"></div>
+        <div class="small text-muted mt-2" id="camera-scan-msg">Hold the barcode inside the frame.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
       </div>
     </div>
   </div>
@@ -808,20 +839,58 @@
   }
 
   /* ===== Payment balls + split ===== */
-  .split-toggle{ font-size:.84rem; font-weight:600; color:var(--app-muted); display:inline-flex; align-items:center; gap:.4rem; cursor:pointer; }
-  .pay-balls{ display:flex; gap:.6rem; flex-wrap:wrap; }
+  .split-toggle{ font-size:.8rem; font-weight:600; color:var(--app-muted); display:inline-flex; align-items:center; gap:.35rem; cursor:pointer; }
+  /* Three methods share one row — compact horizontal chips, not tall cards */
+  .pay-balls{ display:flex; gap:.4rem; }
   .pay-ball{
-    flex:1 1 110px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.35rem;
-    padding:.85rem .6rem; border-radius:var(--app-radius-sm); border:1px solid var(--app-border-strong); background:var(--app-surface);
-    color:var(--app-text); font-weight:700; cursor:pointer; transition:border-color .12s ease, background-color .12s ease, box-shadow .12s ease;
+    flex:1 1 0; min-width:0; display:flex; flex-direction:row; align-items:center; justify-content:center; gap:.35rem;
+    padding:.5rem .3rem; min-height:44px; border-radius:var(--app-radius-sm); border:1px solid var(--app-border-strong); background:var(--app-surface);
+    color:var(--app-text); font-weight:700; font-size:.86rem; cursor:pointer; transition:border-color .12s ease, background-color .12s ease, box-shadow .12s ease;
   }
   .pay-ball:hover{ border-color:var(--app-accent-line); background:var(--app-surface-2); }
   .pay-ball.active{ border-color:var(--app-accent); background:var(--app-accent-soft); color:var(--app-accent-ink); box-shadow:0 0 0 1px var(--app-accent) inset; }
   .pay-ball-dot{
-    width:2.1rem; height:2.1rem; border-radius:999px; display:grid; place-items:center;
-    background:var(--app-accent-soft); color:var(--app-accent-ink); font-size:1.05rem; font-weight:700;
+    width:1.4rem; height:1.4rem; flex:0 0 1.4rem; border-radius:999px; display:grid; place-items:center;
+    background:var(--app-accent-soft); color:var(--app-accent-ink); font-size:.8rem; font-weight:700;
   }
   .pay-ball.active .pay-ball-dot{ background:var(--app-accent-ink); color:#fff; }
+
+  /* ===== Line modal: one-screen density ===== */
+  .lm-body{ display:grid; gap:.7rem; }
+  .lm-row{ display:grid; gap:.4rem; }
+  .lm-label{ font-size:.7rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--app-muted); }
+  .lm-label-row{ display:flex; align-items:center; justify-content:space-between; gap:.6rem; }
+  .lm-sub-label{ font-size:.72rem; font-weight:600; color:var(--app-muted); }
+  .lm-disc,.lm-custom{ display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:.5rem; }
+  .lm-disc .input-group,.lm-custom .input-group{ max-width:11rem; }
+  /* product identity: thumb + wrapping brand/name/meta */
+  .line-modal-product{
+    display:grid; grid-template-columns:48px minmax(0,1fr); gap:.65rem; align-items:center;
+    padding:.6rem .7rem; border-radius:var(--app-radius-sm); background:var(--app-surface-2); border:1px solid var(--app-border);
+  }
+  .lm-thumb{ width:48px; height:48px; border-radius:var(--app-radius-sm); overflow:hidden; border:1px solid var(--app-border); background:var(--app-surface); }
+  .lm-thumb img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .lm-thumb.empty{ display:none; }
+  .lm-ident{ min-width:0; }
+  .lm-brand{ font-size:.68rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--app-muted); line-height:1.25; }
+  .lm-name{ font-size:.95rem; font-weight:700; color:var(--app-text); line-height:1.25; overflow-wrap:anywhere; }
+  .lm-meta{ display:flex; flex-wrap:wrap; gap:.4rem; margin-top:.15rem; font-size:.74rem; color:var(--app-muted); font-variant-numeric:tabular-nums; }
+  .lm-stock{ font-weight:700; }
+  /* quantity chips 1..5 (+ overflow) — one tap, one row */
+  .qty-chips{ display:flex; gap:.35rem; }
+  .qty-chip{
+    flex:1 1 0; min-height:44px; border-radius:var(--app-radius-sm); border:1px solid var(--app-border-strong);
+    background:var(--app-surface); color:var(--app-text); font-weight:700; font-size:.95rem; cursor:pointer;
+    font-variant-numeric:tabular-nums; transition:border-color .12s ease, background-color .12s ease;
+  }
+  .qty-chip:hover:not(:disabled){ border-color:var(--app-accent-line); background:var(--app-surface-2); }
+  .qty-chip.active{ border-color:var(--app-accent); background:var(--app-accent-soft); color:var(--app-accent-ink); box-shadow:0 0 0 1px var(--app-accent) inset; }
+  .qty-chip:disabled{ opacity:.38; cursor:not-allowed; }
+  .qty-more{ flex:0 0 3rem; }
+  /* camera scanner */
+  .camera-view{ width:100%; min-height:240px; border-radius:var(--app-radius-sm); overflow:hidden; background:#0b1220; }
+  .camera-view video{ width:100%!important; height:auto!important; display:block; }
+  .scan-cam-btn{ flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; min-width:48px; }
   .pay-split{ display:grid; gap:.6rem; }
   .pay-split-row{ display:grid; grid-template-columns:90px 1fr; align-items:center; gap:.6rem; }
   .pay-split-label{ font-weight:700; color:var(--app-text); }
@@ -840,7 +909,6 @@
   .pay-stack .pay-pill{ justify-content:center; }
 
   /* ===== Line item modal ===== */
-  .line-modal-product{ padding:.7rem .85rem; border-radius:var(--app-radius-sm); background:var(--app-surface-2); border:1px solid var(--app-border); margin-bottom:1rem; }
   .price-toggle{ display:flex; gap:.5rem; }
   .price-opt{
     flex:1 1 0; padding:.55rem .6rem; border-radius:var(--app-radius-sm); border:1px solid var(--app-border-strong); background:var(--app-surface);
@@ -1340,6 +1408,10 @@ document.addEventListener('DOMContentLoaded', () => {
     return {
       barcode: barcode,
       title: d.display_name || d.name || barcode,
+      brand: d.brand || '',
+      model: d.model || '',
+      pname: d.product_name || '',
+      spec: [d.spec, d.color].filter(Boolean).join(' '),
       stock: Number(d.stock) || 0,
       retail: (d.retail_price != null && d.retail_price !== '') ? Number(d.retail_price) : null,
       wholesale: (d.wholesale_price != null && d.wholesale_price !== '') ? Number(d.wholesale_price) : null,
@@ -1389,24 +1461,64 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('line-modal-linetotal').textContent = formatMoney(finalUnit * qty);
     updateLineModalPayUI();
   }
+  // Quantity is picked from 1..5 chips (a "+" chip covers the rare larger
+  // quantities); the hidden #line-modal-qty stays the single source of truth.
+  const qtyChipsWrap = document.getElementById('line-modal-qty-chips');
+  const qtyMoreChip = document.getElementById('line-modal-qty-more');
+  function renderQtyChips() {
+    const q = Number(document.getElementById('line-modal-qty').value) || 1;
+    const stock = Number(modalCtx && modalCtx.stock) || 0;
+    qtyChipsWrap.querySelectorAll('.qty-chip[data-qty]').forEach((b) => {
+      const v = Number(b.dataset.qty);
+      b.classList.toggle('active', v === q);
+      b.disabled = stock > 0 && v > stock;
+    });
+    qtyMoreChip.textContent = q > 5 ? String(q) : '+';
+    qtyMoreChip.classList.toggle('active', q > 5);
+    qtyMoreChip.disabled = stock > 0 && q >= stock;
+  }
+  function setModalQty(q) {
+    const stock = Number(modalCtx && modalCtx.stock) || 0;
+    q = Math.max(1, Math.floor(Number(q) || 1));
+    if (stock > 0) q = Math.min(q, stock);
+    document.getElementById('line-modal-qty').value = q;
+    renderQtyChips();
+    updateLineModalPreview();
+  }
+
   function openLineModal(ctx, item) {
     modalCtx = ctx;
     editingUid = item ? item.uid : null;
     document.getElementById('lineItemModalTitle').textContent = item ? 'Edit line' : 'Add product';
     document.getElementById('line-modal-save').textContent = item ? 'Save changes' : 'Add to cart';
-    document.getElementById('line-modal-name').textContent = ctx.title;
-    document.getElementById('line-modal-barcode').textContent = ctx.barcode;
-    document.getElementById('line-modal-stock').textContent = `In stock: ${ctx.stock}`;
+    document.getElementById('line-modal-brand').textContent = ctx.brand || '';
+    document.getElementById('line-modal-name').textContent =
+      [ctx.model, ctx.pname].filter(Boolean).join(' · ') || ctx.title;
+    document.getElementById('line-modal-barcode').textContent = ctx.barcode + (ctx.spec ? ` · ${ctx.spec}` : '');
+    document.getElementById('line-modal-stock').textContent = `In stock ${ctx.stock}`;
+    const thumbWrap = document.getElementById('line-modal-thumb-wrap');
+    const thumbImg = document.getElementById('line-modal-thumb');
+    if (ctx.image_url) { thumbImg.src = ctx.image_url; thumbWrap.classList.remove('empty'); }
+    else { thumbImg.removeAttribute('src'); thumbWrap.classList.add('empty'); }
     const retail = (ctx.retail != null && isFinite(ctx.retail)) ? Number(ctx.retail) : null;
     const wholesale = (ctx.wholesale != null && isFinite(ctx.wholesale)) ? Number(ctx.wholesale) : null;
     document.getElementById('line-modal-retail').textContent = retail != null ? `€${retail.toFixed(2)}` : '€—';
     document.getElementById('line-modal-wholesale').textContent = wholesale != null ? `€${wholesale.toFixed(2)}` : '€—';
+    document.querySelector('#line-modal-price-toggle .price-opt[data-kind="retail"]').disabled = (retail == null);
     document.querySelector('#line-modal-price-toggle .price-opt[data-kind="wholesale"]').disabled = (wholesale == null);
-    document.getElementById('line-modal-qty').value = item ? item.qty : 1;
-    const base = item ? item.base : (retail != null ? retail : '');
+    const base = item ? item.base : (retail != null ? retail : (wholesale != null ? wholesale : ''));
     document.getElementById('line-modal-base').value = (base !== '' && base != null) ? Number(base).toFixed(2) : '';
+    // The chosen price is fixed — only Discount changes it. A product with no
+    // saved price at all still needs a way in, so reveal a manual field then.
+    const noSavedPrice = (retail == null && wholesale == null);
+    const customWrap = document.getElementById('line-modal-custom-wrap');
+    const customInput = document.getElementById('line-modal-custom');
+    customWrap.classList.toggle('d-none', !noSavedPrice);
+    customInput.value = noSavedPrice && base ? Number(base).toFixed(2) : '';
     document.getElementById('line-modal-discount').value = item ? (Number(item.discount) || 0).toFixed(2) : '0';
-    const isWholesale = item && wholesale != null && Math.abs(Number(item.base) - wholesale) < 0.001;
+    setModalQty(item ? item.qty : 1);
+    const isWholesale = (item && wholesale != null && Math.abs(Number(item.base) - wholesale) < 0.001)
+      || (!item && retail == null && wholesale != null);
     setPriceToggle(isWholesale ? 'wholesale' : 'retail');
     modalSplit = !!(item && item.isSplit);
     modalPayMethod = (item && !item.isSplit && METHODS.includes(item.payment)) ? item.payment : lastMethod;
@@ -1469,8 +1581,18 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // 行弹窗事件
-  document.getElementById('line-modal-qty').addEventListener('input', updateLineModalPreview);
-  document.getElementById('line-modal-base').addEventListener('input', updateLineModalPreview);
+  qtyChipsWrap.querySelectorAll('.qty-chip[data-qty]').forEach((b) => {
+    b.addEventListener('click', () => { if (!b.disabled) setModalQty(b.dataset.qty); });
+  });
+  qtyMoreChip.addEventListener('click', () => {
+    if (!qtyMoreChip.disabled) setModalQty((Number(document.getElementById('line-modal-qty').value) || 1) + 1);
+  });
+  // Manual price only exists when the product has no saved retail/wholesale.
+  document.getElementById('line-modal-custom').addEventListener('input', (e) => {
+    const v = parseMoney(e.target.value);
+    document.getElementById('line-modal-base').value = isFinite(v) ? v.toFixed(2) : '';
+    updateLineModalPreview();
+  });
   document.getElementById('line-modal-discount').addEventListener('input', updateLineModalPreview);
   document.querySelectorAll('#line-modal-price-toggle .price-opt').forEach((b) => {
     b.addEventListener('click', () => {
@@ -1504,6 +1626,91 @@ document.addEventListener('DOMContentLoaded', () => {
   lineModalSplit.querySelectorAll('.line-pay-amount').forEach((inp) => {
     inp.addEventListener('input', () => { inp.value = inp.value.replace(/[^\d.,]/g, ''); updateLineModalPayUI(); });
   });
+
+  // ===== 摄像头扫码 =====
+  // The scanner library (~370KB) is only fetched the first time the camera is
+  // actually used, so the POS page stays light on mobile data.
+  const cameraModalEl = document.getElementById('cameraScanModal');
+  const cameraMsg = document.getElementById('camera-scan-msg');
+  let scanner = null;
+  let scanLibPromise = null;
+  let scanBusy = false;
+
+  function loadScanLib() {
+    if (window.__Html5QrcodeLibrary__) return Promise.resolve(window.__Html5QrcodeLibrary__);
+    if (!scanLibPromise) {
+      scanLibPromise = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = "{% static 'js/html5-qrcode.min.js' %}";
+        s.onload = () => resolve(window.__Html5QrcodeLibrary__);
+        s.onerror = () => { scanLibPromise = null; reject(new Error('scanner failed to load')); };
+        document.head.appendChild(s);
+      });
+    }
+    return scanLibPromise;
+  }
+
+  function lookupBarcode(code) {
+    fetch(`/check_barcode/?barcode=${encodeURIComponent(code)}`)
+      .then(r => r.json())
+      .then(d => {
+        if (!d.exists) { toastWarn(`Barcode ${escapeHtml(code)} not found.`); return; }
+        if (d.stock > 0) openLineModal(ctxFromCheck(d, code), null);
+        else toastError(`${escapeHtml(d.name || code)} — no stock`);
+      })
+      .catch(() => toastError('Lookup failed. Check the connection.'));
+  }
+
+  async function startScanner() {
+    cameraMsg.textContent = 'Starting camera…';
+    scanBusy = false;
+    let lib;
+    try { lib = await loadScanLib(); } catch (e) {
+      cameraMsg.textContent = 'Scanner could not load. Type the barcode instead.';
+      return;
+    }
+    const F = lib.Html5QrcodeSupportedFormats;
+    scanner = new lib.Html5Qrcode('camera-scan-view', {
+      formatsToSupport: [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128],
+      verbose: false,
+    });
+    try {
+      await scanner.start(
+        { facingMode: 'environment' },
+        {
+          fps: 10,
+          // wide, short box — product barcodes are wider than they are tall
+          qrbox: (w, h) => ({ width: Math.floor(Math.min(w * 0.9, 320)), height: Math.floor(Math.min(h * 0.5, 180)) }),
+        },
+        (text) => {
+          if (scanBusy) return;
+          const code = String(text || '').trim();
+          if (!/^\d{6,14}$/.test(code)) return;   // product barcodes only
+          scanBusy = true;
+          bootstrap.Modal.getOrCreateInstance(cameraModalEl).hide();
+          lookupBarcode(code);
+        },
+        () => { /* per-frame miss — ignore */ }
+      );
+      cameraMsg.textContent = 'Hold the barcode inside the frame.';
+    } catch (e) {
+      scanner = null;
+      cameraMsg.textContent = 'Cannot open the camera. Allow camera access in the browser, then try again.';
+    }
+  }
+
+  async function stopScanner() {
+    if (!scanner) return;
+    const s = scanner;
+    scanner = null;
+    try { await s.stop(); s.clear(); } catch (e) { /* already stopped */ }
+  }
+
+  document.getElementById('camera-scan-btn').addEventListener('click', () => {
+    bootstrap.Modal.getOrCreateInstance(cameraModalEl).show();
+  });
+  cameraModalEl.addEventListener('shown.bs.modal', startScanner);
+  cameraModalEl.addEventListener('hidden.bs.modal', stopScanner);
 
   // ===== 条码/模糊搜索切换 =====
   barcodeInput.addEventListener('input', ()=>{
@@ -1540,16 +1747,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!results.length) { prodSuggest.classList.add('d-none'); hidePreview(); return; }
         results.forEach((p) => {
           const item = createSuggestionItem(p, (product, line) => {
-            fetch(`/check_barcode/?barcode=${encodeURIComponent(product.barcode)}`)
-              .then(r=>r.json())
-              .then(d=>{
-                if (!d.exists){ toastWarn('Product not found.'); return; }
-                if (d.stock > 0) {
-                  openLineModal(ctxFromCheck(d, product.barcode), null);
-                } else {
-                  toastError(`${line} No Stock`);
-                }
-              });
+            lookupBarcode(product.barcode);
             prodSuggest.classList.add('d-none');
             hidePreview();
             barcodeInput.value = '';
@@ -1580,23 +1778,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!q) return;
 
     if (/^\d+$/.test(q)) {
-      const code = q;
-      fetch(`/check_barcode/?barcode=${encodeURIComponent(code)}`)
-        .then(r=>r.json())
-        .then(d=>{
-          if (!d.exists){ toastWarn('Product not found.'); return; }
-          if (d.stock>0) {
-            openLineModal(ctxFromCheck(d, code), null);
-          } else {
-            toastError(`${d.name} — no stock`);
-          }
-        })
-        .finally(()=>{
-          barcodeInput.value='';
-          prodSuggest.classList.add('d-none');
-          hidePreview();
-          barcodeInput.focus(); barcodeInput.select();
-        });
+      lookupBarcode(q);
+      barcodeInput.value = '';
+      prodSuggest.classList.add('d-none');
+      hidePreview();
+      barcodeInput.focus(); barcodeInput.select();
       return;
     }
 
