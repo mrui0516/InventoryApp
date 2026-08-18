@@ -781,10 +781,9 @@ class DashboardViewTests(TestCase):
         self.assertNotContains(response, "Monthly overview")
         self.assertNotContains(response, "Top customers")
         self.assertNotContains(response, "Gross Profit")
-        self.assertContains(response, "Sales Today")
-        self.assertContains(response, "EUR 30.00")
-        self.assertContains(response, "Amount")
-        self.assertContains(response, "Unit")
+        self.assertContains(response, "Sales today")           # KPI strip
+        self.assertContains(response, "EUR 30.00")             # order total is visible to employee
+        self.assertContains(response, "Dashboard Customer")    # order card renders the customer
         self.assertContains(response, "Operations")
         self.assertContains(response, "Sales &amp; Clients")
         self.assertContains(response, reverse("sales_records"))

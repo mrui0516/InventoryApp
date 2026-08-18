@@ -447,7 +447,44 @@ footer{ border-top:1px solid var(--app-border); margin-top:2rem; }
 .lowstock-extra summary::-webkit-details-marker{ display:none; }
 .lowstock-extra summary::after{ content:"Show more"; margin-left:.55rem; font-size:.86rem; color:var(--muted); font-weight:700; }
 .lowstock-extra[open] summary::after{ content:"Hide"; }
-.qr-image{ width:180px; height:180px; border-radius:var(--app-radius-sm); border:1px solid var(--border); }
+.qr-image{ width:min(64vw,200px); height:auto; aspect-ratio:1; border-radius:var(--app-radius-sm); border:1px solid var(--border); }
+/* Compact icon-only button (e.g. the mobile-access QR trigger) */
+.icon-btn{ display:inline-flex; align-items:center; justify-content:center; width:42px; height:42px; padding:0; }
+
+/* --- Employee "Today" block: dense, mobile-first (no wide tables) --- */
+.today-kpis{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.5rem; }
+.today-kpi{ padding:.6rem .7rem; border:1px solid var(--border); border-radius:var(--app-radius-sm); background:var(--app-surface-2); }
+.today-kpi.hl{ background:var(--accent-soft); border-color:var(--app-accent-line); }
+.today-kpi .k{ font-size:.68rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); }
+.today-kpi .v{ margin-top:.22rem; font-size:1.2rem; font-weight:800; color:var(--text); line-height:1.1; font-variant-numeric:tabular-nums; }
+.today-pay{ display:flex; flex-wrap:wrap; gap:.45rem; }
+.today-pay .pay-row{ flex:1 1 9rem; display:flex; align-items:baseline; justify-content:space-between; gap:.55rem;
+  padding:.45rem .7rem; border:1px solid var(--border); border-radius:999px; background:var(--app-surface-2); }
+.today-pay .m{ font-weight:700; color:var(--text); font-size:.86rem; }
+.today-pay .a{ font-weight:800; color:var(--text); font-size:.9rem; font-variant-numeric:tabular-nums; }
+.today-pay .s{ color:var(--muted); font-size:.72rem; }
+.today-orders{ display:grid; gap:.55rem; }
+.order-card{ border:1px solid var(--border); border-radius:var(--app-radius-sm); background:var(--app-surface); padding:.6rem .7rem; }
+.order-card-head{ display:flex; align-items:baseline; justify-content:space-between; gap:.6rem; }
+.order-card-id{ font-weight:800; color:var(--text); }
+.order-card-time{ font-weight:600; color:var(--muted); font-size:.82rem; margin-left:.3rem; }
+.order-card-total{ font-weight:800; color:var(--text); font-variant-numeric:tabular-nums; }
+.order-card-meta{ display:flex; align-items:center; justify-content:space-between; gap:.6rem; margin-top:.28rem; }
+.order-card-cust{ color:var(--muted); font-size:.9rem; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.order-card-actions{ display:flex; gap:.4rem; margin-top:.5rem; }
+.order-card-actions .btn{ flex:1 1 auto; }
+.order-card-items{ margin-top:.5rem; border-top:1px dashed var(--border); padding-top:.5rem; display:grid; gap:.42rem; }
+.order-item{ display:flex; align-items:center; justify-content:space-between; gap:.6rem; }
+.order-item-main{ display:flex; align-items:center; gap:.5rem; min-width:0; }
+.order-item-main .inline-product-thumb-wrap,.order-item-main .inline-product-thumb-empty{ width:34px; height:34px; flex:0 0 34px; }
+.order-item-name{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.9rem; color:var(--text); }
+.order-item-fig{ display:flex; align-items:baseline; gap:.55rem; white-space:nowrap; }
+.order-item-qty{ color:var(--muted); font-size:.85rem; }
+.order-item-total{ font-weight:700; font-size:.88rem; font-variant-numeric:tabular-nums; }
+@media (max-width:576px){
+  .today-kpis{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .today-kpis .hl{ grid-column:1 / -1; }   /* money tile gets full width, never cramped */
+}
 
 /* --- product-list mobile card table --- */
 @media (max-width:576px){
