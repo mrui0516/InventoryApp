@@ -45,17 +45,13 @@
 
   <div class="operation-layout">
     <div class="operation-main">
-      <section class="operation-card">
-        <div class="operation-card-head">
-          <div>
-            <h3 class="operation-title">Customer</h3>
-          </div>
-          <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#addCustomerModal">Add New Customer</button>
-        </div>
-
+      <section class="operation-card cust-card">
         <div class="position-relative">
-          <label for="customer-search" class="form-label">Customer (Name or NIF) &mdash; leave empty for walk-in</label>
-          <input type="text" id="customer-search" class="form-control" placeholder="Type name or NIF">
+          <label for="customer-search" class="lm-label">Customer</label>
+          <div class="input-group">
+            <input type="text" id="customer-search" class="form-control" placeholder="Name or NIF — optional" autocomplete="off">
+            <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#addCustomerModal" aria-label="Add new customer" title="Add new customer">+</button>
+          </div>
           <input type="hidden" name="customer_id" id="customer-id">
           <div id="customer-suggestions" class="list-group position-absolute w-100 shadow-sm d-none" role="listbox" aria-label="Customer suggestions" style="z-index:1000;"></div>
         </div>
@@ -66,7 +62,7 @@
           <div>
             <h3 class="operation-title">Cart</h3>
           </div>
-          <span class="summary-badge" id="summary-line-count">0 lines</span>
+          <span class="summary-badge" id="summary-line-count">0 products</span>
         </div>
 
         <div class="table-responsive">
@@ -93,7 +89,7 @@
 
   <div class="checkout-bar">
     <div class="checkout-bar-info">
-      <span id="bar-count">0 lines · 0 pcs</span>
+      <span id="bar-count">0 products · 0 pcs</span>
       <span class="checkout-warn d-none" id="bar-warn" aria-live="polite"></span>
     </div>
     <div class="checkout-bar-right">
@@ -120,7 +116,7 @@
         </div>
 
         <div class="rv-facts">
-          <div><span class="review-label">Customer</span><span class="review-modal-value" id="review-customer">Walk-in</span></div>
+          <div><span class="review-label">Customer</span><span class="review-modal-value" id="review-customer">—</span></div>
           <div><span class="review-label">Items</span><span class="review-modal-value" id="review-qty">0 pcs</span></div>
           <div><span class="review-label">Discount</span><span class="review-modal-value" id="review-discount">EUR 0.00</span></div>
         </div>
@@ -136,7 +132,7 @@
         </div>
 
         <div class="lm-row">
-          <div class="lm-label">Lines</div>
+          <div class="lm-label">Products</div>
           <div class="review-line-items" id="review-line-items"></div>
         </div>
       </div>
@@ -225,7 +221,7 @@
 
         <div class="line-modal-preview">
           <div><span class="review-label">Unit</span><strong id="line-modal-final">EUR 0.00</strong></div>
-          <div><span class="review-label">Line total</span><strong id="line-modal-linetotal">EUR 0.00</strong></div>
+          <div><span class="review-label">Total</span><strong id="line-modal-linetotal">EUR 0.00</strong></div>
         </div>
         <div class="text-danger small mt-2 d-none" id="line-modal-error"></div>
       </div>
@@ -238,13 +234,13 @@
 </div>
 
 <div class="modal fade" id="cameraScanModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title">Scan barcode</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body lm-body">
         <div id="camera-scan-view" class="camera-view"></div>
         <div class="cam-tools">
           <label class="cam-zoom d-none" id="camera-zoom-wrap">
@@ -253,10 +249,14 @@
           </label>
           <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="camera-torch">Light</button>
         </div>
-        <div class="small text-muted mt-2" id="camera-scan-msg">Hold the barcode inside the frame.</div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+        <div class="small text-muted" id="camera-scan-msg">Hold the barcode inside the frame.</div>
+        <div>
+          <label class="lm-label" for="camera-manual">Or type the barcode</label>
+          <div class="input-group input-group-sm">
+            <input type="text" inputmode="numeric" class="form-control" id="camera-manual" placeholder="Barcode" autocomplete="off">
+            <button type="button" class="btn btn-outline-primary" id="camera-manual-go">Find</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -354,6 +354,9 @@
     min-width:0;            /* grid item: prevent min-content (the cart table) from forcing width */
   }
   .operation-card .table-responsive{ overflow-x:auto; }
+  /* customer is a single compact row, not a full section */
+  .cust-card{ padding:.7rem .8rem; }
+  .cust-card .lm-label{ display:block; margin-bottom:.25rem; }
   .operation-card-head{
     display:flex;
     justify-content:space-between;
@@ -834,9 +837,10 @@
   .qty-chip.active{ border-color:var(--app-accent); background:var(--app-accent-soft); color:var(--app-accent-ink); box-shadow:0 0 0 1px var(--app-accent) inset; }
   .qty-chip:disabled{ opacity:.38; cursor:not-allowed; }
   .qty-more{ flex:0 0 3rem; }
-  /* camera scanner */
-  .camera-view{ width:100%; min-height:240px; border-radius:var(--app-radius-sm); overflow:hidden; background:#0b1220; }
-  .camera-view video{ width:100%!important; height:auto!important; display:block; }
+  /* camera scanner — capped so the dialog never outgrows the screen */
+  .camera-view{ width:100%; max-height:38vh; border-radius:var(--app-radius-sm); overflow:hidden; background:#0b1220; }
+  .camera-view video{ width:100%!important; height:auto!important; max-height:38vh; object-fit:contain; display:block; margin:0 auto; }
+  .camera-view canvas{ display:none; }
   .scan-cam-btn{ flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; min-width:48px; }
   .pay-split{ display:grid; gap:.6rem; }
   .pay-split-row{ display:grid; grid-template-columns:90px 1fr; align-items:center; gap:.6rem; }
@@ -1176,7 +1180,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <td class="text-end">
           <div class="d-flex gap-1 justify-content-end">
             <button type="button" class="btn btn-sm btn-outline-secondary js-edit">Edit</button>
-            <button type="button" class="btn btn-sm btn-outline-danger js-del" title="Remove line">&times;</button>
+            <button type="button" class="btn btn-sm btn-outline-danger js-del" title="Remove product">&times;</button>
           </div>
         </td>`;
       tr.querySelector('.js-edit').addEventListener('click', () => openLineModal(item, item));
@@ -1240,14 +1244,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const warnings = [];
     cart.forEach(i => lineWarnings(i).forEach(w => warnings.push(`${i.title}: ${w.text}`)));
-    if (customerSearch.value.trim() && !customerIdInput.value) warnings.push('Typed customer not selected — sale stays walk-in.');
+    if (customerSearch.value.trim() && !customerIdInput.value) warnings.push('Customer typed but not selected.');
     if (!cart.length) warnings.push('Cart is empty.');
-    if (cart.length && !allPaid) warnings.push('Each line needs a complete payment.');
+    if (cart.length && !allPaid) warnings.push('Each product needs a payment method.');
     const uniq = uniqueWarnings(warnings);
 
     summaryTotalAmount.textContent = formatMoney(total);
-    summaryLineCount.textContent = `${cart.length} ${cart.length === 1 ? 'line' : 'lines'}`;
-    barCount.textContent = `${cart.length} line${cart.length === 1 ? '' : 's'} · ${qty} pcs`;
+    summaryLineCount.textContent = `${cart.length} product${cart.length === 1 ? '' : 's'}`;
+    barCount.textContent = `${cart.length} product${cart.length === 1 ? '' : 's'} · ${qty} pcs`;
     // Details live in the confirm dialog; the bar only flags that there is something to check.
     barWarn.textContent = uniq.length ? `${uniq.length} to check` : '';
     barWarn.classList.toggle('d-none', uniq.length === 0);
@@ -1265,7 +1269,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function openCheckoutReview() {
     const s = recalc();
     document.getElementById('review-customer').textContent =
-      customerIdInput.value ? customerSearch.value : 'Walk-in / no customer';
+      customerIdInput.value ? customerSearch.value : '—';
     document.getElementById('review-qty').textContent = `${s.qty} pcs`;
     document.getElementById('review-discount').textContent = formatMoney(s.disc);
     document.getElementById('review-total').textContent = formatMoney(s.total);
@@ -1322,22 +1326,20 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ===== 消息提示 =====
-  function toastInfo(html){
-    info.classList.remove('d-none','alert-warning','alert-danger');
-    info.classList.add('alert-info');
+  // Every toast auto-dismisses. Warnings/errors used to stay on screen forever,
+  // so an old "no stock" banner kept showing while later products scanned fine.
+  let toastTimer = null;
+  function hideToast(){ clearTimeout(toastTimer); info.classList.add('d-none'); }
+  function showToast(kind, html, ms){
+    clearTimeout(toastTimer);
+    info.classList.remove('d-none','alert-info','alert-warning','alert-danger');
+    info.classList.add(kind);
     info.innerHTML = html;
-    setTimeout(()=>{ info.classList.add('d-none'); }, 1200);
+    toastTimer = setTimeout(hideToast, ms);
   }
-  function toastWarn(html){
-    info.classList.remove('d-none','alert-info','alert-danger');
-    info.classList.add('alert-warning');
-    info.innerHTML = html;
-  }
-  function toastError(html){
-    info.classList.remove('d-none','alert-info','alert-warning');
-    info.classList.add('alert-danger');
-    info.innerHTML = html;
-  }
+  function toastInfo(html){ showToast('alert-info', html, 1500); }
+  function toastWarn(html){ showToast('alert-warning', html, 4000); }
+  function toastError(html){ showToast('alert-danger', html, 4000); }
 
   // ===== 选品后弹窗：数量 / 批发切换 / 折扣 =====
   function ctxFromCheck(d, barcode) {
@@ -1423,9 +1425,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function openLineModal(ctx, item) {
+    hideToast();   // a good product clears any stale no-stock/not-found banner
     modalCtx = ctx;
     editingUid = item ? item.uid : null;
-    document.getElementById('lineItemModalTitle').textContent = item ? 'Edit line' : 'Add product';
+    document.getElementById('lineItemModalTitle').textContent = item ? 'Edit product' : 'Add product';
     document.getElementById('line-modal-save').textContent = item ? 'Save changes' : 'Add to cart';
     document.getElementById('line-modal-brand').textContent = ctx.brand || '';
     document.getElementById('line-modal-name').textContent =
@@ -1494,7 +1497,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const split = readModalSplit();
       const sum = METHODS.reduce((s, m) => s + (split[m] || 0), 0);
       if (sum <= 0) return fail('Enter the split amounts.');
-      if (Math.abs(sum - lineTotal) > 0.01) return fail(`Split must add up to the line total EUR ${lineTotal.toFixed(2)}.`);
+      if (Math.abs(sum - lineTotal) > 0.01) return fail(`Split must add up to EUR ${lineTotal.toFixed(2)}.`);
       paymentSplit = {};
       METHODS.forEach((m) => { if (split[m] > 0) paymentSplit[m] = Number(split[m].toFixed(2)); });
       payment = METHODS.filter(m => paymentSplit[m] > 0).sort((a, b) => paymentSplit[b] - paymentSplit[a])[0];
@@ -1511,6 +1514,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }, fields));
     }
     lastMethod = payment;
+    hideToast();
     bootstrap.Modal.getOrCreateInstance(lineModalEl).hide();
     renderCart();
     barcodeInput.focus();
@@ -1607,29 +1611,31 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const F = lib.Html5QrcodeSupportedFormats;
     scanner = new lib.Html5Qrcode('camera-scan-view', {
-      formatsToSupport: [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128],
-      // native BarcodeDetector where available (Android) — much faster/sharper
-      experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+      formatsToSupport: [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39, F.ITF],
       verbose: false,
     });
     try {
       await scanner.start(
         { facingMode: 'environment' },
         {
-          fps: 12,
-          // No qrbox: a crop box throws away most of the frame. Scanning the
-          // whole (high-res) frame is what makes small barcodes readable.
+          fps: 10,
+          // A large crop (not the whole frame) is the sweet spot: decoding a full
+          // 1080p frame is so slow that a read never lands, while a small box
+          // throws the barcode away. This keeps most of the frame but cheap.
+          qrbox: (w, h) => ({ width: Math.floor(w * 0.92), height: Math.floor(h * 0.6) }),
           videoConstraints: {
             facingMode: 'environment',
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
             advanced: [{ focusMode: 'continuous' }],
           },
         },
         (text) => {
           if (scanBusy) return;
+          // Accept whatever decoded — if it is not a known product the lookup
+          // says so, which is far more useful than silently ignoring the read.
           const code = String(text || '').trim();
-          if (!/^\d{6,14}$/.test(code)) return;   // product barcodes only
+          if (code.length < 6) return;
           scanBusy = true;
           bootstrap.Modal.getOrCreateInstance(cameraModalEl).hide();
           lookupBarcode(code);
@@ -1690,10 +1696,24 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   document.getElementById('camera-scan-btn').addEventListener('click', () => {
+    document.getElementById('camera-manual').value = '';
     bootstrap.Modal.getOrCreateInstance(cameraModalEl).show();
   });
   cameraModalEl.addEventListener('shown.bs.modal', startScanner);
   cameraModalEl.addEventListener('hidden.bs.modal', stopScanner);
+
+  // Typed fallback for when a barcode is damaged or the camera cannot lock on.
+  function submitManualBarcode() {
+    const code = document.getElementById('camera-manual').value.trim();
+    if (!code) return;
+    scanBusy = true;
+    bootstrap.Modal.getOrCreateInstance(cameraModalEl).hide();
+    lookupBarcode(code);
+  }
+  document.getElementById('camera-manual-go').addEventListener('click', submitManualBarcode);
+  document.getElementById('camera-manual').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); submitManualBarcode(); }
+  });
 
   // ===== 条码/模糊搜索切换 =====
   barcodeInput.addEventListener('input', ()=>{
