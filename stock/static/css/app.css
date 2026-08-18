@@ -33,6 +33,7 @@
 
   /* Layout */
   --sidebar-w:248px;
+  --tabbar-h:0px;   /* reserved bottom space for the mobile tab bar (set in media query) */
 
   /* Typography — system stack for data/body, refined serif for page titles */
   --font-display:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,ui-serif,serif;
@@ -181,6 +182,10 @@ img{ height:auto; }
 .erp-topbar{ display:none; }
 .erp-backdrop{ display:none; }
 
+/* Mobile bottom tab bar — thumb-reachable primary nav (phones only). The burger
+   + off-canvas sidebar stays for the full menu (opened via the "Menu" tab). */
+.erp-tabbar{ display:none; }
+
 @media (max-width:991.98px){
   .erp-sidebar{ transform:translateX(-100%); transition:transform .22s ease; box-shadow:0 0 48px rgba(0,0,0,.45); }
   body.erp-nav-open .erp-sidebar{ transform:translateX(0); }
@@ -188,7 +193,8 @@ img{ height:auto; }
   .erp-topbar{
     display:flex; align-items:center; gap:.8rem;
     position:sticky; top:0; z-index:1030;
-    background:linear-gradient(90deg,#0b1220,#111827); padding:.55rem .9rem;
+    background:linear-gradient(90deg,#0b1220,#111827);
+    padding:.55rem .9rem; padding-top:calc(.55rem + env(safe-area-inset-top,0px));
   }
   .erp-topbar-brand{ color:#fff; font-weight:800; text-decoration:none; letter-spacing:.03em; }
   .erp-burger{
@@ -196,6 +202,29 @@ img{ height:auto; }
     border-radius:var(--app-radius-sm); padding:.2rem .62rem; font-size:1.25rem; line-height:1.2; cursor:pointer;
   }
   body.erp-nav-open .erp-backdrop{ display:block; position:fixed; inset:0; background:rgba(2,6,23,.5); z-index:1035; }
+}
+
+@media (max-width:767.98px){
+  :root{ --tabbar-h:calc(56px + env(safe-area-inset-bottom,0px)); }
+  .erp-tabbar{
+    display:flex; position:fixed; left:0; right:0; bottom:0; z-index:1020;
+    background:var(--app-surface); border-top:1px solid var(--app-border);
+    padding-bottom:env(safe-area-inset-bottom,0px);
+    box-shadow:0 -2px 12px rgba(16,24,40,.08);
+  }
+  .erp-tab{
+    flex:1 1 0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:.15rem; min-height:56px; padding:.28rem .1rem; background:transparent; border:0;
+    color:var(--app-muted); text-decoration:none; font-size:.66rem; font-weight:700; line-height:1;
+  }
+  .erp-tab svg{ width:22px; height:22px; stroke-width:1.9; }
+  .erp-tab.active{ color:var(--app-accent-ink); }
+  .erp-tab:active{ background:var(--app-surface-2); }
+  /* Content clears the fixed bar so nothing hides behind it */
+  .erp-content{ padding-bottom:calc(1.25rem + var(--tabbar-h)); }
+  /* Page-level sticky save bars / floating buttons stay above the tab bar */
+  .sticky-actions,.form-actions{ bottom:calc(var(--tabbar-h) + .5rem) !important; }
+  .back-top{ bottom:calc(20px + var(--tabbar-h)) !important; }
 }
 
 footer{ border-top:1px solid var(--app-border); margin-top:2rem; }
@@ -458,4 +487,9 @@ footer{ border-top:1px solid var(--app-border); margin-top:2rem; }
   .table-responsive{ -webkit-overflow-scrolling:touch; }
   /* Big page titles shrink a touch more on the smallest screens */
   h1{ font-size:1.5rem; }
+  /* Density: titles, hero numbers and card padding tuned down for phones */
+  .dash-title,.page-title,.pos-title{ font-size:1.35rem; }
+  .section-head h2{ font-size:1.05rem; }
+  .metric-value,.stat-value{ font-size:1.3rem; }
+  .pad{ padding:.72rem; }
 }

@@ -786,9 +786,10 @@
     .review-stat.highlight strong{ font-size:1.15rem; }
     .guardrail-panel{ padding:.6rem .7rem; }
 
-    /* Sticky confirm doubles as the checkout bar (carries the running total) */
+    /* Sticky confirm doubles as the checkout bar (carries the running total).
+       Sits above the bottom tab bar so both stay tappable. */
     #submitBtn{
-      position:sticky; bottom:.5rem; width:100%;
+      position:sticky; bottom:calc(var(--tabbar-h) + .5rem); width:100%;
       padding:.85rem 1rem; font-size:1rem; line-height:1.2;
       box-shadow:0 8px 20px rgba(16,24,40,.18); z-index:5;
     }
