@@ -208,18 +208,27 @@ img{ height:auto; }
   :root{ --tabbar-h:calc(56px + env(safe-area-inset-bottom,0px)); }
   .erp-tabbar{
     display:flex; position:fixed; left:0; right:0; bottom:0; z-index:1020;
-    background:var(--app-surface); border-top:1px solid var(--app-border);
+    background:linear-gradient(180deg,#111a2e,#0b1220);
+    border-top:1px solid rgba(255,255,255,.08);
     padding-bottom:env(safe-area-inset-bottom,0px);
-    box-shadow:0 -2px 12px rgba(16,24,40,.08);
+    box-shadow:0 -6px 22px rgba(2,6,23,.4);
   }
   .erp-tab{
     flex:1 1 0; display:flex; flex-direction:column; align-items:center; justify-content:center;
-    gap:.15rem; min-height:56px; padding:.28rem .1rem; background:transparent; border:0;
-    color:var(--app-muted); text-decoration:none; font-size:.66rem; font-weight:700; line-height:1;
+    gap:.22rem; min-height:58px; padding:.34rem .1rem .3rem; background:transparent; border:0;
+    color:rgba(255,255,255,.6); text-decoration:none;
+    font-size:.66rem; font-weight:600; letter-spacing:.02em; line-height:1;
+    -webkit-tap-highlight-color:transparent;
   }
-  .erp-tab svg{ width:22px; height:22px; stroke-width:1.9; }
-  .erp-tab.active{ color:var(--app-accent-ink); }
-  .erp-tab:active{ background:var(--app-surface-2); }
+  /* Icon sits in a pill that lights up as the active-page indicator (Material-3) */
+  .erp-tab svg{
+    width:24px; height:24px; padding:4px 15px; box-sizing:content-box;
+    border-radius:999px; stroke-width:1.9;
+    transition:background-color .18s ease, color .18s ease, transform .12s ease;
+  }
+  .erp-tab:active svg{ transform:scale(.88); }
+  .erp-tab.active{ color:#fff; font-weight:700; }
+  .erp-tab.active svg{ background:rgba(96,140,255,.28); color:#dbe7ff; }
   /* Content clears the fixed bar so nothing hides behind it */
   .erp-content{ padding-bottom:calc(1.25rem + var(--tabbar-h)); }
   /* Page-level sticky save bars / floating buttons stay above the tab bar */
