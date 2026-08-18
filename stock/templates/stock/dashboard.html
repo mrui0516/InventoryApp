@@ -459,7 +459,6 @@
     <div class="dash-card pad">
       <div class="section-head">
         <div><h2>Today operations</h2></div>
-        <div class="quick-tags"><span class="note-pill">Today focus</span></div>
       </div>
 
       <div class="today-kpis">
@@ -471,11 +470,12 @@
       {% if today_payment_breakdown %}
       <div class="dash-card pad mt-3">
         <div class="section-top"><div><h3>Payment methods today</h3></div></div>
-        <div class="today-pay mt-2">
+        <div class="today-kpis mt-2">
           {% for row in today_payment_breakdown %}
-            <div class="pay-row">
-              <span class="m">{{ row.label }}</span>
-              <span><span class="a">EUR {{ row.amount|floatformat:2 }}</span> <span class="s">{{ row.share_pct|floatformat:0 }}%</span></span>
+            <div class="today-kpi">
+              <div class="k">{{ row.label }}</div>
+              <div class="v">EUR {{ row.amount|floatformat:2 }}</div>
+              <div class="s">{{ row.share_pct|floatformat:0 }}% of today</div>
             </div>
           {% endfor %}
         </div>
@@ -502,19 +502,24 @@
               <div class="collapse order-card-items" id="today-order-{{ o.id }}">
                 {% for it in o.view_items_today %}
                   <div class="order-item">
-                    <div class="order-item-main">
-                      {% if it.image_url %}
-                        <button type="button" class="inline-product-thumb-wrap" data-product-preview-url="{{ it.image_url }}" data-product-preview-title="{{ it.product.display_name }}">
-                          <img src="{{ it.image_url }}" alt="{{ it.product.display_name }}" class="inline-product-thumb" loading="lazy">
-                        </button>
-                      {% else %}
-                        <div class="inline-product-thumb-empty">No img</div>
-                      {% endif %}
-                      <span class="order-item-name">{{ it.product.display_name }}</span>
+                    {% if it.image_url %}
+                      <button type="button" class="inline-product-thumb-wrap" data-product-preview-url="{{ it.image_url }}" data-product-preview-title="{{ it.product.display_name }}">
+                        <img src="{{ it.image_url }}" alt="{{ it.product.display_name }}" class="inline-product-thumb" loading="lazy">
+                      </button>
+                    {% else %}
+                      <div class="inline-product-thumb-empty">No img</div>
+                    {% endif %}
+                    <div class="order-item-body">
+                      {% if it.product.brand %}<div class="order-item-brand">{{ it.product.brand }}</div>{% endif %}
+                      <div class="order-item-name">{% if it.product.model %}{{ it.product.model }} · {% endif %}{{ it.product.name }}</div>
+                      {% if it.product.variant_label %}<div class="order-item-sub">{{ it.product.variant_label }}</div>{% endif %}
                     </div>
                     <div class="order-item-fig">
                       <span class="order-item-qty">×{{ it.quantity }}</span>
-                      {% if show_order_financials %}<span class="order-item-total">EUR {{ it.line_total|floatformat:2 }}</span>{% endif %}
+                      {% if show_order_financials %}
+                        <span class="order-item-total">EUR {{ it.line_total|floatformat:2 }}</span>
+                        <span class="order-item-pay">{{ it.payment_label }}</span>
+                      {% endif %}
                     </div>
                   </div>
                 {% endfor %}
