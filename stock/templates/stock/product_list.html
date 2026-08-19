@@ -4,14 +4,31 @@
 {% block content %}
 <style>
   /* Categories are selection chips (pills), visually distinct from the
-     action buttons below so the two never read as the same control. */
-  .cat-chips{ display:flex; flex-wrap:nowrap; gap:.3rem; }
-  .cat-chips .btn{ flex:1 1 0; min-width:0; font-weight:600; white-space:nowrap; border-radius:999px; }
+     action buttons below so the two never read as the same control. They get
+     their own full-width row: squeezed into one narrow toolbar column the
+     longer names ("Accessories") were being clipped. */
+  .toolbar-grid > .cat-quickfilter{ grid-column:1 / -1; }
+  .cat-chips{ display:flex; flex-wrap:wrap; gap:.35rem; }
+  .cat-chips .btn{ flex:0 0 auto; font-weight:600; white-space:nowrap; border-radius:999px; padding:.35rem .9rem; }
+  /* counters live in the table header now */
+  .table-stats{ display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; }
+  .tstat{
+    display:inline-flex; align-items:baseline; gap:.3rem;
+    padding:.25rem .6rem; border-radius:999px;
+    background:var(--app-surface-2); border:1px solid var(--pl-border);
+    color:var(--pl-muted); font-size:.78rem; font-weight:600; white-space:nowrap;
+  }
+  .tstat b{ color:var(--pl-text); font-weight:800; font-variant-numeric:tabular-nums; }
   /* Action row: one primary (Apply), one outline disclosure, one plain link. */
   .filter-actions{ display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
   .filter-actions .mf-btn{ display:inline-flex; align-items:center; gap:.35rem; }
   .filter-actions .reset-btn{ text-decoration:none; font-weight:600; color:var(--pl-muted); }
   .filter-actions .apply-btn{ font-weight:700; }
+  /* Desktop: categories own row 1, then search + the three selects on row 2.
+     (Between 576-1199px the shared two-column tablet layout still applies.) */
+  @media (min-width:1200px){
+    .toolbar-grid{ grid-template-columns:2fr repeat(3,minmax(0,1fr)); }
+  }
   /* the secondary filters collapse on phones but stay inline on desktop */
   @media (min-width:576px){ #moreFilters.mf-collapse{ display:contents !important; } }
   /* Export is occasional — keep it folded so it never pushes the list down */
@@ -44,18 +61,16 @@
     .pm-spec{ font-size:.72rem; color:var(--pl-muted); font-weight:600; line-height:1.25; }
     .pm-sub{ font-size:.68rem; color:var(--pl-muted); line-height:1.3; font-variant-numeric:tabular-nums;
       overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    /* counters: one compact row instead of three stacked cards */
-    .stat-grid{ grid-template-columns:repeat(3,minmax(0,1fr)); gap:.4rem; }
-    .stat-card{ padding:.4rem .5rem; }
-    .stat-label{ font-size:.58rem; letter-spacing:.03em; }
-    .stat-value{ margin-top:.1rem; font-size:1.05rem; }
+    .table-stats{ gap:.3rem; }
+    .tstat{ padding:.2rem .5rem; font-size:.7rem; }
     /* filters: compact labels, collapsed secondary block two-up */
     .toolbar .form-label{ font-size:.68rem; margin-bottom:.2rem; text-transform:uppercase; letter-spacing:.04em; }
     .toolbar .form-control,.toolbar .form-select{ padding:.45rem .6rem; }
     #moreFilters{ grid-column:1 / -1; }
     #moreFilters.show{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.5rem; }
     /* clear hierarchy instead of three identical-looking buttons */
-    .cat-chips .btn{ font-size:.72rem; padding:.38rem .3rem; }
+    .cat-chips{ flex-wrap:nowrap; }
+    .cat-chips .btn{ flex:1 1 0; min-width:0; font-size:.72rem; padding:.38rem .3rem; }
     .filter-actions .mf-btn{ flex:0 0 auto; font-size:.78rem; padding:.4rem .65rem; min-height:36px; }
     .filter-actions .reset-btn{ margin-left:auto; font-size:.78rem; padding:.4rem .5rem; min-height:36px; }
     .filter-actions .apply-btn{ flex:1 1 100%; min-height:42px; }
@@ -92,21 +107,6 @@
         {% endif %}
         {% if can_manage %}<a href="{% url 'add_product' %}" class="btn btn-primary"><span class="d-none d-sm-inline">Add Product</span><span class="d-sm-none">+ Add</span></a>{% endif %}
       </div>
-    </div>
-  </section>
-
-  <section class="stat-grid">
-    <div class="stat-card">
-      <span class="stat-label">Products</span>
-      <div class="stat-value">{{ total_types }}</div>
-    </div>
-    <div class="stat-card">
-      <span class="stat-label">In stock</span>
-      <div class="stat-value">{{ in_stock_types }}</div>
-    </div>
-    <div class="stat-card">
-      <span class="stat-label">Units on page</span>
-      <div class="stat-value">{{ total_stock }}</div>
     </div>
   </section>
 
@@ -269,6 +269,11 @@
     <div class="strip-head mb-3">
       <div>
         <h2 class="h5 mb-1">Product Table</h2>
+      </div>
+      <div class="table-stats">
+        <span class="tstat"><b>{{ total_types }}</b> products</span>
+        <span class="tstat"><b>{{ in_stock_types }}</b> in stock</span>
+        <span class="tstat"><b>{{ total_stock }}</b> units on page</span>
       </div>
     </div>
 
