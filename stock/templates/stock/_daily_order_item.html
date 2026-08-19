@@ -1,0 +1,19 @@
+<div class="ord-item">
+  {% if item.image_url %}
+    <img src="{{ item.image_url }}" alt="" class="ord-thumb" loading="lazy">
+  {% else %}
+    <div class="ord-thumb ord-thumb-empty">&mdash;</div>
+  {% endif %}
+  <div class="ord-name">
+    {% if item.product %}<a href="{% url 'product_detail' item.product.id %}">{{ item.display_name }}</a>{% else %}{{ item.display_name }}{% endif %}
+    {% if item.product %}<div class="ord-code">{{ item.product.barcode }}</div>{% endif %}
+  </div>
+  <div class="ord-fig">
+    <span class="ord-qty">&times;{{ item.quantity }}</span>
+    {% if show_order_financials %}
+      <span class="ord-total">EUR {{ item.line_total|floatformat:2 }}</span>
+      <span class="ord-pay">{{ item.payment_label }}</span>
+    {% endif %}
+    {% if show_profit %}<span class="ord-profit {% if item.line_profit < 0 %}neg{% endif %}">EUR {{ item.line_profit|floatformat:2 }}</span>{% endif %}
+  </div>
+</div>

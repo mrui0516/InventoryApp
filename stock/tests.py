@@ -1465,9 +1465,10 @@ class InboundOutboundPageTests(TestCase):
         response = self.client.get(reverse("inbound"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Review and Confirm Inbound")
+        # Sticky checkout bar -> confirm dialog -> its double-check guardrails.
+        self.assertContains(response, "Review &amp; confirm")
         self.assertContains(response, "Final Inbound Review")
-        self.assertContains(response, "Guardrails")
+        self.assertContains(response, "Please double-check")
 
     def test_employee_blocked_from_inbound_page(self):
         self.client.login(username="ops_employee", password="pw123456")
@@ -2333,7 +2334,7 @@ class MultiStoreTests(TestCase):
         response = self.client.get(reverse("daily_summary"))
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.context["store_is_all"])
-        self.assertContains(response, "<th>Store</th>")
+        self.assertContains(response, "ord-store")   # each order card names its store
         self.assertContains(response, self.store_a.name)
         self.assertContains(response, self.store_b.name)
 
@@ -2388,9 +2389,10 @@ class MultiStoreTests(TestCase):
         self.assertEqual(response.context["order_count"], 1)
         self.assertEqual(response.context["total_amount"], Decimal("10.00"))
         self.assertEqual(response.context["total_qty"], 1)
-        # Each order exposes a details modal + a Print link to the receipt page.
+        # Each order renders inline (no dialog) with a Print link to the receipt.
         order = response.context["orders"][0]
-        self.assertContains(response, 'id="order-modal-%s"' % order.id)
+        self.assertContains(response, "#%s" % order.id)
+        self.assertNotContains(response, "order-modal")
         self.assertContains(response, reverse("sale_order_detail", args=[order.id]))
 
     def test_today_payment_stats_reflect_split_tender(self):

@@ -20,6 +20,41 @@
   .top-metric{ text-align:right; white-space:nowrap; font-weight:900; }
   .top-metric .sub{ color:var(--app-muted); font-size:.8rem; font-weight:700; }
   @media print{ .erp-sidebar,.erp-topbar,.dash-actions,.no-print{ display:none !important; } .erp-content{ margin-left:0; } }
+
+  /* Today's orders: each order is shown in full inline (no dialog). Beyond
+     three products the rest fold away, mirroring the phone card pattern. */
+  .ord-list{ display:grid; gap:.6rem; }
+  .ord-card{ border:1px solid var(--app-border); border-radius:var(--app-radius-sm); background:var(--app-surface); padding:.65rem .75rem; }
+  .ord-head{ display:flex; align-items:baseline; justify-content:space-between; gap:.75rem; }
+  .ord-no{ font-weight:800; color:var(--app-text); }
+  .ord-time,.ord-store{ margin-left:.45rem; color:var(--app-muted); font-size:.82rem; font-weight:600; }
+  .ord-sum{ font-weight:800; font-size:1.05rem; color:var(--app-text); font-variant-numeric:tabular-nums; }
+  .ord-meta{ display:flex; align-items:center; justify-content:space-between; gap:.6rem; flex-wrap:wrap; margin-top:.25rem; }
+  .ord-cust{ color:var(--app-muted); font-size:.9rem; min-width:0; }
+  .ord-cust a{ color:inherit; }
+  .ord-tags{ display:flex; flex-wrap:wrap; gap:.3rem; }
+  .ord-tags .neg{ background:var(--app-danger-soft); color:var(--app-danger); border-color:#f6cfca; }
+  .ord-items{ margin-top:.5rem; border-top:1px dashed var(--app-border); padding-top:.5rem; display:grid; gap:.4rem; }
+  .ord-item{ display:grid; grid-template-columns:34px minmax(0,1fr) auto; gap:.55rem; align-items:center; }
+  .ord-thumb{ width:34px; height:34px; border-radius:.45rem; object-fit:cover; border:1px solid var(--app-border); background:var(--app-surface-2); }
+  .ord-thumb-empty{ display:grid; place-items:center; color:var(--app-muted); font-size:.7rem; }
+  .ord-name{ min-width:0; font-size:.88rem; }
+  .ord-name a{ color:var(--app-text); text-decoration:none; font-weight:600; }
+  .ord-code{ color:var(--app-muted); font-size:.7rem; font-variant-numeric:tabular-nums; }
+  .ord-fig{ display:flex; align-items:baseline; gap:.55rem; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .ord-qty{ color:var(--app-muted); font-size:.82rem; }
+  .ord-total{ font-weight:700; font-size:.86rem; }
+  .ord-pay,.ord-profit{ color:var(--app-muted); font-size:.72rem; font-weight:700; }
+  .ord-profit.neg{ color:var(--app-danger); }
+  .ord-more{ margin-top:.1rem; }
+  .ord-more > summary{ cursor:pointer; color:var(--app-accent-ink); font-size:.8rem; font-weight:700; padding:.2rem 0; }
+  .ord-more[open] > summary{ margin-bottom:.35rem; }
+  .ord-actions{ display:flex; justify-content:flex-end; margin-top:.5rem; }
+  @media (max-width:575.98px){
+    .ord-card{ padding:.55rem .6rem; }
+    .ord-fig{ flex-direction:column; align-items:flex-end; gap:.05rem; }
+    .ord-sum{ font-size:1rem; }
+  }
 </style>
 
 <div class="dash-page">
@@ -85,50 +120,44 @@
     <div class="dash-card pad">
       <div class="section-top"><div><span class="kicker">Orders</span><h3>Today's orders</h3></div></div>
       {% if orders %}
-        <div class="table-responsive">
-          <table class="table align-middle mb-0">
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Customer</th>
-                {% if store_is_all %}<th>Store</th>{% endif %}
-                <th class="text-center">Items</th>
-                {% if show_order_financials %}<th>Payment</th><th class="text-end">Total</th>{% endif %}
-                {% if show_profit %}<th class="text-end">Profit</th>{% endif %}
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for order in orders %}
-                <tr>
-                  <td class="num">{{ order.summary_time }}</td>
-                  <td>
-                    {% if order.customer_id %}<a class="top-name" href="{% url 'customer_detail' order.customer_id %}">{{ order.summary_customer }}</a>{% else %}{{ order.summary_customer }}{% endif %}
-                    <div class="tiny">Order #{{ order.id }}</div>
-                  </td>
-                  {% if store_is_all %}<td>{{ order.summary_store }}</td>{% endif %}
-                  <td class="text-center num">{{ order.summary_qty }}</td>
-                  {% if show_order_financials %}
-                    <td>
-                      {% if order.summary_pay|length > 1 %}
-                        <span class="pay-stack">{% for p in order.summary_pay %}<span class="pay-pill">{{ p.label }} €{{ p.amount|floatformat:2 }}</span>{% endfor %}</span>
-                      {% else %}
-                        {% for p in order.summary_pay %}<span class="pay-pill">{{ p.label }}</span>{% endfor %}
-                      {% endif %}
-                    </td>
-                    <td class="text-end num fw-bold">EUR {{ order.summary_total|floatformat:2 }}</td>
-                  {% endif %}
-                  {% if show_profit %}<td class="text-end num {% if order.summary_profit < 0 %}text-danger{% endif %}">EUR {{ order.summary_profit|floatformat:2 }}</td>{% endif %}
-                  <td class="text-end no-print">
-                    <div class="d-flex gap-1 justify-content-end">
-                      <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#order-modal-{{ order.id }}">Details</button>
-                      <a class="btn btn-sm btn-outline-dark" href="{{ order.detail_url }}">Print</a>
-                    </div>
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+        <div class="ord-list">
+          {% for order in orders %}
+            <article class="ord-card">
+              <div class="ord-head">
+                <div class="ord-id">
+                  <span class="ord-no">#{{ order.id }}</span>
+                  <span class="ord-time">{{ order.summary_time }}</span>
+                  {% if store_is_all %}<span class="ord-store">{{ order.summary_store }}</span>{% endif %}
+                </div>
+                {% if show_order_financials %}<div class="ord-sum">EUR {{ order.summary_total|floatformat:2 }}</div>{% endif %}
+              </div>
+
+              <div class="ord-meta">
+                <span class="ord-cust">
+                  {% if order.customer_id %}<a href="{% url 'customer_detail' order.customer_id %}">{{ order.summary_customer }}</a>{% else %}{{ order.summary_customer }}{% endif %}
+                </span>
+                <span class="ord-tags">
+                  <span class="pill">{{ order.summary_qty }} pcs</span>
+                  {% for p in order.summary_pay %}<span class="pay-pill">{{ p.label }}{% if order.summary_pay|length > 1 %} €{{ p.amount|floatformat:2 }}{% endif %}</span>{% endfor %}
+                  {% if show_profit %}<span class="pay-pill {% if order.summary_profit < 0 %}neg{% endif %}">Profit EUR {{ order.summary_profit|floatformat:2 }}</span>{% endif %}
+                </span>
+              </div>
+
+              <div class="ord-items">
+                {% for item in order.summary_items|slice:":3" %}{% include "stock/_daily_order_item.html" %}{% endfor %}
+                {% if order.summary_items|length > 3 %}
+                  <details class="ord-more">
+                    <summary>{{ order.summary_items|length|add:"-3" }} more</summary>
+                    {% for item in order.summary_items|slice:"3:" %}{% include "stock/_daily_order_item.html" %}{% endfor %}
+                  </details>
+                {% endif %}
+              </div>
+
+              <div class="ord-actions no-print">
+                <a class="btn btn-sm btn-outline-dark" href="{{ order.detail_url }}">Print</a>
+              </div>
+            </article>
+          {% endfor %}
         </div>
       {% else %}
         <div class="tiny">No sales recorded for {{ day|date:"j M Y" }}.</div>
@@ -177,75 +206,6 @@
   </div>
 </div>
 
-{% for order in orders %}
-  <div class="modal fade" id="order-modal-{{ order.id }}" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-      <div class="modal-content">
-        <div class="modal-header">
-          <div>
-            <h5 class="modal-title">Order #{{ order.id }} · {{ order.summary_time }}</h5>
-            <div class="tiny">{{ order.summary_customer }}{% if show_order_financials %} · EUR {{ order.summary_total|floatformat:2 }}{% endif %}</div>
-          </div>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body">
-          <div class="table-responsive">
-            <table class="table table-sm align-middle mb-0">
-              <thead>
-                <tr>
-                  <th>Product</th>
-                  <th class="text-center">Qty</th>
-                  {% if show_order_financials %}<th class="text-end">Unit</th><th>Pay</th><th class="text-end">Subtotal</th>{% endif %}
-                  {% if show_profit %}<th class="text-end">Profit</th>{% endif %}
-                </tr>
-              </thead>
-              <tbody>
-                {% for item in order.summary_items %}
-                  <tr>
-                    <td>
-                      <div class="d-flex align-items-center gap-2">
-                        {% if item.image_url %}<img src="{{ item.image_url }}" alt="" style="width:38px;height:38px;object-fit:cover;border-radius:.5rem;border:1px solid var(--app-border)">{% endif %}
-                        <div>
-                          {% if item.product %}<a class="top-name" href="{% url 'product_detail' item.product.id %}">{{ item.display_name }}</a>{% else %}{{ item.display_name }}{% endif %}
-                          {% if item.product %}<div class="tiny">{{ item.product.barcode }}</div>{% endif %}
-                        </div>
-                      </div>
-                    </td>
-                    <td class="text-center num">{{ item.quantity }}</td>
-                    {% if show_order_financials %}
-                      <td class="text-end num">EUR {{ item.unit_price|floatformat:2 }}</td>
-                      <td><span class="pay-pill">{{ item.payment_label }}</span></td>
-                      <td class="text-end num fw-bold">EUR {{ item.line_total|floatformat:2 }}</td>
-                    {% endif %}
-                    {% if show_profit %}<td class="text-end num {% if item.line_profit < 0 %}text-danger{% endif %}">EUR {{ item.line_profit|floatformat:2 }}</td>{% endif %}
-                  </tr>
-                {% endfor %}
-              </tbody>
-              {% if show_order_financials %}
-                <tfoot>
-                  <tr>
-                    <th>Total</th>
-                    <th class="text-center">{{ order.summary_qty }}</th>
-                    <th></th><th></th>
-                    <th class="text-end">EUR {{ order.summary_total|floatformat:2 }}</th>
-                    {% if show_profit %}<th class="text-end">EUR {{ order.summary_profit|floatformat:2 }}</th>{% endif %}
-                  </tr>
-                </tfoot>
-              {% endif %}
-            </table>
-          </div>
-          {% if order.summary_pay|length > 1 %}
-            <div class="d-flex flex-wrap gap-2 mt-3">{% for p in order.summary_pay %}<span class="pay-pill">{{ p.label }} €{{ p.amount|floatformat:2 }}</span>{% endfor %}</div>
-          {% endif %}
-        </div>
-        <div class="modal-footer">
-          <a class="btn btn-outline-dark" href="{{ order.detail_url }}">Print receipt</a>
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-        </div>
-      </div>
-    </div>
-  </div>
-{% endfor %}
 
 {% if show_order_financials and payment_rows %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>

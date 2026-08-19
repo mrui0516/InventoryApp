@@ -169,18 +169,45 @@
 <!-- Scan / Search (with autocomplete dropdown) -->
 <form id="scan-form" class="mb-3 position-relative">
   <label for="barcode" class="form-label">Scan or Search Product</label>
-  <input
-    type="text"
-    id="barcode"
-    class="form-control"
-    placeholder="Enter barcode / name / brand / model"
-    autofocus
-    autocomplete="off"
-  >
+  <div class="input-group">
+    <input
+      type="text"
+      id="barcode"
+      class="form-control"
+      placeholder="Enter barcode / name / brand / model"
+      autofocus
+      autocomplete="off"
+    >
+    <button type="button" class="btn btn-outline-secondary scan-cam-btn" id="camera-scan-btn" aria-label="Scan barcode with camera" title="Scan with camera">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8V6a1 1 0 0 1 1-1h2"/><path d="M18 5h2a1 1 0 0 1 1 1v2"/><path d="M21 16v2a1 1 0 0 1-1 1h-2"/><path d="M6 19H4a1 1 0 0 1-1-1v-2"/><path d="M7 9v6"/><path d="M10 9v6"/><path d="M13.5 9v6"/><path d="M17 9v6"/></svg>
+    </button>
+  </div>
   <div id="autocomplete-list"
        class="list-group position-absolute w-100 shadow-sm d-none"
        style="z-index: 1000; max-height: 320px; overflow:auto;"></div>
 </form>
+
+<div class="modal fade" id="cameraScanModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Scan barcode</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="camera-scan-view" class="camera-view"></div>
+        <div class="cam-tools">
+          <label class="cam-zoom d-none" id="camera-zoom-wrap">
+            <span>Zoom</span>
+            <input type="range" class="form-range" id="camera-zoom" min="1" max="5" step="0.1" value="1">
+          </label>
+          <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="camera-torch">Light</button>
+        </div>
+        <div class="small text-muted mt-2" id="camera-scan-msg">Hold the barcode inside the frame.</div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div id="product-image-preview" class="product-image-preview" aria-hidden="true">
   <img id="product-image-preview-img" src="" alt="">
@@ -226,11 +253,11 @@
         <div class="operation-card-head">
           <div>
             <span class="operation-kicker">Step 2</span>
-            <h3 class="operation-title">Inbound lines</h3>
+            <h3 class="operation-title">Products received</h3>
           </div>
           <div class="summary-badge-row">
-            <span class="summary-badge" id="summary-line-count">0 lines</span>
-            <span class="summary-badge" id="summary-warning-badge">0 warnings</span>
+            <span class="summary-badge" id="summary-line-count">0 products</span>
+            
           </div>
         </div>
 
@@ -258,40 +285,23 @@
       </section>
     </div>
 
-    <aside class="operation-side">
-      <div class="operation-card sticky-review">
-        <span class="operation-kicker">Step 3</span>
-        <h3 class="operation-title">Final review</h3>
+  </div>
 
-        <div class="review-stats">
-          <div class="review-stat">
-            <span class="review-label">Supplier</span>
-            <strong id="summary-supplier">Ungrouped inbound</strong>
-          </div>
-          <div class="review-stat">
-            <span class="review-label">Items</span>
-            <strong id="summary-total-qty">0 pcs</strong>
-          </div>
-          <div class="review-stat">
-            <span class="review-label">Invoice</span>
-            <strong id="summary-invoice">No invoice linked</strong>
-          </div>
-          <div class="review-stat highlight">
-            <span class="review-label">Total</span>
-            <strong id="summary-total-amount">EUR 0.00</strong>
-          </div>
-        </div>
-
-        <div class="guardrail-panel">
-          <div class="guardrail-title">Guardrails</div>
-          <ul class="guardrail-list" id="summary-warning-list">
-            <li>No warnings yet. Add products to review this inbound.</li>
-          </ul>
-        </div>
-
-        <button type="submit" id="submitBtn" class="btn btn-success w-100" disabled>Review and Confirm Inbound</button>
+  <div class="checkout-bar">
+    <div class="checkout-bar-info">
+      <span id="summary-supplier">Ungrouped inbound</span>
+      <span class="bar-sep">&middot;</span>
+      <span id="summary-total-qty">0 pcs</span>
+      <span class="checkout-warn d-none" id="summary-warning-badge" aria-live="polite"></span>
+      <span class="d-none" id="summary-invoice">No invoice linked</span>
+    </div>
+    <div class="checkout-bar-right">
+      <div class="checkout-bar-total">
+        <span class="review-label">Total cost</span>
+        <strong id="summary-total-amount">EUR 0.00</strong>
       </div>
-    </aside>
+      <button type="submit" id="submitBtn" class="btn btn-success" disabled>Review &amp; confirm</button>
+    </div>
   </div>
 </form>
 
@@ -356,89 +366,31 @@
   .inbound-shell{
     display:block;
   }
-  .operation-layout{
-    display:grid;
-    grid-template-columns:minmax(0,1.75fr) minmax(320px,.95fr);
-    gap:1rem;
-    align-items:start;
+  /* Single column: the lines table gets the full width and the running totals
+     live in the sticky bar, so confirming never needs a scroll to the end. */
+  .operation-layout{ display:grid; grid-template-columns:1fr; gap:1rem; align-items:start; }
+  /* camera scanner — capped so the dialog never outgrows the screen */
+  .camera-view{ width:100%; max-height:38vh; border-radius:var(--app-radius-sm); overflow:hidden; background:#0b1220; }
+  .camera-view video{ width:100%!important; height:auto!important; max-height:38vh; object-fit:contain; display:block; margin:0 auto; }
+  .camera-view canvas{ display:none; }
+  .cam-tools{ display:flex; align-items:center; gap:.75rem; margin-top:.6rem; }
+  .cam-zoom{ flex:1 1 auto; display:flex; align-items:center; gap:.55rem; font-size:.78rem; font-weight:700; color:var(--app-muted); margin:0; }
+  .cam-zoom .form-range{ flex:1 1 auto; }
+  #camera-torch.active{ background:var(--app-accent-soft); border-color:var(--app-accent); color:var(--app-accent-ink); }
+  .scan-cam-btn{ flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; min-width:48px; }
+  .checkout-bar{
+    position:sticky; bottom:calc(var(--tabbar-h) + .5rem); z-index:5;
+    display:flex; align-items:center; gap:.9rem; flex-wrap:wrap;
+    margin-top:1rem; padding:.7rem .9rem;
+    background:var(--app-surface); border:1px solid var(--app-border-strong);
+    border-radius:var(--app-radius); box-shadow:0 8px 24px rgba(16,24,40,.14);
   }
-  .operation-main,
-  .operation-side{
-    display:grid;
-    gap:1rem;
-  }
-  .operation-card{
-    background:#fff;
-    border:1px solid var(--ds-border);
-    border-radius:1rem;
-    box-shadow:var(--app-shadow);
-    padding:1rem;
-  }
-  .operation-card-head{
-    display:flex;
-    justify-content:space-between;
-    gap:1rem;
-    align-items:flex-start;
-    flex-wrap:wrap;
-    margin-bottom:1rem;
-  }
-  .operation-kicker{
-    display:inline-flex;
-    align-items:center;
-    padding:.25rem .65rem;
-    border-radius:999px;
-    background:#eaf2ff;
-    color:#1747a6;
-    font-size:.76rem;
-    font-weight:800;
-    letter-spacing:.04em;
-    text-transform:uppercase;
-  }
-  .operation-title{
-    margin:.55rem 0 .2rem;
-    color:var(--ds-text);
-    font-size:1.15rem;
-    font-weight:900;
-  }
-  .operation-copy{
-    margin:0;
-    color:var(--ds-muted);
-  }
-  .summary-badge-row{
-    display:flex;
-    gap:.55rem;
-    flex-wrap:wrap;
-  }
-  .summary-badge{
-    display:inline-flex;
-    align-items:center;
-    padding:.3rem .72rem;
-    border-radius:999px;
-    background:#f3f7fc;
-    border:1px solid #d7e0eb;
-    color:#173761;
-    font-size:.82rem;
-    font-weight:800;
-  }
-  .sticky-review{
-    position:sticky;
-    top:1rem;
-  }
-  .review-stats{
-    display:grid;
-    gap:.75rem;
-    margin-top:.9rem;
-  }
-  .review-stat{
-    padding:.8rem .9rem;
-    border-radius:.95rem;
-    background:#f8fafc;
-    border:1px solid #e2e8f0;
-  }
-  .review-stat.highlight{
-    background:linear-gradient(180deg,#fff,#edf4ff);
-    border-color:#c9daf6;
-  }
+  .checkout-bar-info{ display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; color:var(--app-muted); font-weight:600; font-size:.88rem; }
+  .bar-sep{ opacity:.5; }
+  .checkout-warn{ padding:.16rem .55rem; border-radius:999px; background:var(--app-warn-soft); color:var(--app-warn); font-size:.74rem; font-weight:800; }
+  .checkout-bar-right{ display:flex; align-items:center; gap:.9rem; margin-left:auto; }
+  .checkout-bar-total strong{ display:block; font-size:1.25rem; font-weight:800; color:var(--app-text); font-variant-numeric:tabular-nums; line-height:1.1; }
+  .checkout-bar .btn{ min-width:11rem; }
   .review-label{
     display:block;
     color:var(--ds-muted);
@@ -446,34 +398,6 @@
     font-weight:900;
     letter-spacing:.04em;
     text-transform:uppercase;
-  }
-  .review-stat strong,
-  .review-modal-value{
-    display:block;
-    color:var(--ds-text);
-    font-size:1.02rem;
-    font-weight:900;
-    margin-top:.2rem;
-  }
-  .guardrail-panel{
-    margin-top:1rem;
-    padding:.9rem;
-    border-radius:1rem;
-    background:#fff9eb;
-    border:1px solid #f1d6a8;
-  }
-  .guardrail-title{
-    color:#8a5a08;
-    font-weight:900;
-    margin-bottom:.55rem;
-  }
-  .guardrail-list{
-    margin:0;
-    padding-left:1.1rem;
-    color:#6b4c11;
-  }
-  .guardrail-list li + li{
-    margin-top:.38rem;
   }
   .review-modal-grid{
     display:grid;
@@ -711,9 +635,6 @@
     .operation-layout{
       grid-template-columns:1fr;
     }
-    .sticky-review{
-      position:static;
-    }
   }
 
   @media (max-width: 576px){
@@ -758,7 +679,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const summaryTotalAmount = document.getElementById('summary-total-amount');
   const summaryLineCount = document.getElementById('summary-line-count');
   const summaryWarningBadge = document.getElementById('summary-warning-badge');
-  const summaryWarningList = document.getElementById('summary-warning-list');
 
   function hidePreview() {
     previewBox.classList.remove('show');
@@ -982,11 +902,10 @@ document.addEventListener('DOMContentLoaded', () => {
     summaryTotalQty.textContent = `${state.totalQty} pcs`;
     summaryInvoice.textContent = getInvoiceLabel();
     summaryTotalAmount.textContent = formatMoney(state.total);
-    summaryLineCount.textContent = `${state.lineCount} ${state.lineCount === 1 ? 'line' : 'lines'}`;
-    summaryWarningBadge.textContent = `${state.warnings.length} ${state.warnings.length === 1 ? 'warning' : 'warnings'}`;
-    summaryWarningList.innerHTML = state.warnings.length
-      ? state.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join('')
-      : '<li>No warnings. Supplier, invoice and costs look consistent.</li>';
+    summaryLineCount.textContent = `${state.lineCount} product${state.lineCount === 1 ? '' : 's'}`;
+    // Details live in the confirm dialog; the bar only flags there is something to check.
+    summaryWarningBadge.textContent = state.warnings.length ? `${state.warnings.length} to check` : '';
+    summaryWarningBadge.classList.toggle('d-none', state.warnings.length === 0);
     return state;
   }
 
@@ -1121,21 +1040,123 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    fetch(`/check_barcode/?barcode=${encodeURIComponent(value)}`)
+    lookupBarcode(value);
+    barcodeInput.value='';
+    listBox.classList.add('d-none');
+    hidePreview();
+    barcodeInput.focus();
+  });
+
+  // Shared by the Enter key and the camera scanner.
+  function lookupBarcode(code){
+    return fetch(`/check_barcode/?barcode=${encodeURIComponent(code)}`)
       .then(r=>r.json())
       .then(d=>{
-        if (!d.exists) { setInfo('warning', 'Product not found.'); return; }
+        if (!d.exists) { setInfo('warning', `Barcode ${code} not found.`); return; }
         const line = d.display_name || d.name || `${d.brand}${d.model ? ' - ' + d.model : ''} ${d.product_name || ''}`.trim();
-        addToCart(line, value, d.last_cost ?? null, d.image_url || '');
+        addToCart(line, code, d.last_cost ?? null, d.image_url || '');
         setInfo('info', `Added <strong>${line}</strong>${d.last_cost!=null ? ' | Last cost: €'+Number(d.last_cost).toFixed(2) : ''}`);
       })
-      .finally(()=>{
-        barcodeInput.value='';
-        listBox.classList.add('d-none');
-        hidePreview();
-        barcodeInput.focus();
+      .catch(()=> setInfo('warning', 'Lookup failed. Check the connection.'));
+  }
+
+  // ===== Camera scanning (library fetched on first use) =====
+  const cameraModalEl = document.getElementById('cameraScanModal');
+  const cameraMsg = document.getElementById('camera-scan-msg');
+  let scanner = null, scanLibPromise = null, scanBusy = false;
+
+  function loadScanLib(){
+    if (window.__Html5QrcodeLibrary__) return Promise.resolve(window.__Html5QrcodeLibrary__);
+    if (!scanLibPromise) {
+      scanLibPromise = new Promise((resolve, reject) => {
+        const el = document.createElement('script');
+        el.src = "{% static 'js/html5-qrcode.min.js' %}";
+        el.onload = () => resolve(window.__Html5QrcodeLibrary__);
+        el.onerror = () => { scanLibPromise = null; reject(new Error('scanner failed to load')); };
+        document.head.appendChild(el);
       });
+    }
+    return scanLibPromise;
+  }
+
+  async function startScanner(){
+    cameraMsg.textContent = 'Starting camera…';
+    scanBusy = false;
+    let lib;
+    try { lib = await loadScanLib(); }
+    catch (e) { cameraMsg.textContent = 'Scanner could not load. Type the barcode instead.'; return; }
+    const F = lib.Html5QrcodeSupportedFormats;
+    scanner = new lib.Html5Qrcode('camera-scan-view', {
+      formatsToSupport: [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39, F.ITF],
+      verbose: false,
+    });
+    try {
+      await scanner.start(
+        { facingMode: 'environment' },
+        {
+          fps: 10,
+          qrbox: (w, h) => ({ width: Math.floor(w * 0.92), height: Math.floor(h * 0.6) }),
+          videoConstraints: {
+            facingMode: 'environment',
+            width: { ideal: 1280 }, height: { ideal: 720 },
+            advanced: [{ focusMode: 'continuous' }],
+          },
+        },
+        (text) => {
+          if (scanBusy) return;
+          const code = String(text || '').trim();
+          if (code.length < 6) return;
+          scanBusy = true;
+          // Receiving is repetitive: keep the camera open and keep adding.
+          lookupBarcode(code).then(() => { setTimeout(() => { scanBusy = false; }, 1200); });
+        },
+        () => {}
+      );
+      cameraMsg.textContent = 'Keep ~15cm away and zoom in — scanned products are added straight to the list.';
+      setupCameraControls();
+    } catch (e) {
+      scanner = null;
+      cameraMsg.textContent = 'Cannot open the camera. Allow camera access in the browser, then try again.';
+    }
+  }
+
+  function setupCameraControls(){
+    const zoomWrap = document.getElementById('camera-zoom-wrap');
+    const zoomInput = document.getElementById('camera-zoom');
+    const torchBtn = document.getElementById('camera-torch');
+    zoomWrap.classList.add('d-none'); torchBtn.classList.add('d-none');
+    let caps = null;
+    try { caps = scanner.getRunningTrackCapabilities(); } catch (e) { return; }
+    if (!caps) return;
+    if (caps.zoom && caps.zoom.max > caps.zoom.min) {
+      zoomInput.min = caps.zoom.min; zoomInput.max = caps.zoom.max;
+      zoomInput.step = caps.zoom.step || 0.1;
+      const start = Math.min(caps.zoom.max, Math.max(caps.zoom.min, 2));
+      zoomInput.value = start; applyCamera({ zoom: start });
+      zoomWrap.classList.remove('d-none');
+      zoomInput.oninput = () => applyCamera({ zoom: Number(zoomInput.value) });
+    }
+    if (caps.torch) {
+      let on = false;
+      torchBtn.classList.remove('d-none');
+      torchBtn.onclick = () => { on = !on; applyCamera({ torch: on }); torchBtn.classList.toggle('active', on); };
+    }
+  }
+  function applyCamera(advanced){
+    if (!scanner) return;
+    try { scanner.applyVideoConstraints({ advanced: [advanced] }); } catch (e) {}
+  }
+  async function stopScanner(){
+    if (!scanner) return;
+    const sc = scanner; scanner = null;
+    try { await sc.stop(); sc.clear(); } catch (e) {}
+  }
+
+  document.getElementById('camera-scan-btn').addEventListener('click', () => {
+    bootstrap.Modal.getOrCreateInstance(cameraModalEl).show();
   });
+  cameraModalEl.addEventListener('shown.bs.modal', startScanner);
+  cameraModalEl.addEventListener('hidden.bs.modal', stopScanner);
 
   // === Autocomplete (same logic as outbound) ===
   function debounce(fn, delay=220){ let timer; return (...args)=>{ clearTimeout(timer); timer=setTimeout(()=>fn(...args), delay); }; }

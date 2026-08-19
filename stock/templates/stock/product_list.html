@@ -3,13 +3,13 @@
 
 {% block content %}
 <style>
-  /* Categories are selection chips (pills), visually distinct from the
-     action buttons below so the two never read as the same control. They get
-     their own full-width row: squeezed into one narrow toolbar column the
-     longer names ("Accessories") were being clipped. */
-  .toolbar-grid > .cat-quickfilter{ grid-column:1 / -1; }
+  /* Two rows only: category chips, then one control row. Field labels are
+     dropped — each select names itself through its first option. */
+  .toolbar{ display:grid; gap:.55rem; }
   .cat-chips{ display:flex; flex-wrap:wrap; gap:.35rem; }
   .cat-chips .btn{ flex:0 0 auto; font-weight:600; white-space:nowrap; border-radius:999px; padding:.35rem .9rem; }
+  .filter-row{ display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; }
+  .fr-search{ flex:2 1 18rem; min-width:0; }
   /* counters live in the table header now */
   .table-stats{ display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; }
   .tstat{
@@ -19,18 +19,15 @@
     color:var(--pl-muted); font-size:.78rem; font-weight:600; white-space:nowrap;
   }
   .tstat b{ color:var(--pl-text); font-weight:800; font-variant-numeric:tabular-nums; }
-  /* Action row: one primary (Apply), one outline disclosure, one plain link. */
-  .filter-actions{ display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
-  .filter-actions .mf-btn{ display:inline-flex; align-items:center; gap:.35rem; }
-  .filter-actions .reset-btn{ text-decoration:none; font-weight:600; color:var(--pl-muted); }
-  .filter-actions .apply-btn{ font-weight:700; }
-  /* Desktop: categories own row 1, then search + the three selects on row 2.
-     (Between 576-1199px the shared two-column tablet layout still applies.) */
-  @media (min-width:1200px){
-    .toolbar-grid{ grid-template-columns:2fr repeat(3,minmax(0,1fr)); }
+  /* One primary (Apply), one outline disclosure, one plain link. */
+  .filter-row .mf-btn{ display:inline-flex; align-items:center; gap:.35rem; }
+  .filter-row .reset-btn{ text-decoration:none; font-weight:600; color:var(--pl-muted); }
+  .filter-row .apply-btn{ font-weight:700; }
+  /* The secondary selects collapse on phones but sit inline on desktop. */
+  @media (min-width:576px){
+    #moreFilters.mf-collapse{ display:contents !important; }
+    .filter-row .form-select{ flex:1 1 9rem; min-width:0; max-width:15rem; }
   }
-  /* the secondary filters collapse on phones but stay inline on desktop */
-  @media (min-width:576px){ #moreFilters.mf-collapse{ display:contents !important; } }
   /* Export is occasional — keep it folded so it never pushes the list down */
   .export-details > summary{ cursor:pointer; font-weight:700; color:var(--app-accent-ink); padding:.5rem .1rem; }
 
@@ -63,17 +60,16 @@
       overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .table-stats{ gap:.3rem; }
     .tstat{ padding:.2rem .5rem; font-size:.7rem; }
-    /* filters: compact labels, collapsed secondary block two-up */
-    .toolbar .form-label{ font-size:.68rem; margin-bottom:.2rem; text-transform:uppercase; letter-spacing:.04em; }
+    /* filters: chips share one row, selects fold away two-up */
     .toolbar .form-control,.toolbar .form-select{ padding:.45rem .6rem; }
-    #moreFilters{ grid-column:1 / -1; }
+    .fr-search{ flex:1 1 100%; }
+    #moreFilters{ flex:1 1 100%; }
     #moreFilters.show{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.5rem; }
-    /* clear hierarchy instead of three identical-looking buttons */
     .cat-chips{ flex-wrap:nowrap; }
     .cat-chips .btn{ flex:1 1 0; min-width:0; font-size:.72rem; padding:.38rem .3rem; }
-    .filter-actions .mf-btn{ flex:0 0 auto; font-size:.78rem; padding:.4rem .65rem; min-height:36px; }
-    .filter-actions .reset-btn{ margin-left:auto; font-size:.78rem; padding:.4rem .5rem; min-height:36px; }
-    .filter-actions .apply-btn{ flex:1 1 100%; min-height:42px; }
+    .filter-row .mf-btn{ flex:0 0 auto; font-size:.78rem; padding:.4rem .65rem; min-height:36px; }
+    .filter-row .reset-btn{ margin-left:auto; font-size:.78rem; padding:.4rem .5rem; min-height:36px; }
+    .filter-row .apply-btn{ flex:1 1 8rem; min-height:38px; }
     /* compact page header: small title, short button labels */
     .page-head{ align-items:center; gap:.5rem; }
     .page-title{ font-size:1.15rem; }
@@ -84,10 +80,6 @@
     .pm-whs{ font-size:.7rem; font-weight:600; color:var(--pl-muted); font-variant-numeric:tabular-nums; }
     .pm-edit{ flex:0 0 44px; display:grid; place-items:center; color:var(--pl-muted); border-left:1px solid var(--pl-border); }
     .pm-edit:active{ background:var(--app-surface-2); }
-    /* filters: search + categories full width, the rest two-up */
-    .toolbar-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); gap:.6rem; }
-    .toolbar-grid > div:first-child,
-    .toolbar-grid > .cat-quickfilter{ grid-column:1 / -1; }
   }
 </style>
 
@@ -111,49 +103,32 @@
   </section>
 
   <section class="page-card pad">
-    <div class="strip-head mb-3 d-none d-sm-flex">
-      <div>
-        <h2 class="h5 mb-1">Filter Products</h2>
-      </div>
-    </div>
     <form method="get" class="toolbar">
-      <div class="toolbar-grid">
-        <div>
-          <label class="form-label fw-bold">Search</label>
-          <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Barcode, brand, model, name, spec, or color">
-        </div>
-        <div class="cat-quickfilter">
-          <label class="form-label fw-bold d-block">Category</label>
-          <input type="hidden" name="category" id="categoryInput" value="{% if selected_category %}{{ selected_category }}{% endif %}">
-          <div class="cat-chips" role="group" aria-label="Category quick filter">
-            <button type="submit" onclick="document.getElementById('categoryInput').value=''" class="btn btn-sm {% if not selected_category %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</button>
-            {% for c in categories %}
-              <button type="submit" onclick="document.getElementById('categoryInput').value='{{ c.id }}'" class="btn btn-sm {% if selected_category == c.id %}btn-primary{% else %}btn-outline-secondary{% endif %}">{{ c.name }}</button>
-            {% endfor %}
-          </div>
-        </div>
+      <input type="hidden" name="category" id="categoryInput" value="{% if selected_category %}{{ selected_category }}{% endif %}">
+      <div class="cat-chips" role="group" aria-label="Filter by category">
+        <button type="submit" onclick="document.getElementById('categoryInput').value=''" class="btn btn-sm {% if not selected_category %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</button>
+        {% for c in categories %}
+          <button type="submit" onclick="document.getElementById('categoryInput').value='{{ c.id }}'" class="btn btn-sm {% if selected_category == c.id %}btn-primary{% else %}btn-outline-secondary{% endif %}">{{ c.name }}</button>
+        {% endfor %}
+      </div>
+
+      <div class="filter-row">
+        <input type="text" name="q" value="{{ query }}" class="form-control fr-search" aria-label="Search products"
+               placeholder="Search barcode, brand, model, name, spec or color">
         <div class="collapse mf-collapse" id="moreFilters">
-        <div>
-          <label class="form-label fw-bold">Brand</label>
-          <select name="brand" class="form-select">
+          <select name="brand" class="form-select" aria-label="Brand">
             <option value="">All Brands</option>
             {% for brand in brands %}
               <option value="{{ brand.id }}" {% if selected_brand == brand.id %}selected{% endif %}>{{ brand.name }}</option>
             {% endfor %}
           </select>
-        </div>
-        <div>
-          <label class="form-label fw-bold">Stock Status</label>
-          <select name="stock_status" class="form-select">
+          <select name="stock_status" class="form-select" aria-label="Stock status">
             <option value="">All Stock</option>
             <option value="in_stock" {% if stock_status == 'in_stock' %}selected{% endif %}>In stock</option>
             <option value="low_stock" {% if stock_status == 'low_stock' %}selected{% endif %}>Low stock</option>
             <option value="out_of_stock" {% if stock_status == 'out_of_stock' %}selected{% endif %}>Out of stock</option>
           </select>
-        </div>
-        <div>
-          <label class="form-label fw-bold">Sort</label>
-          <select name="sort" class="form-select">
+          <select name="sort" class="form-select" aria-label="Sort by">
             <option value="latest" {% if sort_by == 'latest' %}selected{% endif %}>Latest added</option>
             <option value="name_asc" {% if sort_by == 'name_asc' %}selected{% endif %}>Name A-Z</option>
             <option value="stock_desc" {% if sort_by == 'stock_desc' %}selected{% endif %}>Stock high to low</option>
@@ -165,15 +140,12 @@
             {% endif %}
           </select>
         </div>
-        </div>
-      </div>
-      <div class="filter-actions mt-2">
         <button class="btn btn-outline-secondary mf-btn d-sm-none" type="button" data-bs-toggle="collapse" data-bs-target="#moreFilters" aria-controls="moreFilters">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16"/><path d="M7 12h10"/><path d="M10 18h4"/></svg>
-          More filters
+          Filters
         </button>
+        <button type="submit" class="btn btn-primary apply-btn">Apply</button>
         <a href="{% url 'product_list' %}" class="btn btn-link reset-btn">Reset</a>
-        <button type="submit" class="btn btn-primary apply-btn">Apply filters</button>
       </div>
     </form>
     {% if active_filter_labels %}
