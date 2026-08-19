@@ -17,41 +17,30 @@
     </div>
     <span class="note-pill warn">{{ pending_reviews|length }} pending</span>
   </div>
-  <div class="table-responsive">
-    <table class="table align-middle mb-0">
-      <thead class="table-light">
-        <tr>
-          <th>#</th>
-          <th>Supplier</th>
-          <th>Invoice</th>
-          <th class="text-center">Lines</th>
-          <th class="text-end">Total &euro;</th>
-          <th>Created</th>
-          <th class="text-end">Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for pr in pending_reviews %}
-          <tr>
-            <td>#{{ pr.order.id }}</td>
-            <td>{{ pr.order.supplier.name }}</td>
-            <td>{{ pr.order.invoice_no|default:"—" }}{% if pr.order.invoice_date %} · {{ pr.order.invoice_date|date:"Y-m-d" }}{% endif %}</td>
-            <td class="text-center">{{ pr.lines|length }}</td>
-            <td class="text-end">&euro;{{ pr.order.total_amount|floatformat:2 }}</td>
-            <td>{{ pr.order.created_at|date:"Y-m-d H:i" }}</td>
-            <td class="text-end">
-              <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#receive-modal-{{ pr.order.id }}">Review &amp; Receive</button>
-            </td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="pend-list">
+    {% for pr in pending_reviews %}
+      <article class="pend-card">
+        <div class="pend-main">
+          <div class="pend-top">
+            <span class="pend-no">#{{ pr.order.id }}</span>
+            <span class="pend-supplier">{{ pr.order.supplier.name }}</span>
+          </div>
+          <div class="pend-meta">
+            {{ pr.order.invoice_no|default:"No invoice" }}{% if pr.order.invoice_date %} · {{ pr.order.invoice_date|date:"Y-m-d" }}{% endif %}
+            · {{ pr.lines|length }} product{{ pr.lines|length|pluralize }}
+            · {{ pr.order.created_at|date:"Y-m-d H:i" }}
+          </div>
+        </div>
+        <div class="pend-fig">&euro;{{ pr.order.total_amount|floatformat:2 }}</div>
+        <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#receive-modal-{{ pr.order.id }}">Receive</button>
+      </article>
+    {% endfor %}
   </div>
 </div>
 
 {% for pr in pending_reviews %}
   <div class="modal fade" id="receive-modal-{{ pr.order.id }}" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
       <form method="post" action="{% url 'inbound_receive' pr.order.id %}" class="modal-content">
         {% csrf_token %}
         {{ pr.form.supplier }}
@@ -60,35 +49,35 @@
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
-          <div class="row g-2 mb-3">
-            <div class="col-md-5 position-relative">
-              <label class="form-label">Supplier</label>
-              <input type="text" class="form-control js-supplier-search" value="{{ pr.order.supplier.name }}" autocomplete="off">
+          <div class="rcv-fields">
+            <div class="position-relative">
+              <label class="rcv-label">Supplier</label>
+              <input type="text" class="form-control form-control-sm js-supplier-search" value="{{ pr.order.supplier.name }}" autocomplete="off">
               <div class="list-group position-absolute w-100 shadow-sm d-none js-supplier-suggestions" style="z-index:1080;"></div>
             </div>
-            <div class="col-md-3">
-              <label class="form-label">Invoice No.</label>
+            <div>
+              <label class="rcv-label">Invoice No.</label>
               {{ pr.form.invoice_no }}
             </div>
-            <div class="col-md-4">
-              <label class="form-label">Invoice Date</label>
+            <div>
+              <label class="rcv-label">Invoice Date</label>
               {{ pr.form.invoice_date }}
             </div>
-            <div class="col-12">
-              <label class="form-label">Note (optional)</label>
+            <div class="rcv-note">
+              <label class="rcv-label">Note</label>
               {{ pr.form.note }}
             </div>
           </div>
 
           {{ pr.formset.management_form }}
           <div class="table-responsive">
-            <table class="table align-middle mb-0">
+            <table class="table table-sm align-middle mb-0 rcv-table">
               <thead class="table-light">
                 <tr>
                   <th>Product</th>
-                  <th class="text-center" style="width:92px">Qty</th>
-                  <th class="text-end" style="width:130px">Unit Cost &euro;</th>
-                  <th class="text-center" style="width:64px">Remove</th>
+                  <th class="text-center" style="width:82px">Qty</th>
+                  <th class="text-end" style="width:118px">Cost &euro;</th>
+                  <th class="text-center" style="width:56px">Del</th>
                 </tr>
               </thead>
               <tbody>
@@ -100,7 +89,7 @@
                         {% if line.item.image_url %}
                           <div class="cart-product-thumb-wrap"><img src="{{ line.item.image_url }}" class="cart-product-thumb" alt=""></div>
                         {% else %}
-                          <div class="cart-product-thumb-empty">No image</div>
+                          <div class="cart-product-thumb-empty">&mdash;</div>
                         {% endif %}
                         <div class="cart-product-main">
                           <div class="fw-semibold">{{ line.item.display_name }}</div>
@@ -378,6 +367,36 @@
   .cam-zoom .form-range{ flex:1 1 auto; }
   #camera-torch.active{ background:var(--app-accent-soft); border-color:var(--app-accent); color:var(--app-accent-ink); }
   .scan-cam-btn{ flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; min-width:48px; }
+  /* Awaiting receipt: compact cards instead of a wide scrolling table */
+  .pend-list{ display:grid; gap:.5rem; }
+  .pend-card{
+    display:flex; align-items:center; gap:.75rem; flex-wrap:wrap;
+    padding:.55rem .7rem; border:1px solid var(--app-border);
+    border-radius:var(--app-radius-sm); background:var(--app-surface);
+  }
+  .pend-main{ flex:1 1 14rem; min-width:0; }
+  .pend-no{ font-weight:800; color:var(--app-text); }
+  .pend-supplier{ margin-left:.45rem; font-weight:700; color:var(--app-text); }
+  .pend-meta{ color:var(--app-muted); font-size:.78rem; margin-top:.1rem; }
+  .pend-fig{ font-weight:800; color:var(--app-text); font-variant-numeric:tabular-nums; margin-left:auto; }
+  /* Receive dialog: dense enough to fit without hunting for the buttons */
+  .rcv-fields{ display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr); gap:.5rem; margin-bottom:.75rem; }
+  .rcv-note{ grid-column:1 / -1; }
+  .rcv-label{ display:block; font-size:.68rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--app-muted); margin-bottom:.15rem; }
+  .rcv-fields .form-control,.rcv-fields .form-select,.rcv-fields input,.rcv-fields textarea{
+    width:100%; padding:.35rem .55rem; font-size:.9rem;
+    border:1px solid var(--app-border); border-radius:var(--app-radius-sm);
+  }
+  .rcv-fields textarea{ min-height:2.2rem; }
+  .rcv-table td,.rcv-table th{ padding:.35rem .45rem; }
+  .rcv-table .cart-product-thumb-wrap,.rcv-table .cart-product-thumb-empty{ width:34px; height:34px; }
+  .rcv-table .cart-product{ grid-template-columns:34px minmax(0,1fr); gap:.5rem; }
+  .rcv-table input{ width:100%; padding:.3rem .45rem; font-size:.9rem; border:1px solid var(--app-border); border-radius:var(--app-radius-xs); }
+  @media (max-width:575.98px){
+    .rcv-fields{ grid-template-columns:1fr 1fr; }
+    .pend-card{ padding:.5rem .6rem; }
+    .pend-fig{ font-size:.95rem; }
+  }
   .checkout-bar{
     position:sticky; bottom:calc(var(--tabbar-h) + .5rem); z-index:5;
     display:flex; align-items:center; gap:.9rem; flex-wrap:wrap;

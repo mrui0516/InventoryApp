@@ -10,7 +10,6 @@
   .pay-row{ display:grid; grid-template-columns:1fr auto; gap:.4rem; align-items:center; }
   .pay-row .bar{ grid-column:1/-1; height:7px; border-radius:999px; background:#e8eef6; overflow:hidden; }
   .pay-row .bar span{ display:block; height:100%; background:linear-gradient(90deg,#7fb0ff,var(--app-accent)); }
-  .chart-box{ position:relative; height:200px; }
   .top-row{ display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.7rem; align-items:center; padding:.5rem 0; border-top:1px solid var(--app-border); }
   .top-row:first-of-type{ border-top:0; }
   .top-name{ font-weight:800; color:var(--app-text); text-decoration:none; }
@@ -55,6 +54,17 @@
     .ord-fig{ flex-direction:column; align-items:flex-end; gap:.05rem; }
     .ord-sum{ font-size:1rem; }
   }
+  /* KPI strip: compact tiles, not full-height cards */
+  .snapshot-grid{ gap:.5rem; }
+  .snapshot-card{ padding:.55rem .7rem; }
+  .snapshot-card .metric-label{ font-size:.64rem; letter-spacing:.04em; }
+  .snapshot-card .metric-value{ margin-top:.15rem; font-size:1.2rem; }
+  .snapshot-card .metric-sub{ margin-top:.1rem; font-size:.72rem; }
+  @media (max-width:575.98px){
+    .snapshot-grid{ grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:.4rem; }
+    .snapshot-card{ padding:.45rem .55rem; }
+    .snapshot-card .metric-value{ font-size:1.05rem; }
+  }
 </style>
 
 <div class="dash-page">
@@ -87,36 +97,33 @@
       <div class="snapshot-card highlight">
         <span class="metric-label">Orders</span>
         <div class="metric-value">{{ order_count }}</div>
-        <div class="metric-sub">Today</div>
       </div>
     {% endif %}
     <div class="snapshot-card">
       <span class="metric-label">Items Sold</span>
       <div class="metric-value">{{ total_qty }}</div>
-      <div class="metric-sub">Units across all orders</div>
     </div>
     {% if show_order_financials %}
       <div class="snapshot-card">
         <span class="metric-label">Average Order</span>
         <div class="metric-value">EUR {{ avg_order|floatformat:2 }}</div>
-        <div class="metric-sub">Per order</div>
       </div>
     {% endif %}
     {% if show_profit %}
       <div class="snapshot-card">
         <span class="metric-label">Net Profit</span>
         <div class="metric-value">EUR {{ total_profit|floatformat:2 }}</div>
-        <div class="metric-sub">Admin only</div>
       </div>
     {% endif %}
     <div class="snapshot-card">
       <span class="metric-label">Stock Received</span>
       <div class="metric-value">{{ received_units }}</div>
-      <div class="metric-sub">{{ received_orders }} inbound · all stores</div>
+      <div class="metric-sub">{{ received_orders }} inbound</div>
     </div>
   </div>
 
   <div class="summary-grid">
+    <div class="split-col">
     <div class="dash-card pad">
       <div class="section-top"><div><span class="kicker">Orders</span><h3>Today's orders</h3></div></div>
       {% if orders %}
@@ -164,13 +171,10 @@
       {% endif %}
     </div>
 
-    <div class="split-col">
       {% if show_order_financials %}
         <div class="dash-card pad">
           <div class="section-top"><div><span class="kicker">Payment</span><h3>Payment mix</h3></div></div>
           {% if payment_rows %}
-            {{ payment_chart|json_script:"dayPayData" }}
-            <div class="chart-box"><canvas id="dayPayChart"></canvas></div>
             <div class="pay-rows">
               {% for row in payment_rows %}
                 <div class="pay-row">
@@ -186,6 +190,9 @@
         </div>
       {% endif %}
 
+    </div>
+
+    <div class="split-col">
       {% if top_products %}
         <div class="dash-card pad">
           <div class="section-top"><div><span class="kicker">Products</span><h3>Top products</h3></div></div>
@@ -207,20 +214,4 @@
 </div>
 
 
-{% if show_order_financials and payment_rows %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-  (function () {
-    if (!window.Chart) return;
-    var el = document.getElementById('dayPayChart');
-    if (!el) return;
-    var d = JSON.parse(document.getElementById('dayPayData').textContent);
-    new Chart(el, {
-      type: 'doughnut',
-      data: { labels: d.map(function (x) { return x.label; }), datasets: [{ data: d.map(function (x) { return x.amount; }), backgroundColor: window.CHART_PALETTE, borderWidth: 0 }] },
-      options: { responsive: true, maintainAspectRatio: false, cutout: '62%', plugins: { legend: { display: false }, tooltip: { callbacks: { label: function (c) { return c.label + ': €' + Number(c.raw).toFixed(2); } } } } },
-    });
-  }());
-</script>
-{% endif %}
 {% endblock %}

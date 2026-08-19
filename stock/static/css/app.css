@@ -403,6 +403,33 @@ footer{ border-top:1px solid var(--app-border); margin-top:2rem; }
 .stock-pill.zero{ background:#fef2f2; color:#b42318; border-color:#fecaca; }
 .metric-pill{ background:var(--accent-soft); color:var(--app-accent-ink); }
 
+/* --- operation pages (inbound / outbound) ---
+   These lived only inside outbound.html, so inbound used the same class names
+   with no surface at all and its panels blended into the page background. */
+.operation-card{
+  background:var(--app-surface);
+  border:1px solid var(--app-border);
+  border-radius:var(--app-radius);
+  box-shadow:var(--app-shadow);
+  padding:1.1rem 1.15rem;
+  min-width:0;
+}
+.operation-card .table-responsive{ overflow-x:auto; }
+.operation-card-head{
+  display:flex; justify-content:space-between; gap:1rem;
+  align-items:center; flex-wrap:wrap; margin-bottom:.9rem;
+}
+.operation-title{ margin:0; color:var(--app-text); font-size:1.05rem; font-weight:700; letter-spacing:-.01em; }
+.operation-kicker{
+  display:block; color:var(--app-muted); font-size:.7rem; font-weight:800;
+  letter-spacing:.06em; text-transform:uppercase; margin-bottom:.15rem;
+}
+.summary-badge{
+  display:inline-flex; align-items:center; padding:.24rem .66rem; border-radius:999px;
+  background:var(--app-surface-2); border:1px solid var(--app-border);
+  color:var(--app-muted); font-size:.8rem; font-weight:700; font-variant-numeric:tabular-nums;
+}
+
 /* --- tables --- */
 .table-wrap{ overflow:auto; border:1px solid var(--border); border-radius:var(--app-radius-sm); background:#fff; }
 .table thead th{ font-size:.78rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:#243549; background:#eef3f9; border-bottom:1px solid var(--border); }
