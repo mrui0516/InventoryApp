@@ -1,9 +1,7 @@
 <div class="ord-item">
   {% if item.image_url %}
-    <button type="button" class="ord-thumb js-open-image-modal" style="padding:0;border:0;background:none"
-            data-image-url="{{ item.image_url }}" data-image-label="{{ item.display_name }}">
-      <img src="{{ item.image_url }}" alt="" class="ord-thumb" loading="lazy">
-    </button>
+    <img src="{{ item.image_url }}" alt="" class="ord-thumb js-open-image-modal" width="34" height="34" loading="lazy"
+         data-image-url="{{ item.image_url }}" data-image-label="{{ item.display_name }}" style="cursor:zoom-in">
   {% else %}
     <div class="ord-thumb ord-thumb-empty">&mdash;</div>
   {% endif %}
