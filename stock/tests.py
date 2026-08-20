@@ -4274,6 +4274,38 @@ class SyncProductToShopifyButtonTests(TestCase):
         sp.assert_called_once()
         spi.assert_called_once()
 
+    def test_enabling_tracking_always_rewrites_the_quantity(self):
+        """Regression: syncing a stocked product left Shopify showing 0.
+
+        Turning a variant from untracked to tracked makes Shopify (re)initialise
+        its inventory level at 0. The sync used to skip the quantity write when
+        the variant's *reported* quantity already equalled the target, so the
+        variant was switched to tracked and then stranded at 0."""
+        from unittest import mock
+        from stock.services import shopify_sync
+        product = self._perfume()
+        Purchase.objects.create(product=product, supplier=None, quantity=6,
+                                cost_price=Decimal("4.00"), remaining=6)
+        self.assertEqual(product.total_stock(), 6)
+
+        client = mock.MagicMock()
+        # No decant variants -> target is the full on-hand (6). Shopify already
+        # reports 6, but the variant is untracked, so tracking must be enabled
+        # AND the quantity rewritten afterwards.
+        client.find_variant_by_sku.side_effect = lambda sku: ({
+            'product_id': 'gid://P', 'variant_id': 'gid://V',
+            'inventory_item_id': 'gid://I', 'price': '10.00',
+            'available': 6, 'tracked': False, 'policy': 'CONTINUE',
+        } if sku == product.barcode else None)
+        client.get_location_id.return_value = 'gid://L'
+
+        code, detail = shopify_sync.sync_product_price_inventory(
+            product, client, do_price=False, do_inventory=True)
+
+        self.assertEqual(code, shopify_sync.INV_UPDATED)
+        client.set_variant_stocked.assert_called_once_with('gid://P', 'gid://V')
+        client.set_inventory_available.assert_called_once_with('gid://I', 'gid://L', 6)
+
     def test_non_perfume_blocked(self):
         from unittest import mock
         cat = Category.objects.create(name="Accessories")
@@ -4614,7 +4646,8 @@ class DecantInventoryPushTests(TestCase):
 
     def test_untracked_decant_is_made_tracked_and_deny(self):
         # French Avenue case: decant is untracked + CONTINUE at qty 0, so it stays
-        # buyable. Even though the quantity already matches, flip it to track+deny.
+        # buyable. Flip it to track+deny — and because enabling tracking makes
+        # Shopify (re)initialise the level, the quantity is written afterwards too.
         from unittest import mock
         from stock.services import shopify_sync
         cat = Category.objects.create(name="Perfumes")
@@ -4631,7 +4664,9 @@ class DecantInventoryPushTests(TestCase):
             p, client, do_price=False, do_inventory=True, shop_variants=sv, location_id="L")
         self.assertEqual(code, shopify_sync.INV_UPDATED)
         client.set_variant_stocked.assert_called_once_with("P", "v1")   # decant fixed
-        client.set_inventory_available.assert_not_called()              # qtys already 0
+        # The 100ml variant was already tracked at the right qty -> untouched;
+        # only the newly tracked decant gets its level written (target 0 here).
+        client.set_inventory_available.assert_called_once_with("I1", "L", 0)
 
     def test_per_product_path_looks_up_variants_and_is_correct(self):
         # The product-page button path: shop_variants=None -> find_variant_by_sku.

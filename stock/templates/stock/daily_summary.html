@@ -6,7 +6,7 @@
   /* page-specific components only — tokens inherited from app.css */
   .pay-pill{ display:inline-flex; align-items:center; padding:.2rem .55rem; border-radius:999px; background:var(--app-accent-soft); border:1px solid #cbdbf4; color:var(--app-accent-ink); font-size:.78rem; font-weight:800; }
   .pay-stack{ display:inline-flex; flex-direction:column; gap:.2rem; align-items:flex-start; }
-  .pay-rows{ display:grid; gap:.55rem; margin-top:.9rem; }
+  .pay-rows{ display:grid; grid-template-columns:repeat(auto-fit,minmax(11rem,1fr)); gap:.5rem .9rem; margin-top:.6rem; }
   .pay-row{ display:grid; grid-template-columns:1fr auto; gap:.4rem; align-items:center; }
   .pay-row .bar{ grid-column:1/-1; height:7px; border-radius:999px; background:#e8eef6; overflow:hidden; }
   .pay-row .bar span{ display:block; height:100%; background:linear-gradient(90deg,#7fb0ff,var(--app-accent)); }
@@ -124,6 +124,24 @@
 
   <div class="summary-grid">
     <div class="split-col">
+      {% if show_order_financials %}
+        <div class="dash-card pad">
+          <div class="section-top"><div><span class="kicker">Payment</span><h3>Payment mix</h3></div></div>
+          {% if payment_rows %}
+            <div class="pay-rows">
+              {% for row in payment_rows %}
+                <div class="pay-row">
+                  <span class="item-name">{{ row.label }}</span>
+                  <span class="item-value">EUR {{ row.amount|floatformat:2 }} · {{ row.pct }}%</span>
+                  <span class="bar"><span style="width:{{ row.pct }}%"></span></span>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="tiny">No payments yet.</div>
+          {% endif %}
+        </div>
+      {% endif %}
     <div class="dash-card pad">
       <div class="section-top"><div><span class="kicker">Orders</span><h3>Today's orders</h3></div></div>
       {% if orders %}
@@ -171,24 +189,6 @@
       {% endif %}
     </div>
 
-      {% if show_order_financials %}
-        <div class="dash-card pad">
-          <div class="section-top"><div><span class="kicker">Payment</span><h3>Payment mix</h3></div></div>
-          {% if payment_rows %}
-            <div class="pay-rows">
-              {% for row in payment_rows %}
-                <div class="pay-row">
-                  <span class="item-name">{{ row.label }}</span>
-                  <span class="item-value">EUR {{ row.amount|floatformat:2 }} · {{ row.pct }}%</span>
-                  <span class="bar"><span style="width:{{ row.pct }}%"></span></span>
-                </div>
-              {% endfor %}
-            </div>
-          {% else %}
-            <div class="tiny">No payments yet.</div>
-          {% endif %}
-        </div>
-      {% endif %}
 
     </div>
 

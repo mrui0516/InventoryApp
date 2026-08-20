@@ -134,6 +134,13 @@ def sync_product_price_inventory(product, client=None, *, do_price=True, do_inve
                 # quantity is ignored and it stays buyable (the decant bug).
                 needs_policy = (rec.get('tracked') is False) or (rec.get('policy') not in (None, 'DENY'))
                 needs_qty = rec.get('available') != target
+                # Switching a variant to tracked makes Shopify (re)initialise its
+                # inventory level, which starts at 0 — an untracked variant never
+                # had a real level, so its reported quantity means nothing. Always
+                # write the quantity after a policy change, even when the reported
+                # number already matched, or the variant is left stranded at 0.
+                if needs_policy:
+                    needs_qty = True
                 if not (needs_policy or needs_qty):
                     continue
                 bits = (['track+deny'] if needs_policy else []) + \
