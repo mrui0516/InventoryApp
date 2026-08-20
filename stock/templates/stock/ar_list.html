@@ -7,9 +7,9 @@
     /* Tokens inherited from app.css; keep the page-local --ok alias */
     .iou-ui{ --ok:var(--app-good); }
     .iou-ui h2{font-weight:800;color:var(--text)}
-    .kpi{border:1px solid var(--border);border-radius:var(--radius);background:linear-gradient(180deg,#f8fbff,#fff);box-shadow:var(--shadow);padding:1rem 1.1rem}
-    .kpi .label{color:var(--muted);font-weight:700}
-    .kpi .value{font-size:1.35rem;font-weight:900}
+    .kpi{border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--app-surface-2);padding:.5rem .7rem}
+    .kpi .label{color:var(--muted);font-weight:700;font-size:.66rem;letter-spacing:.05em;text-transform:uppercase}
+    .kpi .value{font-size:1.1rem;font-weight:800;font-variant-numeric:tabular-nums}
     .kpi.ok .value{color:var(--ok)}
     .kpi.danger .value{color:var(--danger)}
     .filter-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:.85rem}
@@ -25,6 +25,16 @@
     .money-rt{text-align:right;font-variant-numeric:tabular-nums}
     .balance-danger{color:var(--danger);font-weight:800}
     .balance-ok{color:var(--ok);font-weight:800}
+    /* Phones: one compact row per IOU — a 9-column table cannot work there. */
+    .iou-item{display:flex;align-items:stretch;border-bottom:1px solid var(--border)}
+    .iou-main{flex:1 1 auto;min-width:0;display:grid;grid-template-columns:minmax(0,1fr) auto;
+      gap:.1rem .6rem;align-items:center;padding:.55rem .65rem;text-decoration:none;color:inherit}
+    .iou-main:active{background:var(--app-surface-2)}
+    .iou-who{font-size:.9rem;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .iou-sub{grid-column:1;font-size:.72rem;color:var(--muted);display:flex;gap:.35rem;align-items:center;flex-wrap:wrap}
+    .iou-fig{grid-column:2;grid-row:1 / span 2;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+    .iou-fig b{display:block;font-size:.95rem;font-weight:800}
+    .iou-fig .cap{font-size:.66rem;color:var(--muted);font-weight:700}
     @media (max-width:576px){
       .kpi{margin-bottom:.6rem}
       .table-wrap{border:none;box-shadow:none}
@@ -87,7 +97,7 @@
     {% endif %}
   </form>
 
-  <div class="table-responsive table-wrap">
+  <div class="table-responsive table-wrap d-none d-sm-block">
     <table class="table table-sm table-hover align-middle mb-0">
       <thead class="table-light">
         <tr>
@@ -132,6 +142,27 @@
         {% endfor %}
       </tbody>
     </table>
+  </div>
+  <div class="d-sm-none table-wrap">
+    {% for inv in invoices %}
+      <div class="iou-item">
+        <a class="iou-main" href="{% url 'ar_detail' inv.id %}">
+          <span class="iou-who">{{ inv.customer.name }}</span>
+          <span class="iou-sub">
+            #{{ inv.id }} · {{ inv.date|date:"Y-m-d" }}
+            <span class="status-badge {% if inv.status == 'paid' %}status-paid{% elif inv.status == 'partial' %}status-partial{% else %}status-unpaid{% endif %}">{{ inv.status|capfirst }}</span>
+          </span>
+          {% if show_sensitive %}
+            <span class="iou-fig">
+              <b class="{% if inv.balance > 0 %}balance-danger{% else %}balance-ok{% endif %}">EUR {{ inv.balance|floatformat:2 }}</b>
+              <span class="cap">of {{ inv.total_amount|floatformat:2 }}</span>
+            </span>
+          {% endif %}
+        </a>
+      </div>
+    {% empty %}
+      <div class="text-center text-muted py-3">No records found.</div>
+    {% endfor %}
   </div>
 </div>
 {% endblock %}

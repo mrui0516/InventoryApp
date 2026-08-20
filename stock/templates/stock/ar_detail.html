@@ -27,10 +27,17 @@
     .t-amt{font-weight:900;color:#065f46}
     .t-meta{color:var(--muted);font-weight:600}
     @media (max-width:576px){
+      /* Compact row per line instead of a card with one full-width row per
+         field: product on top, the figures as a wrapping labelled strip. */
       .table thead{display:none}
-      .table tbody tr{display:block;margin:.6rem 0;border:1px solid var(--border);border-radius:12px;background:#fff;box-shadow:var(--shadow)}
-      .table tbody td{display:grid;grid-template-columns:42% 1fr;gap:.45rem;padding:.75rem .85rem !important;border:0 !important;text-align:right}
-      .table tbody td::before{content:attr(data-label);color:#64748b;font-weight:700;text-align:left}
+      .table tbody tr{display:flex;flex-wrap:wrap;align-items:center;gap:.1rem .55rem;
+        padding:.5rem .6rem;border-bottom:1px solid var(--border)}
+      .table tbody td{border:0 !important;padding:.05rem 0 !important;font-size:.8rem;
+        white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums}
+      .table tbody td:first-child{flex:1 0 100%;white-space:normal;font-size:.9rem;
+        font-weight:700;color:var(--text)}
+      .table tbody td::before{content:attr(data-label) " ";color:var(--muted);font-weight:600}
+      .table tbody td:first-child::before{content:none}
     }
   </style>
 

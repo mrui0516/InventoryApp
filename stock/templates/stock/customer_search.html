@@ -390,7 +390,17 @@
         width:100%;
       }
     }
-  </style>
+    /* KPI tiles are a summary strip, not the page's main content */
+  .snapshot-card,.metric-card{ padding:.55rem .7rem; }
+  .metric-label{ font-size:.64rem; letter-spacing:.04em; }
+  .metric-value{ margin-top:.15rem; font-size:1.2rem; }
+  .metric-sub{ margin-top:.1rem; font-size:.72rem; }
+  @media (max-width:575.98px){
+    .snapshot-grid,.stat-grid{ grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:.4rem; }
+    .snapshot-card,.metric-card{ padding:.45rem .55rem; }
+    .metric-value{ font-size:1.05rem; }
+  }
+</style>
 
   <div class="customer-shell">
     <section class="hero-card">
@@ -411,17 +421,14 @@
       <article class="metric-card">
         <div class="metric-label">Visible Customers</div>
         <div class="metric-value">{{ customer_summary.customer_count }}</div>
-        <div class="metric-sub">{% if query %}Matching this search{% else %}In the current directory{% endif %}</div>
       </article>
       <article class="metric-card">
         <div class="metric-label">Active in 60 Days</div>
         <div class="metric-value">{{ customer_summary.active_count }}</div>
-        <div class="metric-sub">Recent customers worth following up with</div>
       </article>
       <article class="metric-card">
         <div class="metric-label">No Orders Yet</div>
         <div class="metric-value">{{ customer_summary.new_count }}</div>
-        <div class="metric-sub">New or not-yet-converted customer records</div>
       </article>
       <article class="metric-card">
         {% if show_sensitive %}
@@ -431,7 +438,6 @@
         {% else %}
           <div class="metric-label">Returning Customers</div>
           <div class="metric-value">{{ customer_summary.with_orders_count }}</div>
-          <div class="metric-sub">Customers with at least one completed order</div>
         {% endif %}
       </article>
     </section>
