@@ -43,20 +43,20 @@
     </div>
     <div class="table-wrap">
       <div class="table-responsive">
-        <table class="table align-middle mb-0">
+        <table class="table align-middle mb-0 compact-rows">
           <thead>
             <tr>
-              <th>Time</th><th>Customer</th><th>Items</th><th>Payment</th><th class="text-end">Total</th><th>Actions</th>
+              <th>Customer</th><th>Time</th><th>Items</th><th>Payment</th><th class="text-end">Total</th><th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {% for o in orders %}
             <tr>
-              <td class="num">{{ o.created_hhmm }}</td>
               <td>{{ o.customer_name }}</td>
-              <td class="num">{{ o.item_count }}</td>
-              <td>{{ o.payment_label }}</td>
-              <td class="num text-end">EUR {{ o.total_amount|floatformat:2 }}</td>
+              <td class="num" data-label="">{{ o.created_hhmm }}</td>
+              <td class="num" data-label="Items">{{ o.item_count }}</td>
+              <td data-label="">{{ o.payment_label }}</td>
+              <td class="num text-end" data-label="Total">EUR {{ o.total_amount|floatformat:2 }}</td>
               <td>
                 <div class="actions">
                   <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#order-modal-{{ o.order_id }}">View</button>

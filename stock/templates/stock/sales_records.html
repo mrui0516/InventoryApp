@@ -151,28 +151,31 @@
     .summary-grid{
       display:grid;
       grid-template-columns:repeat(4, minmax(0, 1fr));
-      gap:1rem;
-      margin-bottom:1.2rem;
+      gap:.5rem;
+      margin-bottom:.8rem;
     }
     .summary-card{
-      padding:1rem 1.05rem;
+      padding:.55rem .7rem;
     }
     .summary-label{
       color:var(--muted);
-      font-weight:700;
-      font-size:.9rem;
+      font-weight:800;
+      font-size:.64rem;
+      letter-spacing:.05em;
+      text-transform:uppercase;
     }
     .summary-value{
-      margin-top:.35rem;
+      margin-top:.15rem;
       color:var(--text);
-      font-size:1.5rem;
-      font-weight:900;
+      font-size:1.2rem;
+      font-weight:800;
       line-height:1.1;
+      font-variant-numeric:tabular-nums;
     }
     .summary-sub{
-      margin-top:.3rem;
+      margin-top:.1rem;
       color:var(--muted);
-      font-size:.88rem;
+      font-size:.72rem;
       font-weight:600;
     }
     .summary-card.payments{
@@ -769,7 +772,7 @@
         grid-template-columns:1fr;
       }
       .summary-grid{
-        grid-template-columns:1fr;
+        grid-template-columns:repeat(2, minmax(0, 1fr));
       }
       .history-head,
       .order-tools{
@@ -839,13 +842,13 @@
     .cal-badge{align-self:flex-start;margin-top:.25rem;background:#2563eb;color:#fff;font-size:.7rem;font-weight:800;border-radius:.4rem;padding:.05rem .4rem;}
     .cal-empty{color:#cdd2da;font-size:.75rem;margin-top:.35rem;}
     .day-modal[hidden]{display:none;}
-    .day-modal{position:fixed;inset:0;z-index:1080;display:flex;align-items:flex-start;justify-content:center;padding:3vh 1rem;overflow:auto;}
+    .day-modal{position:fixed;inset:0;z-index:1080;display:flex;align-items:center;justify-content:center;padding:2vh 1rem;overflow:auto;}
     .day-modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.55);}
-    .day-modal-dialog{position:relative;background:#fff;border-radius:1rem;max-width:940px;width:100%;box-shadow:0 24px 60px rgba(0,0,0,.25);}
+    .day-modal-dialog{position:relative;background:#fff;border-radius:1rem;max-width:940px;width:100%;max-height:94vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.25);}
     .day-modal-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:1rem 1.25rem;border-bottom:1px solid var(--border,#e5e7eb);position:sticky;top:0;background:#fff;border-radius:1rem 1rem 0 0;}
     .day-modal-title{font-weight:900;font-size:1.05rem;color:var(--text);}
     .day-modal-close{border:0;background:transparent;font-size:1.7rem;line-height:1;cursor:pointer;color:#64748b;}
-    .day-modal-body{padding:1rem 1.25rem 1.25rem;}
+    .day-modal-body{padding:1rem 1.25rem 1.25rem;overflow:auto;-webkit-overflow-scrolling:touch;}
     @media (max-width:640px){.cal-cell{height:auto;min-height:3.6rem;}.calendar{border-spacing:3px;}.cal-search input[type=search]{min-width:11rem;}}
   </style>
 
@@ -933,13 +936,11 @@
         <div class="summary-card">
           <div class="summary-label">Average Ticket</div>
           <div class="summary-value">EUR {{ year_avg_ticket|floatformat:2 }}</div>
-          <div class="summary-sub">Across {{ year_order_count }} orders</div>
         </div>
         {% if show_profit %}
           <div class="summary-card">
             <div class="summary-label">Gross Profit</div>
             <div class="summary-value">EUR {{ year_sales_profit|floatformat:2 }}</div>
-            <div class="summary-sub">FIFO &middot; full year</div>
           </div>
         {% endif %}
         <div class="summary-card">
@@ -1011,13 +1012,11 @@
         <div class="summary-card">
           <div class="summary-label">Orders Found</div>
           <div class="summary-value">{{ total_sales_orders }}</div>
-          <div class="summary-sub">Across the selected range</div>
         </div>
       {% endif %}
       <div class="summary-card">
         <div class="summary-label">Items Sold</div>
         <div class="summary-value">{{ total_sales_qty }}</div>
-        <div class="summary-sub">Across the selected range</div>
       </div>
       <div class="summary-card">
         <div class="summary-label">{% if show_order_financials %}Average Per Order{% else %}Days Covered{% endif %}</div>
@@ -1028,7 +1027,6 @@
         <div class="summary-card">
           <div class="summary-label">Net Profit</div>
           <div class="summary-value">EUR {{ total_sales_profit|floatformat:2 }}</div>
-          <div class="summary-sub">Admin only</div>
         </div>
       {% endif %}
       {% if show_purchases %}

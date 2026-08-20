@@ -106,29 +106,32 @@
     .summary-grid{
       display:grid;
       grid-template-columns:repeat(3, minmax(0, 1fr));
-      gap:1rem;
-      margin-bottom:1rem;
+      gap:.5rem;
+      margin-bottom:.8rem;
     }
     .summary-card{
-      padding:1rem 1.1rem;
+      padding:.55rem .7rem;
     }
     .summary-label{
       color:var(--muted);
-      font-size:.88rem;
+      font-size:.64rem;
       font-weight:800;
+      letter-spacing:.05em;
+      text-transform:uppercase;
     }
     .summary-value{
-      margin-top:.35rem;
+      margin-top:.15rem;
       color:var(--text);
-      font-size:1.6rem;
-      font-weight:900;
+      font-size:1.2rem;
+      font-weight:800;
       line-height:1.1;
+      font-variant-numeric:tabular-nums;
     }
     .summary-sub{
-      margin-top:.3rem;
+      margin-top:.1rem;
       color:var(--muted);
-      font-size:.88rem;
-      font-weight:700;
+      font-size:.72rem;
+      font-weight:600;
     }
 
     .section-head{
@@ -672,9 +675,11 @@
 
     @media (max-width: 575.98px){
       .hero-grid,
-      .summary-grid,
       .ar-grid{
         grid-template-columns:1fr;
+      }
+      .summary-grid{
+        grid-template-columns:repeat(2, minmax(0, 1fr));
       }
       .hero-actions,
       .order-tools{
@@ -767,18 +772,15 @@
       <div class="summary-card">
         <div class="summary-label">Total Spent</div>
         <div class="summary-value">€{{ total_spent|floatformat:2 }}</div>
-        <div class="summary-sub">Across all completed orders</div>
       </div>
       <div class="summary-card">
         <div class="summary-label">Average Order</div>
         <div class="summary-value">EUR {{ average_order_value|floatformat:2 }}</div>
-        <div class="summary-sub">Average basket value for this customer</div>
       </div>
     {% endif %}
     <div class="summary-card">
       <div class="summary-label">Total Orders</div>
       <div class="summary-value">{{ total_orders }}</div>
-      <div class="summary-sub">Grouped by month, date, and time</div>
     </div>
     <div class="summary-card">
       <div class="summary-label">Last Order</div>
@@ -800,7 +802,6 @@
     <div class="summary-card">
       <div class="summary-label">Total Items</div>
       <div class="summary-value">{{ total_items }}</div>
-      <div class="summary-sub">Units sold to this customer</div>
     </div>
     <div class="summary-card">
       <div class="summary-label">Customer Since</div>
@@ -815,20 +816,17 @@
     <div class="summary-card">
       <div class="summary-label">Orders / Month</div>
       <div class="summary-value">{% if cadence.orders_per_month is not None %}{{ cadence.orders_per_month }}{% else %}-{% endif %}</div>
-      <div class="summary-sub">Average ordering frequency</div>
     </div>
     {% if show_sales_sensitive %}
       <div class="summary-card">
         <div class="summary-label">Largest Order</div>
         <div class="summary-value">EUR {{ largest_order_total|floatformat:2 }}</div>
-        <div class="summary-sub">Highest single order value recorded</div>
       </div>
     {% endif %}
     {% if show_profit %}
       <div class="summary-card">
         <div class="summary-label">Net Profit</div>
         <div class="summary-value">€{{ total_profit|floatformat:2 }}</div>
-        <div class="summary-sub">Admin only</div>
       </div>
     {% endif %}
   </div>
@@ -1126,7 +1124,7 @@
 
   {% if show_sensitive %}
     <div class="modal fade" id="deleteCustomerModal" tabindex="-1" aria-hidden="true">
-      <div class="modal-dialog">
+      <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
         <form method="post" action="{% url 'delete_customer' customer.id %}" class="modal-content">
           {% csrf_token %}
           <div class="modal-header">
