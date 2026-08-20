@@ -105,8 +105,9 @@
 
 ## 6. 现状与遗留（2026-08-20）
 
-- 共享层 `app.css` 约 35 KB / 180 个类；**页面内联 CSS 仍有约 138 KB，分布在 30 个模板**。
-- **125 个类名在多个模板里重复定义**，其中 **20 个与 app.css 冲突**（内联写在 content 区块，优先级更高 → 改 app.css 传不到这些页面）。
+- 共享层 `app.css` 约 36 KB / 180 个类；**页面内联 CSS 约 137 KB，分布在 30 个模板**。
+- 与 app.css 冲突的选择器：**首轮清理前 57 个 → 现在 43 个**。已清掉：8 条与 app.css 逐字相同的重复规则，以及 6 个页面对核心元素的私自改写（`.btn` 圆角、`.btn-primary` 光晕、写死颜色的 `.page-title`、重复的 `.pos-title`）。
+- 余下 43 个多为**有意的页面变体**（`.chip`/`.pill` 尺寸、`.table thead th` 配色、打印用 `.pos-title`），需逐页目视确认后再并入或改名收敛。
 - 因此：**新页面按本文写即可**；旧页面要逐个把内联样式并入 app.css 才能真正统一，需逐页目视确认，属于渐进任务。
 
 优先清理顺序（按内联体积）：`outbound` 22KB → `sales_records` 20KB → `customer_detail` 16KB → `inbound` 10KB → `customer_search` 9KB → `catalog` 9KB。

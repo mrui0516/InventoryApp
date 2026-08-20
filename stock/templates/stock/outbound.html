@@ -316,13 +316,6 @@
 <style>
   /* --ds-* design tokens inherited from app.css (canonical dense-flat) */
 
-  .pos-title{
-    font-family:var(--font-display);
-    font-size:1.75rem;
-    font-weight:700;
-    letter-spacing:-.01em;
-    color:var(--app-text);
-  }
   .checkout-shell{ display:block; }
   /* Single column: the cart gets the full width and the running total lives in
      the sticky checkout bar, so confirming never requires scrolling to the end. */
@@ -352,39 +345,11 @@
     padding:1.1rem 1.15rem;
     min-width:0;            /* grid item: prevent min-content (the cart table) from forcing width */
   }
-  .operation-card .table-responsive{ overflow-x:auto; }
   /* customer is a single compact row, not a full section */
   .cust-card{ padding:.7rem .8rem; }
   .cust-card .lm-label{ display:block; margin-bottom:.25rem; }
-  .operation-card-head{
-    display:flex;
-    justify-content:space-between;
-    gap:1rem;
-    align-items:center;
-    flex-wrap:wrap;
-    margin-bottom:.9rem;
-  }
-  .operation-title{
-    margin:0;
-    color:var(--app-text);
-    font-size:1.05rem;
-    font-weight:700;
-    letter-spacing:-.01em;
-  }
   .operation-copy{ margin:0; color:var(--app-muted); }
   .summary-badge-row{ display:flex; gap:.55rem; flex-wrap:wrap; }
-  .summary-badge{
-    display:inline-flex;
-    align-items:center;
-    padding:.24rem .66rem;
-    border-radius:999px;
-    background:var(--app-surface-2);
-    border:1px solid var(--app-border);
-    color:var(--app-muted);
-    font-size:.8rem;
-    font-weight:700;
-    font-variant-numeric:tabular-nums;
-  }
   .guardrail-note{
     padding:.75rem .85rem;
     border-radius:var(--app-radius-sm);
@@ -684,12 +649,6 @@
     display:block;
     cursor:zoom-in;
   }
-  .cart-product-thumb{
-    width:100%;
-    height:100%;
-    object-fit:cover;
-    display:block;
-  }
   .cart-product-thumb-empty{
     display:grid;
     place-items:center;
@@ -698,9 +657,6 @@
     font-weight:700;
     text-align:center;
     padding:.25rem;
-  }
-  .cart-product-main{
-    min-width:0;
   }
 
   /* 提交按钮 */
