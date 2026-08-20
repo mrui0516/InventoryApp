@@ -1,0 +1,22 @@
+<div class="ord-item">
+  {% if item.image_url %}
+    <button type="button" class="ord-thumb js-open-image-modal" style="padding:0;border:0;background:none"
+            data-image-url="{{ item.image_url }}" data-image-label="{{ item.display_name }}">
+      <img src="{{ item.image_url }}" alt="" class="ord-thumb" loading="lazy">
+    </button>
+  {% else %}
+    <div class="ord-thumb ord-thumb-empty">&mdash;</div>
+  {% endif %}
+  <div class="ord-name">
+    {% if item.product %}<a href="{% url 'product_detail' item.product.id %}">{{ item.display_name }}</a>{% else %}{{ item.display_name }}{% endif %}
+    <div class="ord-code">
+      {% if item.product %}{{ item.product.barcode }}{% endif %}
+      {% if item.edit_url %}<a href="{{ item.edit_url }}">Adjust</a>{% endif %}
+    </div>
+  </div>
+  <div class="ord-fig">
+    <span class="ord-qty">&times;{{ item.quantity }}</span>
+    <span class="ord-total">EUR {{ item.line_total|floatformat:2 }}</span>
+    <span class="ord-pay">@ {{ item.cost_price|floatformat:2 }}</span>
+  </div>
+</div>

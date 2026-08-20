@@ -791,34 +791,6 @@
         flex-direction:column;
         align-items:flex-start;
       }
-      .item-table thead{
-        display:none;
-      }
-      .item-table,
-      .item-table tbody,
-      .item-table tr,
-      .item-table td{
-        display:block;
-        width:100%;
-      }
-      .item-table tr{
-        border-top:1px solid #eef2f7;
-        padding:.75rem 0;
-      }
-      .item-table td{
-        border:0;
-        padding:.2rem 0;
-      }
-      .item-table td::before{
-        content:attr(data-label);
-        display:block;
-        color:var(--muted);
-        font-size:.76rem;
-        font-weight:800;
-        text-transform:uppercase;
-        letter-spacing:.03em;
-        margin-bottom:.1rem;
-      }
     }
 
     /* --- Month calendar --- */
@@ -962,13 +934,13 @@
       <section class="top-card">
         <h3 style="margin:0 0 .6rem;font-size:1.05rem;font-weight:900;color:var(--text);">Monthly Breakdown</h3>
         <div class="table-responsive">
-          <table class="table item-table mb-0">
+          <table class="table item-table mb-0 compact-rows">
             <thead>
               <tr>
                 <th>Month</th>
+                <th class="text-end">Sales</th>
                 <th class="text-center">Orders</th>
                 <th class="text-center">Items</th>
-                <th class="text-end">Sales</th>
                 {% if show_profit %}<th class="text-end">Profit</th>{% endif %}
                 <th class="text-end">Avg</th>
                 <th></th>
@@ -978,11 +950,11 @@
               {% for row in monthly_rows %}
                 <tr>
                   <td class="fw-bold">{{ row.label }}</td>
-                  <td class="text-center">{{ row.order_count }}</td>
-                  <td class="text-center">{{ row.qty }}</td>
-                  <td class="text-end fw-bold">EUR {{ row.amount|floatformat:2 }}</td>
-                  {% if show_profit %}<td class="text-end">EUR {{ row.profit|floatformat:2 }}</td>{% endif %}
-                  <td class="text-end">EUR {{ row.avg_ticket|floatformat:2 }}</td>
+                  <td class="text-end fw-bold" data-label="">EUR {{ row.amount|floatformat:2 }}</td>
+                  <td class="text-center" data-label="Orders">{{ row.order_count }}</td>
+                  <td class="text-center" data-label="Items">{{ row.qty }}</td>
+                  {% if show_profit %}<td class="text-end" data-label="Profit">EUR {{ row.profit|floatformat:2 }}</td>{% endif %}
+                  <td class="text-end" data-label="Avg">EUR {{ row.avg_ticket|floatformat:2 }}</td>
                   <td class="text-end">{% if row.order_count %}<a class="btn btn-sm btn-outline-secondary" href="{{ row.detail_url }}">Open</a>{% endif %}</td>
                 </tr>
               {% endfor %}
@@ -1288,57 +1260,14 @@
                         <a href="{{ row.edit_url }}" class="btn btn-sm btn-outline-primary">Adjust record</a>
                       </div>
                     {% endif %}
-                    <div class="table-responsive">
-                      <table class="table item-table">
-                        <thead>
-                          <tr>
-                            <th>Image</th>
-                            <th>Product</th>
-                            <th>Barcode</th>
-                            <th>Qty</th>
-                            <th>Unit Cost</th>
-                            <th>Subtotal</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {% for item in row.items %}
-                            <tr>
-                              <td data-label="Image" class="item-photo-cell">
-                                {% if item.image_url %}
-                                  <button type="button" class="item-photo-btn js-open-image-modal" data-image-url="{{ item.image_url }}" data-image-label="{{ item.display_name }}">
-                                    <img src="{{ item.image_url }}" alt="{{ item.display_name }}">
-                                    <span class="zoom-label">Zoom</span>
-                                  </button>
-                                {% else %}
-                                  <div class="item-photo-placeholder">No image</div>
-                                {% endif %}
-                              </td>
-                              <td data-label="Product">
-                                <div class="item-name">
-                                  {% if item.product %}
-                                    <a href="{% url 'product_detail' item.product.id %}">{{ item.display_name }}</a>
-                                  {% else %}
-                                    {{ item.display_name }}
-                                  {% endif %}
-                                </div>
-                              </td>
-                              <td data-label="Barcode">
-                                <div class="item-code">{% if item.product %}{{ item.product.barcode }}{% else %}-{% endif %}</div>
-                              </td>
-                              <td data-label="Qty"><span class="num">{{ item.quantity }}</span></td>
-                              <td data-label="Unit Cost"><span class="num">€{{ item.cost_price|floatformat:2 }}</span></td>
-                              <td data-label="Subtotal"><span class="num">€{{ item.line_total|floatformat:2 }}</span></td>
-                              <td data-label="Action">
-                                {% if item.edit_url %}
-                                  <a href="{{ item.edit_url }}" class="btn btn-sm btn-outline-secondary">Adjust</a>
-                                {% else %}
-                                  <span class="muted-note">Header</span>
-                                {% endif %}
-                              </td>
-                            </tr>
-                          {% endfor %}
-                        </tbody>
-                      </table>
+                    <div class="ord-items">
+                      {% for item in row.items|slice:":3" %}{% include "stock/_purchase_order_item.html" %}{% endfor %}
+                      {% if row.items|length > 3 %}
+                        <details class="ord-more">
+                          <summary>{{ row.items|length|add:"-3" }} more</summary>
+                          {% for item in row.items|slice:"3:" %}{% include "stock/_purchase_order_item.html" %}{% endfor %}
+                        </details>
+                      {% endif %}
                     </div>
                   </div>
                 </details>
