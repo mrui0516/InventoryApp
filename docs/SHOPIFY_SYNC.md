@@ -149,10 +149,10 @@ All Shopify variants are fetched once; only real changes write. Price sets the
 | Variant | Available set to |
 |---|---|
 | 100ml | `max(N − 2, 0)` — the last 2 bottles are shop samples, so ≤2 → out of stock |
-| 10ml / 5ml | `99` while any stock exists (N ≥ 1 — a sample can be decanted), else `0` |
+| 10ml / 5ml | `10` while any stock exists (N ≥ 1 — a sample can be decanted), else `0` |
 
 Products without decant variants just get 100ml = `N`. The reserve (2) and decant
-availability (99) are `DECANT_RESERVE` / `DECANT_AVAILABLE` in `shopify_sync.py`.
+availability (10) are `DECANT_RESERVE` / `DECANT_AVAILABLE` in `shopify_sync.py`.
 
 **Real-time:** set `SHOPIFY_INVENTORY_SYNC=1` in the environment. Then, after the
 DB commit:

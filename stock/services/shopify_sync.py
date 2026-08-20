@@ -54,7 +54,7 @@ def _price_str(value):
 # bottles are reserved for decanting (100ml hidden) while the 10ml/5ml stay
 # available as long as any bottle exists.
 DECANT_RESERVE = 2          # full bottles kept back; 100ml shows on-hand minus this
-DECANT_AVAILABLE = 99       # 10ml/5ml available quantity while any bottle exists
+DECANT_AVAILABLE = 10       # 10ml/5ml available quantity while any bottle exists
 DECANT_SUFFIXES = ('-10ML', '-5ML')
 
 

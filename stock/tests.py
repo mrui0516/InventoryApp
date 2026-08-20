@@ -1424,6 +1424,29 @@ class EmployeeProductEditExportTests(TestCase):
         }
         self.assertIn('"EUR" #,##0.00', format_codes)
 
+    def test_delete_keeps_every_record_and_only_clears_photos(self):
+        """Regression: 'delete' used to cascade the product (and, forced, its
+        purchase + sales history and any emptied order) away. The books must
+        survive - only the photos go."""
+        manager = get_user_model().objects.create_superuser("del_mgr", password="pw123456")
+        self.client.login(username="del_mgr", password="pw123456")
+        Purchase.objects.create(product=self.product, supplier=None, quantity=4,
+                                cost_price=Decimal("3.00"), remaining=4)
+        order = SaleOrder.objects.create()
+        Sale.objects.create(order=order, product=self.product, quantity=1,
+                            unit_price=Decimal("9.90"), payment_method="cash")
+        from stock.models import ProductImage
+        ProductImage.objects.create(product=self.product, image="products/x.jpg")
+
+        resp = self.client.post(reverse("delete_product", args=[self.product.pk]))
+
+        self.assertEqual(resp.status_code, 302)
+        self.product.refresh_from_db()                       # product still there
+        self.assertEqual(self.product.purchase_set.count(), 1)
+        self.assertEqual(self.product.sale_set.count(), 1)
+        self.assertTrue(SaleOrder.objects.filter(pk=order.pk).exists())
+        self.assertEqual(self.product.images.count(), 0)     # photos gone
+
     def test_employee_still_blocked_from_deletes_and_shopify_export(self):
         self.client.login(username="edit_emp", password="pw123456")
         for resp in [
@@ -4612,10 +4635,10 @@ class DecantInventoryLogicTests(SimpleTestCase):
         from stock.services.shopify_sync import _inventory_targets
         present = {"B1", "B1-10ML", "B1-5ML"}
         # decants available while any stock (a sample) exists; only N=0 hides them
-        self.assertEqual(_inventory_targets("B1", 5, present), {"B1": 3, "B1-10ML": 99, "B1-5ML": 99})
-        self.assertEqual(_inventory_targets("B1", 3, present), {"B1": 1, "B1-10ML": 99, "B1-5ML": 99})
-        self.assertEqual(_inventory_targets("B1", 2, present), {"B1": 0, "B1-10ML": 99, "B1-5ML": 99})
-        self.assertEqual(_inventory_targets("B1", 1, present), {"B1": 0, "B1-10ML": 99, "B1-5ML": 99})
+        self.assertEqual(_inventory_targets("B1", 5, present), {"B1": 3, "B1-10ML": 10, "B1-5ML": 10})
+        self.assertEqual(_inventory_targets("B1", 3, present), {"B1": 1, "B1-10ML": 10, "B1-5ML": 10})
+        self.assertEqual(_inventory_targets("B1", 2, present), {"B1": 0, "B1-10ML": 10, "B1-5ML": 10})
+        self.assertEqual(_inventory_targets("B1", 1, present), {"B1": 0, "B1-10ML": 10, "B1-5ML": 10})
         self.assertEqual(_inventory_targets("B1", 0, present), {"B1": 0, "B1-10ML": 0, "B1-5ML": 0})
 
     def test_targets_no_decant_uses_full_onhand(self):
@@ -4642,7 +4665,7 @@ class DecantInventoryPushTests(TestCase):
             p, client, do_price=False, do_inventory=True, shop_variants=sv, location_id="L")
         self.assertEqual(code, shopify_sync.INV_UPDATED)
         calls = {c.args[0]: c.args[2] for c in client.set_inventory_available.call_args_list}
-        self.assertEqual(calls, {"I0": 3, "I1": 99, "I2": 99})  # 100ml=5-2=3, decants=99
+        self.assertEqual(calls, {"I0": 3, "I1": 10, "I2": 10})  # 100ml=5-2=3, decants=10
 
     def test_untracked_decant_is_made_tracked_and_deny(self):
         # French Avenue case: decant is untracked + CONTINUE at qty 0, so it stays
@@ -4689,7 +4712,7 @@ class DecantInventoryPushTests(TestCase):
             p, client, do_price=False, do_inventory=True)  # shop_variants=None -> lookup
         self.assertEqual(code, shopify_sync.INV_UPDATED)
         calls = {c.args[0]: c.args[2] for c in client.set_inventory_available.call_args_list}
-        self.assertEqual(calls, {"I0": 3, "I1": 99, "I2": 99})  # N=5 -> 100ml=3, decants=99
+        self.assertEqual(calls, {"I0": 3, "I1": 10, "I2": 10})  # N=5 -> 100ml=3, decants=10
 
 
 class BackupDbCommandTests(TestCase):

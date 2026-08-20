@@ -305,40 +305,19 @@
 <section class="danger-zone mb-4">
   <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
     <div>
-      <h3 class="danger-title">Delete Product</h3>
-      <p class="danger-copy">Remove this product only if it was created by mistake and has no purchase or sales history.</p>
-      {% if can_delete_product %}
-        <p class="danger-note mb-0">This product can be deleted now. Images linked to it will be removed too.</p>
-      {% elif can_force_delete_product %}
-        <p class="danger-note mb-0">
-          This product already has history. You can still force delete it as admin, but that will also remove linked purchase and sales records.
-        </p>
-      {% else %}
-        <p class="danger-note mb-0">
-          Delete is locked because this product already has
-          {{ purchase_count }} purchase record{{ purchase_count|pluralize }}
-          and
-          {{ sale_count }} sales record{{ sale_count|pluralize }}.
-        </p>
-      {% endif %}
+      <h3 class="danger-title">Remove Photos</h3>
+      <p class="danger-note mb-0">
+        Clears this product's photos. The product, its
+        {{ purchase_count }} purchase record{{ purchase_count|pluralize }} and
+        {{ sale_count }} sales record{{ sale_count|pluralize }} are kept.
+      </p>
     </div>
 
-    {% if can_delete_product %}
-      <form method="post" action="{% url 'delete_product' product.id %}" onsubmit="return confirm('Delete this product permanently? This cannot be undone.');">
-        {% csrf_token %}
-        <input type="hidden" name="return_querystring" value="{{ request.GET.urlencode }}">
-        <button type="submit" class="btn btn-danger">Delete Product</button>
-      </form>
-    {% elif can_force_delete_product %}
-      <form method="post" action="{% url 'delete_product' product.id %}" onsubmit="return confirm('Force delete this product and all linked purchase and sales history? This cannot be undone.');">
-        {% csrf_token %}
-        <input type="hidden" name="return_querystring" value="{{ request.GET.urlencode }}">
-        <input type="hidden" name="force_delete" value="1">
-        <button type="submit" class="btn btn-danger">Force Delete Product</button>
-      </form>
-    {% else %}
-      <button type="button" class="btn btn-outline-danger" disabled>Delete Locked</button>
-    {% endif %}
+    <form method="post" action="{% url 'delete_product' product.id %}" onsubmit="return confirm('Remove this product’s photos? Sales history and all other records are kept.');">
+      {% csrf_token %}
+      <input type="hidden" name="return_querystring" value="{{ request.GET.urlencode }}">
+      <button type="submit" class="btn btn-outline-danger">Remove Photos</button>
+    </form>
   </div>
 </section>
 {% endif %}

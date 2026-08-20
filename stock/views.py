@@ -1854,8 +1854,6 @@ def edit_product_view(request, pk):
     purchases = product.purchase_set.all().order_by('-date')
     purchase_count = product.purchase_set.count()
     sale_count = product.sale_set.count()
-    can_delete_product = purchase_count == 0 and sale_count == 0
-    can_force_delete_product = request.user.is_superuser
     # total available stock (sum of remaining from all batches)
     total_stock = purchases.aggregate(s=Coalesce(Sum('remaining'), Value(0), output_field=IntegerField()))['s'] or 0
 
@@ -1867,8 +1865,6 @@ def edit_product_view(request, pk):
         'total_stock': total_stock,
         'purchase_count': purchase_count,
         'sale_count': sale_count,
-        'can_delete_product': can_delete_product,
-        'can_force_delete_product': can_force_delete_product,
         'brand_series_map_json': json.dumps(build_brand_series_map()),
         'brand_catalog_json': json.dumps(build_brand_catalog()),
     })
@@ -1878,101 +1874,38 @@ def edit_product_view(request, pk):
 @login_required
 @manager_required
 def delete_product_view(request, pk):
+    """Retire a product without destroying anything.
+
+    Deleting used to cascade the product away (and, with force_delete, its
+    purchase and sales history plus any order left empty). Sales history is the
+    books, so nothing is removed any more: this only clears the product's
+    photos. The product, its batches, its sales and their orders all stay, so
+    reporting and profit are unaffected."""
     product = get_object_or_404(Product, pk=pk)
-    purchase_count = product.purchase_set.count()
-    sale_count = product.sale_set.count()
     query_string = request.POST.get('return_querystring', '').strip()
-    force_delete = request.POST.get('force_delete') == '1'
 
-    if (purchase_count or sale_count) and not (force_delete and request.user.is_superuser):
-        blockers = []
-        if purchase_count:
-            blockers.append(f'{purchase_count} purchase record{"s" if purchase_count != 1 else ""}')
-        if sale_count:
-            blockers.append(f'{sale_count} sales record{"s" if sale_count != 1 else ""}')
-        messages.error(
-            request,
-            f'Cannot delete "{product.display_name}" because it still has '
-            + ' and '.join(blockers)
-            + '.'
-        )
-        edit_url = reverse('edit_product', args=[product.pk])
-        if query_string:
-            edit_url = f'{edit_url}?{query_string}'
-        return redirect(edit_url)
-
-    product_name = product.display_name
-    sale_dates = list(product.sale_set.dates('date', 'day'))
-    affected_order_ids = list(
-        product.sale_set.exclude(order_id__isnull=True).values_list('order_id', flat=True).distinct()
-    )
-    affected_inbound_ids = list(
-        product.purchase_set.exclude(inbound_order_id__isnull=True).values_list('inbound_order_id', flat=True).distinct()
-    )
     image_count = product.images.count()
-
     with transaction.atomic():
         for image in list(product.images.all()):
             if image.image:
                 image.image.delete(save=False)
+        product.images.all().delete()
 
-        product.delete()
-
-        empty_order_count = 0
-        if affected_order_ids:
-            empty_orders = list(
-                SaleOrder.objects.filter(id__in=affected_order_ids)
-                .annotate(item_count=Count('items'))
-                .filter(item_count=0)
-            )
-            empty_order_count = len(empty_orders)
-            if empty_orders:
-                SaleOrder.objects.filter(id__in=[order.id for order in empty_orders]).delete()
-
-        empty_inbound_count = 0
-        if affected_inbound_ids:
-            inbound_orders = list(InboundOrder.objects.filter(id__in=affected_inbound_ids).prefetch_related('items'))
-            empty_inbound_ids = []
-            for inbound_order in inbound_orders:
-                items = list(inbound_order.items.all())
-                if not items:
-                    empty_inbound_ids.append(inbound_order.id)
-                    continue
-                inbound_order.total_amount = sum(
-                    (Decimal(item.quantity) * item.cost_price for item in items),
-                    Decimal('0.00'),
-                )
-                inbound_order.save(update_fields=['total_amount'])
-            if empty_inbound_ids:
-                empty_inbound_count = len(empty_inbound_ids)
-                InboundOrder.objects.filter(id__in=empty_inbound_ids).delete()
-
-    if force_delete and request.user.is_superuser and (purchase_count or sale_count):
+    if image_count:
         messages.success(
             request,
-            f'Product "{product_name}" force-deleted with {purchase_count} purchase record'
-            f'{"s" if purchase_count != 1 else ""}, {sale_count} sales record'
-            f'{"s" if sale_count != 1 else ""}, and {image_count} image'
-            f'{"s" if image_count != 1 else ""} removed.'
-            + (
-                f' Cleaned up {empty_order_count} empty order{"s" if empty_order_count != 1 else ""}'
-                f' and {empty_inbound_count} empty inbound order{"s" if empty_inbound_count != 1 else ""}.'
-                if empty_order_count or empty_inbound_count else ''
-            )
+            f'Removed {image_count} photo{"s" if image_count != 1 else ""} from '
+            f'"{product.display_name}". All records were kept.'
         )
     else:
-        messages.success(request, f'Product "{product_name}" deleted.')
+        messages.info(request, f'"{product.display_name}" has no photos to remove.')
 
-    product_list_url = reverse('product_list')
+    edit_url = reverse('edit_product', args=[product.pk])
     if query_string:
-        product_list_url = f'{product_list_url}?{query_string}'
-    return redirect(product_list_url)
+        edit_url = f'{edit_url}?{query_string}'
+    return redirect(edit_url)
 
 
-# -----------------------------
-# 前端查条码（用于入/出库页）
-# 这里返回库存、最近进价等；前端想隐藏展示也没问题
-# -----------------------------
 @login_required
 def dashboard_view(request):
     isManger = has_manager_access(request.user)
