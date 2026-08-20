@@ -315,6 +315,8 @@
     .order-entry summary::-webkit-details-marker{
       display:none;
     }
+    .order-top{ display:flex; align-items:baseline; gap:.5rem; flex-wrap:wrap; }
+    .order-customer-main{ font-weight:700; }
     .order-summary{
       display:grid;
       grid-template-columns:minmax(0, 1fr) auto;
@@ -1160,19 +1162,14 @@
                 <summary class="order-summary">
                   <div class="order-summary-main">
                     <div class="order-summary-text">
-                      <div class="order-identity">
-                        <span class="identity-label">Customer</span>
+                      <div class="order-top">
+                        <span class="order-badge">{% if row.order_id %}#{{ row.order_id }}{% else %}Legacy{% endif %}</span>
+                        <span class="order-time">{{ row.created_at|date:"H:i" }}</span>
                         {% if row.customer_detail_url %}
                           <a href="{{ row.customer_detail_url }}" class="order-customer-main">{{ row.customer_name }}</a>
                         {% else %}
                           <span class="order-customer-main">{{ row.customer_name }}</span>
                         {% endif %}
-                      </div>
-                      <div class="order-top">
-                        <span class="order-badge">
-                          {% if row.order_id %}Order #{{ row.order_id }}{% else %}Legacy Sale{% endif %}
-                        </span>
-                        <span class="order-time">{{ row.created_at|date:"Y-m-d H:i" }}</span>
                       </div>
                     </div>
                   </div>
@@ -1185,10 +1182,7 @@
                         {% endif %}
                       </div>
                     {% endif %}
-                    <div class="expand-control">
-                      <span class="expand-label">Details</span>
-                      <span class="order-arrow" aria-hidden="true"></span>
-                    </div>
+                    <span class="order-arrow" aria-hidden="true"></span>
                   </div>
                 </summary>
 
@@ -1198,65 +1192,14 @@
                       <a href="{{ row.detail_url }}" class="btn btn-sm btn-outline-secondary">Print</a>
                     </div>
                   {% endif %}
-                  <div class="table-responsive">
-                    <table class="table item-table">
-                      <thead>
-                        <tr>
-                          <th>Image</th>
-                          <th>Product</th>
-                          <th>Barcode</th>
-                          <th>Qty</th>
-                          {% if show_order_financials %}
-                            <th>Unit Price</th>
-                            <th>Payment</th>
-                            <th>Subtotal</th>
-                            <th>Action</th>
-                          {% endif %}
-                          {% if show_profit %}
-                            <th>Net Profit</th>
-                          {% endif %}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {% for item in row.items_today %}
-                          <tr>
-                            <td data-label="Image" class="item-photo-cell">
-                              {% if item.image_url %}
-                                <button type="button" class="item-photo-btn js-open-image-modal" data-image-url="{{ item.image_url }}" data-image-label="{{ item.display_name }}">
-                                  <img src="{{ item.image_url }}" alt="{{ item.display_name }}">
-                                  <span class="zoom-label">Zoom</span>
-                                </button>
-                              {% else %}
-                                <div class="item-photo-placeholder">No image</div>
-                              {% endif %}
-                            </td>
-                            <td data-label="Product">
-                              <div class="item-name">
-                                {% if item.product %}
-                                  <a href="{% url 'product_detail' item.product.id %}">{{ item.display_name }}</a>
-                                {% else %}
-                                  {{ item.display_name }}
-                                {% endif %}
-                              </div>
-                            </td>
-                            <td data-label="Barcode">
-                              <div class="item-code">{% if item.product %}{{ item.product.barcode }}{% else %}-{% endif %}</div>
-                            </td>
-                            <td data-label="Qty"><span class="num">{{ item.quantity }}</span></td>
-                            {% if show_order_financials %}
-                              <td data-label="Unit Price"><span class="num">EUR {{ item.unit_price|floatformat:2 }}</span></td>
-                              <td data-label="Payment"><span class="pay-pill">{{ item.payment_label }}</span></td>
-                              <td data-label="Subtotal"><span class="num">EUR {{ item.line_total|floatformat:2 }}</span></td>
-                            {% endif %}
-                            {% if show_profit %}
-                              <td data-label="Net Profit">
-                                <span class="num {% if item.line_profit < 0 %}text-danger{% endif %}">EUR {{ item.line_profit|floatformat:2 }}</span>
-                              </td>
-                            {% endif %}
-                          </tr>
-                        {% endfor %}
-                      </tbody>
-                    </table>
+                  <div class="ord-items">
+                    {% for item in row.items_today|slice:":3" %}{% include "stock/_daily_order_item.html" %}{% endfor %}
+                    {% if row.items_today|length > 3 %}
+                      <details class="ord-more">
+                        <summary>{{ row.items_today|length|add:"-3" }} more</summary>
+                        {% for item in row.items_today|slice:"3:" %}{% include "stock/_daily_order_item.html" %}{% endfor %}
+                      </details>
+                    {% endif %}
                   </div>
                 </div>
               </details>

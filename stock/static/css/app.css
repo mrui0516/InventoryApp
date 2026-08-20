@@ -464,6 +464,26 @@ body.anon .erp-content{
   .compact-rows tbody td .btn{ margin-top:.25rem; }
 }
 
+/* --- order line items (shared by /today and the sales records page) ---
+   Used with the stock/_daily_order_item.html partial: thumb | wrapping
+   product identity | right-aligned figures. Items past the third fold
+   into an .ord-more disclosure. */
+.ord-items{ margin-top:.5rem; border-top:1px dashed var(--app-border); padding-top:.5rem; display:grid; gap:.4rem; }
+.ord-item{ display:grid; grid-template-columns:34px minmax(0,1fr) auto; gap:.55rem; align-items:center; }
+.ord-thumb{ width:34px; height:34px; border-radius:.45rem; object-fit:cover; border:1px solid var(--app-border); background:var(--app-surface-2); }
+.ord-thumb-empty{ display:grid; place-items:center; color:var(--app-muted); font-size:.7rem; }
+.ord-name{ min-width:0; font-size:.88rem; }
+.ord-name a{ color:var(--app-text); text-decoration:none; font-weight:600; }
+.ord-code{ color:var(--app-muted); font-size:.7rem; font-variant-numeric:tabular-nums; }
+.ord-fig{ display:flex; align-items:baseline; gap:.55rem; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.ord-qty{ color:var(--app-muted); font-size:.82rem; }
+.ord-total{ font-weight:700; font-size:.86rem; }
+.ord-pay,.ord-profit{ color:var(--app-muted); font-size:.72rem; font-weight:700; }
+.ord-profit.neg{ color:var(--app-danger); }
+.ord-more{ margin-top:.1rem; }
+.ord-more > summary{ cursor:pointer; color:var(--app-accent-ink); font-size:.8rem; font-weight:700; padding:.2rem 0; }
+.ord-more[open] > summary{ margin-bottom:.35rem; }
+
 /* --- operation pages (inbound / outbound) ---
    These lived only inside outbound.html, so inbound used the same class names
    with no surface at all and its panels blended into the page background. */

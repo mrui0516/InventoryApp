@@ -55,6 +55,7 @@
 | 表单/筛选 | `toolbar` `toolbar-grid` `toolbar-label` `check-row` `form-actions` |
 | 产品行 | `inline-product` + `inline-product-thumb(-wrap/-empty)`、`product-block` `thumb` |
 | 订单卡（今日/历史） | `order-card` `order-card-head/meta/items/actions` `order-item*` |
+| **订单行明细** | `ord-items` + `{% include "stock/_daily_order_item.html" %}`，超过 3 条用 `ord-more` 折叠（/today 与销售记录页共用） |
 | 空状态/弱化文字 | `tiny` `muted` `sub` |
 
 **数字对齐**：金额/数量列加 `num`（或 `text-end`）即得等宽数字，不会跳动。
