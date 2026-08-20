@@ -1,27 +1,29 @@
 {% extends "stock/base.html" %}
-{% block title %}Login{% endblock %}
+{% block title %}Sign in{% endblock %}
 
 {% block content %}
-<div class="container" style="max-width:420px; margin-top:5rem;">
-  <div class="card shadow-sm p-4">
-    <h1 class="h3 mb-3 text-center">Login</h1>
-    <form method="post" novalidate>
-      {% csrf_token %}
-      <div class="mb-3">
-        <label for="login-username" class="form-label">Username</label>
-        <input type="text" id="login-username" name="username" class="form-control" required autofocus>
-      </div>
-      <div class="mb-3">
-        <label for="login-password" class="form-label">Password</label>
-        <input type="password" id="login-password" name="password" class="form-control" required>
-      </div>
+<div class="auth-card">
+  <div class="auth-brand">KHAN<span>PERFUME</span></div>
+  <div class="auth-title">Staff sign in</div>
 
-      {% if form.errors %}
-        <div class="alert alert-danger small">Invalid username or password.</div>
-      {% endif %}
+  <form method="post" novalidate>
+    {% csrf_token %}
+    <div class="mb-3">
+      <label for="login-username" class="form-label">Username</label>
+      <input type="text" id="login-username" name="username" class="form-control"
+             autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus>
+    </div>
+    <div class="mb-3">
+      <label for="login-password" class="form-label">Password</label>
+      <input type="password" id="login-password" name="password" class="form-control"
+             autocomplete="current-password" required>
+    </div>
 
-      <button type="submit" class="btn btn-primary w-100">Login</button>
-    </form>
-  </div>
+    {% if form.errors %}
+      <div class="alert alert-danger small py-2">Invalid username or password.</div>
+    {% endif %}
+
+    <button type="submit" class="btn btn-primary">Sign in</button>
+  </form>
 </div>
 {% endblock %}

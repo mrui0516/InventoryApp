@@ -4,62 +4,80 @@
 {% block content %}
 <style>
   .panel{background:#fff;border:1px solid var(--app-border);border-radius:var(--app-radius);box-shadow:var(--app-shadow)}
-  .hero{padding:1.35rem}
-  .hero h1{margin:0;font-size:2rem;font-weight:900;color:var(--app-text)}
+  .hero{padding:.9rem 1.05rem}
+  .hero h1{margin:0;font-size:1.35rem;font-weight:800;color:var(--app-text)}
   .sub{color:var(--app-muted)}
-  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem}
-  .stat{padding:1rem 1.1rem;border-radius:1rem;background:linear-gradient(180deg,#f8fbff,#eef4fb);border:1px solid #d5e2f0}
-  .stat-k{font-size:.78rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#52719a}
-  .stat-v{font-size:1.8rem;font-weight:900;color:var(--app-text)}
+  /* counters sit inline with the title, like the product list */
+  .sup-stats{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center}
+  .sup-stat{display:inline-flex;align-items:baseline;gap:.3rem;padding:.25rem .6rem;border-radius:999px;
+    background:var(--app-surface-2);border:1px solid var(--app-border);
+    color:var(--app-muted);font-size:.78rem;font-weight:600;white-space:nowrap}
+  .sup-stat b{color:var(--app-text);font-weight:800;font-variant-numeric:tabular-nums}
+
   .supplier-group{overflow:hidden}
-  .group-head{padding:.85rem 1.1rem;border-bottom:1px solid var(--app-border);background:var(--app-surface-2,#f6f9fc)}
-  .group-head .sub{color:var(--app-muted)}
-  .supplier-table{font-size:.94rem}
-  .supplier-table thead th{font-size:.72rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#52719a;white-space:nowrap}
-  .supplier-table td{vertical-align:middle}
-  .supplier-name{font-size:1rem;font-weight:800;color:var(--app-text)}
-  .chip{display:inline-flex;padding:.22rem .55rem;border-radius:999px;background:#eef4ff;color:#1d4f9c;font-size:.76rem;font-weight:800;margin:.15rem .2rem .15rem 0}
-  .meta{font-size:.88rem;color:#445468}
-  .meta.small{font-size:.8rem;color:#6a7c90}
+  .group-head{padding:.55rem .9rem;border-bottom:1px solid var(--app-border);background:var(--app-surface-2)}
+  .group-head h2{font-size:.72rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--app-muted);margin:0}
+
+  /* Fixed layout so every group's columns line up, and one line per cell so
+     rows keep an identical height however much data a supplier has. */
+  .supplier-table{font-size:.9rem;table-layout:fixed;width:100%}
+  .supplier-table thead th{font-size:.68rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--app-muted);white-space:nowrap;padding:.45rem .6rem}
+  .supplier-table td{vertical-align:middle;padding:.45rem .6rem;height:3.4rem}
+  .supplier-table td,.supplier-table th{overflow:hidden}
+  .trunc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .supplier-name{font-size:.92rem;font-weight:700;color:var(--app-text)}
+  .chip{display:inline-flex;padding:.15rem .5rem;border-radius:999px;background:var(--app-accent-soft);
+    color:var(--app-accent-ink);font-size:.7rem;font-weight:700;margin-right:.2rem;white-space:nowrap}
+  .meta{font-size:.78rem;color:var(--app-muted)}
+  .num{font-variant-numeric:tabular-nums}
+
+  /* Phones: one compact row per supplier — a 7-column table cannot work here. */
+  .sup-item{display:flex;align-items:stretch;border-bottom:1px solid var(--app-border)}
+  .sup-main{flex:1 1 auto;min-width:0;display:grid;grid-template-columns:minmax(0,1fr) auto;
+    gap:.15rem .6rem;align-items:center;padding:.55rem .65rem;text-decoration:none;color:inherit}
+  .sup-main:active{background:var(--app-surface-2)}
+  .sup-name{font-size:.9rem;font-weight:700;color:var(--app-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sup-sub{grid-column:1;font-size:.72rem;color:var(--app-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sup-fig{grid-column:2;grid-row:1 / span 2;text-align:right;white-space:nowrap;font-size:.72rem;color:var(--app-muted);font-variant-numeric:tabular-nums}
+  .sup-fig b{display:block;font-size:.9rem;font-weight:800;color:var(--app-text)}
+  .sup-edit{flex:0 0 44px;display:grid;place-items:center;color:var(--app-muted);border-left:1px solid var(--app-border)}
+  .sup-edit:active{background:var(--app-surface-2)}
+  @media (max-width:575.98px){
+    .hero{padding:.7rem .8rem}
+    .hero h1{font-size:1.15rem}
+    .hero .btn{padding:.4rem .65rem;font-size:.8rem}
+  }
 </style>
 
 <div class="d-grid gap-4">
   <section class="panel hero">
-    <div class="d-flex justify-content-between gap-3 flex-wrap align-items-start">
-      <div>
-        <h1>Supplier Management</h1>
+    <div class="d-flex justify-content-between gap-3 flex-wrap align-items-center">
+      <div class="d-flex align-items-center gap-3 flex-wrap">
+        <h1>Suppliers</h1>
+        <div class="sup-stats">
+          <span class="sup-stat"><b>{{ supplier_count }}</b> total</span>
+          <span class="sup-stat"><b>{{ linked_suppliers }}</b> with purchases</span>
+        </div>
       </div>
       <a href="{% url 'supplier_create' %}" class="btn btn-primary">Add supplier</a>
     </div>
   </section>
 
-  <section class="stats">
-    <div class="stat">
-      <div class="stat-k">Total Suppliers</div>
-      <div class="stat-v">{{ supplier_count }}</div>
-    </div>
-    <div class="stat">
-      <div class="stat-k">Linked In Purchasing</div>
-      <div class="stat-v">{{ linked_suppliers }}</div>
-    </div>
-  </section>
-
   <section class="panel p-3">
-    <form method="get" class="row g-3 align-items-end">
-      <div class="col-md-7">
-        <label class="form-label fw-bold">Search</label>
-        <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Search by name, phone, country, address, or product type">
+    <form method="get" class="row g-2 align-items-center">
+      <div class="col-12 col-md-7">
+        <input type="text" name="q" value="{{ query }}" class="form-control" aria-label="Search suppliers" placeholder="Search name, phone, country, address or product type">
       </div>
-      <div class="col-md-3">
-        <label class="form-label fw-bold">Country</label>
-        <select name="country" class="form-select">
+      <div class="col-8 col-md-3">
+        <select name="country" class="form-select" aria-label="Country">
           <option value="">All countries</option>
           {% for c in country_options %}<option value="{{ c }}" {% if country_filter == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
           <option value="__none__" {% if country_filter == '__none__' %}selected{% endif %}>No country</option>
         </select>
       </div>
-      <div class="col-md-2 d-grid">
-        <button class="btn btn-outline-primary">Filter</button>
+      <div class="col-4 col-md-2 d-grid">
+        <button class="btn btn-primary">Filter</button>
       </div>
     </form>
   </section>
@@ -67,17 +85,22 @@
   {% for group in supplier_groups %}
     <section class="panel supplier-group">
       <div class="group-head">
-        <h2 class="h6 mb-0">{{ group.country }} <span class="sub">({{ group.suppliers|length }})</span></h2>
+        <h2>{{ group.country }} <span class="sub">({{ group.suppliers|length }})</span></h2>
       </div>
-      <div class="table-responsive">
+
+      <div class="table-responsive d-none d-sm-block">
         <table class="table table-hover align-middle mb-0 supplier-table">
+          <colgroup>
+            <col style="width:26%"><col style="width:14%"><col style="width:20%">
+            <col style="width:8%"><col style="width:8%"><col style="width:14%"><col style="width:10%">
+          </colgroup>
           <thead>
             <tr>
               <th>Supplier</th>
               <th>Phone</th>
               <th>Categories</th>
-              <th class="text-center">Purchases</th>
-              <th class="text-center">Inbound</th>
+              <th class="text-center">Purch.</th>
+              <th class="text-center">Inb.</th>
               <th>Last purchase</th>
               <th class="text-end">Actions</th>
             </tr>
@@ -86,23 +109,20 @@
             {% for supplier in group.suppliers %}
               <tr>
                 <td>
-                  <div class="supplier-name">{{ supplier.name }}</div>
-                  {% if supplier.contact_person %}<div class="meta">{{ supplier.contact_person }}</div>{% endif %}
-                  {% if supplier.address %}<div class="meta small">{{ supplier.address }}</div>{% endif %}
+                  <div class="supplier-name trunc">{{ supplier.name }}</div>
+                  <div class="meta trunc">{{ supplier.contact_person|default:supplier.address|default:"&mdash;" }}</div>
                 </td>
-                <td>{{ supplier.phone|default:"—" }}</td>
-                <td>
-                  {% for category in supplier.product_types.all %}
-                    <span class="chip">{{ category.name }}</span>
-                  {% empty %}
-                    <span class="meta">—</span>
-                  {% endfor %}
+                <td class="trunc">{{ supplier.phone|default:"—" }}</td>
+                <td class="trunc">
+                  {% for category in supplier.product_types.all|slice:":2" %}<span class="chip">{{ category.name }}</span>{% endfor %}
+                  {% if supplier.product_types.all|length > 2 %}<span class="chip">+{{ supplier.product_types.all|length|add:"-2" }}</span>{% endif %}
+                  {% if not supplier.product_types.all %}<span class="meta">—</span>{% endif %}
                 </td>
-                <td class="text-center">{{ supplier.purchase_count }}</td>
-                <td class="text-center">{{ supplier.inbound_count }}</td>
-                <td>{% if supplier.last_purchase_at %}{{ supplier.last_purchase_at|date:"Y-m-d H:i" }}{% else %}<span class="meta">No purchases yet</span>{% endif %}</td>
+                <td class="text-center num">{{ supplier.purchase_count }}</td>
+                <td class="text-center num">{{ supplier.inbound_count }}</td>
+                <td class="trunc num">{% if supplier.last_purchase_at %}{{ supplier.last_purchase_at|date:"Y-m-d" }}{% else %}<span class="meta">—</span>{% endif %}</td>
                 <td class="text-end">
-                  <div class="d-flex gap-2 justify-content-end flex-wrap">
+                  <div class="d-flex gap-1 justify-content-end">
                     <a href="{% url 'supplier_detail' supplier.id %}" class="btn btn-dark btn-sm">Orders</a>
                     <a href="{% url 'supplier_edit' supplier.id %}" class="btn btn-outline-primary btn-sm">Edit</a>
                   </div>
@@ -111,6 +131,21 @@
             {% endfor %}
           </tbody>
         </table>
+      </div>
+
+      <div class="d-sm-none">
+        {% for supplier in group.suppliers %}
+          <div class="sup-item">
+            <a class="sup-main" href="{% url 'supplier_detail' supplier.id %}">
+              <span class="sup-name">{{ supplier.name }}</span>
+              <span class="sup-sub">{{ supplier.phone|default:supplier.contact_person|default:"No phone" }}</span>
+              <span class="sup-fig"><b>{{ supplier.purchase_count }}</b>purchases</span>
+            </a>
+            <a class="sup-edit" href="{% url 'supplier_edit' supplier.id %}" aria-label="Edit {{ supplier.name }}">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+            </a>
+          </div>
+        {% endfor %}
       </div>
     </section>
   {% empty %}

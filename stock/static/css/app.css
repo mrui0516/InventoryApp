@@ -403,6 +403,40 @@ footer{ border-top:1px solid var(--app-border); margin-top:2rem; }
 .stock-pill.zero{ background:#fef2f2; color:#b42318; border-color:#fecaca; }
 .metric-pill{ background:var(--accent-soft); color:var(--app-accent-ink); }
 
+/* ------------------------- Signed-out (auth) shell ----------------------
+   No app chrome is rendered before sign-in, so the content owns the viewport.
+   Nothing here may reveal the app's navigation or business structure. */
+body.anon{ background:linear-gradient(160deg,#0b1220,#0f172a 55%,#111a2e); }
+body.anon .erp-content{
+  margin-left:0; max-width:none; min-height:100dvh;
+  display:grid; place-items:center;
+  padding:2rem 1rem calc(2rem + env(safe-area-inset-bottom,0px));
+}
+.auth-card{
+  width:min(100%,23rem);
+  background:var(--app-surface);
+  border:1px solid var(--app-border);
+  border-radius:var(--app-radius);
+  box-shadow:0 18px 50px rgba(2,6,23,.45);
+  padding:1.6rem 1.5rem;
+}
+.auth-brand{
+  display:flex; align-items:baseline; gap:.3rem; justify-content:center;
+  font-weight:800; font-size:1.15rem; letter-spacing:.05em; color:var(--app-text);
+}
+.auth-brand span{ font-weight:600; font-size:.95rem; color:var(--app-accent); }
+.auth-title{
+  margin:.9rem 0 1.1rem; text-align:center;
+  font-size:.72rem; font-weight:800; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--app-muted);
+}
+.auth-card .form-label{ font-size:.72rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--app-muted); margin-bottom:.25rem; }
+.auth-card .form-control{ padding:.6rem .8rem; font-size:16px; }  /* 16px: no iOS zoom */
+.auth-card .btn-primary{ width:100%; min-height:46px; font-weight:700; margin-top:.3rem; }
+@media (max-width:575.98px){
+  .auth-card{ padding:1.25rem 1.1rem; }
+}
+
 /* --- operation pages (inbound / outbound) ---
    These lived only inside outbound.html, so inbound used the same class names
    with no surface at all and its panels blended into the page background. */
