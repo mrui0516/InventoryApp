@@ -1424,28 +1424,40 @@ class EmployeeProductEditExportTests(TestCase):
         }
         self.assertIn('"EUR" #,##0.00', format_codes)
 
-    def test_delete_keeps_every_record_and_only_clears_photos(self):
-        """Regression: 'delete' used to cascade the product (and, forced, its
-        purchase + sales history and any emptied order) away. The books must
-        survive - only the photos go."""
-        manager = get_user_model().objects.create_superuser("del_mgr", password="pw123456")
+    def test_delete_archives_product_but_keeps_sales_and_profit(self):
+        """Regression: 'delete' used to cascade the product away, taking its
+        purchase + sales rows (and any emptied order) with it, so past revenue
+        and profit changed retroactively. It must leave the books alone."""
+        from stock.models import ProductImage
+        from stock.services.profit import sale_profit_map_for_sale_ids
+        get_user_model().objects.create_superuser("del_mgr", password="pw123456")
         self.client.login(username="del_mgr", password="pw123456")
         Purchase.objects.create(product=self.product, supplier=None, quantity=4,
-                                cost_price=Decimal("3.00"), remaining=4)
+                                cost_price=Decimal("3.00"), remaining=3)
         order = SaleOrder.objects.create()
-        Sale.objects.create(order=order, product=self.product, quantity=1,
-                            unit_price=Decimal("9.90"), payment_method="cash")
-        from stock.models import ProductImage
+        sale = Sale.objects.create(order=order, product=self.product, quantity=1,
+                                   unit_price=Decimal("9.90"), payment_method="cash",
+                                   cost_basis=Decimal("3.00"))
         ProductImage.objects.create(product=self.product, image="products/x.jpg")
+        before = sale_profit_map_for_sale_ids([sale.id])[sale.id]["profit"]
 
         resp = self.client.post(reverse("delete_product", args=[self.product.pk]))
-
         self.assertEqual(resp.status_code, 302)
-        self.product.refresh_from_db()                       # product still there
-        self.assertEqual(self.product.purchase_set.count(), 1)
-        self.assertEqual(self.product.sale_set.count(), 1)
+
+        # Gone from the catalogue...
+        self.assertFalse(Product.objects.filter(pk=self.product.pk).exists())
+        self.assertNotContains(self.client.get(reverse("product_list")),
+                               self.product.barcode)
+        # ...but every record, and the profit built on it, survives.
+        archived = Product.all_objects.get(pk=self.product.pk)
+        self.assertTrue(archived.is_archived)
+        self.assertEqual(archived.purchase_set.count(), 1)
+        self.assertEqual(archived.sale_set.count(), 1)
         self.assertTrue(SaleOrder.objects.filter(pk=order.pk).exists())
-        self.assertEqual(self.product.images.count(), 0)     # photos gone
+        self.assertEqual(sale_profit_map_for_sale_ids([sale.id])[sale.id]["profit"], before)
+        # A historical sale still resolves its product, and photos are cleared.
+        self.assertEqual(Sale.objects.get(pk=sale.id).product.pk, self.product.pk)
+        self.assertEqual(archived.images.count(), 0)
 
     def test_employee_still_blocked_from_deletes_and_shopify_export(self):
         self.client.login(username="edit_emp", password="pw123456")

@@ -1460,7 +1460,7 @@ def add_product_view(request):
 @login_required
 def product_detail_view(request, pk):
     product = get_object_or_404(
-        Product.objects.select_related('category', 'brand_master', 'series_master').prefetch_related('images'),
+        Product.all_objects.select_related('category', 'brand_master', 'series_master').prefetch_related('images'),
         pk=pk
     )
 
@@ -1874,36 +1874,29 @@ def edit_product_view(request, pk):
 @login_required
 @manager_required
 def delete_product_view(request, pk):
-    """Retire a product without destroying anything.
+    """Delete a product from the catalogue without destroying the books.
 
-    Deleting used to cascade the product away (and, with force_delete, its
-    purchase and sales history plus any order left empty). Sales history is the
-    books, so nothing is removed any more: this only clears the product's
-    photos. The product, its batches, its sales and their orders all stay, so
-    reporting and profit are unaffected."""
-    product = get_object_or_404(Product, pk=pk)
-    query_string = request.POST.get('return_querystring', '').strip()
+    A hard delete used to cascade the product away, taking its purchase and
+    sales rows (and any order left empty) with it — so past revenue and profit
+    changed retroactively. Instead the product is archived: it disappears from
+    every catalogue view, search, scan and Shopify sync, while its sales stay
+    exactly as they were, so history and profit are untouched. Photos are
+    removed since nothing displays them any more."""
+    product = get_object_or_404(Product.all_objects, pk=pk)
+    sale_count = product.sale_set.count()
 
-    image_count = product.images.count()
     with transaction.atomic():
         for image in list(product.images.all()):
             if image.image:
                 image.image.delete(save=False)
         product.images.all().delete()
+        product.archived_at = timezone.now()
+        product.save(update_fields=['archived_at'])
 
-    if image_count:
-        messages.success(
-            request,
-            f'Removed {image_count} photo{"s" if image_count != 1 else ""} from '
-            f'"{product.display_name}". All records were kept.'
-        )
-    else:
-        messages.info(request, f'"{product.display_name}" has no photos to remove.')
-
-    edit_url = reverse('edit_product', args=[product.pk])
-    if query_string:
-        edit_url = f'{edit_url}?{query_string}'
-    return redirect(edit_url)
+    note = (f' Its {sale_count} sales record{"s" if sale_count != 1 else ""} '
+            f'and their profit are kept.') if sale_count else ''
+    messages.success(request, f'Deleted "{product.display_name}".{note}')
+    return redirect('product_list')
 
 
 @login_required
@@ -2439,7 +2432,7 @@ def _enrich_correction_items(raw_items):
             ids.append(int(row.get('product_id')))
         except (TypeError, ValueError):
             continue
-    products = {p.id: p for p in Product.objects.filter(id__in=ids)}
+    products = {p.id: p for p in Product.all_objects.filter(id__in=ids)}
     cart = []
     for row in raw_items:
         try:

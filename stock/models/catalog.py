@@ -51,6 +51,20 @@ class ProductSeries(models.Model):
         return f"{self.brand.name} - {self.name}"
 
 
+class ActiveProductManager(models.Manager):
+    """Default manager: the live catalogue only.
+
+    Deleting a product archives it instead of destroying rows, because its sales
+    are the books. Every catalogue query (lists, search, scanning, exports,
+    Shopify sync) goes through ``objects`` and so skips archived products, while
+    ``all_objects`` still sees them. ``Meta.base_manager_name`` points at
+    ``all_objects`` so a historical ``sale.product`` keeps resolving.
+    """
+
+    def get_queryset(self):
+        return super().get_queryset().filter(archived_at__isnull=True)
+
+
 class Product(models.Model):
     name = models.CharField(max_length=100, db_index=True)
     model = models.CharField(max_length=100, blank=True, null=True, db_index=True)
@@ -77,6 +91,17 @@ class Product(models.Model):
     # Shopify tag per gender (Portuguese storefront; drives the smart collections).
     GENDER_SHOPIFY_TAGS = {'men': 'Homem', 'women': 'Mulher', 'unisex': 'Unissexo'}
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES, blank=True, default='', db_index=True)
+    archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    objects = ActiveProductManager()   # live catalogue
+    all_objects = models.Manager()     # includes archived — history, admin
+
+    class Meta:
+        base_manager_name = 'all_objects'
+
+    @property
+    def is_archived(self):
+        return self.archived_at is not None
 
     @property
     def gender_shopify_tag(self):
