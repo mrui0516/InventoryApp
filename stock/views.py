@@ -642,11 +642,17 @@ def inbound_receive_view(request, order_id):
     """
     order = get_object_or_404(
         InboundOrder.objects
-        .filter(status='pending_receipt')
         .select_related('supplier')
         .prefetch_related('pending_items__product__images'),
         id=order_id,
     )
+    # Only pending orders can be reviewed. Previously the status was part of the
+    # lookup, so a repeated submit — a double tap, or the browser re-sending the
+    # POST — hit an order that the first request had already received and the
+    # user got a bare 404 even though the receipt had gone through.
+    if order.status != 'pending_receipt':
+        messages.info(request, f'Order #{order.id} was already received.')
+        return redirect('inbound')
 
     if request.method == 'POST':
         action = (request.POST.get('action') or 'save').strip()

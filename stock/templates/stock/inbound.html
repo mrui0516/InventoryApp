@@ -119,6 +119,19 @@
 
 <script>
 (function () {
+  // A second submit used to hit an order the first one had already received,
+  // which 404'd. Lock the receive dialogs after the first click.
+  document.querySelectorAll('form[action*="/receive/"]').forEach(function (f) {
+    f.addEventListener('submit', function () {
+      if (f.dataset.sent === '1') return;
+      f.dataset.sent = '1';
+      f.querySelectorAll('button[type="submit"]').forEach(function (b) {
+        b.disabled = true;
+        if (b.value === 'receive') b.textContent = 'Receiving…';
+      });
+    });
+  });
+
   function wireSupplier(search) {
     const form = search.closest('form');
     const hidden = form ? form.querySelector('input[name="supplier"]') : null;

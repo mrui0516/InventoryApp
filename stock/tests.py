@@ -276,6 +276,44 @@ class WorkflowRegressionTests(TestCase):
         self.assertEqual(purchase.cost_price, Decimal("9.00"))
         self.assertEqual(self.product.total_stock(), stock_before + 6)
 
+    def test_receiving_the_same_order_twice_does_not_404(self):
+        """Regression: the order lookup filtered on status='pending_receipt', so a
+        repeated submit (double tap / browser re-post) hit an order the first
+        request had already received and returned a bare 404 - even though the
+        stock had gone in correctly."""
+        self.client.login(username="manager", password="pw123456")
+        supplier = Supplier.objects.create(name="Twice Supplies")
+        order = InboundOrder.objects.create(supplier=supplier, status="pending_receipt",
+                                            total_amount=Decimal("0.00"))
+        item = InboundPendingItem.objects.create(
+            inbound_order=order, product=self.product, quantity=4, cost_price=Decimal("7.00")
+        )
+        payload = {
+            "action": "receive", "supplier": str(supplier.id),
+            "invoice_no": "INV-2", "invoice_date": "2026-06-02", "note": "",
+            "lines-TOTAL_FORMS": "1", "lines-INITIAL_FORMS": "1",
+            "lines-MIN_NUM_FORMS": "0", "lines-MAX_NUM_FORMS": "1000",
+            "lines-0-id": str(item.id), "lines-0-quantity": "4",
+            "lines-0-cost_price": "7.00", "lines-0-DELETE": "",
+        }
+        stock_before = self.product.total_stock()
+
+        first = self.client.post(reverse("inbound_receive", args=[order.id]), payload)
+        self.assertEqual(first.status_code, 302)
+
+        # The repeat must redirect with a message, not 404, and must not double
+        # the stock.
+        second = self.client.post(reverse("inbound_receive", args=[order.id]), payload)
+        self.assertEqual(second.status_code, 302)
+        self.assertIn(reverse("inbound"), second.headers["Location"])
+        self.assertEqual(self.product.total_stock(), stock_before + 4)
+
+        # A genuinely unknown order still 404s.
+        self.assertEqual(
+            self.client.post(reverse("inbound_receive", args=[order.id + 9999]), payload).status_code,
+            404,
+        )
+
     def test_outbound_rejects_payment_not_matching_total(self):
         self.client.login(username="cashier", password="pw123456")
         before = SaleOrder.objects.count()
