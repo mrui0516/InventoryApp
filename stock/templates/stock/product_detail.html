@@ -308,7 +308,10 @@
           <div><dt>Brand</dt><dd>{{ product.brand|default:"-" }}</dd></div>
           <div><dt>Series / Model</dt><dd>{{ product.model|default:"-" }}</dd></div>
           <div><dt>Name</dt><dd>{{ product.name }}</dd></div>
-          <div><dt>Spec</dt><dd>{{ product.spec|default:"-" }}</dd></div>
+          <div><dt>Volume</dt><dd>{% if product.volume_ml %}{{ product.volume_ml }} ml{% else %}{{ product.spec|default:"-" }}{% endif %}</dd></div>
+          <div><dt>Concentration</dt><dd>{{ product.concentration|default:"-" }}</dd></div>
+          <div><dt>Fragrance family</dt><dd>{% for f in product.fragrance_families.all %}{{ f.name }}{% if not forloop.last %}, {% endif %}{% empty %}-{% endfor %}</dd></div>
+          {% if show_sensitive %}<div><dt>Inspired by</dt><dd>{{ product.inspired_by|default:"-" }}</dd></div>{% endif %}
           <div><dt>Color</dt><dd>{{ product.color|default:"-" }}</dd></div>
           <div><dt>Created</dt><dd>{{ product.created_at|date:"Y-m-d" }}</dd></div>
         </dl>

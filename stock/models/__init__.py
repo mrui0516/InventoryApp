@@ -10,7 +10,8 @@ Domain dependency order (acyclic): core → catalog → partners → inventory
 → sales → finance → reporting → hr.
 """
 from .core import PrintProfile, Store, StoreProfile
-from .catalog import Category, Brand, ProductSeries, Product, ProductImage
+from .catalog import (Category, Brand, ProductSeries, Product, ProductImage,
+                      Concentration, FragranceFamily, Inspiration)
 from .partners import Supplier, Customer
 from .inventory import InboundOrder, InboundPendingItem, Purchase, StockAdjustmentLog
 from .sales import SaleOrder, Sale, SaleOrderChangeLog, SaleOrderPayment

@@ -51,6 +51,61 @@ class ProductSeries(models.Model):
         return f"{self.brand.name} - {self.name}"
 
 
+
+class Concentration(models.Model):
+    """Perfume strength: EDT / EDP / Extrait de Parfum / Attar / Oil ...
+
+    A table rather than ``choices`` so the shop can add a new strength itself
+    without a code change. ``shopify_tag`` is optional — blank means the value
+    stays internal and is never pushed to the storefront.
+    """
+    name = models.CharField(max_length=60, unique=True)
+    short = models.CharField(max_length=12, blank=True, default='')   # e.g. EDP
+    shopify_tag = models.CharField(max_length=60, blank=True, default='')
+    sort_order = models.PositiveIntegerField(default=100)
+
+    class Meta:
+        ordering = ['sort_order', 'name']
+
+    def __str__(self):
+        return self.short or self.name
+
+
+class FragranceFamily(models.Model):
+    """Broad scent family (floral, oud, fruity, woody, sweet, fresh ...).
+
+    A perfume usually belongs to several, hence the many-to-many on Product.
+    """
+    name = models.CharField(max_length=60, unique=True)
+    shopify_tag = models.CharField(max_length=60, blank=True, default='')
+    sort_order = models.PositiveIntegerField(default=100)
+
+    class Meta:
+        ordering = ['sort_order', 'name']
+        verbose_name_plural = 'fragrance families'
+
+    def __str__(self):
+        return self.name
+
+
+class Inspiration(models.Model):
+    """The designer/niche fragrance an Arabic perfume is inspired by.
+
+    Internal only: it drives in-store search ("which one smells like Baccarat?")
+    and is deliberately never synced to Shopify, since publishing another
+    house's trademark on a storefront carries legal risk.
+    """
+    house = models.CharField(max_length=80)                 # Givenchy
+    name = models.CharField(max_length=120)                 # L'Interdit
+
+    class Meta:
+        ordering = ['house', 'name']
+        constraints = [models.UniqueConstraint(fields=['house', 'name'], name='unique_inspiration')]
+
+    def __str__(self):
+        return f'{self.house} {self.name}'.strip()
+
+
 class ActiveProductManager(models.Manager):
     """Default manager: the live catalogue only.
 
@@ -92,6 +147,14 @@ class Product(models.Model):
     GENDER_SHOPIFY_TAGS = {'men': 'Homem', 'women': 'Mulher', 'unisex': 'Unissexo'}
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES, blank=True, default='', db_index=True)
     archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    # --- perfume attributes (see docs/PERFUME_ATTRIBUTES.md) ---
+    volume_ml = models.PositiveIntegerField(null=True, blank=True, db_index=True)
+    concentration = models.ForeignKey('Concentration', on_delete=models.SET_NULL,
+                                      null=True, blank=True, related_name='products')
+    fragrance_families = models.ManyToManyField('FragranceFamily', blank=True, related_name='products')
+    inspired_by = models.ForeignKey('Inspiration', on_delete=models.SET_NULL,
+                                    null=True, blank=True, related_name='products')
 
     objects = ActiveProductManager()   # live catalogue
     all_objects = models.Manager()     # includes archived — history, admin
@@ -141,7 +204,8 @@ class Product(models.Model):
 
     @property
     def variant_label(self):
-        return " ".join([part for part in [self.spec, self.color] if part])
+        size = f'{self.volume_ml}ml' if self.volume_ml else self.spec
+        return " ".join([part for part in [size, self.color] if part])
 
     @property
     def display_name(self):

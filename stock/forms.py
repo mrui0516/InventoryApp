@@ -56,6 +56,10 @@ class ProductForm(forms.ModelForm):
             'spec',
             'color',
             'gender',
+            'volume_ml',
+            'concentration',
+            'fragrance_families',
+            'inspired_by',
             'default_price',
             'wholesale_price',
             'price_locked',
@@ -63,6 +67,14 @@ class ProductForm(forms.ModelForm):
         ]
         widgets = {
             'gender': forms.Select(attrs={'class': 'form-select'}),
+            'concentration': forms.Select(attrs={'class': 'form-select'}),
+            'inspired_by': forms.Select(attrs={'class': 'form-select'}),
+            # a perfume usually sits in several families
+            'fragrance_families': forms.CheckboxSelectMultiple(),
+            'volume_ml': forms.NumberInput(attrs={
+                'step': '1', 'min': '1', 'max': '1000',
+                'class': 'form-control', 'placeholder': 'e.g. 100',
+            }),
             'description': forms.Textarea(attrs={'rows': 3, 'class': 'form-control'}),
             'default_price': forms.NumberInput(attrs={
                 'step': '0.01',
@@ -80,6 +92,12 @@ class ProductForm(forms.ModelForm):
 
     def __init__(self, *args, can_edit_prices=True, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields['volume_ml'].label = 'Volume (ml)'
+        self.fields['concentration'].label = 'Concentration'
+        self.fields['concentration'].empty_label = 'Not set'
+        self.fields['fragrance_families'].label = 'Fragrance family'
+        self.fields['inspired_by'].label = 'Inspired by (internal)'
+        self.fields['inspired_by'].empty_label = 'Not set'
         def parse_pk(value):
             if value in (None, ''):
                 return None

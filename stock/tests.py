@@ -3848,6 +3848,93 @@ class EmployeePriceReadOnlyTests(TestCase):
         self.assertFalse(p.price_locked)   # employee POST cannot lock it
 
 
+class PerfumeAttributeTests(TestCase):
+    """Volume / concentration / fragrance family / inspired-by as real data."""
+
+    def setUp(self):
+        from stock.models import Concentration, FragranceFamily, Inspiration
+        self.cat = Category.objects.create(name="Perfumes")
+        self.edp = Concentration.objects.create(name="Eau de Parfum", short="EDP", sort_order=20)
+        self.floral = FragranceFamily.objects.create(name="Floral", sort_order=10)
+        self.oud = FragranceFamily.objects.create(name="Oud", sort_order=20)
+        self.insp = Inspiration.objects.create(house="Givenchy", name="L'Interdit")
+
+    def test_volume_drives_the_variant_label(self):
+        p = Product.objects.create(name="Rosa", barcode="9000000000001", brand="Lattafa",
+                                   category=self.cat, default_price=Decimal("20"),
+                                   volume_ml=100)
+        # volume is authoritative once set, so the label stops depending on free text
+        self.assertEqual(p.variant_label, "100ml")
+        self.assertIn("100ml", p.display_name)
+
+    def test_spec_still_used_when_no_volume(self):
+        p = Product.objects.create(name="Cable", barcode="9000000000002", brand="Anker",
+                                   category=self.cat, default_price=Decimal("5"), spec="20W")
+        self.assertEqual(p.variant_label, "20W")
+
+    def test_attributes_round_trip_through_the_edit_form(self):
+        p = Product.objects.create(name="Khamrah", barcode="9000000000003", brand="Lattafa",
+                                   category=self.cat, default_price=Decimal("30"))
+        get_user_model().objects.create_superuser("perf_mgr", password="pw123456")
+        self.client.login(username="perf_mgr", password="pw123456")
+        resp = self.client.post(reverse("edit_product", args=[p.pk]), {
+            "barcode": "9000000000003", "category": self.cat.id, "new_brand_name": "Lattafa",
+            "name": "Khamrah", "default_price": "30.00",
+            "volume_ml": "100", "concentration": self.edp.id,
+            "fragrance_families": [self.floral.id, self.oud.id],
+            "inspired_by": self.insp.id,
+        })
+        self.assertIn(resp.status_code, (200, 302))
+        p.refresh_from_db()
+        self.assertEqual(p.volume_ml, 100)
+        self.assertEqual(p.concentration, self.edp)
+        self.assertEqual(p.inspired_by, self.insp)
+        self.assertEqual(set(p.fragrance_families.all()), {self.floral, self.oud})
+
+    def test_inspired_by_is_internal_and_never_sent_to_shopify(self):
+        from stock.services import shopify_sync
+        p = Product.objects.create(name="Rosa", barcode="9000000000004", brand="Lattafa",
+                                   category=self.cat, default_price=Decimal("20"),
+                                   inspired_by=self.insp, description="A floral perfume.")
+        payload = shopify_sync._shopify_description_html(p)
+        self.assertNotIn("Givenchy", payload)
+        self.assertNotIn("Interdit", payload)
+
+
+class PerfumeAttributeBackfillTests(TestCase):
+    def test_backfill_reads_volume_strength_and_family_from_existing_text(self):
+        from django.core.management import call_command
+        from stock.models import Concentration, FragranceFamily
+        cat = Category.objects.create(name="Perfumes")
+        p = Product.objects.create(
+            name="EDP", model="KHAMRAH", barcode="9100000000001", brand="Lattafa",
+            category=cat, default_price=Decimal("30"), spec="100ML",
+            description="Uma fragrancia floral inspirada na iconica fragrancia Givenchy L'Interdit.",
+        )
+        call_command("backfill_perfume_attributes", "--apply", verbosity=0)
+
+        p.refresh_from_db()
+        self.assertEqual(p.volume_ml, 100)                      # from "100ML"
+        self.assertEqual(p.concentration.short, "EDP")          # from the name
+        self.assertEqual(p.name, "KHAMRAH")                     # name was just the strength
+        self.assertEqual(p.inspired_by.house, "Givenchy")       # known house only
+        self.assertIn("Floral", [f.name for f in p.fragrance_families.all()])
+        # the lookup tables are seeded so the shop can extend them itself
+        self.assertTrue(Concentration.objects.filter(short="Extrait").exists())
+        self.assertTrue(FragranceFamily.objects.filter(name="Oud").exists())
+
+    def test_dry_run_writes_nothing(self):
+        from django.core.management import call_command
+        from stock.models import Concentration
+        cat = Category.objects.create(name="Perfumes")
+        p = Product.objects.create(name="Asad", barcode="9100000000002", brand="Lattafa",
+                                   category=cat, default_price=Decimal("30"), spec="100ml")
+        call_command("backfill_perfume_attributes", verbosity=0)
+        p.refresh_from_db()
+        self.assertIsNone(p.volume_ml)
+        self.assertEqual(Concentration.objects.count(), 0)
+
+
 class SupplierLeadTimeTests(TestCase):
     """Lead time = inbound order placed (created_at) -> received (received_at)."""
 
