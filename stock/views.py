@@ -2739,6 +2739,17 @@ def supplier_list_view(request):
         suppliers_qs = suppliers_qs.filter(country=country_filter)
 
     suppliers = list(suppliers_qs)
+    # Lead-time comparison across suppliers: one query for the whole page, then
+    # rank the ones that have timed orders so the fastest is obvious.
+    from .services.lead_time import lead_stats_by_supplier
+    lead_by_id = lead_stats_by_supplier()
+    ranked = sorted((sid for sid in lead_by_id), key=lambda sid: lead_by_id[sid]['avg_days'])
+    fastest_supplier_id = ranked[0] if ranked else None
+    slowest_supplier_id = ranked[-1] if len(ranked) > 1 else None
+    for supplier in suppliers:
+        supplier.lead = lead_by_id.get(supplier.id)
+        supplier.is_fastest = (supplier.id == fastest_supplier_id)
+        supplier.is_slowest = (supplier.id == slowest_supplier_id)
     supplier_count = len(suppliers)
     linked_suppliers = sum(1 for supplier in suppliers if supplier.purchase_count or supplier.inbound_count)
 
@@ -2763,6 +2774,7 @@ def supplier_list_view(request):
         'country_options': country_options,
         'supplier_count': supplier_count,
         'linked_suppliers': linked_suppliers,
+        'lead_tracked': len(lead_by_id),
         'can_manage': has_manager_access(request.user),
     })
 
@@ -2941,14 +2953,11 @@ def supplier_detail_view(request, supplier_id):
             'qty': row['qty'] or 0,
         })
 
-    # Lead time: order placed (created_at) → received (received_at), over received orders.
-    lead_days = []
-    for created, received in (InboundOrder.objects
-                              .filter(supplier=supplier, status='received', received_at__isnull=False)
-                              .values_list('created_at', 'received_at')):
-        if created and received and received >= created:
-            lead_days.append((received - created).total_seconds() / 86400.0)
-    avg_lead_days = (sum(lead_days) / len(lead_days)) if lead_days else None
+    # Lead time: order placed (created_at) → received (received_at). See
+    # services/lead_time.py for why same-moment rows are excluded.
+    from .services.lead_time import supplier_lead_stats, recent_lead_times
+    lead = supplier_lead_stats(supplier)
+    lead_recent = recent_lead_times(supplier)
 
     scorecard = {
         'lifetime_spend': lifetime_spend,
@@ -2962,8 +2971,9 @@ def supplier_detail_view(request, supplier_id):
         'avg_order_value': avg_order_value,
         'orders_per_month': orders_per_month,
         'last_purchase': agg['last'],
-        'avg_lead_days': avg_lead_days,
-        'lead_sample': len(lead_days),
+        'lead': lead,
+        'avg_lead_days': lead['avg_days'] if lead else None,
+        'lead_sample': lead['sample'] if lead else 0,
         'top_products': top_products,
     }
 
@@ -2971,6 +2981,7 @@ def supplier_detail_view(request, supplier_id):
 
     return render(request, 'stock/supplier_detail.html', {
         'supplier': supplier,
+        'lead_recent': lead_recent,
         'query': query,
         'history_page': history_page,
         'history_count': len(history_rows),

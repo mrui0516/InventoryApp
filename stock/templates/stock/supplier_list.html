@@ -31,6 +31,12 @@
     color:var(--app-accent-ink);font-size:.7rem;font-weight:700;margin-right:.2rem;white-space:nowrap}
   .meta{font-size:.78rem;color:var(--app-muted)}
   .num{font-variant-numeric:tabular-nums}
+  /* lead time = order placed -> received; fastest/slowest highlighted for comparison */
+  .lead-cell{white-space:nowrap}
+  .lead-val{font-weight:800}
+  .lead-val.fast{color:var(--app-good)}
+  .lead-val.slow{color:var(--app-danger)}
+  .lead-n{display:block;font-size:.66rem;color:var(--app-muted);font-weight:600}
 
   /* Phones: one compact row per supplier — a 7-column table cannot work here. */
   .sup-item{display:flex;align-items:stretch;border-bottom:1px solid var(--app-border)}
@@ -58,6 +64,7 @@
         <div class="sup-stats">
           <span class="sup-stat"><b>{{ supplier_count }}</b> total</span>
           <span class="sup-stat"><b>{{ linked_suppliers }}</b> with purchases</span>
+          <span class="sup-stat"><b>{{ lead_tracked }}</b> lead-time tracked</span>
         </div>
       </div>
       <a href="{% url 'supplier_create' %}" class="btn btn-primary">Add supplier</a>
@@ -91,8 +98,8 @@
       <div class="table-responsive d-none d-sm-block">
         <table class="table table-hover align-middle mb-0 supplier-table">
           <colgroup>
-            <col style="width:26%"><col style="width:14%"><col style="width:20%">
-            <col style="width:8%"><col style="width:8%"><col style="width:14%"><col style="width:10%">
+            <col style="width:24%"><col style="width:13%"><col style="width:16%">
+            <col style="width:7%"><col style="width:7%"><col style="width:13%"><col style="width:12%"><col style="width:8%">
           </colgroup>
           <thead>
             <tr>
@@ -101,6 +108,7 @@
               <th>Categories</th>
               <th class="text-center">Purch.</th>
               <th class="text-center">Inb.</th>
+              <th class="text-center">Lead time</th>
               <th>Last purchase</th>
               <th class="text-end">Actions</th>
             </tr>
@@ -120,6 +128,14 @@
                 </td>
                 <td class="text-center num">{{ supplier.purchase_count }}</td>
                 <td class="text-center num">{{ supplier.inbound_count }}</td>
+                <td class="text-center num lead-cell">
+                  {% if supplier.lead %}
+                    <span class="lead-val{% if supplier.is_fastest %} fast{% elif supplier.is_slowest %} slow{% endif %}">{{ supplier.lead.avg_label }}</span>
+                    <span class="lead-n">n={{ supplier.lead.sample }}</span>
+                  {% else %}
+                    <span class="meta">&mdash;</span>
+                  {% endif %}
+                </td>
                 <td class="trunc num">{% if supplier.last_purchase_at %}{{ supplier.last_purchase_at|date:"Y-m-d" }}{% else %}<span class="meta">—</span>{% endif %}</td>
                 <td class="text-end">
                   <div class="d-flex gap-1 justify-content-end">
@@ -139,7 +155,10 @@
             <a class="sup-main" href="{% url 'supplier_detail' supplier.id %}">
               <span class="sup-name">{{ supplier.name }}</span>
               <span class="sup-sub">{{ supplier.phone|default:supplier.contact_person|default:"No phone" }}</span>
-              <span class="sup-fig"><b>{{ supplier.purchase_count }}</b>purchases</span>
+              <span class="sup-fig">
+                {% if supplier.lead %}<b>{{ supplier.lead.avg_label }}</b>lead &middot; {{ supplier.purchase_count }} purch.
+                {% else %}<b>{{ supplier.purchase_count }}</b>purchases{% endif %}
+              </span>
             </a>
             <a class="sup-edit" href="{% url 'supplier_edit' supplier.id %}" aria-label="Edit {{ supplier.name }}">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>

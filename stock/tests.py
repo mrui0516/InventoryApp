@@ -3848,6 +3848,79 @@ class EmployeePriceReadOnlyTests(TestCase):
         self.assertFalse(p.price_locked)   # employee POST cannot lock it
 
 
+class SupplierLeadTimeTests(TestCase):
+    """Lead time = inbound order placed (created_at) -> received (received_at)."""
+
+    def _order(self, supplier, days, status="received"):
+        from django.utils import timezone as tz
+        created = tz.now() - timezone.timedelta(days=30)
+        order = InboundOrder.objects.create(supplier=supplier, status=status,
+                                            total_amount=Decimal("0.00"))
+        InboundOrder.objects.filter(pk=order.pk).update(
+            created_at=created,
+            received_at=(created + timezone.timedelta(days=days)) if days is not None else None,
+        )
+        return InboundOrder.objects.get(pk=order.pk)
+
+    def test_stats_summarise_only_orders_that_actually_waited(self):
+        from stock.services.lead_time import supplier_lead_stats
+        s = Supplier.objects.create(name="Lead Co")
+        self._order(s, 2)
+        self._order(s, 4)
+        self._order(s, 6)
+        # Migration 0023 backfilled received_at = created_at on every pre-existing
+        # order, and a direct inbound is received the moment it is entered. Those
+        # rows never waited, so counting them would drag the average to zero.
+        self._order(s, 0)
+        self._order(s, None)
+
+        stats = supplier_lead_stats(s)
+
+        self.assertEqual(stats["sample"], 3)
+        self.assertAlmostEqual(stats["avg_days"], 4.0, places=3)
+        self.assertAlmostEqual(stats["median_days"], 4.0, places=3)
+        self.assertAlmostEqual(stats["min_days"], 2.0, places=3)
+        self.assertAlmostEqual(stats["max_days"], 6.0, places=3)
+
+    def test_no_timed_orders_gives_none(self):
+        from stock.services.lead_time import supplier_lead_stats
+        s = Supplier.objects.create(name="Untimed Co")
+        self._order(s, 0)
+        self.assertIsNone(supplier_lead_stats(s))
+
+    def test_list_page_ranks_suppliers_for_comparison(self):
+        from stock.services.lead_time import lead_stats_by_supplier
+        fast = Supplier.objects.create(name="Fast Co")
+        slow = Supplier.objects.create(name="Slow Co")
+        self._order(fast, 1); self._order(fast, 3)
+        self._order(slow, 10)
+
+        by_id = lead_stats_by_supplier()
+
+        self.assertAlmostEqual(by_id[fast.id]["avg_days"], 2.0, places=3)
+        self.assertAlmostEqual(by_id[slow.id]["avg_days"], 10.0, places=3)
+
+        get_user_model().objects.create_superuser("lead_mgr", password="pw123456")
+        self.client.login(username="lead_mgr", password="pw123456")
+        page = self.client.get(reverse("supplier_list"))
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, "Lead time")
+        html = page.content.decode()
+        # the quickest supplier is flagged, the slowest too
+        self.assertIn("lead-val fast", html)
+        self.assertIn("lead-val slow", html)
+
+    def test_detail_page_shows_the_breakdown(self):
+        fast = Supplier.objects.create(name="Detail Co")
+        self._order(fast, 5)
+        get_user_model().objects.create_superuser("lead_mgr2", password="pw123456")
+        self.client.login(username="lead_mgr2", password="pw123456")
+        page = self.client.get(reverse("supplier_detail", args=[fast.id]))
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, "Fastest / Slowest")
+        self.assertContains(page, "Recent lead times")
+
+
 class PerfumeBackfillCommandTests(TestCase):
     def test_backfill_prices_unlocked_perfumes(self):
         from django.core.management import call_command
