@@ -3926,6 +3926,16 @@ class ProductEditFormGroupingTests(TestCase):
         self.assertIn("data-perfume-only", html)
         self.assertIn("data-non-perfume", html)
 
+    def test_add_form_is_grouped_and_renders_each_field_once(self):
+        import re
+        html = self.client.get(reverse("add_product")).content.decode()
+        for field in ['color', 'spec', 'gender', 'volume_ml', 'concentration', 'inspired_by']:
+            widgets = re.findall(r'<(?:input|select|textarea)[^>]*name="%s"' % field, html)
+            self.assertEqual(len(widgets), 1, f'{field}: {len(widgets)} widgets')
+        self.assertIn("data-perfume-only", html)
+        self.assertIn("data-non-perfume", html)
+        self.assertIn("fam-picker", html)
+
     def test_saving_a_non_perfume_keeps_gender_and_colour(self):
         p = Product.objects.create(name="Case", barcode="9200000000002", brand="Anker",
                                    category=self.accessories, default_price=Decimal("9"),
