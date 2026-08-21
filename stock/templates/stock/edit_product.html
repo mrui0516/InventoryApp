@@ -143,6 +143,14 @@
     padding:.25rem .6rem;border:1px solid var(--app-border);border-radius:999px;
     background:var(--app-surface-2);cursor:pointer}
   .fam-picker input{margin:0}
+  /* grouped form: related fields under one heading instead of a flat wall */
+  .form-groups{display:grid;gap:.75rem}
+  .fgroup{border:1px solid var(--app-border);border-radius:var(--app-radius);padding:.7rem .85rem;margin:0;min-width:0}
+  .fgroup > legend{float:none;width:auto;padding:0 .35rem;margin:0 0 .35rem -.35rem;
+    font-size:.68rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--app-muted)}
+  .fgroup .form-label{font-size:.72rem;font-weight:700;color:var(--app-muted);margin-bottom:.15rem}
+  .fgroup[hidden]{display:none}
+  @media (max-width:575.98px){ .fgroup{padding:.6rem .65rem} }
 </style>
 
 <h1 class="pos-title mb-3">Edit product: <span class="muted">{{ product.display_name }}</span></h1>
@@ -171,98 +179,101 @@
 
   <div class="row g-3">
     <div class="col-lg-8">
-      <div class="row g-3">
-        <div class="col-md-6">
-          <label class="form-label">Barcode</label>
-          {% render_field form.barcode class="form-control" inputmode="numeric" pattern="[0-9]{0,13}" maxlength="13" %}
-        </div>
+      <div class="form-groups">
 
-        <div class="col-md-6">
-          <label class="form-label">Category</label>
-          {% render_field form.category class="form-select" %}
-        </div>
+        <fieldset class="fgroup">
+          <legend>Identity</legend>
+          <div class="row g-2">
+            <div class="col-md-6">
+              <label class="form-label">Barcode</label>
+              {% render_field form.barcode class="form-control" inputmode="numeric" pattern="[0-9]{0,13}" maxlength="13" %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Category</label>
+              {% render_field form.category class="form-select" %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Brand</label>
+              {% render_field form.brand_master class="form-select" %}
+              {% render_field form.new_brand_name class="form-control mt-1" placeholder="Or add a new brand" %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Series / Model</label>
+              {% render_field form.series_master class="form-select" %}
+              {% render_field form.new_series_name class="form-control mt-1" placeholder="Or add a new series" %}
+            </div>
+            <div class="col-md-8">
+              <label class="form-label">Product Name</label>
+              {% render_field form.name class="form-control" placeholder="e.g. Khamrah / Clear Case" %}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Gender</label>
+              {% render_field form.gender class="form-select" %}
+            </div>
+          </div>
+        </fieldset>
 
-        <div class="col-md-6">
-          <label class="form-label">Brand</label>
-          {% render_field form.brand_master class="form-select" %}
-        </div>
+        <fieldset class="fgroup" data-perfume-only>
+          <legend>Perfume</legend>
+          <div class="row g-2">
+            <div class="col-md-6">
+              <label class="form-label">Volume (ml)</label>
+              {% render_field form.volume_ml class="form-control" %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Concentration</label>
+              {% render_field form.concentration class="form-select" %}
+            </div>
+            <div class="col-12">
+              <label class="form-label">Fragrance family</label>
+              <div class="fam-picker">{{ form.fragrance_families }}</div>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Inspired by <span class="text-muted">(internal &mdash; not shown on the shop)</span></label>
+              {% render_field form.inspired_by class="form-select" %}
+            </div>
+          </div>
+        </fieldset>
 
-        <div class="col-md-6">
-          <label class="form-label">New Brand</label>
-          {% render_field form.new_brand_name class="form-control" placeholder="Add brand if not listed" %}
-        </div>
+        <fieldset class="fgroup" data-non-perfume>
+          <legend>Variant</legend>
+          <div class="row g-2">
+            <div class="col-md-6">
+              <label class="form-label">Specification</label>
+              {% render_field form.spec class="form-control" placeholder="e.g. 20W" %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Color</label>
+              {% render_field form.color class="form-control" placeholder="Optional" %}
+            </div>
+          </div>
+        </fieldset>
 
-        <div class="col-md-6">
-          <label class="form-label">Series / Model</label>
-          {% render_field form.series_master class="form-select" %}
-        </div>
+        <fieldset class="fgroup">
+          <legend>Pricing</legend>
+          <div class="row g-2">
+            <div class="col-md-6">
+              <label class="form-label">Retail Price (&euro;)</label>
+              {% render_field form.default_price class="form-control js-money" type="text" inputmode="decimal" step="0.01" placeholder="0.00" %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Wholesale Price (&euro;)</label>
+              {% render_field form.wholesale_price class="form-control js-money" type="text" inputmode="decimal" step="0.01" placeholder="0.00" %}
+            </div>
+            {% if user|is_manager_user %}
+            <div class="col-12 form-check ms-1">
+              <input type="checkbox" class="form-check-input" id="price_locked" name="price_locked" {% if form.price_locked.value %}checked{% endif %}>
+              <label class="form-check-label" for="price_locked">Lock price (don't auto-update from cost)</label>
+            </div>
+            {% endif %}
+          </div>
+        </fieldset>
 
-        <div class="col-md-6">
-          <label class="form-label">New Series / Model</label>
-          {% render_field form.new_series_name class="form-control" placeholder="Add series/model if needed" %}
-        </div>
-
-        <div class="col-md-6">
-          <label class="form-label">Product Name</label>
-          {% render_field form.name class="form-control" placeholder="e.g. EDP / Clear Case / Charger" %}
-        </div>
-
-        <div class="col-md-4">
-          <label class="form-label">Specification</label>
-          {% render_field form.spec class="form-control" placeholder="Optional" %}
-        </div>
-
-        <div class="col-md-4">
-          <label class="form-label">Color</label>
-          {% render_field form.color class="form-control" placeholder="Optional" %}
-        </div>
-
-        <div class="col-md-4">
-          <label class="form-label">Gender</label>
-          {% render_field form.gender class="form-select" %}
-        </div>
-
-        <div class="col-md-4">
-          <label class="form-label">Volume (ml)</label>
-          {% render_field form.volume_ml class="form-control" %}
-        </div>
-
-        <div class="col-md-4">
-          <label class="form-label">Concentration</label>
-          {% render_field form.concentration class="form-select" %}
-        </div>
-
-        <div class="col-md-4">
-          <label class="form-label">Inspired by <span class="text-muted">(internal)</span></label>
-          {% render_field form.inspired_by class="form-select" %}
-        </div>
-
-        <div class="col-12">
-          <label class="form-label">Fragrance family</label>
-          <div class="fam-picker">{{ form.fragrance_families }}</div>
-        </div>
-
-        <div class="col-md-6">
-          <label class="form-label">Retail Price (€)</label>
-          {% render_field form.default_price class="form-control js-money" type="text" inputmode="decimal" step="0.01" placeholder="0.00" %}
-        </div>
-
-        <div class="col-md-6">
-          <label class="form-label">Wholesale Price (€)</label>
-          {% render_field form.wholesale_price class="form-control js-money" type="text" inputmode="decimal" step="0.01" placeholder="0.00" %}
-        </div>
-
-        {% if user|is_manager_user %}
-        <div class="mb-2 form-check">
-          <input type="checkbox" class="form-check-input" id="price_locked" name="price_locked" {% if form.price_locked.value %}checked{% endif %}>
-          <label class="form-check-label" for="price_locked">Lock price (don't auto-update from cost)</label>
-        </div>
-        {% endif %}
-
-        <div class="col-12">
-          <label class="form-label">Description</label>
+        <fieldset class="fgroup">
+          <legend>Description</legend>
           {% render_field form.description class="form-control" rows="3" placeholder="Short description (optional)" %}
-        </div>
+        </fieldset>
+
       </div>
     </div>
 
@@ -519,7 +530,19 @@ document.addEventListener('DOMContentLoaded', () => {
   brandSelect.dataset.currentValue = brandSelect.value;
   seriesSelect.dataset.currentValue = seriesSelect.value;
 
+  // Perfumes have no colour and no free-text spec (volume drives the size), and
+  // non-perfumes have no concentration or fragrance family. Hidden groups keep
+  // their inputs in the DOM, so values are still submitted and nothing is lost.
+  function applyCategoryKind() {
+    const option = categorySelect.options[categorySelect.selectedIndex];
+    const isPerfume = /perfum/i.test(option ? option.text : '');
+    form.querySelectorAll('[data-perfume-only]').forEach((el) => { el.hidden = !isPerfume; });
+    form.querySelectorAll('[data-non-perfume]').forEach((el) => { el.hidden = isPerfume; });
+  }
+  applyCategoryKind();
+
   categorySelect.addEventListener('change', () => {
+    applyCategoryKind();
     const previousBrand = brandSelect.value;
     const previousSeries = seriesSelect.value;
     brandSelect.dataset.currentValue = previousBrand;

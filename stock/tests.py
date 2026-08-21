@@ -3901,6 +3901,46 @@ class PerfumeAttributeTests(TestCase):
         self.assertNotIn("Interdit", payload)
 
 
+class ProductEditFormGroupingTests(TestCase):
+    """The edit form groups fields and hides the ones a category does not use.
+
+    Hiding is presentational only: every field still renders, so submitting the
+    form never silently clears a value the group happened to hide.
+    """
+
+    def setUp(self):
+        self.perfumes = Category.objects.create(name="Perfumes")
+        self.accessories = Category.objects.create(name="Accessories")
+        get_user_model().objects.create_superuser("grp_mgr", password="pw123456")
+        self.client.login(username="grp_mgr", password="pw123456")
+
+    def test_every_field_is_rendered_once(self):
+        p = Product.objects.create(name="Khamrah", barcode="9200000000001", brand="Lattafa",
+                                   category=self.perfumes, default_price=Decimal("30"))
+        import re
+        html = self.client.get(reverse("edit_product", args=[p.pk])).content.decode()
+        for field in ['color', 'spec', 'gender', 'volume_ml', 'concentration', 'inspired_by']:
+            # count real widgets only - the page's JS also mentions these names
+            widgets = re.findall(r'<(?:input|select|textarea)[^>]*name="%s"' % field, html)
+            self.assertEqual(len(widgets), 1, f'{field}: {len(widgets)} widgets')
+        self.assertIn("data-perfume-only", html)
+        self.assertIn("data-non-perfume", html)
+
+    def test_saving_a_non_perfume_keeps_gender_and_colour(self):
+        p = Product.objects.create(name="Case", barcode="9200000000002", brand="Anker",
+                                   category=self.accessories, default_price=Decimal("9"),
+                                   color="Black", gender="unisex")
+        resp = self.client.post(reverse("edit_product", args=[p.pk]), {
+            "barcode": "9200000000002", "category": self.accessories.id,
+            "new_brand_name": "Anker", "name": "Case", "default_price": "9.00",
+            "color": "Black", "gender": "unisex", "spec": "",
+        })
+        self.assertIn(resp.status_code, (200, 302))
+        p.refresh_from_db()
+        self.assertEqual(p.color, "Black")
+        self.assertEqual(p.gender, "unisex")
+
+
 class PerfumeAttributeBackfillTests(TestCase):
     def test_backfill_reads_volume_strength_and_family_from_existing_text(self):
         from django.core.management import call_command
