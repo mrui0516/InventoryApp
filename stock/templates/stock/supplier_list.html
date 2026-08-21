@@ -25,6 +25,9 @@
     color:var(--app-muted);white-space:nowrap;padding:.45rem .6rem}
   .supplier-table td{vertical-align:middle;padding:.45rem .6rem;height:3.4rem}
   .supplier-table td,.supplier-table th{overflow:hidden}
+  /* actions keep their natural width — overflow:hidden above was clipping them */
+  .supplier-table td.sup-actions{overflow:visible;white-space:nowrap}
+  .sup-actions .btn{padding:.28rem .6rem;font-size:.78rem}
   .trunc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .supplier-name{font-size:.92rem;font-weight:700;color:var(--app-text)}
   .chip{display:inline-flex;padding:.15rem .5rem;border-radius:999px;background:var(--app-accent-soft);
@@ -98,8 +101,8 @@
       <div class="table-responsive d-none d-sm-block">
         <table class="table table-hover align-middle mb-0 supplier-table">
           <colgroup>
-            <col style="width:24%"><col style="width:13%"><col style="width:16%">
-            <col style="width:7%"><col style="width:7%"><col style="width:13%"><col style="width:12%"><col style="width:8%">
+            <col style="width:23%"><col style="width:11%"><col style="width:14%">
+            <col style="width:6%"><col style="width:6%"><col style="width:12%"><col style="width:12%"><col style="width:16%">
           </colgroup>
           <thead>
             <tr>
@@ -137,8 +140,8 @@
                   {% endif %}
                 </td>
                 <td class="trunc num">{% if supplier.last_purchase_at %}{{ supplier.last_purchase_at|date:"Y-m-d" }}{% else %}<span class="meta">—</span>{% endif %}</td>
-                <td class="text-end">
-                  <div class="d-flex gap-1 justify-content-end">
+                <td class="text-end sup-actions">
+                  <div class="d-flex gap-1 justify-content-end flex-nowrap">
                     <a href="{% url 'supplier_detail' supplier.id %}" class="btn btn-dark btn-sm">Orders</a>
                     <a href="{% url 'supplier_edit' supplier.id %}" class="btn btn-outline-primary btn-sm">Edit</a>
                   </div>
