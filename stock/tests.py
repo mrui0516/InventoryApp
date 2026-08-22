@@ -276,6 +276,32 @@ class WorkflowRegressionTests(TestCase):
         self.assertEqual(purchase.cost_price, Decimal("9.00"))
         self.assertEqual(self.product.total_stock(), stock_before + 6)
 
+    def test_receive_buttons_stay_submittable(self):
+        """Regression: the double-submit guard disabled the submit buttons inside
+        the submit handler. A disabled button is not serialised, so name="action"
+        never reached the server, the view fell back to its 'save' default and the
+        order looked saved while staying pending with no stock added."""
+        self.client.login(username="manager", password="pw123456")
+        supplier = Supplier.objects.create(name="Guard Supplies")
+        order = InboundOrder.objects.create(supplier=supplier, status="pending_receipt",
+                                            total_amount=Decimal("0.00"))
+        InboundPendingItem.objects.create(inbound_order=order, product=self.product,
+                                          quantity=2, cost_price=Decimal("5.00"))
+        html = self.client.get(reverse("inbound")).content.decode()
+
+        # the action must ride on the button, so a no-JS submit still works
+        self.assertIn('name="action" value="receive"', html)
+        # ...and the guard must not disable the buttons before serialisation
+        guard = html[html.index('Guard against a double submit'):]
+        guard = guard[:guard.index('</script>')]
+        # strip comments: the explanation itself mentions setTimeout
+        code = chr(10).join(l for l in guard.splitlines()
+                            if not l.strip().startswith('//'))
+        self.assertIn('b.disabled = true', code)
+        self.assertIn('setTimeout(function', code)
+        self.assertLess(code.index('setTimeout(function'), code.index('b.disabled = true'),
+                        'buttons are disabled before the form is serialised')
+
     def test_receiving_the_same_order_twice_does_not_404(self):
         """Regression: the order lookup filtered on status='pending_receipt', so a
         repeated submit (double tap / browser re-post) hit an order the first

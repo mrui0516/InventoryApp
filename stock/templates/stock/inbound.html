@@ -119,16 +119,24 @@
 
 <script>
 (function () {
-  // A second submit used to hit an order the first one had already received,
-  // which 404'd. Lock the receive dialogs after the first click.
+  // Guard against a double submit, which used to 404 on an order the first
+  // request had already received.
+  //
+  // The disabling MUST be deferred: a disabled button is not serialised, so
+  // disabling inside the submit handler dropped name="action" from the payload
+  // and the view fell back to its 'save' default - the receipt appeared to
+  // succeed ("saved") while the order stayed pending. setTimeout lets the
+  // browser build the payload first, then locks the dialog.
   document.querySelectorAll('form[action*="/receive/"]').forEach(function (f) {
     f.addEventListener('submit', function () {
       if (f.dataset.sent === '1') return;
       f.dataset.sent = '1';
-      f.querySelectorAll('button[type="submit"]').forEach(function (b) {
-        b.disabled = true;
-        if (b.value === 'receive') b.textContent = 'Receiving…';
-      });
+      setTimeout(function () {
+        f.querySelectorAll('button[type="submit"]').forEach(function (b) {
+          b.disabled = true;
+          if (b.value === 'receive') b.textContent = 'Receiving…';
+        });
+      }, 0);
     });
   });
 
