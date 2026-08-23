@@ -3874,6 +3874,112 @@ class EmployeePriceReadOnlyTests(TestCase):
         self.assertFalse(p.price_locked)   # employee POST cannot lock it
 
 
+class StoreSellableCategoryTests(TestCase):
+    """Scentory sells perfume only; Khan Perfume sells everything it stocks."""
+
+    def setUp(self):
+        self.perfumes = Category.objects.create(name="Perfumes")
+        self.accessories = Category.objects.create(name="Accessories")
+        self.khan = Store.objects.create(name="Khan Perfume", code="KHAN", is_default=True)
+        self.scentory = Store.objects.create(name="Scentory", code="SCEN")
+        self.scentory.sellable_categories.add(self.perfumes)
+
+        self.perfume = Product.objects.create(
+            name="Oud", barcode="9400000000001", brand="B",
+            category=self.perfumes, default_price=Decimal("50"))
+        self.case = Product.objects.create(
+            name="Case", barcode="9400000000002", brand="B",
+            category=self.accessories, default_price=Decimal("9"))
+
+        self.user = get_user_model().objects.create_user(username="till", password="pw123456")
+        StoreProfile.objects.create(user=self.user, store=self.scentory)
+        self.client.force_login(self.user)
+
+    def _login_at_khan(self):
+        user = get_user_model().objects.create_user(username="khan", password="pw123456")
+        StoreProfile.objects.create(user=user, store=self.khan)
+        self.client.force_login(user)
+
+    def test_a_store_with_no_categories_configured_sells_everything(self):
+        self._login_at_khan()
+        response = self.client.get(reverse('products_autocomplete'), {'q': 'Case'})
+        self.assertEqual(len(response.json()['results']), 1)
+
+    def test_till_search_hides_categories_the_store_does_not_sell(self):
+        response = self.client.get(reverse('products_autocomplete'), {'q': 'Case'})
+        self.assertEqual(response.json()['results'], [])
+
+    def test_till_search_still_finds_what_the_store_does_sell(self):
+        response = self.client.get(reverse('products_autocomplete'), {'q': 'Oud'})
+        self.assertEqual(len(response.json()['results']), 1)
+
+    def test_scanning_an_unsold_category_at_the_till_is_not_found(self):
+        response = self.client.get(reverse('check_barcode'), {'barcode': self.case.barcode})
+        self.assertFalse(response.json()['exists'])
+
+    def test_inbound_receives_the_whole_catalogue_regardless_of_store(self):
+        # Stock is shared company-wide, so receiving must never be store-scoped.
+        response = self.client.get(reverse('check_barcode'),
+                                   {'barcode': self.case.barcode, 'scope': 'stock'})
+        self.assertTrue(response.json()['exists'])
+
+    def test_product_list_is_scoped_to_the_active_store(self):
+        response = self.client.get(reverse('product_list'))
+        names = [p.name for p in response.context['products']]
+        self.assertIn("Oud", names)
+        self.assertNotIn("Case", names)
+
+
+class PurgeUnusedProductsTests(TestCase):
+    """The purge is destructive, so its guard matters more than its happy path."""
+
+    def setUp(self):
+        from django.core.management import call_command
+        self.call = call_command
+        self.cat = Category.objects.create(name="Accessories")
+        self.perfumes = Category.objects.create(name="Perfumes")
+
+    def _product(self, barcode, category=None):
+        return Product.objects.create(name="X", barcode=barcode, brand="B",
+                                      category=category or self.cat,
+                                      default_price=Decimal("5"))
+
+    def test_deletes_only_products_with_no_history(self):
+        unused = self._product("9300000000001")
+        sold = self._product("9300000000002")
+        purchased = self._product("9300000000003")
+        order = SaleOrder.objects.create()
+        Sale.objects.create(order=order, product=sold, quantity=1,
+                            unit_price=Decimal("5"), payment_method="cash")
+        Purchase.objects.create(product=purchased, quantity=1, remaining=1,
+                                cost_price=Decimal("2"))
+
+        self.call("purge_unused_products", "--category", "Accessories", "--apply", verbosity=0)
+
+        self.assertFalse(Product.all_objects.filter(pk=unused.pk).exists())
+        self.assertTrue(Product.all_objects.filter(pk=sold.pk).exists())
+        self.assertTrue(Product.all_objects.filter(pk=purchased.pk).exists())
+
+    def test_a_product_with_only_an_image_is_kept(self):
+        from stock.models import ProductImage
+        pictured = self._product("9300000000004")
+        ProductImage.objects.create(product=pictured, image="products/x.jpg")
+        self.call("purge_unused_products", "--category", "Accessories", "--apply", verbosity=0)
+        self.assertTrue(Product.all_objects.filter(pk=pictured.pk).exists())
+
+    def test_dry_run_deletes_nothing(self):
+        unused = self._product("9300000000005")
+        self.call("purge_unused_products", "--category", "Accessories", verbosity=0)
+        self.assertTrue(Product.all_objects.filter(pk=unused.pk).exists())
+
+    def test_category_filters_scope_the_purge(self):
+        accessory = self._product("9300000000006")
+        perfume = self._product("9300000000007", category=self.perfumes)
+        self.call("purge_unused_products", "--exclude-category", "perfum", "--apply", verbosity=0)
+        self.assertFalse(Product.all_objects.filter(pk=accessory.pk).exists())
+        self.assertTrue(Product.all_objects.filter(pk=perfume.pk).exists())
+
+
 class PerfumeAttributeTests(TestCase):
     """Volume / concentration / fragrance family / inspired-by as real data."""
 

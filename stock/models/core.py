@@ -13,11 +13,21 @@ class Store(models.Model):
     is_default = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # Which categories this store actually sells. Khan Perfume carries perfume
+    # and phone accessories; Scentory is perfume only, and its staff should not
+    # be wading through phone cases at the till. Left empty the store sells
+    # everything, so adding a category later is a tick box, not a code change.
+    sellable_categories = models.ManyToManyField(
+        'Category', blank=True, related_name='stores')
+
     class Meta:
         ordering = ['name']
 
     def __str__(self):
         return self.name
+
+    def sells_everything(self):
+        return not self.sellable_categories.exists()
 
     @classmethod
     def get_default(cls):

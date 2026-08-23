@@ -258,6 +258,27 @@ has_admin_access(user)          → is_superuser only
 - **打印小票抬头按店铺**：`PrintProfile` 加 `store` OneToOne（迁移 0030/0031：原单例抬头挂到默认店铺，其余店铺各建一份，从默认抬头 + 店名播种）。`PrintProfile.get_for_store(store)` 按店铺取/建；`get_solo()` 退化为默认店铺抬头。小票（`sale_order_detail`）用**该订单店铺**的抬头；抬头编辑页（`print_profile_edit_view`）编辑**当前活动店铺**的抬头（All stores 时编辑默认店铺）。
 - **仍待接入**：按分类的销售目标 `SalesTarget` 改为按店铺（模型变更；当前仪表盘目标进度用店铺销售额对比全局分类目标，为已知局限）；员工创建/编辑表单增加显式店铺选择（当前新建按活动/默认店铺自动分配）。
 
+### 5.10 门店可售分类（Store sellable categories）
+
+库存、进货、供应商是全公司共享的；**卖什么**才是分门店的。
+`Store.sellable_categories` (M2M → Category) 为空 = 该店销售全部分类。
+
+| 门店 | 定位 | 可售 |
+|------|------|------|
+| Khan Perfume (90A) | 仓库 + 门店 | 全部（香水 + 手机配件/电子） |
+| Scentory (SHOP2) | 纯香水店 | Perfumes |
+
+生效范围由 `stock/stores.py::scope_products_by_store()` 统一实现，调用点：
+
+- `product_list_view` —— 按当前门店过滤目录（All stores 不过滤）
+- `check_barcode` / `products_autocomplete` —— 收银台查询默认按门店过滤
+
+**例外：进货必须看到全部目录。** 库存是全公司共享的，Scentory 的账号收货时
+也可能收到配件，所以 `inbound.html` 在请求上带 `?scope=stock`，
+由 `views.py::_lookup_scope()` 放行。改动这两个端点时不要丢掉这个参数。
+
+调整门店可售分类不需要改代码：Django admin → Store → Sellable categories。
+
 ## 6. 前端架构
 
 ### 6.0 共享设计系统（`static/css/app.css`）

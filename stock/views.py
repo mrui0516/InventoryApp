@@ -63,6 +63,7 @@ from .stores import (
     available_stores,
     can_switch_store,
     resolve_active_store,
+    scope_products_by_store,
     scope_sales_by_store,
     store_for_new_sale,
 )
@@ -893,6 +894,7 @@ def product_list_view(request):
     selected_brand = request.GET.get('brand')
     stock_status = (request.GET.get('stock_status') or '').strip()
     sort_by = (request.GET.get('sort') or 'latest').strip()
+    active_store, _is_all = resolve_active_store(request)
     state = get_filtered_product_list_state(
         show_sales_sensitive=show_sales_sensitive,
         query=query,
@@ -900,6 +902,7 @@ def product_list_view(request):
         selected_brand=selected_brand,
         stock_status=stock_status,
         sort_by=sort_by,
+        store=active_store,
     )
 
     products_qs = state['products_qs']
@@ -953,7 +956,7 @@ def product_list_view(request):
     return render(request, 'stock/product_list.html', context)
 
 
-def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_category, selected_brand, stock_status, sort_by):
+def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_category, selected_brand, stock_status, sort_by, store=None):
     recent_sales_start = timezone.now() - timedelta(days=30)
     stock_subquery = (
         Purchase.objects
@@ -983,7 +986,7 @@ def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_cat
         .values('date')[:1]
     )
 
-    products_qs = Product.objects.annotate(
+    products_qs = scope_products_by_store(Product.objects, store).annotate(
         total_stock=Coalesce(Subquery(stock_subquery, output_field=IntegerField()), Value(0), output_field=IntegerField()),
     )
     if show_sales_sensitive:
@@ -2219,11 +2222,27 @@ def yearly_sales_view(request):
     return redirect(f'{base_url}?{query}' if query else base_url)
 
 
+def _lookup_scope(request, queryset):
+    """Narrow a product lookup to what the active store sells.
+
+    Selling is store-specific, but stock is not: inbound receives for the
+    whole company, so it asks for ``scope=stock`` and gets the full catalogue.
+    Everything else is a till lookup and is scoped by default.
+    """
+    if request.GET.get('scope') == 'stock':
+        return queryset
+    active_store, _is_all = resolve_active_store(request)
+    return scope_products_by_store(queryset, active_store)
+
+
 @login_required
 def check_barcode(request):
     barcode = request.GET.get('barcode', '').strip()
     try:
-        product = Product.objects.select_related('brand_master', 'series_master').prefetch_related('images').get(barcode=barcode)
+        qs = _lookup_scope(
+            request,
+            Product.objects.select_related('brand_master', 'series_master').prefetch_related('images'))
+        product = qs.get(barcode=barcode)
         # 当前库存（可用不用于表单，仅供前端显示时参考；这里不必返回也可）
         stock = product.purchase_set.filter(remaining__gt=0).aggregate(s=Sum('remaining'))['s'] or 0
         # 最近一次进价
@@ -5167,11 +5186,11 @@ def products_autocomplete(request):
     product_id = request.GET.get('product_id', '').strip()
     results = []
     matches = Product.objects.none()
-    base_qs = (
+    base_qs = _lookup_scope(
+        request,
         Product.objects
         .select_related('brand_master', 'series_master')
-        .prefetch_related('images')
-    )
+        .prefetch_related('images'))
 
     if product_id.isdigit():
         matches = base_qs.filter(id=int(product_id))[:1]

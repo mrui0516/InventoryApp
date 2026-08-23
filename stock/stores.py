@@ -69,3 +69,17 @@ def scope_sales_by_store(queryset, store, is_all, *, field='store'):
     if is_all or store is None:
         return queryset
     return queryset.filter(**{field: store})
+
+def scope_products_by_store(queryset, store):
+    """Limit a Product queryset to what ``store`` actually sells.
+
+    Stock itself stays shared across stores; this is only about which
+    categories a shop puts in front of its staff. A store with no categories
+    configured sells everything, so this is a no-op until someone ticks boxes.
+    """
+    if store is None:
+        return queryset
+    category_ids = list(store.sellable_categories.values_list('id', flat=True))
+    if not category_ids:
+        return queryset
+    return queryset.filter(category_id__in=category_ids)

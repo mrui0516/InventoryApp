@@ -22,15 +22,15 @@
 
 ## 2. 当前数据规模
 
-（来自 `db.sqlite3` 实时查询，2026-07-15）
+（来自 `db.sqlite3` 实时查询，2026-08-23）
 
 | 实体 | 数量 |
 |---|---|
-| Product（产品） | 392 |
-| Purchase（采购批次） | 582 |
-| InboundOrder（进货订单） | 201 |
-| SaleOrder（销售订单） | 1,695 |
-| Sale（销售行项目） | 4,166 |
+| Product（产品） | 238（全部为香水；169 条旧配件已清空，等待重新录入） |
+| Purchase（采购批次） | 641 |
+| InboundOrder（进货订单） | 213 |
+| SaleOrder（销售订单） | 1,905 |
+| Sale（销售行项目） | 4,541 |
 | Customer（客户） | 35 |
 | Supplier（供应商） | 16 |
 | ARInvoice（应收发票） | 4 |
@@ -99,6 +99,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-08-23: **清空 169 条从未使用的旧配件 + 按店铺配置可售分类。** 旧的手机配件/电子条目全部是零采购零销售零库存零图片，为配件库存重建让路，用新的 `purge_unused_products` 命令删除（默认 dry-run，拒绝任何带采购/销售/图片/调整/待收货记录的产品，`--category`/`--exclude-category` 限定范围）；删除后 4,541 条销售与 641 条采购**一条未动**，剩 238 条香水。新增 `Store.sellable_categories`（M2M→Category，**留空 = 全卖**）：Khan Perfume 仓库+门店卖全部，Scentory 纯香水店只卖 Perfumes（迁移 0040 按 `code='SHOP2'` 播种，已手工配置过的店铺不覆盖）。过滤统一走 `stores.py::scope_products_by_store()`，作用于产品列表与收银台的扫码/搜索。**进货是例外**：库存全公司共享，`inbound.html` 带 `?scope=stock` 拿到完整目录。改分类不用改代码，在 admin 勾选即可。284 通过（撤销过滤后 3 条转红验证）。
 - 2026-08-20: **修复「确认收货」只保存、不入库的 bug。** 点 Confirm receipt 显示「saved」、库存没进、订单仍在 Awaiting receipt。根因是我上次修 404 时加的**防重复提交**：它在表单自己的 submit 处理里把所有提交按钮 disable 了，而**被禁用的按钮不会被序列化** → `name="action" value="receive"` 根本没发给服务器 → 视图回落到默认的 'save'。改为用 `setTimeout` **延后**禁用，让浏览器先序列化再锁弹窗，防重复提交依然有效。回归测试断言 action 挂在按钮上（无 JS 也能提交）且禁用发生在 setTimeout 之后（比对时先剥掉注释——我第一版测试因为匹配到自己注释里的 setTimeout 而在 bug 复现时仍然通过）。已通过「撤销修复 → 测试 FAILED」验证。274 通过。
 - 2026-08-20: **香型改为平铺 chip + add_product 同样分组。** 香型选择器原本每个香型占一整行——我写的 CSS 针对 `ul/li`，但 Django 的 `CheckboxSelectMultiple` 渲染的是**每个选项一个 div**，规则根本没命中。改为针对真实结构，香型现在是自动换行的小胶囊。`add_product` 套用 `edit_product` 的同一套分组（Identity / Perfume / Variant / Pricing / Description，品牌与系列跟各自的“新建”输入框上下配对），香水隐藏 Variant 组、非香水隐藏 Perfume 组，随分类实时切换；隐藏组仍保留控件，值照常提交。测试扩展到新增页：两个页面每个字段都必须**只渲染一个控件**。273 通过。
 - 2026-08-20: **编辑产品页表单分组 + 香水不再显示颜色。** 原来是 13 个字段平铺一片。现按 Identity / Perfume / Variant / Pricing / Description **分组**，成对字段（品牌+新建品牌、系列+新建系列）改为上下叠放而不是各占一列。**香水隐藏 Variant 组**（颜色 + 自由文本 spec —— 尺寸已由 `volume_ml` 接管），非香水隐藏 Perfume 组；切换分类即时生效。隐藏只是显示层面：**所有控件照常渲染**，值仍会提交，不会被静默清空。改造中我一度把 Gender 只放进 Perfume 组，那样非香水保存时会被清空——已改为放在 Identity 且**只渲染一次**，并加测试断言每个字段只有一个控件、保存非香水后颜色与性别仍在。272 通过。

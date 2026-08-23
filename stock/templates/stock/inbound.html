@@ -1080,7 +1080,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Shared by the Enter key and the camera scanner.
   function lookupBarcode(code){
-    return fetch(`/check_barcode/?barcode=${encodeURIComponent(code)}`)
+    return fetch(`/check_barcode/?scope=stock&barcode=${encodeURIComponent(code)}`)
       .then(r=>r.json())
       .then(d=>{
         if (!d.exists) { setInfo('warning', `Barcode ${code} not found.`); return; }
@@ -1195,7 +1195,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const q = barcodeInput.value.trim();
     if (!q) { listBox.classList.add('d-none'); hidePreview(); return; }
     if (/^\d{6,}$/.test(q)) { listBox.classList.add('d-none'); hidePreview(); return; }
-    fetch(`/api/products_autocomplete/?q=${encodeURIComponent(q)}`)
+    fetch(`/api/products_autocomplete/?scope=stock&q=${encodeURIComponent(q)}`)
       .then(r=>r.json())
       .then(data=>{
         listBox.innerHTML = '';
@@ -1203,7 +1203,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!results.length) { listBox.classList.add('d-none'); hidePreview(); return; }
         results.forEach((p) => {
           const item = createSuggestionItem(p, (product, line) => {
-            fetch(`/check_barcode/?barcode=${encodeURIComponent(product.barcode)}`)
+            fetch(`/check_barcode/?scope=stock&barcode=${encodeURIComponent(product.barcode)}`)
               .then(r=>r.json())
               .then(d=>{
                 addToCart(line, product.barcode, d && d.last_cost!=null ? d.last_cost : null, (d && d.image_url) || product.image_url || '');

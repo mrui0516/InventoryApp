@@ -12,9 +12,15 @@ from .models import (
 
 @admin.register(Store)
 class StoreAdmin(admin.ModelAdmin):
-    list_display = ('name', 'code', 'is_active', 'is_default', 'created_at')
+    list_display = ('name', 'code', 'is_active', 'is_default', 'sellable_summary', 'created_at')
     list_filter = ('is_active', 'is_default')
     search_fields = ('name', 'code')
+    filter_horizontal = ('sellable_categories',)
+
+    @admin.display(description='Sells')
+    def sellable_summary(self, obj):
+        names = list(obj.sellable_categories.values_list('name', flat=True))
+        return ', '.join(names) if names else 'Everything'
 
 
 @admin.register(StoreProfile)
