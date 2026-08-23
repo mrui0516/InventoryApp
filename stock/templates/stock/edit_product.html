@@ -153,6 +153,10 @@
     font-size:.68rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--app-muted)}
   .fgroup .form-label{font-size:.72rem;font-weight:700;color:var(--app-muted);margin-bottom:.15rem}
   .fgroup[hidden]{display:none}
+  .vflag{display:inline-block;margin-left:.25rem;padding:0 .25rem;border-radius:3px;
+    background:var(--app-accent-soft);color:var(--app-accent-ink);font-size:.6rem;font-weight:800}
+  [data-attr-for][hidden]{display:none}
+
   @media (max-width:575.98px){ .fgroup{padding:.6rem .65rem} }
 </style>
 
@@ -251,6 +255,27 @@
             </div>
           </div>
         </fieldset>
+
+        {% if form.attribute_fields %}
+        <fieldset class="fgroup" data-attr-group>
+          <legend>Specs</legend>
+          <div class="row g-2">
+            {% for row in form.attribute_fields %}
+              <div class="col-md-4 col-6" data-attr-for="{{ row.category_id }}">
+                <label class="form-label" for="{{ row.field.id_for_label }}">
+                  {{ row.attribute.name }}{% if row.attribute.unit %} ({{ row.attribute.unit }}){% endif %}
+                  {% if row.attribute.variant_attribute %}<span class="vflag" title="Separate stock row">V</span>{% endif %}
+                </label>
+                {% if row.attribute.data_type == 'choice' or row.attribute.data_type == 'boolean' %}
+                  {% render_field row.field class="form-select" %}
+                {% else %}
+                  {% render_field row.field class="form-control" %}
+                {% endif %}
+              </div>
+            {% endfor %}
+          </div>
+        </fieldset>
+        {% endif %}
 
         <fieldset class="fgroup">
           <legend>Pricing</legend>
@@ -544,8 +569,26 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   applyCategoryKind();
 
+  // Every category's shop-defined attributes are rendered; only the selected
+  // category's are shown. Hidden ones stay in the DOM and are still submitted,
+  // but the form applies only the ones belonging to the chosen category, so a
+  // leftover value can never overwrite anything.
+  function applyAttributeFields() {
+    const chosen = categorySelect.value;
+    let anyShown = false;
+    form.querySelectorAll('[data-attr-for]').forEach((el) => {
+      const mine = el.dataset.attrFor === chosen;
+      el.hidden = !mine;
+      if (mine) { anyShown = true; }
+    });
+    const group = form.querySelector('[data-attr-group]');
+    if (group) { group.hidden = !anyShown; }
+  }
+  applyAttributeFields();
+
   categorySelect.addEventListener('change', () => {
     applyCategoryKind();
+    applyAttributeFields();
     const previousBrand = brandSelect.value;
     const previousSeries = seriesSelect.value;
     brandSelect.dataset.currentValue = previousBrand;

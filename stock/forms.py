@@ -155,6 +155,95 @@ class ProductForm(forms.ModelForm):
             self.fields['wholesale_price'].disabled = True
             self.fields['price_locked'].disabled = True
 
+        self._build_attribute_fields()
+
+    # -- shop-defined attributes ------------------------------------------
+    def _build_attribute_fields(self):
+        """Add a field per shop-defined attribute, for every category.
+
+        Which attributes apply depends on the category, and the category is
+        chosen in this same form, so every category's attributes are rendered
+        and the template shows only the active one's. save() then applies only
+        the ones that belong to the chosen category - a value left behind in a
+        hidden field must never overwrite anything.
+        """
+        from .models import AttributeOption, CategoryAttribute
+        self.attribute_fields = []
+        attributes = (CategoryAttribute.objects
+                      .select_related('category')
+                      .prefetch_related('options')
+                      .order_by('category__name', 'sort_order', 'name'))
+        answered = {}
+        if self.instance.pk:
+            answered = {value.attribute_id: value
+                        for value in self.instance.attribute_values.all()}
+
+        for attribute in attributes:
+            name = f'attr_{attribute.pk}'
+            self.fields[name] = self._attribute_field(attribute)
+            existing = answered.get(attribute.pk)
+            if existing is not None:
+                self.initial.setdefault(name, self._attribute_initial(existing))
+            self.attribute_fields.append({
+                'attribute': attribute,
+                'field_name': name,
+                'field': self[name],          # bound, so the template can render it
+                'category_id': attribute.category_id,
+            })
+
+    def _attribute_field(self, attribute):
+        from .models.attributes import BOOLEAN, CHOICE, NUMBER
+        common = {'required': False, 'label': attribute.name}
+        if attribute.data_type == CHOICE:
+            choices = [('', '—')] + [(option.pk, option.label)
+                                     for option in attribute.options.all()]
+            return forms.ChoiceField(choices=choices, **common)
+        if attribute.data_type == NUMBER:
+            if attribute.unit:
+                common['label'] = f'{attribute.name} ({attribute.unit})'
+            return forms.DecimalField(max_digits=12, decimal_places=3, **common)
+        if attribute.data_type == BOOLEAN:
+            # Three states on purpose: unanswered is not the same as "no".
+            return forms.ChoiceField(
+                choices=[('', '—'), ('yes', 'Yes'), ('no', 'No')], **common)
+        return forms.CharField(max_length=200, **common)
+
+    @staticmethod
+    def _attribute_initial(value):
+        from .models.attributes import BOOLEAN, CHOICE, NUMBER
+        kind = value.attribute.data_type
+        if kind == CHOICE:
+            return value.value_option_id or ''
+        if kind == NUMBER:
+            return value.value_number
+        if kind == BOOLEAN:
+            if value.value_boolean is None:
+                return ''
+            return 'yes' if value.value_boolean else 'no'
+        return value.value_text
+
+    def _save_attributes(self, product):
+        from .models import ProductAttributeValue, attributes_for_category
+        from .models.attributes import BOOLEAN
+        applicable = attributes_for_category(product.category)
+        keep = []
+        for attribute in applicable:
+            raw = self.cleaned_data.get(f'attr_{attribute.pk}')
+            if raw in (None, ''):
+                continue                  # unanswered means no row, not a blank one
+            if attribute.data_type == BOOLEAN:
+                raw = (raw == 'yes')
+            value, _created = ProductAttributeValue.objects.get_or_create(
+                product=product, attribute=attribute)
+            value.set_value(raw)
+            value.save()
+            keep.append(attribute.pk)
+        # Drops answers that were cleared, and answers left over from the old
+        # category when a product is moved.
+        (product.attribute_values
+         .exclude(attribute_id__in=keep)
+         .delete())
+
     def clean_barcode(self):
         # Cases, screen protectors and cables usually have no EAN printed on
         # them. Leaving the field blank is normal, not an error: save() mints
@@ -215,6 +304,7 @@ class ProductForm(forms.ModelForm):
             if product.brand_master and product.category_id:
                 product.brand_master.categories.add(product.category)
             self.save_m2m()
+            self._save_attributes(product)
         return product
 
 

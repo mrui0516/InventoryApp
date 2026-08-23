@@ -6,6 +6,7 @@ from .models import (
     Product, Purchase, Sale, SaleOrder, Brand, ProductSeries,
     Category, Supplier, Customer, ProductImage, DailySalesSummary, InboundOrder,
     DeviceModel, DeviceAlias, CompatibilityGroup,
+    CategoryAttribute, AttributeOption, ProductAttributeValue,
     ARInvoice, ARItem, ARPayment, AttendanceRecord, PrintProfile, StockAdjustmentLog,
     SalesTarget, SaleOrderPayment, Store, StoreProfile
 )
@@ -339,3 +340,27 @@ class CompatibilityGroupAdmin(admin.ModelAdmin):
     @admin.display(description='Fits')
     def device_list(self, obj):
         return ', '.join(str(d) for d in obj.devices.all()[:6]) or '-'
+
+
+class AttributeOptionInline(admin.TabularInline):
+    """Options live with their attribute - defining a field and its choices
+    is one screen, not two."""
+    model = AttributeOption
+    extra = 4
+
+
+@admin.register(CategoryAttribute)
+class CategoryAttributeAdmin(admin.ModelAdmin):
+    list_display = ('category', 'name', 'code', 'data_type',
+                    'variant_attribute', 'required', 'sort_order')
+    list_filter = ('category', 'data_type', 'variant_attribute', 'required')
+    list_editable = ('variant_attribute', 'required', 'sort_order')
+    search_fields = ('name', 'code')
+    prepopulated_fields = {'code': ('name',)}
+    inlines = [AttributeOptionInline]
+
+
+class ProductAttributeValueInline(admin.TabularInline):
+    model = ProductAttributeValue
+    extra = 0
+    autocomplete_fields = ('attribute',)

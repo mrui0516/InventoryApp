@@ -219,6 +219,37 @@ class Product(models.Model):
     def retail_price(self, value):
         self.default_price = value
 
+    @property
+    def attributes(self):
+        """Shop-defined attribute values, in the order the shop arranged them."""
+        return (self.attribute_values
+                .select_related('attribute', 'value_option')
+                .order_by('attribute__sort_order', 'attribute__name'))
+
+    def attribute_summary(self, only_variant=False):
+        """``[(name, display)]`` for the product page and till lines."""
+        rows = []
+        for value in self.attributes:
+            if only_variant and not value.attribute.variant_attribute:
+                continue
+            shown = value.display()
+            if shown:
+                rows.append((value.attribute.name, shown))
+        return rows
+
+    def set_attribute(self, code, raw):
+        """Answer one shop-defined attribute by its code."""
+        from .attributes import ProductAttributeValue, attributes_for_category
+        attribute = next(
+            (a for a in attributes_for_category(self.category) if a.code == code), None)
+        if attribute is None:
+            raise ValueError(f'{code!r} is not an attribute of category {self.category}.')
+        value, _created = ProductAttributeValue.objects.get_or_create(
+            product=self, attribute=attribute)
+        value.set_value(raw)
+        value.save()
+        return value
+
     def fits(self, device):
         """Does this product fit ``device``? Universal goods fit everything."""
         if self.universal_fit:

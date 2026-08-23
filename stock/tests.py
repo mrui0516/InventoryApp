@@ -8,6 +8,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, TransactionTestCase
@@ -3872,6 +3873,379 @@ class EmployeePriceReadOnlyTests(TestCase):
         })
         p.refresh_from_db()
         self.assertFalse(p.price_locked)   # employee POST cannot lock it
+
+
+class CategoryAttributeTests(TestCase):
+    """Fields the shop defines for itself, with no migration."""
+
+    def setUp(self):
+        from stock.models import CategoryAttribute, AttributeOption
+        self.accessories = Category.objects.create(name="Accessories")
+        self.cases = Category.objects.create(name="Cases", parent=self.accessories)
+
+        self.colour = CategoryAttribute.objects.create(
+            category=self.accessories, name="Colour", code="colour",
+            data_type="choice", variant_attribute=True, sort_order=1)
+        for label in ["Black", "Clear", "Blue"]:
+            AttributeOption.objects.create(attribute=self.colour, label=label)
+
+        self.case_type = CategoryAttribute.objects.create(
+            category=self.cases, name="Case type", code="case_type",
+            data_type="choice", variant_attribute=True, sort_order=2)
+        for label in ["Rubber", "Flip", "MagSafe"]:
+            AttributeOption.objects.create(attribute=self.case_type, label=label)
+
+        self.thickness = CategoryAttribute.objects.create(
+            category=self.cases, name="Thickness", code="thickness",
+            data_type="number", unit="mm", sort_order=3)
+        self.wireless = CategoryAttribute.objects.create(
+            category=self.cases, name="Wireless charging", code="wireless",
+            data_type="boolean", sort_order=4)
+
+        self.product = self._product("Clear TPU", self.cases)
+
+    def _product(self, name, category):
+        from stock.services.barcodes import assign_internal_barcode
+        product = Product(name=name, brand="Generic", category=category,
+                          default_price=Decimal("9"))
+        assign_internal_barcode(product)
+        return product
+
+    # -- inheritance -------------------------------------------------------
+    def test_a_subcategory_inherits_its_parents_attributes(self):
+        from stock.models import attributes_for_category
+        codes = [a.code for a in attributes_for_category(self.cases)]
+        self.assertEqual(codes, ["colour", "case_type", "thickness", "wireless"])
+
+    def test_a_parent_does_not_see_its_childrens_attributes(self):
+        from stock.models import attributes_for_category
+        codes = [a.code for a in attributes_for_category(self.accessories)]
+        self.assertEqual(codes, ["colour"])
+
+    def test_a_subcategory_can_override_an_inherited_attribute(self):
+        from stock.models import CategoryAttribute, attributes_for_category
+        own = CategoryAttribute.objects.create(
+            category=self.cases, name="Colour", code="colour",
+            data_type="text", sort_order=1)
+        found = {a.code: a for a in attributes_for_category(self.cases)}
+        self.assertEqual(found["colour"], own)
+
+    def test_a_category_loop_does_not_hang(self):
+        # Category.parent is a plain FK with nothing stopping a cycle.
+        from stock.models import attributes_for_category
+        self.accessories.parent = self.cases
+        self.accessories.save()
+        self.assertTrue(attributes_for_category(self.cases))
+
+    def test_no_category_means_no_attributes(self):
+        from stock.models import attributes_for_category
+        self.assertEqual(list(attributes_for_category(None)), [])
+
+    # -- values ------------------------------------------------------------
+    def test_a_choice_is_matched_by_label_whatever_the_case(self):
+        value = self.product.set_attribute("colour", "black")
+        self.assertEqual(value.value_option.label, "Black")
+        self.assertEqual(value.display(), "Black")
+
+    def test_a_choice_outside_the_options_is_refused(self):
+        with self.assertRaises(ValidationError):
+            self.product.set_attribute("colour", "Turquoise")
+
+    def test_a_number_is_stored_as_a_number_and_shows_its_unit(self):
+        value = self.product.set_attribute("thickness", "1.5")
+        self.assertEqual(value.value_number, Decimal("1.5"))
+        self.assertEqual(value.display(), "1.5 mm")
+
+    def test_a_comma_decimal_is_accepted(self):
+        # Portuguese keyboards produce 1,5 - refusing it would be a till bug.
+        value = self.product.set_attribute("thickness", "1,5")
+        self.assertEqual(value.value_number, Decimal("1.5"))
+
+    def test_a_number_that_is_not_a_number_is_refused(self):
+        with self.assertRaises(ValidationError):
+            self.product.set_attribute("thickness", "thick")
+
+    def test_a_boolean_reads_as_yes_or_no(self):
+        self.assertEqual(self.product.set_attribute("wireless", "yes").display(), "Yes")
+        self.assertEqual(self.product.set_attribute("wireless", "0").display(), "No")
+
+    def test_setting_an_unknown_code_is_refused(self):
+        with self.assertRaises(ValueError):
+            self.product.set_attribute("nonsense", "x")
+
+    def test_an_attribute_from_another_category_is_not_reachable(self):
+        from stock.models import CategoryAttribute
+        other = Category.objects.create(name="Shisha")
+        CategoryAttribute.objects.create(category=other, name="Bowl", code="bowl")
+        with self.assertRaises(ValueError):
+            self.product.set_attribute("bowl", "Clay")
+
+    def test_answering_the_same_attribute_twice_overwrites(self):
+        self.product.set_attribute("colour", "Black")
+        self.product.set_attribute("colour", "Blue")
+        self.assertEqual(self.product.attribute_values.count(), 1)
+        self.assertEqual(self.product.attributes.first().display(), "Blue")
+
+    def test_switching_type_clears_the_old_column(self):
+        # A stale value in another column would resurface if the type changed.
+        value = self.product.set_attribute("thickness", "1.5")
+        value.attribute.data_type = "text"
+        value.set_value("thin")
+        self.assertIsNone(value.value_number)
+        self.assertEqual(value.display(), "thin")
+
+    def test_an_empty_answer_clears_the_value(self):
+        self.product.set_attribute("colour", "Black")
+        value = self.product.set_attribute("colour", "")
+        self.assertIsNone(value.value_option)
+        self.assertEqual(value.display(), "")
+
+    def test_an_option_from_another_attribute_is_refused(self):
+        from stock.models import ProductAttributeValue
+        wrong = self.case_type.options.first()
+        value = ProductAttributeValue(product=self.product, attribute=self.colour,
+                                      value_option=wrong)
+        with self.assertRaises(ValidationError):
+            value.clean()
+
+    # -- summaries ---------------------------------------------------------
+    def test_summary_is_ordered_the_way_the_shop_arranged_it(self):
+        self.product.set_attribute("thickness", "1.5")
+        self.product.set_attribute("colour", "Black")
+        self.product.set_attribute("case_type", "Rubber")
+        self.assertEqual(self.product.attribute_summary(),
+                         [("Colour", "Black"), ("Case type", "Rubber"), ("Thickness", "1.5 mm")])
+
+    def test_summary_can_be_narrowed_to_what_separates_stock_rows(self):
+        self.product.set_attribute("thickness", "1.5")
+        self.product.set_attribute("colour", "Black")
+        self.assertEqual(self.product.attribute_summary(only_variant=True),
+                         [("Colour", "Black")])
+
+    def test_blank_answers_are_left_out_of_the_summary(self):
+        self.product.set_attribute("colour", "Black")
+        self.product.set_attribute("thickness", "")
+        self.assertEqual(self.product.attribute_summary(), [("Colour", "Black")])
+
+    def test_variant_attributes_are_what_matrix_entry_will_use(self):
+        from stock.models import variant_attributes_for_category
+        codes = [a.code for a in variant_attributes_for_category(self.cases)]
+        self.assertEqual(codes, ["colour", "case_type"])
+
+    def test_perfume_is_unaffected_by_any_of_this(self):
+        perfumes = Category.objects.create(name="Perfumes")
+        perfume = Product.objects.create(name="Oud", barcode="9700000000001", brand="B",
+                                         category=perfumes, default_price=Decimal("50"))
+        self.assertEqual(perfume.attribute_summary(), [])
+
+
+class ProductFormAttributeTests(TestCase):
+    """Shop-defined attributes must survive a round trip through the form."""
+
+    def setUp(self):
+        from stock.models import CategoryAttribute, AttributeOption
+        self.accessories = Category.objects.create(name="Accessories")
+        self.perfumes = Category.objects.create(name="Perfumes")
+        self.brand = Brand.objects.create(name="Generic")
+
+        self.colour = CategoryAttribute.objects.create(
+            category=self.accessories, name="Colour", code="colour",
+            data_type="choice", variant_attribute=True, sort_order=1)
+        self.black = AttributeOption.objects.create(attribute=self.colour, label="Black")
+        AttributeOption.objects.create(attribute=self.colour, label="Clear")
+        self.thickness = CategoryAttribute.objects.create(
+            category=self.accessories, name="Thickness", code="thickness",
+            data_type="number", unit="mm", sort_order=2)
+        self.wireless = CategoryAttribute.objects.create(
+            category=self.accessories, name="Wireless", code="wireless",
+            data_type="boolean", sort_order=3)
+        # An attribute on a category this product is not in.
+        self.bowl = CategoryAttribute.objects.create(
+            category=self.perfumes, name="Bottle", code="bottle", data_type="text")
+
+    def _data(self, **overrides):
+        data = {
+            'barcode': '',
+            'category': self.accessories.id,
+            'brand_master': self.brand.id,
+            'name': 'Clear TPU case',
+            'default_price': '9.90',
+        }
+        data.update(overrides)
+        return data
+
+    def test_attribute_answers_are_saved(self):
+        form = ProductForm(data=self._data(**{
+            f'attr_{self.colour.pk}': str(self.black.pk),
+            f'attr_{self.thickness.pk}': '1.5',
+            f'attr_{self.wireless.pk}': 'yes',
+        }))
+        self.assertTrue(form.is_valid(), form.errors.as_json())
+        product = form.save()
+        self.assertEqual(product.attribute_summary(),
+                         [("Colour", "Black"), ("Thickness", "1.5 mm"), ("Wireless", "Yes")])
+
+    def test_answers_for_other_categories_are_ignored(self):
+        # Every category's fields are rendered; only the chosen one applies.
+        form = ProductForm(data=self._data(**{f'attr_{self.bowl.pk}': 'Crystal'}))
+        self.assertTrue(form.is_valid(), form.errors.as_json())
+        product = form.save()
+        self.assertEqual(product.attribute_summary(), [])
+
+    def test_editing_keeps_answers_that_were_not_changed(self):
+        form = ProductForm(data=self._data(**{f'attr_{self.colour.pk}': str(self.black.pk)}))
+        self.assertTrue(form.is_valid(), form.errors.as_json())
+        product = form.save()
+
+        again = ProductForm(instance=product)
+        self.assertEqual(again.initial.get(f'attr_{self.colour.pk}'), self.black.pk)
+
+        edit = ProductForm(data=self._data(
+            name="Renamed", **{f'attr_{self.colour.pk}': str(self.black.pk)}),
+            instance=product)
+        self.assertTrue(edit.is_valid(), edit.errors.as_json())
+        saved = edit.save()
+        self.assertEqual(saved.attribute_summary(), [("Colour", "Black")])
+
+    def test_clearing_an_answer_clears_it(self):
+        form = ProductForm(data=self._data(**{f'attr_{self.colour.pk}': str(self.black.pk)}))
+        self.assertTrue(form.is_valid())
+        product = form.save()
+        edit = ProductForm(data=self._data(**{f'attr_{self.colour.pk}': ''}), instance=product)
+        self.assertTrue(edit.is_valid(), edit.errors.as_json())
+        self.assertEqual(edit.save().attribute_summary(), [])
+
+    def test_moving_a_product_to_another_category_drops_stale_answers(self):
+        form = ProductForm(data=self._data(**{f'attr_{self.colour.pk}': str(self.black.pk)}))
+        self.assertTrue(form.is_valid())
+        product = form.save()
+        self.assertEqual(product.attribute_values.count(), 1)
+
+        moved = ProductForm(data=self._data(category=self.perfumes.id), instance=product)
+        self.assertTrue(moved.is_valid(), moved.errors.as_json())
+        saved = moved.save()
+        self.assertFalse(saved.attribute_values.filter(attribute=self.colour).exists())
+
+    def test_an_unanswered_boolean_is_not_recorded_as_no(self):
+        # "Not answered" and "No" are different facts about a product.
+        form = ProductForm(data=self._data(**{f'attr_{self.wireless.pk}': ''}))
+        self.assertTrue(form.is_valid())
+        product = form.save()
+        self.assertFalse(product.attribute_values.filter(attribute=self.wireless).exists())
+
+    def test_an_answered_no_is_recorded(self):
+        form = ProductForm(data=self._data(**{f'attr_{self.wireless.pk}': 'no'}))
+        self.assertTrue(form.is_valid())
+        product = form.save()
+        self.assertEqual(product.attribute_summary(), [("Wireless", "No")])
+
+    def test_a_number_field_rejects_text(self):
+        form = ProductForm(data=self._data(**{f'attr_{self.thickness.pk}': 'thick'}))
+        self.assertFalse(form.is_valid())
+        self.assertIn(f'attr_{self.thickness.pk}', form.errors)
+
+
+class AttributeUiTests(TestCase):
+    """The pages must actually render - manage.py check does not compile templates."""
+
+    def setUp(self):
+        from stock.models import CategoryAttribute, AttributeOption, DeviceModel
+        self.accessories = Category.objects.create(name="Accessories")
+        self.perfumes = Category.objects.create(name="Perfumes")
+        Brand.objects.create(name="Generic")
+        self.colour = CategoryAttribute.objects.create(
+            category=self.accessories, name="Colour", code="colour",
+            data_type="choice", variant_attribute=True)
+        self.black = AttributeOption.objects.create(attribute=self.colour, label="Black")
+
+        from stock.services.barcodes import assign_internal_barcode
+        self.case = Product(name="Clear TPU", brand="Generic", category=self.accessories,
+                            default_price=Decimal("9"))
+        assign_internal_barcode(self.case)
+        self.case.set_attribute("colour", "Black")
+        apple = Brand.objects.create(name="Apple")
+        device = DeviceModel.objects.create(brand=apple, name="iPhone 15 Pro Max")
+        self.case.device_models.add(device)
+
+        self.perfume = Product.objects.create(
+            name="Oud", barcode="9800000000001", brand="B",
+            category=self.perfumes, default_price=Decimal("50"), volume_ml=100)
+
+        user = get_user_model().objects.create_superuser(
+            username="mgr", password="pw123456", email="m@x.com")
+        self.client.force_login(user)
+
+    def test_add_product_page_renders_the_attribute_fields(self):
+        html = self.client.get(reverse('add_product')).content.decode()
+        self.assertIn(f'attr_{self.colour.pk}', html)
+        self.assertIn(f'data-attr-for="{self.accessories.pk}"', html)
+
+    def test_edit_product_page_preselects_the_saved_answer(self):
+        html = self.client.get(reverse('edit_product', args=[self.case.pk])).content.decode()
+        self.assertIn(f'value="{self.black.pk}" selected', html)
+
+    def test_product_detail_shows_attributes_and_fitment(self):
+        html = self.client.get(reverse('product_detail', args=[self.case.pk])).content.decode()
+        self.assertIn("Colour", html)
+        self.assertIn("Black", html)
+        self.assertIn("Apple iPhone 15 Pro Max", html)
+
+    def test_an_accessory_page_does_not_show_empty_perfume_rows(self):
+        html = self.client.get(reverse('product_detail', args=[self.case.pk])).content.decode()
+        self.assertNotIn("Fragrance family", html)
+        self.assertNotIn("Concentration", html)
+
+    def test_a_perfume_page_still_shows_its_own_rows(self):
+        html = self.client.get(reverse('product_detail', args=[self.perfume.pk])).content.decode()
+        self.assertIn("Fragrance family", html)
+        self.assertIn("100 ml", html)
+
+
+class SeedAccessoryAttributesTests(TestCase):
+    def setUp(self):
+        from django.core.management import call_command
+        self.call = call_command
+
+    def _counts(self):
+        from stock.models import CategoryAttribute, AttributeOption
+        return CategoryAttribute.objects.count(), AttributeOption.objects.count()
+
+    def test_dry_run_writes_nothing(self):
+        self.call("seed_accessory_attributes", verbosity=0)
+        self.assertEqual(self._counts(), (0, 0))
+        self.assertEqual(Category.objects.count(), 0)
+
+    def test_apply_creates_the_tree_and_the_attributes(self):
+        self.call("seed_accessory_attributes", "--apply", verbosity=0)
+        attributes, options = self._counts()
+        self.assertGreater(attributes, 0)
+        self.assertGreater(options, 0)
+        cases = Category.objects.get(name="Cases")
+        self.assertEqual(cases.parent.name, "Accessories")
+
+    def test_colour_is_inherited_by_every_subcategory(self):
+        from stock.models import attributes_for_category
+        self.call("seed_accessory_attributes", "--apply", verbosity=0)
+        for name in ["Cases", "Screen protectors", "Audio"]:
+            codes = [a.code for a in attributes_for_category(Category.objects.get(name=name))]
+            self.assertIn("colour", codes, name)
+
+    def test_running_it_twice_changes_nothing(self):
+        self.call("seed_accessory_attributes", "--apply", verbosity=0)
+        before = self._counts()
+        self.call("seed_accessory_attributes", "--apply", verbosity=0)
+        self.assertEqual(self._counts(), before)
+
+    def test_it_does_not_overwrite_a_hand_edited_attribute(self):
+        from stock.models import CategoryAttribute
+        self.call("seed_accessory_attributes", "--apply", verbosity=0)
+        colour = CategoryAttribute.objects.get(code="colour",
+                                               category__name="Accessories")
+        colour.name = "Cor"
+        colour.save()
+        self.call("seed_accessory_attributes", "--apply", verbosity=0)
+        colour.refresh_from_db()
+        self.assertEqual(colour.name, "Cor")
 
 
 class DeviceFitmentTests(TestCase):

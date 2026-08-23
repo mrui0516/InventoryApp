@@ -1527,8 +1527,14 @@ def product_detail_view(request, pk):
     # page (merged with sales detail); the product page just links there.
     is_perfume = bool(product.category and 'perfum' in (product.category.name or '').lower())
 
+    category_name = (product.category.name if product.category else '').lower()
     return render(request, 'stock/product_detail.html', {
         'product': product,
+        # Perfume rows and accessory rows are different facts; showing both
+        # leaves half the panel reading "-" whichever kind you are looking at.
+        'is_perfume': 'perfum' in category_name,
+        'attribute_rows': product.attribute_summary(),
+        'fitment_label': product.fitment_label,
         'purchases': purchases,
         'sales': sales,
         'sales_older_count': sales_older_count,

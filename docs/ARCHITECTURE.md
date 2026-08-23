@@ -327,6 +327,38 @@ GS1 把 `02` 和 `20–29` 前缀留给店内自用，因此内部条码是一�
 
 新机型上市 = admin 里加一行 DeviceModel + 几个别名，不需要改代码。
 
+### 5.13 店铺自定义属性（Category attributes）
+
+香水的容量/浓度/香型做成了真列。配件不能这么做：壳有类型（软胶/硬壳/翻盖/MagSafe），
+膜有边型和胶型，下个月又是别的。每加一个字段就改一次 model + migration，不是店铺的工作方式。
+
+所以**让店铺自己定义**：
+
+| 表 | 作用 |
+|---|---|
+| `CategoryAttribute` | "配件有个字段叫 Case type，是选择型，且区分库存行" |
+| `AttributeOption` | 这个字段的可选项 |
+| `ProductAttributeValue` | 某个产品的答案，**分列存储**（数字存数字列，才能正确排序筛选） |
+
+**沿分类树继承**：在 Accessories 上定义一次 Colour，下面所有子分类都有。
+同一个 `code` **就近覆盖** —— 子分类可以重定义继承来的属性。
+`attributes_for_category()` 带**环检测**（`Category.parent` 是普通 FK，没有任何东西阻止成环）。
+
+**`variant_attribute` 是关键标志**：它标出"会让两个东西成为不同库存行"的属性。
+黑色壳和透明壳是两个产品；同一个壳描述成"软触感"不是。
+第 4 步的矩阵批量录入就读这个标志决定画哪个网格。
+
+**表单**：每个分类的属性**全部渲染**，模板只显示当前分类的（沿用香水分组那套 `hidden` 做法）。
+`save()` **只应用属于所选分类的属性** —— 藏起来的字段照样提交，绝不能让残留值覆盖东西
+（改分类时旧分类的答案会被清掉）。**空答案不存行**："没填"和"填了否"是两回事。
+
+**注意**：`{% render_field %}`（widget_tweaks）**不接受带过滤器的属性值**，
+`id=x|add:"_id"` 会抛 `add requires 2 arguments`。用 `field.id_for_label`。
+`manage.py check` 不编译模板，只有跑测试才会发现。
+
+初始属性集：`python manage.py seed_accessory_attributes`（默认 dry-run，`--apply` 写入）。
+可重复运行，不覆盖手工改过的属性。之后全部在 admin 里增改，不用改代码。
+
 ## 6. 前端架构
 
 ### 6.0 共享设计系统（`static/css/app.css`）
