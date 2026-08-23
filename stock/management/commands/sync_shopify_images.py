@@ -27,6 +27,9 @@ _LABEL = {
 }
 
 
+from stock.services.shopify_sync import shopify_syncable
+
+
 class Command(BaseCommand):
     help = 'Upload local product photos to matching Shopify products (by barcode = SKU).'
 
@@ -49,7 +52,9 @@ class Command(BaseCommand):
             return
 
         dry_run = not opts['apply']
-        qs = Product.objects.filter(images__isnull=False).distinct().order_by('brand', 'model', 'name')
+        qs = (shopify_syncable(Product.objects)
+              .filter(images__isnull=False).distinct()
+              .order_by('brand', 'model', 'name'))
         if opts['brand']:
             qs = qs.filter(brand__icontains=opts['brand'])
         if opts['barcode']:

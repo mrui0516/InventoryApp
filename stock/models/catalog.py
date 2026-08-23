@@ -21,6 +21,9 @@ def product_image_upload_to(instance, filename):
 class Category(models.Model):
     name = models.CharField(max_length=50, db_index=True)
     parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE)
+    # Perfume is sold online; phone accessories are shop-floor only. Untick and
+    # the whole category stops being pushed to Shopify - no code change needed.
+    sync_to_shopify = models.BooleanField(default=True)
 
     def __str__(self):
         return self.name
@@ -127,6 +130,17 @@ class Product(models.Model):
     # True when we minted the barcode ourselves because the goods arrived
     # without one - see services/barcodes.py. It is still a valid EAN-13.
     barcode_is_internal = models.BooleanField(default=False)
+
+    # -- fitment (accessories) --------------------------------------------
+    # What this fits, if it is the sort of thing that fits something. Perfume
+    # leaves all three alone. A cable is universal_fit; a case lists the
+    # handsets it was moulded for; a screen protector usually points at a
+    # CompatibilityGroup so one tick covers every phone sharing that glass.
+    universal_fit = models.BooleanField(default=False)
+    device_models = models.ManyToManyField(
+        'stock.DeviceModel', blank=True, related_name='products')
+    compatibility_groups = models.ManyToManyField(
+        'stock.CompatibilityGroup', blank=True, related_name='products')
     brand = models.CharField(max_length=50, db_index=True)
     brand_master = models.ForeignKey(Brand, on_delete=models.SET_NULL, null=True, blank=True, related_name='products')
     series_master = models.ForeignKey(ProductSeries, on_delete=models.SET_NULL, null=True, blank=True, related_name='products')
@@ -204,6 +218,31 @@ class Product(models.Model):
     @retail_price.setter
     def retail_price(self, value):
         self.default_price = value
+
+    def fits(self, device):
+        """Does this product fit ``device``? Universal goods fit everything."""
+        if self.universal_fit:
+            return True
+        if device is None:
+            return False
+        if self.device_models.filter(pk=device.pk).exists():
+            return True
+        return self.compatibility_groups.filter(devices=device).exists()
+
+    @property
+    def fitment_label(self):
+        """Short human summary of what this fits, for lists and the till."""
+        if self.universal_fit:
+            return 'Universal'
+        groups = list(self.compatibility_groups.all()[:2])
+        models_ = list(self.device_models.all()[:2])
+        parts = [group.name for group in groups] + [str(m) for m in models_]
+        if not parts:
+            return ''
+        total = self.compatibility_groups.count() + self.device_models.count()
+        if total > len(parts):
+            parts.append(f'+{total - len(parts)}')
+        return ', '.join(parts)
 
     @property
     def variant_label(self):

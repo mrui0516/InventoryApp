@@ -26,6 +26,9 @@ _LABEL = {
 }
 
 
+from stock.services.shopify_sync import shopify_syncable
+
+
 class Command(BaseCommand):
     help = 'Push price + inventory to Shopify (app authoritative), matching by barcode=SKU.'
 
@@ -48,7 +51,7 @@ class Command(BaseCommand):
         do_inv = not opts['price_only']
         dry_run = not opts['apply']
 
-        qs = (Product.objects
+        qs = (shopify_syncable(Product.objects)
               .exclude(barcode='').exclude(barcode__isnull=True)
               .order_by('brand', 'name'))
         if opts['brand']:

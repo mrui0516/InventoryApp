@@ -5,6 +5,7 @@ from django.urls import reverse
 from .models import (
     Product, Purchase, Sale, SaleOrder, Brand, ProductSeries,
     Category, Supplier, Customer, ProductImage, DailySalesSummary, InboundOrder,
+    DeviceModel, DeviceAlias, CompatibilityGroup,
     ARInvoice, ARItem, ARPayment, AttendanceRecord, PrintProfile, StockAdjustmentLog,
     SalesTarget, SaleOrderPayment, Store, StoreProfile
 )
@@ -221,7 +222,12 @@ class SaleOrderAdmin(admin.ModelAdmin):
 
 
 # ---------- Others ----------
-admin.site.register(Category)
+@admin.register(Category)
+class CategoryAdmin(admin.ModelAdmin):
+    list_display = ('name', 'parent', 'sync_to_shopify')
+    list_filter = ('sync_to_shopify',)
+    list_editable = ('sync_to_shopify',)
+    search_fields = ('name',)
 admin.site.register(Brand)
 admin.site.register(ProductSeries)
 admin.site.register(Supplier)
@@ -304,3 +310,32 @@ class SaleOrderPaymentAdmin(admin.ModelAdmin):
     search_fields = ('order__id', 'order__customer__name')
     date_hierarchy = 'created_at'
 
+
+
+class DeviceAliasInline(admin.TabularInline):
+    """Aliases live with their handset - adding a new spelling is one row."""
+    model = DeviceAlias
+    extra = 3
+
+
+@admin.register(DeviceModel)
+class DeviceModelAdmin(admin.ModelAdmin):
+    list_display = ('brand', 'name', 'release_year', 'alias_list', 'is_active')
+    list_filter = ('brand', 'is_active', 'release_year')
+    search_fields = ('name', 'normalised', 'aliases__alias')
+    inlines = [DeviceAliasInline]
+
+    @admin.display(description='Also written as')
+    def alias_list(self, obj):
+        return ', '.join(obj.aliases.values_list('alias', flat=True)) or '-'
+
+
+@admin.register(CompatibilityGroup)
+class CompatibilityGroupAdmin(admin.ModelAdmin):
+    list_display = ('name', 'device_list', 'note')
+    search_fields = ('name', 'devices__name')
+    filter_horizontal = ('devices',)
+
+    @admin.display(description='Fits')
+    def device_list(self, obj):
+        return ', '.join(str(d) for d in obj.devices.all()[:6]) or '-'

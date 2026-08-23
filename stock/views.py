@@ -47,7 +47,7 @@ from .models import (
     Product, Purchase, Sale, Supplier, Customer, ProductImage,
     Category, SaleOrder, InboundOrder, InboundPendingItem, ARInvoice, ARItem,
     Brand, SaleOrderChangeLog, AttendanceRecord, PrintProfile,
-    StockAdjustmentLog, SaleOrderPayment, Store, StoreProfile,
+    StockAdjustmentLog, SaleOrderPayment, Store, StoreProfile, search_devices,
 )
 from .permissions import (
     has_admin_access,
@@ -1765,14 +1765,17 @@ def sync_all_perfumes_to_shopify(request):
 
 @login_required
 def sync_product_to_shopify(request, pk):
-    """Manager-only button on the product page (perfumes only): push this product
-    to Shopify — create it if missing, then set its price + decant-aware inventory.
-    Handy for listing a new perfume, or a one-off manual re-sync."""
+    """Manager-only button on the product page: push this product to Shopify —
+    create it if missing, then set its price + decant-aware inventory. Handy for
+    listing a new perfume, or a one-off manual re-sync.
+
+    Whether a product belongs online is Category.sync_to_shopify, the same
+    switch the bulk sync commands read — accessories are shop-floor only."""
     product = get_object_or_404(Product, pk=pk)
     if request.method != 'POST' or not has_manager_access(request.user):
         return redirect('product_detail', pk=pk)
-    if not (product.category and 'perfum' in (product.category.name or '').lower()):
-        messages.error(request, 'Shopify sync is for perfumes only.')
+    if product.category and not product.category.sync_to_shopify:
+        messages.error(request, f'{product.category.name} is not sold on Shopify.')
         return redirect('product_detail', pk=pk)
 
     from .services.shopify_client import ShopifyClient
@@ -5195,16 +5198,26 @@ def products_autocomplete(request):
     if product_id.isdigit():
         matches = base_qs.filter(id=int(product_id))[:1]
     elif q:
+        text_match = (
+            Q(name__icontains=q) |
+            Q(brand__icontains=q) |
+            Q(model__icontains=q) |
+            Q(spec__icontains=q) |
+            Q(color__icontains=q) |
+            Q(barcode__icontains=q)
+        )
+        # "15PM" is not in any product name - it is a handset. Accessories are
+        # asked for by what they fit, so a query naming a phone also returns
+        # the things made for it. Universal goods are deliberately left out:
+        # every cable in the shop would otherwise answer every phone.
+        device_ids = list(search_devices(q, limit=5).values_list('id', flat=True))
+        if device_ids:
+            text_match |= (Q(device_models__in=device_ids) |
+                           Q(compatibility_groups__devices__in=device_ids))
         matches = (
             base_qs
-            .filter(
-                Q(name__icontains=q) |
-                Q(brand__icontains=q) |
-                Q(model__icontains=q) |
-                Q(spec__icontains=q) |
-                Q(color__icontains=q) |
-                Q(barcode__icontains=q)
-            )
+            .filter(text_match)
+            .distinct()
             .order_by('brand', 'model', 'name', 'spec', 'color')[:12]
         )
 

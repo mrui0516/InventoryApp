@@ -296,6 +296,37 @@ GS1 把 `02` 和 `20–29` 前缀留给店内自用，因此内部条码是一�
 
 现有 238 条香水没有一条用 `29` 前缀，不存在冲突。
 
+### 5.12 配件适配层（Devices / fitment）
+
+配件不是按"它是什么"卖的，是按"它配什么"卖的。顾客说"15PM 的壳"，
+每次说法还都不一样。三张表解决：
+
+| 表 | 作用 | 例子 |
+|---|---|---|
+| `DeviceModel` | 一台真实机型 | Apple / iPhone 15 Pro Max |
+| `DeviceAlias` | 同一台机器的其它写法（**数据，不是代码**） | `15PM` / `15 Pro Max` / `A2849` |
+| `CompatibilityGroup` | 尺寸相同、可共用配件的一组机型 | "iPhone 15 Pro Max / 15 Plus" |
+
+产品侧三个字段，`fits()` 里 **OR** 起来：
+
+- `Product.universal_fit` —— 数据线、充电头、鼠标，配所有设备
+- `Product.device_models` (M2M) —— 开模的壳，只配指定机型
+- `Product.compatibility_groups` (M2M) —— 钢化膜之类，勾一个组等于勾了组里全部机型
+
+**归一化**：`normalise_device_text()` 把 `iPhone 15 Pro Max` / `iphone-15 pro max` /
+`IPHONE15PROMAX` 全部折成 `iphone15promax`。`DeviceModel.normalised` **只存机型名**，
+因为店员打的是"iPhone 15 Pro Max"而不是"Apple iPhone 15 Pro Max"；
+`resolve_device()` 会额外尝试**剥掉开头的品牌名**（品牌来自数据库，新增品牌不用改代码）。
+
+`DeviceAlias.normalised` 上有 **unique 约束**：同一个简写不能指向两台机器，
+否则收银台无从选择。
+
+**收银台**：`products_autocomplete` 在常规文字匹配之外，会把查询词丢给
+`search_devices()`；命中机型就把"配这台机器的产品"并进结果（`.distinct()` 去重）。
+**通用商品故意不并进去** —— 否则店里每一根线都会出现在每一台手机的搜索结果里。
+
+新机型上市 = admin 里加一行 DeviceModel + 几个别名，不需要改代码。
+
 ## 6. 前端架构
 
 ### 6.0 共享设计系统（`static/css/app.css`）

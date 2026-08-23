@@ -4,6 +4,11 @@ Push local product photos to the matching products in the Shopify store
 (**Scentory**, `www.scentory.pt`). Products are matched by **barcode = Shopify
 variant SKU**.
 
+**哪些产品会上 Shopify，由分类开关决定**：`Category.sync_to_shopify`（admin 里勾选）。
+香水在线上卖，手机配件/电子是**纯门店商品**，迁移 0043 已把非香水分类关掉。
+这个开关同时管住：四个覆盖全部产品的 sync 命令、产品页的单品同步按钮、
+以及**上传照片时的自动同步 signal**（否则给配件拍张照就把它挂到网店上了）。
+
 Entry points, all driven by the same service:
 
 - **`python manage.py sync_shopify_images`** — attach photos to products that

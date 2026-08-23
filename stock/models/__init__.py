@@ -7,11 +7,14 @@ class is re-exported here so existing ``from stock.models import X`` /
 ``from .models import X`` imports keep working unchanged.
 
 Domain dependency order (acyclic): core → catalog → partners → inventory
-→ sales → finance → reporting → hr.
+→ sales → finance → reporting → hr. Devices sit beside catalog.
 """
 from .core import PrintProfile, Store, StoreProfile
 from .catalog import (Category, Brand, ProductSeries, Product, ProductImage,
                       Concentration, FragranceFamily, Inspiration)
+from .devices import (DeviceModel, DeviceAlias, CompatibilityGroup,
+                      normalise_device_text, resolve_device, search_devices,
+                      products_fitting)
 from .partners import Supplier, Customer
 from .inventory import InboundOrder, InboundPendingItem, Purchase, StockAdjustmentLog
 from .sales import SaleOrder, Sale, SaleOrderChangeLog, SaleOrderPayment
@@ -24,6 +27,11 @@ __all__ = [
     'PrintProfile', 'Store', 'StoreProfile',
     # catalog
     'Category', 'Brand', 'ProductSeries', 'Product', 'ProductImage',
+    'Concentration', 'FragranceFamily', 'Inspiration',
+    # devices / fitment
+    'DeviceModel', 'DeviceAlias', 'CompatibilityGroup',
+    'normalise_device_text', 'resolve_device', 'search_devices',
+    'products_fitting',
     # partners
     'Supplier', 'Customer',
     # inventory

@@ -341,3 +341,14 @@ def sync_product(product, client=None, *, create_missing=False, overwrite_image=
     if not create_missing:
         return SKIP_NOT_IN_SHOPIFY, f'no Shopify product with sku {barcode}'
     return create_product_in_shopify(product, client, status=status, dry_run=dry_run)
+
+
+def shopify_syncable(queryset):
+    """Narrow a Product queryset to what belongs on the storefront.
+
+    Which categories go online is a shop decision, not a code decision:
+    Category.sync_to_shopify carries it. Products with no category at all are
+    included, so nothing silently stops syncing because a category was cleared.
+    """
+    from django.db.models import Q
+    return queryset.filter(Q(category__isnull=True) | Q(category__sync_to_shopify=True))

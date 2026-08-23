@@ -18,6 +18,7 @@ from django.core.management.base import BaseCommand
 from stock.models import Product
 from stock.services.shopify_client import ShopifyClient, ShopifyError
 from stock.services.shopify_sync import _shopify_title
+from stock.services.shopify_sync import shopify_syncable
 
 
 class Command(BaseCommand):
@@ -39,7 +40,7 @@ class Command(BaseCommand):
             return
 
         dry_run = not opts['apply']
-        qs = (Product.objects
+        qs = (shopify_syncable(Product.objects)
               .exclude(barcode='').exclude(barcode__isnull=True)
               .order_by('brand', 'name'))
         if opts['brand']:

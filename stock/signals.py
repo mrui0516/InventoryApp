@@ -54,6 +54,10 @@ def push_product_image_to_shopify(sender, instance, created, **kwargs):
     product = instance.product
     if not product:
         return
+    # Accessories are shop-floor only, so photographing one must not quietly
+    # list it online. Same switch the sync commands read.
+    if product.category and not product.category.sync_to_shopify:
+        return
 
     def _push():
         try:

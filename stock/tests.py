@@ -3874,6 +3874,210 @@ class EmployeePriceReadOnlyTests(TestCase):
         self.assertFalse(p.price_locked)   # employee POST cannot lock it
 
 
+class DeviceFitmentTests(TestCase):
+    """A customer asks for "a case for a 15PM" and must find the right case."""
+
+    def setUp(self):
+        from stock.models import DeviceModel, DeviceAlias, CompatibilityGroup
+        self.accessories = Category.objects.create(name="Accessories", sync_to_shopify=False)
+        self.apple = Brand.objects.create(name="Apple")
+
+        self.pro_max = DeviceModel.objects.create(brand=self.apple, name="iPhone 15 Pro Max",
+                                                  release_year=2023)
+        self.plus = DeviceModel.objects.create(brand=self.apple, name="iPhone 15 Plus",
+                                               release_year=2023)
+        for alias in ["15PM", "15 Pro Max", "A2849"]:
+            DeviceAlias.objects.create(device=self.pro_max, alias=alias)
+
+        # Same glass on both handsets, so one protector covers the pair.
+        self.same_glass = CompatibilityGroup.objects.create(name="iPhone 15 Pro Max / 15 Plus")
+        self.same_glass.devices.set([self.pro_max, self.plus])
+
+        self.case = self._product("Clear case")
+        self.case.device_models.add(self.pro_max)
+        self.protector = self._product("Tempered glass")
+        self.protector.compatibility_groups.add(self.same_glass)
+        self.cable = self._product("USB-C cable", universal_fit=True)
+        self.other_case = self._product("Case for Pixel")
+
+    def _product(self, name, **kwargs):
+        from stock.services.barcodes import assign_internal_barcode
+        product = Product(name=name, brand="Generic", category=self.accessories,
+                          default_price=Decimal("9"), **kwargs)
+        assign_internal_barcode(product)
+        return product
+
+    # -- resolving what the customer said ---------------------------------
+    def test_an_alias_finds_the_handset(self):
+        from stock.models import resolve_device
+        for spelling in ["15PM", "15 pro max", "a2849", "15-PM"]:
+            self.assertEqual(resolve_device(spelling), self.pro_max, spelling)
+
+    def test_the_full_name_finds_the_handset_however_it_is_spaced(self):
+        from stock.models import resolve_device
+        for spelling in ["iPhone 15 Pro Max", "apple iphone15promax", "APPLE IPHONE 15 PRO MAX"]:
+            self.assertEqual(resolve_device(spelling), self.pro_max, spelling)
+
+    def test_an_unknown_spelling_resolves_to_nothing(self):
+        from stock.models import resolve_device
+        self.assertIsNone(resolve_device("Nokia 3310"))
+        self.assertIsNone(resolve_device(""))
+
+    def test_the_same_alias_cannot_point_at_two_handsets(self):
+        from stock.models import DeviceAlias
+        from django.db.utils import IntegrityError
+        with self.assertRaises(IntegrityError):
+            DeviceAlias.objects.create(device=self.plus, alias="15 pm")
+
+    # -- finding what fits -------------------------------------------------
+    def test_a_handset_finds_its_case_its_group_and_universal_goods(self):
+        from stock.models import products_fitting
+        names = set(products_fitting(self.pro_max).values_list('name', flat=True))
+        self.assertEqual(names, {"Clear case", "Tempered glass", "USB-C cable"})
+
+    def test_a_group_member_finds_the_shared_protector_but_not_the_moulded_case(self):
+        from stock.models import products_fitting
+        names = set(products_fitting(self.plus).values_list('name', flat=True))
+        self.assertEqual(names, {"Tempered glass", "USB-C cable"})
+
+    def test_a_product_is_not_returned_twice_when_it_matches_two_ways(self):
+        from stock.models import products_fitting
+        self.protector.device_models.add(self.pro_max)     # model AND group
+        rows = list(products_fitting(self.pro_max).values_list('name', flat=True))
+        self.assertEqual(len(rows), len(set(rows)))
+
+    def test_fits_agrees_with_the_queryset(self):
+        self.assertTrue(self.case.fits(self.pro_max))
+        self.assertFalse(self.case.fits(self.plus))
+        self.assertTrue(self.protector.fits(self.plus))
+        self.assertTrue(self.cable.fits(self.plus))
+        self.assertFalse(self.other_case.fits(self.pro_max))
+
+    def test_universal_goods_fit_even_an_unknown_handset(self):
+        self.assertTrue(self.cable.fits(None))
+        self.assertFalse(self.case.fits(None))
+
+    def test_perfume_is_untouched_by_any_of_this(self):
+        perfume = Product.objects.create(name="Oud", barcode="9600000000001", brand="B",
+                                         category=Category.objects.create(name="Perfumes"),
+                                         default_price=Decimal("50"))
+        self.assertFalse(perfume.universal_fit)
+        self.assertEqual(perfume.fitment_label, '')
+        self.assertFalse(perfume.fits(self.pro_max))
+
+    # -- labels ------------------------------------------------------------
+    def test_fitment_label_reads_naturally(self):
+        self.assertEqual(self.cable.fitment_label, 'Universal')
+        self.assertEqual(self.case.fitment_label, 'Apple iPhone 15 Pro Max')
+        self.assertEqual(self.protector.fitment_label, 'iPhone 15 Pro Max / 15 Plus')
+
+    def test_search_finds_handsets_by_partial_alias(self):
+        from stock.models import search_devices
+        self.assertIn(self.pro_max, search_devices("15p"))
+        self.assertIn(self.pro_max, search_devices("pro max"))
+
+
+class TillDeviceSearchTests(TestCase):
+    """Typing a handset at the till must return the accessories that fit it."""
+
+    def setUp(self):
+        from stock.models import DeviceModel, DeviceAlias, CompatibilityGroup
+        from stock.services.barcodes import assign_internal_barcode
+        self.accessories = Category.objects.create(name="Accessories", sync_to_shopify=False)
+        apple = Brand.objects.create(name="Apple")
+        self.pro_max = DeviceModel.objects.create(brand=apple, name="iPhone 15 Pro Max")
+        DeviceAlias.objects.create(device=self.pro_max, alias="15PM")
+        self.plus = DeviceModel.objects.create(brand=apple, name="iPhone 15 Plus")
+        group = CompatibilityGroup.objects.create(name="iPhone 15 Pro Max / 15 Plus")
+        group.devices.set([self.pro_max, self.plus])
+
+        def make(name, **kw):
+            product = Product(name=name, brand="Generic", category=self.accessories,
+                              default_price=Decimal("9"), **kw)
+            assign_internal_barcode(product)
+            return product
+
+        self.case = make("Clear TPU")
+        self.case.device_models.add(self.pro_max)
+        self.protector = make("Tempered glass")
+        self.protector.compatibility_groups.add(group)
+        self.cable = make("USB-C cable", universal_fit=True)
+
+        user = get_user_model().objects.create_user(username="till2", password="pw123456")
+        self.client.force_login(user)
+
+    def _search(self, q):
+        response = self.client.get(reverse('products_autocomplete'), {'q': q})
+        return {row['name'] for row in response.json()['results']}
+
+    def test_an_alias_returns_everything_made_for_that_handset(self):
+        self.assertEqual(self._search("15PM"), {"Clear TPU", "Tempered glass"})
+
+    def test_the_handset_name_works_too(self):
+        self.assertEqual(self._search("iPhone 15 Pro Max"), {"Clear TPU", "Tempered glass"})
+
+    def test_universal_goods_do_not_answer_every_handset(self):
+        # Otherwise every cable in the shop turns up under every phone.
+        self.assertNotIn("USB-C cable", self._search("15PM"))
+
+    def test_searching_by_product_name_still_works(self):
+        self.assertEqual(self._search("Tempered"), {"Tempered glass"})
+
+    def test_a_product_matching_both_ways_appears_once(self):
+        self.protector.device_models.add(self.pro_max)
+        response = self.client.get(reverse('products_autocomplete'), {'q': '15PM'})
+        names = [row['name'] for row in response.json()['results']]
+        self.assertEqual(len(names), len(set(names)))
+
+
+class ShopifySyncScopeTests(TestCase):
+    """Accessories are shop-floor only; only perfume goes on the storefront."""
+
+    def setUp(self):
+        self.perfumes = Category.objects.create(name="Perfumes", sync_to_shopify=True)
+        self.accessories = Category.objects.create(name="Accessories", sync_to_shopify=False)
+        self.perfume = Product.objects.create(
+            name="Oud", barcode="9500000000001", brand="B",
+            category=self.perfumes, default_price=Decimal("50"))
+        self.case = Product.objects.create(
+            name="Case", barcode="9500000000002", brand="B",
+            category=self.accessories, default_price=Decimal("9"))
+
+    def test_syncable_excludes_categories_that_are_offline(self):
+        from stock.services.shopify_sync import shopify_syncable
+        names = list(shopify_syncable(Product.objects).values_list('name', flat=True))
+        self.assertEqual(names, ["Oud"])
+
+    def test_a_product_with_no_category_still_syncs(self):
+        from stock.services.shopify_sync import shopify_syncable
+        orphan = Product.objects.create(name="Orphan", barcode="9500000000003",
+                                        brand="B", category=None, default_price=Decimal("1"))
+        self.assertIn(orphan, shopify_syncable(Product.objects))
+
+    def test_uploading_a_photo_does_not_list_an_accessory_online(self):
+        # The auto-sync signal fires on first photo upload; an offline
+        # category must not be pushed just because someone photographed it.
+        from unittest.mock import patch
+        from stock.models import ProductImage
+        with self.settings(SHOPIFY_AUTO_SYNC=True):
+            with patch('stock.services.shopify_sync.sync_product') as sync:
+                # The push runs on_commit, which TestCase's transaction defers.
+                with self.captureOnCommitCallbacks(execute=True):
+                    ProductImage.objects.create(product=self.case, image="products/x.jpg")
+                self.assertFalse(sync.called)
+                with self.captureOnCommitCallbacks(execute=True):
+                    ProductImage.objects.create(product=self.perfume, image="products/y.jpg")
+                self.assertTrue(sync.called)
+
+    def test_the_product_page_button_refuses_an_offline_category(self):
+        user = get_user_model().objects.create_superuser(
+            username="boss", password="pw123456", email="b@x.com")
+        self.client.force_login(user)
+        response = self.client.post(
+            reverse('sync_product_to_shopify', args=[self.case.pk]), follow=True)
+        self.assertContains(response, "not sold on Shopify")
+
+
 class InternalBarcodeTests(TestCase):
     """Cases and screen protectors arrive with no EAN; we mint a valid one."""
 

@@ -28,6 +28,9 @@ _LABEL = {
 }
 
 
+from stock.services.shopify_sync import shopify_syncable
+
+
 class Command(BaseCommand):
     help = 'Create missing products in Shopify from the app (by barcode = SKU).'
 
@@ -52,7 +55,7 @@ class Command(BaseCommand):
 
         dry_run = not opts['apply']
         status = opts['status'].upper()
-        qs = Product.objects.all().order_by('brand', 'model', 'name')
+        qs = shopify_syncable(Product.objects).order_by('brand', 'model', 'name')
         if opts['brand']:
             qs = qs.filter(brand__icontains=opts['brand'])
         if opts['barcode']:
