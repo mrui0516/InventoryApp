@@ -279,6 +279,23 @@ has_admin_access(user)          → is_superuser only
 
 调整门店可售分类不需要改代码：Django admin → Store → Sellable categories。
 
+### 5.11 无条码商品与内部条码（Internal barcodes）
+
+手机壳、钢化膜、数据线大多**根本没有 EAN**，但 `Product.barcode` 是全系统的身份键：
+收银台查询、Cloudinary `public_id`、Shopify variant SKU —— 全项目 122 处引用。
+所以**不把它改成可空**，而是自己发号。
+
+GS1 把 `02` 和 `20–29` 前缀留给店内自用，因此内部条码是一个**合法的 EAN-13**：
+塞得进现有的 13 位字段、能被扫码枪读出、可以打印成货架标签，下游一行代码都不用改。
+
+- 实现：`stock/services/barcodes.py`，前缀 `29` + 10 位流水 + 校验位。
+- `Product.barcode_is_internal` 只用于 UI 区分号码来源，不参与任何业务逻辑。
+- 表单留空即自动发号（`ProductForm.clean_barcode` + `save`）；**编辑时留空不会清掉已有条码**。
+- SQLite 上 `select_for_update()` 是空操作，并发靠 unique 索引兜底：
+  撞号就顺延取下一个（`assign_internal_barcode` 的重试循环）。
+
+现有 238 条香水没有一条用 `29` 前缀，不存在冲突。
+
 ## 6. 前端架构
 
 ### 6.0 共享设计系统（`static/css/app.css`）

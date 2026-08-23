@@ -3874,6 +3874,109 @@ class EmployeePriceReadOnlyTests(TestCase):
         self.assertFalse(p.price_locked)   # employee POST cannot lock it
 
 
+class InternalBarcodeTests(TestCase):
+    """Cases and screen protectors arrive with no EAN; we mint a valid one."""
+
+    def test_check_digit_matches_gs1_examples(self):
+        from stock.services.barcodes import ean13_check_digit
+        self.assertEqual(ean13_check_digit('590123412345'), '7')
+        self.assertEqual(ean13_check_digit('400638133393'), '1')
+
+    def test_generated_code_is_a_valid_ean13(self):
+        from stock.services.barcodes import build_internal_barcode, ean13_check_digit
+        code = build_internal_barcode(1)
+        self.assertEqual(len(code), 13)
+        self.assertTrue(code.isdigit())
+        self.assertTrue(code.startswith('29'))
+        self.assertEqual(code[-1], ean13_check_digit(code[:12]))
+
+    def test_sequence_advances_and_never_collides(self):
+        from stock.services.barcodes import assign_internal_barcode
+        category = Category.objects.create(name="Accessories")
+        codes = []
+        for i in range(5):
+            product = Product(name=f"Case {i}", brand="Generic", category=category,
+                              default_price=Decimal("9"))
+            codes.append(assign_internal_barcode(product))
+        self.assertEqual(len(set(codes)), 5)
+        self.assertEqual(codes, sorted(codes))
+
+    def test_it_skips_a_number_already_taken(self):
+        from stock.services.barcodes import assign_internal_barcode, build_internal_barcode
+        category = Category.objects.create(name="Accessories")
+        taken = build_internal_barcode(1)
+        Product.objects.create(name="Squatter", barcode=taken, brand="B",
+                               category=category, default_price=Decimal("1"))
+        product = Product(name="Case", brand="Generic", category=category,
+                          default_price=Decimal("9"))
+        self.assertNotEqual(assign_internal_barcode(product), taken)
+
+    def test_a_real_barcode_is_not_flagged_internal(self):
+        category = Category.objects.create(name="Accessories")
+        product = Product.objects.create(name="Cable", barcode="5901234123457", brand="B",
+                                         category=category, default_price=Decimal("5"))
+        self.assertFalse(product.barcode_is_internal)
+
+
+class ProductFormBlankBarcodeTests(TestCase):
+    """Adding a no-barcode product through the form must just work."""
+
+    def setUp(self):
+        self.category = Category.objects.create(name="Accessories")
+        self.brand = Brand.objects.create(name="Generic")
+
+    def _data(self, **overrides):
+        data = {
+            'barcode': '',
+            'category': self.category.id,
+            'brand_master': self.brand.id,
+            'name': 'Clear TPU case',
+            'default_price': '9.90',
+        }
+        data.update(overrides)
+        return data
+
+    def test_a_blank_barcode_is_accepted_and_filled_in(self):
+        form = ProductForm(data=self._data())
+        self.assertTrue(form.is_valid(), form.errors.as_json())
+        product = form.save()
+        self.assertTrue(product.barcode)
+        self.assertTrue(product.barcode_is_internal)
+        self.assertEqual(len(product.barcode), 13)
+
+    def test_two_blank_barcode_products_do_not_collide(self):
+        first = ProductForm(data=self._data(name="Case A"))
+        self.assertTrue(first.is_valid(), first.errors.as_json())
+        one = first.save()
+        second = ProductForm(data=self._data(name="Case B"))
+        self.assertTrue(second.is_valid(), second.errors.as_json())
+        two = second.save()
+        self.assertNotEqual(one.barcode, two.barcode)
+
+    def test_a_supplied_barcode_is_kept_verbatim(self):
+        form = ProductForm(data=self._data(barcode='5901234123457'))
+        self.assertTrue(form.is_valid(), form.errors.as_json())
+        product = form.save()
+        self.assertEqual(product.barcode, '5901234123457')
+        self.assertFalse(product.barcode_is_internal)
+
+    def test_a_duplicate_barcode_is_still_rejected(self):
+        Product.objects.create(name="Taken", barcode='5901234123457', brand="B",
+                               category=self.category, default_price=Decimal("1"))
+        form = ProductForm(data=self._data(barcode='5901234123457'))
+        self.assertFalse(form.is_valid())
+        self.assertIn('barcode', form.errors)
+
+    def test_editing_a_product_does_not_lose_its_barcode(self):
+        product = Product.objects.create(name="Cable", barcode='5901234123457', brand="B",
+                                         category=self.category, default_price=Decimal("5"))
+        form = ProductForm(data=self._data(barcode='', name="Cable v2"), instance=product)
+        self.assertTrue(form.is_valid(), form.errors.as_json())
+        saved = form.save()
+        self.assertEqual(saved.barcode, '5901234123457')
+        self.assertFalse(saved.barcode_is_internal)
+
+
 class StoreSellableCategoryTests(TestCase):
     """Scentory sells perfume only; Khan Perfume sells everything it stocks."""
 

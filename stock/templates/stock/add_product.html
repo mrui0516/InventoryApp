@@ -5,6 +5,7 @@
 
 {% block content %}
 <style>
+  .opt{font-weight:600;font-size:.68rem;color:var(--app-muted);text-transform:uppercase;letter-spacing:.04em}
   :root{
     --ds-border: rgba(0,0,0,.08);
     --ds-card:#fff;
@@ -117,8 +118,8 @@
           <legend>Identity</legend>
           <div class="row g-2">
             <div class="col-md-6">
-              <label class="form-label">Barcode</label>
-              {% render_field form.barcode class="form-control" inputmode="numeric" pattern="[0-9]{0,13}" maxlength="13" placeholder="e.g. 5601234567890" %}
+              <label class="form-label">Barcode <span class="opt">optional</span></label>
+              {% render_field form.barcode class="form-control" inputmode="numeric" pattern="[0-9]{0,13}" maxlength="13" placeholder="Blank = generated" %}
             </div>
             <div class="col-md-6">
               <label class="form-label">Category</label>

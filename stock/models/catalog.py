@@ -124,6 +124,9 @@ class Product(models.Model):
     name = models.CharField(max_length=100, db_index=True)
     model = models.CharField(max_length=100, blank=True, null=True, db_index=True)
     barcode = models.CharField(max_length=13, unique=True, db_index=True)
+    # True when we minted the barcode ourselves because the goods arrived
+    # without one - see services/barcodes.py. It is still a valid EAN-13.
+    barcode_is_internal = models.BooleanField(default=False)
     brand = models.CharField(max_length=50, db_index=True)
     brand_master = models.ForeignKey(Brand, on_delete=models.SET_NULL, null=True, blank=True, related_name='products')
     series_master = models.ForeignKey(ProductSeries, on_delete=models.SET_NULL, null=True, blank=True, related_name='products')

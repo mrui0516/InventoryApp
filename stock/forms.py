@@ -6,6 +6,7 @@ from django.db.models import Q
 from django.forms import inlineformset_factory
 from django.utils import timezone
 
+from .services.barcodes import assign_internal_barcode
 from .models import (
     ARInvoice,
     ARItem,
@@ -30,6 +31,9 @@ class BarcodeForm(forms.Form):
 
 
 class ProductForm(forms.ModelForm):
+    barcode = forms.CharField(
+        required=False, max_length=13, label='Barcode',
+        help_text='Leave blank for goods with no barcode - one is generated.')
     brand_master = forms.ModelChoiceField(
         queryset=Brand.objects.none(),
         required=False,
@@ -151,6 +155,17 @@ class ProductForm(forms.ModelForm):
             self.fields['wholesale_price'].disabled = True
             self.fields['price_locked'].disabled = True
 
+    def clean_barcode(self):
+        # Cases, screen protectors and cables usually have no EAN printed on
+        # them. Leaving the field blank is normal, not an error: save() mints
+        # an internal one. Editing a product keeps whatever it already has.
+        barcode = (self.cleaned_data.get('barcode') or '').strip()
+        if barcode:
+            return barcode
+        if self.instance.pk and self.instance.barcode:
+            return self.instance.barcode
+        return ''
+
     def clean(self):
         cleaned = super().clean()
         brand = cleaned.get('brand_master')
@@ -193,7 +208,10 @@ class ProductForm(forms.ModelForm):
             product.model = None
 
         if commit:
-            product.save()
+            if product.barcode:
+                product.save()
+            else:
+                assign_internal_barcode(product)
             if product.brand_master and product.category_id:
                 product.brand_master.categories.add(product.category)
             self.save_m2m()
