@@ -153,6 +153,8 @@
     font-size:.68rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--app-muted)}
   .fgroup .form-label{font-size:.72rem;font-weight:700;color:var(--app-muted);margin-bottom:.15rem}
   .fgroup[hidden]{display:none}
+  .fgroup[data-kind][hidden]{display:none}
+  [data-fit-specific][hidden]{display:none}
   .vflag{display:inline-block;margin-left:.25rem;padding:0 .25rem;border-radius:3px;
     background:var(--app-accent-soft);color:var(--app-accent-ink);font-size:.6rem;font-weight:800}
   [data-attr-for][hidden]{display:none}
@@ -220,7 +222,7 @@
           </div>
         </fieldset>
 
-        <fieldset class="fgroup" data-perfume-only>
+        <fieldset class="fgroup" data-kind="perfume">
           <legend>Perfume</legend>
           <div class="row g-2">
             <div class="col-md-6">
@@ -242,14 +244,16 @@
           </div>
         </fieldset>
 
-        <fieldset class="fgroup" data-non-perfume>
+        <fieldset class="fgroup" data-kind="general accessory">
           <legend>Variant</legend>
           <div class="row g-2">
             <div class="col-md-6">
               <label class="form-label">Specification</label>
               {% render_field form.spec class="form-control" placeholder="e.g. 20W" %}
             </div>
-            <div class="col-md-6">
+            {# Accessories answer colour through their Colour attribute, so the
+               legacy field would be a second box asking the same thing. #}
+            <div class="col-md-6" data-kind="general">
               <label class="form-label">Color</label>
               {% render_field form.color class="form-control" placeholder="Optional" %}
             </div>
@@ -257,6 +261,27 @@
         </fieldset>
 
         {% if form.attribute_fields %}
+
+        <fieldset class="fgroup" data-kind="accessory">
+          <legend>Fits</legend>
+          <div class="row g-2">
+            <div class="col-12">
+              <div class="form-check">
+                {% render_field form.universal_fit class="form-check-input" id="universal_fit_box" %}
+                <label class="form-check-label" for="universal_fit_box">Fits every device</label>
+              </div>
+            </div>
+            <div class="col-md-6" data-fit-specific>
+              <label class="form-label">Models</label>
+              {% render_field form.device_models class="form-select" %}
+            </div>
+            <div class="col-md-6" data-fit-specific>
+              <label class="form-label">Compatibility groups</label>
+              {% render_field form.compatibility_groups class="form-select" %}
+            </div>
+          </div>
+        </fieldset>
+
         <fieldset class="fgroup" data-attr-group>
           <legend>Specs</legend>
           <div class="row g-2">
@@ -561,11 +586,15 @@ document.addEventListener('DOMContentLoaded', () => {
   // Perfumes have no colour and no free-text spec (volume drives the size), and
   // non-perfumes have no concentration or fragrance family. Hidden groups keep
   // their inputs in the DOM, so values are still submitted and nothing is lost.
+  // Which questions a category asks is Category.form_kind - data, not a
+  // guess at its name. Hidden groups keep their inputs, so values still
+  // submit and nothing is silently cleared.
+  const kindByCategory = JSON.parse('{{ category_kind_json|escapejs }}');
   function applyCategoryKind() {
-    const option = categorySelect.options[categorySelect.selectedIndex];
-    const isPerfume = /perfum/i.test(option ? option.text : '');
-    form.querySelectorAll('[data-perfume-only]').forEach((el) => { el.hidden = !isPerfume; });
-    form.querySelectorAll('[data-non-perfume]').forEach((el) => { el.hidden = isPerfume; });
+    const kind = kindByCategory[String(categorySelect.value)] || 'general';
+    form.querySelectorAll('[data-kind]').forEach((el) => {
+      el.hidden = !el.dataset.kind.split(' ').includes(kind);
+    });
   }
   applyCategoryKind();
 
@@ -585,6 +614,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (group) { group.hidden = !anyShown; }
   }
   applyAttributeFields();
+
+  const universalBox = document.getElementById('universal_fit_box');
+  function applyUniversal() {
+    form.querySelectorAll('[data-fit-specific]').forEach((el) => {
+      el.hidden = universalBox.checked;
+    });
+  }
+  if (universalBox) {
+    applyUniversal();
+    universalBox.addEventListener('change', applyUniversal);
+  }
 
   categorySelect.addEventListener('change', () => {
     applyCategoryKind();

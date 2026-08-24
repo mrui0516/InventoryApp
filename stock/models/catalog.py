@@ -18,15 +18,45 @@ def product_image_upload_to(instance, filename):
     return f"product_images/{brand}/{filename}" if brand else f"product_images/{filename}"
 
 
+GENERAL = 'general'
+PERFUME = 'perfume'
+ACCESSORY = 'accessory'
+
+FORM_KINDS = [
+    (GENERAL, 'General'),
+    (PERFUME, 'Perfume'),
+    (ACCESSORY, 'Accessory / device'),
+]
+
+
 class Category(models.Model):
     name = models.CharField(max_length=50, db_index=True)
     parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE)
     # Perfume is sold online; phone accessories are shop-floor only. Untick and
     # the whole category stops being pushed to Shopify - no code change needed.
     sync_to_shopify = models.BooleanField(default=True)
+    # Which form a new product in this category gets. A perfume is asked for
+    # its volume and concentration; a case is asked what it fits. Held as data
+    # so a new category picks its form in the admin instead of in a name regex.
+    form_kind = models.CharField(max_length=12, default=GENERAL, choices=FORM_KINDS)
 
     def __str__(self):
         return self.name
+
+    @property
+    def effective_form_kind(self):
+        """This category's form kind, inherited from its parent if unset.
+
+        A subcategory of Accessories is an accessory unless it says otherwise,
+        so creating "Tablet cases" needs no extra thought.
+        """
+        node, seen = self, set()
+        while node is not None and node.pk not in seen:
+            if node.form_kind != GENERAL:
+                return node.form_kind
+            seen.add(node.pk)
+            node = node.parent
+        return GENERAL
 
 
 class Brand(models.Model):

@@ -75,7 +75,10 @@ class Command(BaseCommand):
         with transaction.atomic():
             parent = Category.objects.filter(name__iexact='Accessories').first()
             if parent is None:
-                parent = Category(name='Accessories')
+                # form_kind drives which questions the add-product page asks;
+                # without it a new shop would get the generic form for cases.
+                parent = Category(name='Accessories', form_kind='accessory',
+                                  sync_to_shopify=False)
                 created['categories'] += 1
                 if apply:
                     parent.save()
@@ -84,7 +87,9 @@ class Command(BaseCommand):
                 if not Category.objects.filter(name__iexact=name).exists():
                     created['categories'] += 1
                     if apply:
-                        Category.objects.create(name=name, parent=parent)
+                        Category.objects.create(name=name, parent=parent,
+                                                form_kind='accessory',
+                                                sync_to_shopify=False)
 
             for category_name, attributes in PLAN.items():
                 category = Category.objects.filter(name__iexact=category_name).first()

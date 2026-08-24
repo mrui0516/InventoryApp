@@ -359,6 +359,39 @@ GS1 把 `02` 和 `20–29` 前缀留给店内自用，因此内部条码是一�
 初始属性集：`python manage.py seed_accessory_attributes`（默认 dry-run，`--apply` 写入）。
 可重复运行，不覆盖手工改过的属性。之后全部在 admin 里增改，不用改代码。
 
+### 5.14 新增产品：先选分类，再按分类提问（Add-product wizard）
+
+原来是一张 13 个字段的大表，香水和配件混在一起。现在分两步：
+
+**第一步**：按钮选分类。顶级分类一排（Perfumes / Accessories / Shisha），
+有子分类的（Accessories）点开第二排（Cases / Screen protectors / ... / Other accessories）。
+没有子分类的一点即进表单。
+
+**第二步**：表单只问这个分类该问的。
+
+| 字段组 | 显示条件（`data-kind`） |
+|---|---|
+| Identity（条码/品牌/系列/名称） | always |
+| Perfume（**性别** / 容量 / 浓度 / 香型 / inspired by） | `perfume` |
+| Variant（Specification） | `general accessory` |
+| ↳ Color（旧字段） | `general` —— 配件的颜色走自定义属性，否则会问两遍 |
+| Fits（通用 / 机型 / 兼容组） | `accessory` |
+| Specs（店铺自定义属性） | 按分类有没有定义 |
+| Pricing / Description | always |
+
+**判断依据是 `Category.form_kind`（数据），不是猜分类名。**
+之前 `edit_product` 用 `/perfum/i.test(分类名)` 判断，新开一个"香水配件"分类就会误判。
+`form_kind` 有三个值：`general` / `perfume` / `accessory`，
+**沿父分类继承**（`effective_form_kind`）—— 在 Accessories 下新建"Tablet cases"自动就是配件表单。
+在 admin 里改，不用改代码。
+
+**注意**：隐藏的组**仍然在 DOM 里、仍然会提交**。Gender 现在放在 Perfume 组内，
+新增产品没有旧值可丢所以安全；但**改这类结构时必须确认没有值会被静默清掉**
+（历史教训：Gender 曾经只渲染在隐藏的香水组里，保存非香水时被清空）。
+`add_product` / `edit_product` 都有测试断言每个字段只渲染一次。
+
+表单校验失败重新渲染时，分类已经选好，页面**直接跳到第二步**，不用重选。
+
 ## 6. 前端架构
 
 ### 6.0 共享设计系统（`static/css/app.css`）

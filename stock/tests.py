@@ -4248,6 +4248,141 @@ class SeedAccessoryAttributesTests(TestCase):
         self.assertEqual(colour.name, "Cor")
 
 
+class AddProductWizardTests(TestCase):
+    """Pick a category first; the form then asks only that category's questions."""
+
+    def setUp(self):
+        from django.core.management import call_command
+        call_command("seed_accessory_attributes", "--apply", verbosity=0)
+        self.perfumes = Category.objects.create(name="Perfumes", form_kind="perfume")
+        self.cases = Category.objects.get(name="Cases")
+        self.accessories = Category.objects.get(name="Accessories")
+        self.brand = Brand.objects.create(name="Generic")
+        user = get_user_model().objects.create_superuser(
+            username="mgr2", password="pw123456", email="m2@x.com")
+        self.client.force_login(user)
+
+    def _html(self):
+        return self.client.get(reverse('add_product')).content.decode()
+
+    # -- step 1 ------------------------------------------------------------
+    def test_the_page_opens_on_the_category_picker(self):
+        html = self._html()
+        self.assertIn('id="step-pick"', html)
+        self.assertIn('id="step-form"', html)
+        self.assertIn('What are you adding?', html)
+
+    def test_top_level_categories_are_offered_as_buttons(self):
+        html = self._html()
+        for name in ["Accessories", "Perfumes"]:
+            self.assertIn(f'>{name}</span>', html)
+
+    def test_a_category_with_subcategories_offers_them(self):
+        html = self._html()
+        self.assertIn(f'data-children-of="{self.accessories.pk}"', html)
+        self.assertIn('>Cases</span>', html)
+        self.assertIn('Other accessories', html)
+
+    def test_the_picker_knows_each_category_form_kind(self):
+        import json
+        response = self.client.get(reverse('add_product'))
+        kinds = json.loads(response.context['category_kind_json'])
+        self.assertEqual(kinds[str(self.cases.pk)], "accessory")
+        self.assertEqual(kinds[str(self.perfumes.pk)], "perfume")
+
+    def test_a_subcategory_inherits_the_form_kind_of_its_parent(self):
+        import json
+        child = Category.objects.create(name="Tablet cases", parent=self.accessories)
+        response = self.client.get(reverse('add_product'))
+        kinds = json.loads(response.context['category_kind_json'])
+        self.assertEqual(kinds[str(child.pk)], "accessory")
+
+    # -- step 2 shape ------------------------------------------------------
+    def test_perfume_and_accessory_groups_are_both_present_but_tagged(self):
+        html = self._html()
+        self.assertIn('data-kind="perfume"', html)
+        self.assertIn('data-kind="accessory"', html)
+        self.assertIn('data-kind="general accessory"', html)
+
+    def test_the_fitment_group_is_rendered(self):
+        html = self._html()
+        self.assertIn('universal_fit', html)
+        self.assertIn('device_models', html)
+        self.assertIn('compatibility_groups', html)
+
+    def test_the_category_select_is_still_submitted(self):
+        # The buttons drive it, but it must stay in the DOM for validation.
+        self.assertIn('name="category"', self._html())
+
+    def test_colour_is_asked_once_for_accessories(self):
+        # Accessories answer colour through the Colour attribute, so the
+        # legacy field is scoped to general categories.
+        html = self._html()
+        self.assertIn('<div class="col-md-6" data-kind="general">', html)
+
+    def test_an_accessory_does_not_get_perfume_questions(self):
+        html = self._html()
+        # Anchor on the fieldset - the picker button carries the same
+        # data-kind attribute and appears earlier in the page.
+        start = html.index('<fieldset class="fgroup" data-kind="perfume">')
+        perfume_block = html[start:html.index('</fieldset>', start)]
+        for field in ['volume_ml', 'concentration', 'gender']:
+            self.assertIn(field, perfume_block)
+
+        identity = html[html.index('<legend>Identity</legend>'):]
+        identity = identity[:identity.index('</fieldset>')]
+        self.assertNotIn('gender', identity)
+
+    # -- saving ------------------------------------------------------------
+    def _post(self, **overrides):
+        data = {
+            'barcode': '',
+            'category': self.cases.pk,
+            'brand_master': self.brand.pk,
+            'name': 'Clear TPU',
+            'default_price': '9.90',
+        }
+        data.update(overrides)
+        return self.client.post(reverse('add_product'), data)
+
+    def test_an_accessory_saves_with_its_fitment(self):
+        from stock.models import DeviceModel
+        apple = Brand.objects.create(name="Apple")
+        device = DeviceModel.objects.create(brand=apple, name="iPhone 15 Pro Max")
+        response = self._post(device_models=[device.pk])
+        self.assertEqual(response.status_code, 302)
+        product = Product.objects.get(name="Clear TPU")
+        self.assertTrue(product.fits(device))
+        self.assertTrue(product.barcode_is_internal)
+
+    def test_a_universal_accessory_saves(self):
+        response = self._post(name="USB-C cable", universal_fit='on')
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Product.objects.get(name="USB-C cable").universal_fit)
+
+    def test_gender_sits_in_the_perfume_group_and_does_not_break_accessories(self):
+        # Gender is only asked of perfume now; an accessory posting without it
+        # must still save. (Rendering it *only* in a hidden group once cleared
+        # it on non-perfumes - hence this test.)
+        response = self._post()
+        self.assertEqual(response.status_code, 302)
+
+    def test_a_perfume_keeps_the_gender_it_was_given(self):
+        response = self.client.post(reverse('add_product'), {
+            'barcode': '9900000000001',
+            'category': self.perfumes.pk,
+            'brand_master': self.brand.pk,
+            'name': 'Oud',
+            'default_price': '50',
+            'gender': 'men',
+            'volume_ml': '100',
+        })
+        self.assertEqual(response.status_code, 302)
+        perfume = Product.objects.get(name="Oud")
+        self.assertEqual(perfume.gender, 'men')
+        self.assertEqual(perfume.volume_ml, 100)
+
+
 class DeviceFitmentTests(TestCase):
     """A customer asks for "a case for a 15PM" and must find the right case."""
 
@@ -4736,8 +4871,9 @@ class ProductEditFormGroupingTests(TestCase):
             # count real widgets only - the page's JS also mentions these names
             widgets = re.findall(r'<(?:input|select|textarea)[^>]*name="%s"' % field, html)
             self.assertEqual(len(widgets), 1, f'{field}: {len(widgets)} widgets')
-        self.assertIn("data-perfume-only", html)
-        self.assertIn("data-non-perfume", html)
+        # Groups are tagged with the category kinds they belong to.
+        self.assertIn('data-kind="perfume"', html)
+        self.assertIn('data-kind="general accessory"', html)
 
     def test_add_form_is_grouped_and_renders_each_field_once(self):
         import re
@@ -4745,8 +4881,9 @@ class ProductEditFormGroupingTests(TestCase):
         for field in ['color', 'spec', 'gender', 'volume_ml', 'concentration', 'inspired_by']:
             widgets = re.findall(r'<(?:input|select|textarea)[^>]*name="%s"' % field, html)
             self.assertEqual(len(widgets), 1, f'{field}: {len(widgets)} widgets')
-        self.assertIn("data-perfume-only", html)
-        self.assertIn("data-non-perfume", html)
+        # Groups are tagged with the category kinds they belong to.
+        self.assertIn('data-kind="perfume"', html)
+        self.assertIn('data-kind="general accessory"', html)
         self.assertIn("fam-picker", html)
 
     def test_saving_a_non_perfume_keeps_gender_and_colour(self):

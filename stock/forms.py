@@ -60,6 +60,9 @@ class ProductForm(forms.ModelForm):
             'spec',
             'color',
             'gender',
+            'universal_fit',
+            'device_models',
+            'compatibility_groups',
             'volume_ml',
             'concentration',
             'fragrance_families',
@@ -71,6 +74,8 @@ class ProductForm(forms.ModelForm):
         ]
         widgets = {
             'gender': forms.Select(attrs={'class': 'form-select'}),
+            'device_models': forms.SelectMultiple(attrs={'size': 8}),
+            'compatibility_groups': forms.SelectMultiple(attrs={'size': 5}),
             'concentration': forms.Select(attrs={'class': 'form-select'}),
             'inspired_by': forms.Select(attrs={'class': 'form-select'}),
             # a perfume usually sits in several families
@@ -149,6 +154,11 @@ class ProductForm(forms.ModelForm):
         self.fields['name'].label = 'Product Name'
         self.fields['spec'].label = 'Specification'
         self.fields['color'].label = 'Color'
+        self.fields['universal_fit'].label = 'Fits every device'
+        self.fields['device_models'].label = 'Fits these models'
+        self.fields['compatibility_groups'].label = 'Fits these groups'
+        for name in ('device_models', 'compatibility_groups', 'universal_fit'):
+            self.fields[name].required = False
 
         if not can_edit_prices:
             self.fields['default_price'].disabled = True

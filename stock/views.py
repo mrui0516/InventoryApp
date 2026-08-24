@@ -1447,6 +1447,43 @@ def export_shopify_inventory_csv(request):
 # -----------------------------
 # 产品增/改/详情
 # -----------------------------
+def build_category_picker():
+    """Top-level categories, each with its subcategories, for the first step.
+
+    Picking a top-level category with subcategories opens a second row; one
+    without them is the whole answer. The parent itself stays selectable as
+    "Other <parent>" for goods that fit no subcategory.
+    """
+    picker = []
+    parents = (Category.objects
+               .filter(parent__isnull=True)
+               .prefetch_related('category_set')
+               .order_by('name'))
+    for parent in parents:
+        children = list(parent.category_set.order_by('name'))
+        entry = {
+            'id': parent.id,
+            'name': parent.name,
+            'kind': parent.effective_form_kind,
+            'children': [{'id': c.id, 'name': c.name, 'kind': c.effective_form_kind}
+                         for c in children],
+        }
+        if children:
+            entry['children'].append({
+                'id': parent.id,
+                'name': f'Other {parent.name.lower()}',
+                'kind': parent.effective_form_kind,
+            })
+        picker.append(entry)
+    return picker
+
+
+def build_category_kind_map():
+    """``{category_id: form_kind}`` so the page can reshape without a round trip."""
+    return {str(c.id): c.effective_form_kind
+            for c in Category.objects.select_related('parent')}
+
+
 @login_required
 @manager_required
 def add_product_view(request):
@@ -1461,6 +1498,8 @@ def add_product_view(request):
         form = ProductForm(can_edit_prices=has_manager_access(request.user))
     return render(request, 'stock/add_product.html', {
         'form': form,
+        'category_groups': build_category_picker(),
+        'category_kind_json': json.dumps(build_category_kind_map()),
         'brand_series_map_json': json.dumps(build_brand_series_map()),
         'brand_catalog_json': json.dumps(build_brand_catalog()),
     })
@@ -1877,6 +1916,7 @@ def edit_product_view(request, pk):
 
     return render(request, 'stock/edit_product.html', {
         'form': form,
+        'category_kind_json': json.dumps(build_category_kind_map()),
         'product': product,
         'images': images,
         'purchases': purchases,
