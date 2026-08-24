@@ -4248,6 +4248,21 @@ class SeedAccessoryAttributesTests(TestCase):
         self.assertEqual(colour.name, "Cor")
 
 
+class TemplateHygieneTests(SimpleTestCase):
+    def test_no_multi_line_django_comments(self):
+        """``{# #}`` is single-line only - a comment spanning two lines is
+        rendered to the page as literal text, which is how it reaches the shop
+        floor looking like garbage."""
+        import glob
+        offenders = []
+        for path in glob.glob("stock/templates/**/*.html", recursive=True):
+            with open(path, encoding="utf-8") as handle:
+                for number, line in enumerate(handle, 1):
+                    if "{#" in line and "#}" not in line.split("{#", 1)[1]:
+                        offenders.append(f"{path}:{number}")
+        self.assertEqual(offenders, [], "use {% comment %} for multi-line comments")
+
+
 class AddProductWizardTests(TestCase):
     """Pick a category first; the form then asks only that category's questions."""
 
@@ -4296,6 +4311,35 @@ class AddProductWizardTests(TestCase):
         response = self.client.get(reverse('add_product'))
         kinds = json.loads(response.context['category_kind_json'])
         self.assertEqual(kinds[str(child.pk)], "accessory")
+
+    def test_every_kind_of_accessory_the_shop_sells_has_a_category(self):
+        html = self._html()
+        for name in ["Cases", "Screen protectors", "Cables", "Chargers &amp; plugs",
+                     "Power banks", "Audio", "Mice &amp; keyboards", "Storage",
+                     "Holders &amp; mounts"]:
+            self.assertIn(f'>{name}</span>', html, name)
+
+    def test_choosing_a_category_does_not_navigate_away(self):
+        # The picker stays on the page and the form opens underneath it, so
+        # there is no jump and the choice can be changed with one tap.
+        html = self._html()
+        self.assertNotIn('window.scrollTo', html)
+        self.assertNotIn('stepPick.hidden = true', html)
+
+    def test_case_types_cover_the_kinds_the_shop_stocks(self):
+        from stock.models import CategoryAttribute
+        case_type = CategoryAttribute.objects.get(code="case_type")
+        labels = set(case_type.options.values_list('label', flat=True))
+        for label in ["Plain silicone / rubber", "Fancy / printed", "MagSafe",
+                      "Flip / wallet"]:
+            self.assertIn(label, labels)
+        self.assertTrue(case_type.variant_attribute)
+
+    def test_protector_glue_and_edge_are_separate_stock_rows(self):
+        from stock.models import CategoryAttribute
+        for code in ["glue", "edge", "protector_type"]:
+            attribute = CategoryAttribute.objects.get(code=code)
+            self.assertTrue(attribute.variant_attribute, code)
 
     # -- step 2 shape ------------------------------------------------------
     def test_perfume_and_accessory_groups_are_both_present_but_tagged(self):

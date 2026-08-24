@@ -359,13 +359,27 @@ GS1 把 `02` 和 `20–29` 前缀留给店内自用，因此内部条码是一�
 初始属性集：`python manage.py seed_accessory_attributes`（默认 dry-run，`--apply` 写入）。
 可重复运行，不覆盖手工改过的属性。之后全部在 admin 里增改，不用改代码。
 
+### 5.14b 模板里的两个坑
+
+**`{# ... #}` 只支持单行。** 跨行写的注释**不会被当成注释**，会原样渲染到页面上
+（店里看到的就是一堆乱码）。多行注释必须用 `{% comment %}`。
+`stock/tests.py::TemplateHygieneTests` 会扫描所有模板拦截这个问题——
+`manage.py check` 不编译模板，只有测试能发现。
+
+**`{% render_field %}`（widget_tweaks）不接受带过滤器的属性值。**
+`id=x|add:"_id"` 会抛 `add requires 2 arguments`。用 `field.id_for_label`。
+
 ### 5.14 新增产品：先选分类，再按分类提问（Add-product wizard）
 
 原来是一张 13 个字段的大表，香水和配件混在一起。现在分两步：
 
 **第一步**：按钮选分类。顶级分类一排（Perfumes / Accessories / Shisha），
-有子分类的（Accessories）点开第二排（Cases / Screen protectors / ... / Other accessories）。
-没有子分类的一点即进表单。
+有子分类的（Accessories）**就地向下展开**第二排。
+**全程不跳转、不滚动**——选择器一直留在页面上，表单在它下面展开，改分类一下即可。
+
+配件子分类（`seed_accessory_attributes` 播种，可在 admin 增删）：
+Cases / Screen protectors / Cables / Chargers & plugs / Power banks /
+Audio / Mice & keyboards / Storage / Holders & mounts / Other electronics。
 
 **第二步**：表单只问这个分类该问的。
 

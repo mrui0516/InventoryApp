@@ -251,8 +251,7 @@
               <label class="form-label">Specification</label>
               {% render_field form.spec class="form-control" placeholder="e.g. 20W" %}
             </div>
-            {# Accessories answer colour through their Colour attribute, so the
-               legacy field would be a second box asking the same thing. #}
+            {# colour for accessories comes from their Colour attribute #}
             <div class="col-md-6" data-kind="general">
               <label class="form-label">Color</label>
               {% render_field form.color class="form-control" placeholder="Optional" %}
