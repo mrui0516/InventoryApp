@@ -43,6 +43,7 @@ from .forms import (
     PrintProfileForm, InboundOrderEditForm, InboundPurchaseFormSet, DirectPurchaseEditForm,
     InboundReceiveForm, InboundPendingFormSet, StoreForm,
 )
+from .models.catalog import FORM_KINDS, GENERAL, PERFUME
 from .models import (
     Product, Purchase, Sale, Supplier, Customer, ProductImage,
     Category, SaleOrder, InboundOrder, InboundPendingItem, ARInvoice, ARItem,
@@ -956,6 +957,29 @@ def product_list_view(request):
     return render(request, 'stock/product_list.html', context)
 
 
+def category_with_descendants(category_id):
+    """``category_id`` plus every category beneath it.
+
+    The list page filters by the three top-level categories, so picking
+    Accessories has to bring back the cases and the cables too, not an empty
+    page. Walks the tree rather than assuming one level, and tolerates a
+    cycle - Category.parent is a plain FK with nothing preventing one.
+    """
+    if not category_id or not str(category_id).isdigit():
+        return []
+    found, frontier = {int(category_id)}, [int(category_id)]
+    while frontier:
+        children = list(Category.objects
+                        .filter(parent_id__in=frontier)
+                        .exclude(id__in=found)
+                        .values_list('id', flat=True))
+        if not children:
+            break
+        found.update(children)
+        frontier = children
+    return sorted(found)
+
+
 def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_category, selected_brand, stock_status, sort_by, store=None):
     recent_sales_start = timezone.now() - timedelta(days=30)
     stock_subquery = (
@@ -1021,8 +1045,9 @@ def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_cat
             Q(color__icontains=query)
         )
 
-    if selected_category:
-        products_qs = products_qs.filter(category_id=selected_category)
+    category_ids = category_with_descendants(selected_category)
+    if category_ids:
+        products_qs = products_qs.filter(category_id__in=category_ids)
 
     brand_options = (
         Brand.objects
@@ -1030,8 +1055,9 @@ def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_cat
         .order_by('name')
         .distinct()
     )
-    if selected_category:
-        brand_options = brand_options.filter(products__category_id=selected_category).distinct()
+    if category_ids:
+        brand_options = brand_options.filter(
+            products__category_id__in=category_ids).distinct()
 
     selected_brand_id = None
     selected_brand_obj = None
@@ -1068,13 +1094,15 @@ def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_cat
     }
     products_qs = products_qs.order_by(*sort_options.get(sort_by, sort_options['latest']))
 
-    categories = Category.objects.all()
+    # Only the top-level categories are offered as filter chips: twelve chips
+    # is not a filter, it is a wall. Picking one covers everything beneath it.
+    categories = Category.objects.filter(parent__isnull=True).order_by('name')
 
     active_filter_labels = []
     if query:
         active_filter_labels.append({'label': f'Search: {query}'})
     if selected_category and str(selected_category).isdigit():
-        category_obj = categories.filter(id=int(selected_category)).first()
+        category_obj = Category.objects.filter(id=int(selected_category)).first()
         if category_obj:
             active_filter_labels.append({'label': f'Category: {category_obj.name}'})
     if selected_brand_obj:
@@ -1447,6 +1475,62 @@ def export_shopify_inventory_csv(request):
 # -----------------------------
 # 产品增/改/详情
 # -----------------------------
+@login_required
+@manager_required
+@require_POST
+def create_category(request):
+    """Add a category, or a subcategory, from the add-product page.
+
+    The shop decides what it sells, so new kinds of goods must not need a
+    developer. A subcategory inherits its parent's form kind and its Shopify
+    setting, which is almost always what is meant - "Tablet cases" under
+    Accessories is an accessory, and stays off the storefront.
+    """
+    name = (request.POST.get('name') or '').strip()
+    parent_id = (request.POST.get('parent') or '').strip()
+    form_kind = (request.POST.get('form_kind') or '').strip()
+
+    if not name:
+        return JsonResponse({'ok': False, 'error': 'Give the category a name.'}, status=400)
+    if len(name) > 50:
+        return JsonResponse({'ok': False, 'error': 'Name is too long (50 characters).'},
+                            status=400)
+
+    parent = None
+    if parent_id.isdigit():
+        parent = Category.objects.filter(pk=int(parent_id)).first()
+        if parent is None:
+            return JsonResponse({'ok': False, 'error': 'That parent no longer exists.'},
+                                status=400)
+
+    # Two categories with the same name under the same parent are
+    # indistinguishable at the till, so reuse rather than duplicate.
+    existing = Category.objects.filter(name__iexact=name, parent=parent).first()
+    if existing is not None:
+        return JsonResponse({'ok': False, 'error': f'"{existing.name}" already exists.',
+                             'id': existing.id}, status=409)
+
+    if parent is not None:
+        category = Category.objects.create(
+            name=name, parent=parent,
+            form_kind=parent.effective_form_kind,
+            sync_to_shopify=parent.sync_to_shopify)
+    else:
+        valid = {choice for choice, _label in FORM_KINDS}
+        category = Category.objects.create(
+            name=name,
+            form_kind=form_kind if form_kind in valid else GENERAL,
+            sync_to_shopify=(form_kind == PERFUME))
+
+    return JsonResponse({
+        'ok': True,
+        'id': category.id,
+        'name': category.name,
+        'kind': category.effective_form_kind,
+        'parent': parent.id if parent else None,
+    })
+
+
 def build_category_picker():
     """Top-level categories, each with its subcategories, for the first step.
 

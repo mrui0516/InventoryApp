@@ -120,6 +120,17 @@
   .pick-sub{font-size:.68rem;font-weight:600;color:var(--app-muted);text-transform:capitalize}
   .pick-sublevel[hidden]{display:none}
   .pick-sublevel{margin-top:.2rem;padding-top:.1rem}
+  .pick-new{border-style:dashed;color:var(--app-muted)}
+  .pick-new .pick-name{color:var(--app-muted);font-weight:700}
+  .pick-new:hover .pick-name{color:var(--app-accent)}
+  .new-cat{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;margin-top:.5rem}
+  .new-cat[hidden]{display:none}
+  .new-cat input[data-new-name]{max-width:230px}
+  .new-cat select{max-width:170px}
+  .new-cat-error{font-size:.75rem;font-weight:600;color:var(--app-danger)}
+  @media (max-width:575.98px){
+    .new-cat input[data-new-name],.new-cat select{max-width:none;flex:1 1 100%}
+  }
 
   #step-form[hidden]{display:none}
   .fgroup[data-kind][hidden]{display:none}
@@ -153,6 +164,23 @@
         <span class="pick-sub">{% if top.children %}{{ top.children|length }} types{% else %}{{ top.kind }}{% endif %}</span>
       </button>
     {% endfor %}
+    <button type="button" class="pick-btn pick-new" data-new-parent="">
+      <span class="pick-name">+ New category</span>
+      <span class="pick-sub">Add your own</span>
+    </button>
+  </div>
+
+  <div class="new-cat" data-new-form="" hidden>
+    <input type="text" class="form-control form-control-sm" data-new-name
+           maxlength="50" placeholder="Category name">
+    <select class="form-select form-select-sm" data-new-kind>
+      <option value="accessory">Accessory / device</option>
+      <option value="perfume">Perfume</option>
+      <option value="general">General</option>
+    </select>
+    <button type="button" class="btn btn-primary btn-sm" data-new-save>Add</button>
+    <button type="button" class="btn btn-link btn-sm" data-new-cancel>Cancel</button>
+    <span class="new-cat-error" data-new-error></span>
   </div>
 
   {% for top in category_groups %}
@@ -165,6 +193,16 @@
               <span class="pick-name">{{ child.name }}</span>
             </button>
           {% endfor %}
+          <button type="button" class="pick-btn pick-btn-sm pick-new" data-new-parent="{{ top.id }}">
+            <span class="pick-name">+ New type</span>
+          </button>
+        </div>
+        <div class="new-cat" data-new-form="{{ top.id }}" hidden>
+          <input type="text" class="form-control form-control-sm" data-new-name
+                 maxlength="50" placeholder="e.g. Tablet cases">
+          <button type="button" class="btn btn-primary btn-sm" data-new-save>Add</button>
+          <button type="button" class="btn btn-link btn-sm" data-new-cancel>Cancel</button>
+          <span class="new-cat-error" data-new-error></span>
         </div>
       </div>
     {% endif %}
@@ -485,80 +523,195 @@ document.addEventListener('DOMContentLoaded', () => {
   applyAttributeFields();
 
   // ---- step 1: pick a category; the form opens underneath, in place.
-  // The picker stays visible so the choice is always on screen and can be
-  // changed with one tap - no navigation, no scroll jump.
+  // All of it is driven from two pieces of state and one render(). Toggling
+  // classes at each click site is what let a stale highlight survive while
+  // the form showed another category's fields.
   const kindByCategory = JSON.parse('{{ category_kind_json|escapejs }}');
   const stepPick = document.getElementById('step-pick');
   const stepForm = document.getElementById('step-form');
-  const pickButtons = stepPick.querySelectorAll('[data-top]');
-  const subButtons = stepPick.querySelectorAll('[data-pick]');
 
-  function applyKind(categoryId) {
-    const kind = kindByCategory[String(categoryId)] || 'general';
+  let openParent = null;      // which top-level row is expanded
+  let chosen = null;          // the category actually chosen, or null
+
+  function topButtons() { return stepPick.querySelectorAll('[data-top]'); }
+  function subButtons() { return stepPick.querySelectorAll('[data-pick]'); }
+
+  function parentOf(categoryId) {
+    const match = stepPick.querySelector(`[data-children-of] [data-pick="${categoryId}"]`);
+    return match ? match.closest('[data-children-of]').dataset.childrenOf : null;
+  }
+
+  function render() {
+    stepPick.querySelectorAll('[data-children-of]').forEach((panel) => {
+      panel.hidden = panel.dataset.childrenOf !== openParent;
+    });
+    topButtons().forEach((button) => {
+      const id = button.dataset.top;
+      button.classList.toggle('is-open', id === openParent);
+      // A parent is only "chosen" when it is the category itself, or when the
+      // chosen category is one of its children.
+      button.classList.toggle(
+        'is-chosen', chosen !== null && (id === chosen || id === parentOf(chosen)));
+    });
+    subButtons().forEach((button) => {
+      button.classList.toggle('is-chosen', button.dataset.pick === chosen);
+    });
+
+    stepForm.hidden = chosen === null;
+    if (chosen === null) { return; }
+
+    categorySelect.value = chosen;
+    categorySelect.dispatchEvent(new Event('change', { bubbles: true }));
+    const kind = kindByCategory[chosen] || 'general';
     form.querySelectorAll('[data-kind]').forEach((el) => {
       el.hidden = !el.dataset.kind.split(' ').includes(kind);
     });
     applyAttributeFields();
   }
 
-  function markChosen(categoryId) {
-    const id = String(categoryId);
-    subButtons.forEach((b) => b.classList.toggle('is-chosen', b.dataset.pick === id));
-    pickButtons.forEach((b) => {
-      const owns = b.dataset.top === id ||
-        !!stepPick.querySelector(`[data-children-of="${b.dataset.top}"] [data-pick="${id}"]`);
-      b.classList.toggle('is-chosen', owns);
+  stepPick.addEventListener('click', (event) => {
+    const top = event.target.closest('[data-top]');
+    const sub = event.target.closest('[data-pick]');
+    if (sub) {
+      chosen = sub.dataset.pick;
+      render();
+      return;
+    }
+    if (!top) { return; }
+
+    const id = top.dataset.top;
+    if (top.dataset.hasChildren !== '1') {
+      openParent = null;
+      chosen = id;
+      render();
+      return;
+    }
+    // Expanding a parent is not itself a choice: close the form so the fields
+    // on screen always belong to the category that is highlighted.
+    openParent = openParent === id ? null : id;
+    chosen = null;
+    render();
+  });
+
+
+  // ---- adding a category from here, so new kinds of goods never need a
+  // developer. A subcategory inherits its parent's kind on the server.
+  const createCategoryUrl = "{% url 'create_category' %}";
+
+  function newForm(parentId) {
+    return stepPick.querySelector(`[data-new-form="${parentId}"]`);
+  }
+
+  function closeNewForms() {
+    stepPick.querySelectorAll('[data-new-form]').forEach((panel) => {
+      panel.hidden = true;
+      panel.querySelector('[data-new-error]').textContent = '';
     });
   }
 
-  function openSublevel(topId) {
-    stepPick.querySelectorAll('[data-children-of]').forEach((panel) => {
-      panel.hidden = panel.dataset.childrenOf !== topId;
-    });
+  function addPickerButton(category) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = category.parent ? 'pick-btn pick-btn-sm' : 'pick-btn';
+    if (category.parent) {
+      button.dataset.pick = String(category.id);
+      button.innerHTML = '<span class="pick-name"></span>';
+    } else {
+      button.dataset.top = String(category.id);
+      button.dataset.hasChildren = '0';
+      button.innerHTML = '<span class="pick-name"></span><span class="pick-sub"></span>';
+      button.querySelector('.pick-sub').textContent = category.kind;
+    }
+    button.querySelector('.pick-name').textContent = category.name;
+
+    const anchor = category.parent
+      ? stepPick.querySelector(`[data-children-of="${category.parent}"] .pick-new`)
+      : stepPick.querySelector('.pick-grid > .pick-new');
+    anchor.parentNode.insertBefore(button, anchor);
+
+    // The select drives validation and the brand wiring, so it needs the
+    // option too - the page is not reloading.
+    const option = document.createElement('option');
+    option.value = String(category.id);
+    option.textContent = category.name;
+    categorySelect.appendChild(option);
+
+    kindByCategory[String(category.id)] = category.kind;
   }
 
-  function chooseCategory(categoryId) {
-    categorySelect.value = String(categoryId);
-    categorySelect.dispatchEvent(new Event('change', { bubbles: true }));
-    applyKind(categoryId);
-    markChosen(categoryId);
-    stepForm.hidden = false;
-  }
+  async function submitNewCategory(panel, parentId) {
+    const nameField = panel.querySelector('[data-new-name]');
+    const kindField = panel.querySelector('[data-new-kind]');
+    const errorField = panel.querySelector('[data-new-error]');
+    const name = nameField.value.trim();
+    if (!name) { errorField.textContent = 'Give it a name.'; nameField.focus(); return; }
 
-  pickButtons.forEach((button) => {
-    button.addEventListener('click', () => {
-      const topId = button.dataset.top;
-      if (button.dataset.hasChildren !== '1') {
-        openSublevel(null);
-        chooseCategory(topId);
-        return;
-      }
-      const alreadyOpen = !stepPick.querySelector(
-        `[data-children-of="${topId}"]`).hidden;
-      openSublevel(alreadyOpen ? null : topId);
-      button.classList.toggle('is-open', !alreadyOpen);
-      pickButtons.forEach((other) => {
-        if (other !== button) { other.classList.remove('is-open'); }
+    const body = new FormData();
+    body.append('name', name);
+    if (parentId) { body.append('parent', parentId); }
+    if (kindField) { body.append('form_kind', kindField.value); }
+
+    let payload;
+    try {
+      const response = await fetch(createCategoryUrl, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': form.querySelector('[name=csrfmiddlewaretoken]').value },
+        body,
       });
-      // Choosing the parent again should not keep a stale form open.
-      if (alreadyOpen) { stepForm.hidden = true; markChosen(null); }
-    });
+      payload = await response.json();
+    } catch (err) {
+      errorField.textContent = 'Could not reach the server.';
+      return;
+    }
+    if (!payload.ok) {
+      errorField.textContent = payload.error || 'Could not add that.';
+      // It already exists - select it rather than leaving them stuck.
+      if (payload.id) { chosen = String(payload.id); render(); }
+      return;
+    }
+
+    addPickerButton(payload);
+    nameField.value = '';
+    closeNewForms();
+    chosen = String(payload.id);
+    if (payload.parent) { openParent = String(payload.parent); }
+    render();
+  }
+
+  stepPick.addEventListener('click', (event) => {
+    const opener = event.target.closest('[data-new-parent]');
+    if (opener) {
+      const parentId = opener.dataset.newParent;
+      const panel = newForm(parentId);
+      const wasOpen = !panel.hidden;
+      closeNewForms();
+      panel.hidden = wasOpen;
+      if (!wasOpen) { panel.querySelector('[data-new-name]').focus(); }
+      return;
+    }
+    const cancel = event.target.closest('[data-new-cancel]');
+    if (cancel) { closeNewForms(); return; }
+    const save = event.target.closest('[data-new-save]');
+    if (save) {
+      const panel = save.closest('[data-new-form]');
+      submitNewCategory(panel, panel.dataset.newForm);
+    }
   });
 
-  subButtons.forEach((button) => {
-    button.addEventListener('click', () => chooseCategory(button.dataset.pick));
+  stepPick.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') { return; }
+    const nameField = event.target.closest('[data-new-name]');
+    if (!nameField) { return; }
+    event.preventDefault();          // Enter here must not submit the product
+    const panel = nameField.closest('[data-new-form]');
+    submitNewCategory(panel, panel.dataset.newForm);
   });
 
-  // A failed submit re-renders with a category already chosen: reopen it.
+  // A failed submit comes back with a category already set: reopen it.
   if (categorySelect.value) {
-    const chosen = categorySelect.value;
-    pickButtons.forEach((b) => {
-      if (stepPick.querySelector(`[data-children-of="${b.dataset.top}"] [data-pick="${chosen}"]`)) {
-        openSublevel(b.dataset.top);
-        b.classList.add('is-open');
-      }
-    });
-    chooseCategory(chosen);
+    chosen = categorySelect.value;
+    openParent = parentOf(chosen);
+    render();
   }
 
   // Universal goods fit everything, so the specific pickers are meaningless.

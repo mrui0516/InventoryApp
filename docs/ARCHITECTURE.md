@@ -359,6 +359,12 @@ GS1 把 `02` 和 `20–29` 前缀留给店内自用，因此内部条码是一�
 初始属性集：`python manage.py seed_accessory_attributes`（默认 dry-run，`--apply` 写入）。
 可重复运行，不覆盖手工改过的属性。之后全部在 admin 里增改，不用改代码。
 
+### 5.13b 产品列表的分类筛选
+
+列表页的分类 chips **只显示顶级分类**（十二个 chip 不是筛选器，是一堵墙）。
+点顶级分类会带出**它下面所有子分类的产品** —— `category_with_descendants()`
+逐层展开整棵子树（不假设只有一层），并**带环检测**。
+
 ### 5.14b 模板里的两个坑
 
 **`{# ... #}` 只支持单行。** 跨行写的注释**不会被当成注释**，会原样渲染到页面上
@@ -377,9 +383,21 @@ GS1 把 `02` 和 `20–29` 前缀留给店内自用，因此内部条码是一�
 有子分类的（Accessories）**就地向下展开**第二排。
 **全程不跳转、不滚动**——选择器一直留在页面上，表单在它下面展开，改分类一下即可。
 
-配件子分类（`seed_accessory_attributes` 播种，可在 admin 增删）：
+配件子分类（`seed_accessory_attributes` 只是**起始集**，不是固定的）：
 Cases / Screen protectors / Cables / Chargers & plugs / Power banks /
 Audio / Mice & keyboards / Storage / Holders & mounts / Other electronics。
+
+**分类可以在页面上直接加**（`create_category`，`POST`，manager 限定）：
+顶级行末尾的「+ New category」（要选 form kind），
+子分类行末尾的「+ New type」（**自动继承父分类的 form_kind 和 Shopify 开关**，
+所以 Accessories 下新建的一定是配件表单、且不上网店）。
+同一父分类下同名会被拒绝（409）并**直接选中已存在的那个**，不会产生重复分类。
+新分类当场插进按钮行和 `<select>`，页面不刷新。
+
+**选择器是一个 state machine**：`openParent` + `chosen` 两个状态，一个 `render()` 收口。
+之前在每个点击处各自 toggle class，导致展开 Accessories 后仍留着蓝框、
+而表单显示的是另一个分类的字段。**展开父分类不等于选中它** —— 展开时表单收起，
+屏幕上的字段永远属于高亮的那个分类。
 
 **第二步**：表单只问这个分类该问的。
 

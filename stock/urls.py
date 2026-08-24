@@ -20,6 +20,7 @@ urlpatterns = [
     path('products/export-shopify-csv/', views.export_shopify_inventory_csv, name='export_shopify_inventory_csv'),
     path('check_barcode/', views.check_barcode, name='check_barcode'),
     path('add-product/', views.add_product_view, name='add_product'),
+    path('categories/create/', views.create_category, name='create_category'),
     path('products/<int:pk>/', views.product_detail_view, name='product_detail'),
     path('sales-history/', views.product_sales_history_view, name='product_sales_history'),
     path('backup/download/', views.download_db_backup, name='download_db_backup'),

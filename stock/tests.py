@@ -4263,6 +4263,140 @@ class TemplateHygieneTests(SimpleTestCase):
         self.assertEqual(offenders, [], "use {% comment %} for multi-line comments")
 
 
+class CreateCategoryTests(TestCase):
+    """The shop adds its own categories; no developer, no migration."""
+
+    def setUp(self):
+        self.accessories = Category.objects.create(
+            name="Accessories", form_kind="accessory", sync_to_shopify=False)
+        self.manager = get_user_model().objects.create_superuser(
+            username="boss3", password="pw123456", email="b3@x.com")
+        self.client.force_login(self.manager)
+
+    def _post(self, **data):
+        return self.client.post(reverse('create_category'), data)
+
+    def test_a_top_level_category_is_created_with_the_kind_given(self):
+        response = self._post(name="Vapes", form_kind="accessory")
+        self.assertEqual(response.status_code, 200)
+        category = Category.objects.get(name="Vapes")
+        self.assertEqual(category.form_kind, "accessory")
+        self.assertIsNone(category.parent)
+
+    def test_a_subcategory_inherits_its_parents_kind_and_shopify_setting(self):
+        response = self._post(name="Tablet cases", parent=self.accessories.pk)
+        self.assertEqual(response.status_code, 200)
+        child = Category.objects.get(name="Tablet cases")
+        self.assertEqual(child.parent, self.accessories)
+        self.assertEqual(child.effective_form_kind, "accessory")
+        self.assertFalse(child.sync_to_shopify)
+
+    def test_a_new_perfume_category_goes_on_the_storefront(self):
+        self._post(name="Niche perfume", form_kind="perfume")
+        self.assertTrue(Category.objects.get(name="Niche perfume").sync_to_shopify)
+
+    def test_a_new_accessory_category_stays_off_the_storefront(self):
+        self._post(name="Vapes", form_kind="accessory")
+        self.assertFalse(Category.objects.get(name="Vapes").sync_to_shopify)
+
+    def test_the_response_carries_what_the_page_needs(self):
+        payload = self._post(name="Tablet cases", parent=self.accessories.pk).json()
+        self.assertTrue(payload['ok'])
+        self.assertEqual(payload['name'], "Tablet cases")
+        self.assertEqual(payload['kind'], "accessory")
+        self.assertEqual(payload['parent'], self.accessories.pk)
+
+    def test_a_duplicate_under_the_same_parent_is_refused_and_points_at_it(self):
+        first = self._post(name="Tablet cases", parent=self.accessories.pk).json()
+        response = self._post(name="tablet CASES", parent=self.accessories.pk)
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()['id'], first['id'])
+        self.assertEqual(Category.objects.filter(name__iexact="Tablet cases").count(), 1)
+
+    def test_the_same_name_under_a_different_parent_is_allowed(self):
+        other = Category.objects.create(name="Shisha")
+        self._post(name="Glass", parent=self.accessories.pk)
+        response = self._post(name="Glass", parent=other.pk)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Category.objects.filter(name="Glass").count(), 2)
+
+    def test_a_blank_name_is_refused(self):
+        response = self._post(name="   ")
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Category.objects.exclude(pk=self.accessories.pk).exists())
+
+    def test_an_over_long_name_is_refused(self):
+        self.assertEqual(self._post(name="x" * 51).status_code, 400)
+
+    def test_a_missing_parent_is_refused(self):
+        self.assertEqual(self._post(name="Orphan", parent=99999).status_code, 400)
+
+    def test_an_unknown_kind_falls_back_to_general(self):
+        self._post(name="Mystery", form_kind="nonsense")
+        self.assertEqual(Category.objects.get(name="Mystery").form_kind, "general")
+
+    def test_an_employee_cannot_add_categories(self):
+        employee = get_user_model().objects.create_user(username="staff3", password="pw123456")
+        self.client.force_login(employee)
+        self._post(name="Sneaky")
+        self.assertFalse(Category.objects.filter(name="Sneaky").exists())
+
+    def test_it_only_answers_post(self):
+        self.assertEqual(self.client.get(reverse('create_category')).status_code, 405)
+
+
+class ProductListCategoryChipsTests(TestCase):
+    """Three chips, not twelve - and one covers everything beneath it."""
+
+    def setUp(self):
+        from stock.services.barcodes import assign_internal_barcode
+        self.accessories = Category.objects.create(name="Accessories", form_kind="accessory")
+        self.cases = Category.objects.create(name="Cases", parent=self.accessories)
+        self.perfumes = Category.objects.create(name="Perfumes", form_kind="perfume")
+
+        self.case = Product(name="Clear TPU", brand="Generic", category=self.cases,
+                            default_price=Decimal("9"))
+        assign_internal_barcode(self.case)
+        self.perfume = Product.objects.create(
+            name="Oud", barcode="9910000000001", brand="B",
+            category=self.perfumes, default_price=Decimal("50"))
+
+        user = get_user_model().objects.create_superuser(
+            username="boss4", password="pw123456", email="b4@x.com")
+        self.client.force_login(user)
+
+    def test_only_top_level_categories_are_offered_as_chips(self):
+        response = self.client.get(reverse('product_list'))
+        names = [c.name for c in response.context['categories']]
+        self.assertEqual(sorted(names), ["Accessories", "Perfumes"])
+        self.assertNotIn("Cases", names)
+
+    def test_filtering_by_a_parent_includes_its_subcategories(self):
+        response = self.client.get(reverse('product_list'), {'category': self.accessories.pk})
+        names = [p.name for p in response.context['products']]
+        self.assertIn("Clear TPU", names)
+        self.assertNotIn("Oud", names)
+
+    def test_filtering_by_a_leaf_still_works(self):
+        response = self.client.get(reverse('product_list'), {'category': self.cases.pk})
+        self.assertEqual([p.name for p in response.context['products']], ["Clear TPU"])
+
+    def test_a_deep_tree_is_covered(self):
+        from stock.services.barcodes import assign_internal_barcode
+        deep = Category.objects.create(name="MagSafe cases", parent=self.cases)
+        product = Product(name="MagSafe clear", brand="Generic", category=deep,
+                          default_price=Decimal("15"))
+        assign_internal_barcode(product)
+        response = self.client.get(reverse('product_list'), {'category': self.accessories.pk})
+        self.assertIn("MagSafe clear", [p.name for p in response.context['products']])
+
+    def test_a_category_cycle_does_not_hang_the_page(self):
+        self.accessories.parent = self.cases
+        self.accessories.save()
+        response = self.client.get(reverse('product_list'), {'category': self.accessories.pk})
+        self.assertEqual(response.status_code, 200)
+
+
 class AddProductWizardTests(TestCase):
     """Pick a category first; the form then asks only that category's questions."""
 
@@ -4318,6 +4452,13 @@ class AddProductWizardTests(TestCase):
                      "Power banks", "Audio", "Mice &amp; keyboards", "Storage",
                      "Holders &amp; mounts"]:
             self.assertIn(f'>{name}</span>', html, name)
+
+    def test_the_page_offers_adding_a_category_and_a_subcategory(self):
+        html = self._html()
+        self.assertIn('data-new-parent=""', html)                     # top level
+        self.assertIn(f'data-new-parent="{self.accessories.pk}"', html)  # subcategory
+        self.assertIn('+ New category', html)
+        self.assertIn('+ New type', html)
 
     def test_choosing_a_category_does_not_navigate_away(self):
         # The picker stays on the page and the form opens underneath it, so
