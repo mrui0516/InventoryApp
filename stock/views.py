@@ -3008,9 +3008,15 @@ def supplier_detail_view(request, supplier_id):
             product_ids.add(item.product_id)
 
         # Sort on the day the goods actually landed; an invoice can be dated
-        # a week before the shipment turns up.
+        # a week either side of when the shipment turns up.
+        #
+        # The last resort is the order's own creation date, never "today":
+        # falling back to today floated every order with no invoice date and
+        # no receipt time straight to the top, which is how an order from May
+        # came to sit above one that arrived this morning.
         arrived_on = order.received_at.date() if order.received_at else None
-        sort_at = arrived_on or order.invoice_date or timezone.localdate()
+        created_on = order.created_at.date() if order.created_at else timezone.localdate()
+        sort_at = arrived_on or order.invoice_date or created_on
         created_anchor = comparable_recorded_at(
             order.received_at or order.created_at or timezone.now())
         sort_dt = comparable_recorded_at(

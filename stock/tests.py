@@ -4483,6 +4483,60 @@ class SupplierOrderSortingTests(TestCase):
         titles = [row['title'] for row in response.context['history_page']]
         self.assertEqual(titles[0], "ARRIVED-TODAY", titles)
 
+    def test_an_old_order_with_no_invoice_date_does_not_float_to_today(self):
+        """The exact shape that put a May order above this morning's delivery.
+
+        No invoice date and no receipt time used to fall back to "today", so
+        the row sorted as today while displaying its real, much older date.
+        """
+        from stock.models import InboundOrder, Purchase
+        old_order = InboundOrder.objects.create(
+            supplier=self.supplier, invoice_no="OLD-NO-INVOICE-DATE",
+            invoice_date=None, status='received')
+        InboundOrder.objects.filter(pk=old_order.pk).update(
+            invoice_date=None, received_at=None,
+            created_at=timezone.now() - timedelta(days=100))
+        Purchase.objects.create(inbound_order=old_order, product=self.product,
+                                supplier=self.supplier, quantity=1, remaining=1,
+                                cost_price=Decimal("10"),
+                                date=timezone.now() - timedelta(days=100))
+
+        self._order(invoice_date=(timezone.now() - timedelta(days=6)).date(),
+                    received_on=timezone.now(), invoice_no="ARRIVED-TODAY")
+
+        response = self.client.get(reverse('supplier_detail', args=[self.supplier.pk]))
+        rows = list(response.context['history_page'])
+
+        # The invariant, stated directly: a row sorts by the date it shows.
+        # Asserting only on position passed by luck - both rows landed on the
+        # same day and the microseconds happened to favour the right one.
+        for row in rows:
+            self.assertEqual(
+                timezone.localtime(row['sort_at']).date(), row['display_date'],
+                f"{row['title']} sorts by a different date than it displays")
+
+        titles = [row['title'] for row in rows]
+        self.assertEqual(titles[0], "ARRIVED-TODAY", titles)
+        self.assertEqual(titles[-1], "OLD-NO-INVOICE-DATE", titles)
+
+    def test_rows_are_in_strict_date_order(self):
+        from stock.models import InboundOrder, Purchase
+        # A spread of the awkward shapes, all mixed together.
+        self._order(invoice_date=None, received_on=timezone.now() - timedelta(days=2),
+                    invoice_no="TWO-DAYS-AGO")
+        self._order(invoice_date=(timezone.now() + timedelta(days=5)).date(),
+                    received_on=timezone.now() - timedelta(days=30),
+                    invoice_no="FUTURE-INVOICE-OLD-ARRIVAL")
+        self._order(invoice_date=(timezone.now() - timedelta(days=1)).date(),
+                    received_on=timezone.now(), invoice_no="TODAY")
+
+        response = self.client.get(reverse('supplier_detail', args=[self.supplier.pk]))
+        rows = list(response.context['history_page'])
+        dates = [row['display_date'] for row in rows]
+        self.assertEqual(dates, sorted(dates, reverse=True), dates)
+        for row in rows:
+            self.assertEqual(timezone.localtime(row['sort_at']).date(), row['display_date'])
+
     def test_the_listed_date_is_when_the_goods_arrived(self):
         arrival = timezone.now() - timedelta(days=1)
         self._order(invoice_date=(timezone.now() - timedelta(days=8)).date(),
