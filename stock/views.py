@@ -550,6 +550,9 @@ def inbound_view(request):
                     invoice_no=invoice_no or None,
                     invoice_date=invoice_date or timezone.localdate(),
                     status='pending_receipt',
+                    # The order is being placed with the supplier now; this is
+                    # the clock the lead time is measured from.
+                    placed_at=timezone.now(),
                     total_amount=Decimal('0.00'),
                 )
 
@@ -698,9 +701,7 @@ def inbound_receive_view(request, order_id):
                             cost_price=it.cost_price,
                             date=now,
                         )
-                    order.status = 'received'
-                    order.received_at = now
-                    order.save(update_fields=['status', 'received_at'])
+                    order.mark_received(now)
                     order.pending_items.all().delete()
                     messages.success(
                         request,

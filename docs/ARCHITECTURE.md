@@ -258,6 +258,28 @@ has_admin_access(user)          → is_superuser only
 - **打印小票抬头按店铺**：`PrintProfile` 加 `store` OneToOne（迁移 0030/0031：原单例抬头挂到默认店铺，其余店铺各建一份，从默认抬头 + 店名播种）。`PrintProfile.get_for_store(store)` 按店铺取/建；`get_solo()` 退化为默认店铺抬头。小票（`sale_order_detail`）用**该订单店铺**的抬头；抬头编辑页（`print_profile_edit_view`）编辑**当前活动店铺**的抬头（All stores 时编辑默认店铺）。
 - **仍待接入**：按分类的销售目标 `SalesTarget` 改为按店铺（模型变更；当前仪表盘目标进度用店铺销售额对比全局分类目标，为已知局限）；员工创建/编辑表单增加显式店铺选择（当前新建按活动/默认店铺自动分配）。
 
+### 5.9b 供应商到货时效（Supplier lead time）
+
+时效 = `InboundOrder.placed_at`（下单给供应商）→ `received_at`（确认收货）。
+**两个时间戳都由 model 自己打**（`save()` 里给新单打 `placed_at`，`mark_received()` 打
+`received_at`），不是靠某个 view 记得去写 —— 漏打一次，这一单的时效就永久丢了。
+
+**原来的做法是错的**：靠 `received_at > created_at` 猜"这行有没有真实数据"。
+后果是 212 张已收货的单里只有 16 张被统计：
+156 张 `received_at == created_at`、**40 张 `received_at` 干脆是 NULL**
+（`status` 默认值就是 `'received'`，直接建单就不会有收货时间）。
+同一天下单同一天到货的单也会被这个过滤悄悄丢掉。
+
+现在的规则很直白：**`placed_at` 和 `received_at` 都有 = 统计；缺一个 = 不统计**。
+没有 `placed_at` 的历史单**永远不参与**——没有诚实的办法凭空造出下单时间。
+迁移 0049 只回填两种确定的情况：还没收货的暂定单（`created_at` 就是下单时间），
+以及原本就被统计的那 16 张（否则店里现在看到的平均值会全部消失）。
+
+所以数字是**从少到多、越来越准**的，供应商列表和详情页都显示 `n=样本数`。
+
+**查为什么某一单没被统计**：`python manage.py lead_time_report --supplier PERFUME`
+会逐单打印 计入/跳过 和跳过的原因（只读）。
+
 ### 5.10 门店可售分类（Store sellable categories）
 
 库存、进货、供应商是全公司共享的；**卖什么**才是分门店的。

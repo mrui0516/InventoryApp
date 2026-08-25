@@ -2050,7 +2050,9 @@ class SupplierManagementTests(TestCase):
         )
         order = InboundOrder.objects.create(supplier=supplier, status="received", received_at=timezone.now())
         InboundOrder.objects.filter(pk=order.pk).update(
-            created_at=timezone.now() - timedelta(days=2), received_at=timezone.now()
+            created_at=timezone.now() - timedelta(days=2),
+            placed_at=timezone.now() - timedelta(days=2),
+            received_at=timezone.now()
         )
         Purchase.objects.create(
             inbound_order=order, product=product, supplier=supplier,
@@ -4263,6 +4265,156 @@ class TemplateHygieneTests(SimpleTestCase):
         self.assertEqual(offenders, [], "use {% comment %} for multi-line comments")
 
 
+class LeadTimeStampingTests(TestCase):
+    """Every order received from now on must be measured."""
+
+    def setUp(self):
+        from stock.models import Supplier
+        self.supplier = Supplier.objects.create(name="PERFUME EUROPE")
+
+    def _order(self, **kwargs):
+        from stock.models import InboundOrder
+        return InboundOrder.objects.create(supplier=self.supplier, **kwargs)
+
+    def test_a_new_order_records_when_it_was_placed(self):
+        order = self._order(status='pending_receipt')
+        self.assertIsNotNone(order.placed_at)
+
+    def test_receiving_stamps_the_time_once(self):
+        from stock.services.lead_time import supplier_lead_stats
+        order = self._order(status='pending_receipt')
+        order.placed_at = timezone.now() - timedelta(days=3)
+        order.save(update_fields=['placed_at'])
+
+        order.mark_received()
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'received')
+        self.assertIsNotNone(order.received_at)
+        self.assertAlmostEqual(order.lead_time_days, 3.0, places=1)
+
+        stats = supplier_lead_stats(self.supplier)
+        self.assertEqual(stats['sample'], 1)
+        self.assertAlmostEqual(stats['avg_days'], 3.0, places=1)
+
+    def test_an_order_created_straight_as_received_still_carries_a_time(self):
+        # status defaults to 'received'; such a row used to keep received_at
+        # NULL and could never be measured. That is how 40 orders were lost.
+        order = self._order()
+        self.assertEqual(order.status, 'received')
+        self.assertIsNotNone(order.received_at)
+        self.assertIsNotNone(order.placed_at)
+
+    def test_an_order_with_no_placed_at_is_left_out_rather_than_guessed(self):
+        from stock.models import InboundOrder
+        from stock.services.lead_time import supplier_lead_stats
+        order = self._order(status='pending_receipt')
+        InboundOrder.objects.filter(pk=order.pk).update(placed_at=None)
+        order.refresh_from_db()
+        order.mark_received()
+        self.assertIsNone(supplier_lead_stats(self.supplier))
+
+    def test_a_same_day_receipt_is_counted_not_dropped(self):
+        # The old filter required received_at > created_at, so an order placed
+        # and received in the same breath vanished instead of counting as ~0.
+        from stock.services.lead_time import supplier_lead_stats
+        order = self._order(status='pending_receipt')
+        order.mark_received(order.placed_at)
+        self.assertEqual(supplier_lead_stats(self.supplier)['sample'], 1)
+
+    def test_the_average_moves_as_more_orders_arrive(self):
+        from stock.services.lead_time import supplier_lead_stats
+        for days in (2, 4, 6):
+            order = self._order(status='pending_receipt')
+            order.placed_at = timezone.now() - timedelta(days=days)
+            order.save(update_fields=['placed_at'])
+            order.mark_received()
+        stats = supplier_lead_stats(self.supplier)
+        self.assertEqual(stats['sample'], 3)
+        self.assertAlmostEqual(stats['avg_days'], 4.0, places=1)
+        self.assertAlmostEqual(stats['median_days'], 4.0, places=1)
+
+    def test_a_clock_going_backwards_does_not_make_a_negative_wait(self):
+        from stock.services.lead_time import supplier_lead_stats
+        order = self._order(status='pending_receipt')
+        order.mark_received(order.placed_at - timedelta(hours=2))
+        self.assertEqual(supplier_lead_stats(self.supplier)['avg_days'], 0.0)
+
+    def test_confirming_receipt_through_the_page_is_measured(self):
+        # The whole point: the real flow, not just the model.
+        from stock.models import InboundOrder, InboundPendingItem, Product, Category
+        from stock.services.lead_time import supplier_lead_stats
+        category = Category.objects.create(name="Perfumes")
+        product = Product.objects.create(name="Oud", barcode="9920000000001", brand="B",
+                                         category=category, default_price=Decimal("50"))
+        order = self._order(status='pending_receipt')
+        InboundOrder.objects.filter(pk=order.pk).update(
+            placed_at=timezone.now() - timedelta(days=5))
+        InboundPendingItem.objects.create(inbound_order=order, product=product,
+                                          quantity=2, cost_price=Decimal("10"))
+
+        user = get_user_model().objects.create_superuser(
+            username="recv", password="pw123456", email="r@x.com")
+        self.client.force_login(user)
+        line = order.pending_items.first()
+        response = self.client.post(reverse('inbound_receive', args=[order.pk]), {
+            'action': 'receive',
+            'supplier': str(self.supplier.pk),
+            'invoice_no': 'INV-1',
+            'invoice_date': timezone.localdate().isoformat(),
+            'note': '',
+            'lines-TOTAL_FORMS': '1',
+            'lines-INITIAL_FORMS': '1',
+            'lines-MIN_NUM_FORMS': '0',
+            'lines-MAX_NUM_FORMS': '1000',
+            'lines-0-id': str(line.pk),
+            'lines-0-inbound_order': str(order.pk),
+            'lines-0-quantity': '2',
+            'lines-0-cost_price': '10',
+        })
+        self.assertIn(response.status_code, (200, 302))
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'received')
+        stats = supplier_lead_stats(self.supplier)
+        self.assertIsNotNone(stats, 'a receipt through the page must be measured')
+        self.assertAlmostEqual(stats['avg_days'], 5.0, places=0)
+
+
+class LeadTimeReportCommandTests(TestCase):
+    def setUp(self):
+        from django.core.management import call_command
+        from stock.models import Supplier
+        self.call = call_command
+        self.supplier = Supplier.objects.create(name="PERFUME EUROPE")
+
+    def _run(self):
+        from io import StringIO
+        out = StringIO()
+        self.call("lead_time_report", supplier="PERFUME", stdout=out)
+        return out.getvalue()
+
+    def test_it_reports_a_measured_order(self):
+        from stock.models import InboundOrder
+        order = InboundOrder.objects.create(supplier=self.supplier, status='pending_receipt')
+        InboundOrder.objects.filter(pk=order.pk).update(
+            placed_at=timezone.now() - timedelta(days=4))
+        order.refresh_from_db()
+        order.mark_received()
+        output = self._run()
+        self.assertIn("PERFUME EUROPE", output)
+        self.assertIn("4.0d", output)
+
+    def test_it_says_why_an_order_is_skipped(self):
+        from stock.models import InboundOrder
+        order = InboundOrder.objects.create(supplier=self.supplier)
+        InboundOrder.objects.filter(pk=order.pk).update(placed_at=None)
+        self.assertIn("no placed_at", self._run())
+
+    def test_a_pending_order_is_reported_as_not_received_yet(self):
+        from stock.models import InboundOrder
+        InboundOrder.objects.create(supplier=self.supplier, status='pending_receipt')
+        self.assertIn("not received yet", self._run())
+
+
 class CreateCategoryTests(TestCase):
     """The shop adds its own categories; no developer, no migration."""
 
@@ -5121,44 +5273,50 @@ class PerfumeAttributeBackfillTests(TestCase):
 
 
 class SupplierLeadTimeTests(TestCase):
-    """Lead time = inbound order placed (created_at) -> received (received_at)."""
+    """Lead time = inbound order placed (placed_at) -> received (received_at)."""
 
     def _order(self, supplier, days, status="received"):
         from django.utils import timezone as tz
-        created = tz.now() - timezone.timedelta(days=30)
+        placed = tz.now() - timezone.timedelta(days=30)
         order = InboundOrder.objects.create(supplier=supplier, status=status,
                                             total_amount=Decimal("0.00"))
         InboundOrder.objects.filter(pk=order.pk).update(
-            created_at=created,
-            received_at=(created + timezone.timedelta(days=days)) if days is not None else None,
+            created_at=placed,
+            placed_at=placed,
+            received_at=(placed + timezone.timedelta(days=days)) if days is not None else None,
         )
         return InboundOrder.objects.get(pk=order.pk)
 
-    def test_stats_summarise_only_orders_that_actually_waited(self):
+    def test_stats_summarise_every_order_that_can_be_measured(self):
         from stock.services.lead_time import supplier_lead_stats
         s = Supplier.objects.create(name="Lead Co")
         self._order(s, 2)
         self._order(s, 4)
         self._order(s, 6)
-        # Migration 0023 backfilled received_at = created_at on every pre-existing
-        # order, and a direct inbound is received the moment it is entered. Those
-        # rows never waited, so counting them would drag the average to zero.
+        # Placed and received in the same breath is a real, if short, wait -
+        # it counts as zero rather than disappearing.
         self._order(s, 0)
+        # No receipt time at all: nothing to measure, so it is left out.
         self._order(s, None)
 
         stats = supplier_lead_stats(s)
 
-        self.assertEqual(stats["sample"], 3)
-        self.assertAlmostEqual(stats["avg_days"], 4.0, places=3)
-        self.assertAlmostEqual(stats["median_days"], 4.0, places=3)
-        self.assertAlmostEqual(stats["min_days"], 2.0, places=3)
+        self.assertEqual(stats["sample"], 4)
+        self.assertAlmostEqual(stats["avg_days"], 3.0, places=3)
+        self.assertAlmostEqual(stats["median_days"], 3.0, places=3)
+        self.assertAlmostEqual(stats["min_days"], 0.0, places=3)
         self.assertAlmostEqual(stats["max_days"], 6.0, places=3)
 
-    def test_no_timed_orders_gives_none(self):
+    def test_an_order_that_was_never_placed_is_not_guessed_at(self):
         from stock.services.lead_time import supplier_lead_stats
         s = Supplier.objects.create(name="Untimed Co")
-        self._order(s, 0)
+        order = self._order(s, 3)
+        InboundOrder.objects.filter(pk=order.pk).update(placed_at=None)
         self.assertIsNone(supplier_lead_stats(s))
+
+    def test_a_supplier_with_no_orders_at_all_gives_none(self):
+        from stock.services.lead_time import supplier_lead_stats
+        self.assertIsNone(supplier_lead_stats(Supplier.objects.create(name="New Co")))
 
     def test_list_page_ranks_suppliers_for_comparison(self):
         from stock.services.lead_time import lead_stats_by_supplier

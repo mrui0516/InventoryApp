@@ -1,16 +1,16 @@
 """Supplier lead time: how long an inbound order takes from placed to received.
 
-An order is placed when the pending inbound is created (``created_at``) and
-lands when it is confirmed received (``received_at``). Only orders that actually
-waited count: migration 0023 backfilled ``received_at = created_at`` on every
-pre-existing order, and a direct inbound is received the moment it is entered,
-so those rows carry no waiting time. Averaging them in drags every supplier
-towards zero and makes the comparison useless, hence the ``received_at >
-created_at`` filter.
+Measured from ``InboundOrder.placed_at`` (the order was put to the supplier)
+to ``received_at`` (the goods were confirmed in). Both are stamped by the
+model itself, so every order from now on is measured - a view that forgets is
+a number lost for good.
+
+Orders that predate ``placed_at`` are not measured at all. There is no honest
+way to invent when they were ordered, and guessing drags a supplier's average
+towards zero. That means the figures start thin and get sharper as orders come
+in, which is why the sample size is shown next to every average.
 """
 from collections import defaultdict
-
-from django.db.models import F
 
 from ..models import InboundOrder
 
@@ -49,16 +49,22 @@ def _stats(days):
     }
 
 
-def _rows(supplier=None):
-    qs = (
-        InboundOrder.objects
-        .filter(status='received', received_at__isnull=False, received_at__gt=F('created_at'))
-        .values_list('supplier_id', 'created_at', 'received_at')
+def measurable_orders():
+    """Received orders that carry both timestamps, so the wait is a fact."""
+    return InboundOrder.objects.filter(
+        status='received',
+        placed_at__isnull=False,
+        received_at__isnull=False,
     )
+
+
+def _rows(supplier=None):
+    qs = measurable_orders().values_list('supplier_id', 'placed_at', 'received_at')
     if supplier is not None:
         qs = qs.filter(supplier=supplier)
-    for supplier_id, created, received in qs:
-        yield supplier_id, (received - created).total_seconds() / 86400.0
+    for supplier_id, placed, received in qs:
+        # Clamped at zero: a clock adjustment must not produce a negative wait.
+        yield supplier_id, max((received - placed).total_seconds() / 86400.0, 0.0)
 
 
 def supplier_lead_stats(supplier):
@@ -81,10 +87,9 @@ def lead_stats_by_supplier():
 def recent_lead_times(supplier, limit=8):
     """The supplier's most recent timed orders, newest first, for the detail page."""
     rows = []
-    for order in (InboundOrder.objects
-                  .filter(supplier=supplier, status='received',
-                          received_at__isnull=False, received_at__gt=F('created_at'))
+    for order in (measurable_orders()
+                  .filter(supplier=supplier)
                   .order_by('-received_at')[:limit]):
-        days = (order.received_at - order.created_at).total_seconds() / 86400.0
+        days = order.lead_time_days or 0.0
         rows.append({'order': order, 'days': days, 'label': humanise(days)})
     return rows
