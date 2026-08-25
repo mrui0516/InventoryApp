@@ -2946,7 +2946,10 @@ def supplier_detail_view(request, supplier_id):
         .filter(Q(supplier=supplier) | Q(items__supplier=supplier))
         .select_related('supplier')
         .prefetch_related('items__product', 'items__product__images', 'items__supplier')
-        .order_by('-invoice_date', '-created_at', '-id')
+        # Newest activity first. Ordering by invoice_date alone buried an
+        # order that arrived today under one carrying a later invoice.
+        .annotate(activity_at=Coalesce('received_at', 'created_at'))
+        .order_by('-activity_at', '-id')
         .distinct()
     )
     direct_purchases_qs = (
@@ -3004,8 +3007,12 @@ def supplier_detail_view(request, supplier_id):
             row_qty += item.quantity
             product_ids.add(item.product_id)
 
-        sort_at = order.invoice_date or timezone.localdate()
-        created_anchor = comparable_recorded_at(order.created_at or timezone.now())
+        # Sort on the day the goods actually landed; an invoice can be dated
+        # a week before the shipment turns up.
+        arrived_on = order.received_at.date() if order.received_at else None
+        sort_at = arrived_on or order.invoice_date or timezone.localdate()
+        created_anchor = comparable_recorded_at(
+            order.received_at or order.created_at or timezone.now())
         sort_dt = comparable_recorded_at(
             created_anchor.replace(year=sort_at.year, month=sort_at.month, day=sort_at.day)
         )
@@ -3013,8 +3020,12 @@ def supplier_detail_view(request, supplier_id):
             'kind': 'Inbound order',
             'title': order.invoice_no or f'Inbound Order #{order.id}',
             'sort_at': sort_dt,
-            'display_date': order.invoice_date or order.created_at.date(),
-            'meta': f'{len(items)} items',
+            'display_date': arrived_on or order.invoice_date or order.created_at.date(),
+            'meta': (f'{len(items)} items'
+                     + (f' | invoice {order.invoice_date:%Y-%m-%d}'
+                        if order.invoice_date and arrived_on
+                           and order.invoice_date != arrived_on else '')
+                     + ('' if arrived_on else ' | awaiting receipt')),
             'amount': row_amount,
             'qty': row_qty,
             'items': items,

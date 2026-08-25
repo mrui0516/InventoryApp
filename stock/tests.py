@@ -4442,6 +4442,69 @@ class LeadTimeAdminCorrectionTests(TestCase):
             self.assertIn(field, InboundOrderAdmin.fields, field)
 
 
+class SupplierOrderSortingTests(TestCase):
+    """Supplier history is read newest-arrival first."""
+
+    def setUp(self):
+        from stock.models import InboundOrder, Purchase, Supplier, Category
+        self.supplier = Supplier.objects.create(name="PERFUME EUROPE")
+        self.category = Category.objects.create(name="Perfumes")
+        self.product = Product.objects.create(
+            name="Oud", barcode="9930000000001", brand="B",
+            category=self.category, default_price=Decimal("50"))
+        user = get_user_model().objects.create_superuser(
+            username="sup_mgr", password="pw123456", email="s@x.com")
+        self.client.force_login(user)
+
+    def _order(self, invoice_date, received_on, invoice_no):
+        from stock.models import InboundOrder, Purchase
+        order = InboundOrder.objects.create(
+            supplier=self.supplier, invoice_no=invoice_no,
+            invoice_date=invoice_date, status='pending_receipt')
+        Purchase.objects.create(inbound_order=order, product=self.product,
+                                supplier=self.supplier, quantity=1, remaining=1,
+                                cost_price=Decimal("10"), date=received_on)
+        order.status = 'received'
+        order.received_at = received_on
+        order.save(update_fields=['status', 'received_at'])
+        return order
+
+    def test_the_order_that_arrived_last_is_listed_first(self):
+        # An invoice can be dated after a shipment that turned up later, which
+        # is exactly how today's delivery ended up buried.
+        old_arrival = timezone.now() - timedelta(days=10)
+        new_arrival = timezone.now()
+        self._order(invoice_date=(timezone.now() + timedelta(days=2)).date(),
+                    received_on=old_arrival, invoice_no="LATE-INVOICE")
+        self._order(invoice_date=(timezone.now() - timedelta(days=6)).date(),
+                    received_on=new_arrival, invoice_no="ARRIVED-TODAY")
+
+        response = self.client.get(reverse('supplier_detail', args=[self.supplier.pk]))
+        titles = [row['title'] for row in response.context['history_page']]
+        self.assertEqual(titles[0], "ARRIVED-TODAY", titles)
+
+    def test_the_listed_date_is_when_the_goods_arrived(self):
+        arrival = timezone.now() - timedelta(days=1)
+        self._order(invoice_date=(timezone.now() - timedelta(days=8)).date(),
+                    received_on=arrival, invoice_no="INV-9")
+        response = self.client.get(reverse('supplier_detail', args=[self.supplier.pk]))
+        row = response.context['history_page'][0]
+        self.assertEqual(row['display_date'], arrival.date())
+        self.assertIn('invoice', row['meta'])      # the invoice date is still shown
+
+    def test_a_pending_order_says_so(self):
+        from stock.models import InboundOrder, Purchase
+        order = InboundOrder.objects.create(
+            supplier=self.supplier, invoice_no="PENDING-1",
+            invoice_date=timezone.localdate(), status='pending_receipt')
+        Purchase.objects.create(inbound_order=order, product=self.product,
+                                supplier=self.supplier, quantity=1, remaining=1,
+                                cost_price=Decimal("10"), date=timezone.now())
+        response = self.client.get(reverse('supplier_detail', args=[self.supplier.pk]))
+        row = response.context['history_page'][0]
+        self.assertIn('awaiting receipt', row['meta'])
+
+
 class CreateCategoryTests(TestCase):
     """The shop adds its own categories; no developer, no migration."""
 
@@ -5374,8 +5437,9 @@ class SupplierLeadTimeTests(TestCase):
         self.client.login(username="lead_mgr2", password="pw123456")
         page = self.client.get(reverse("supplier_detail", args=[fast.id]))
         self.assertEqual(page.status_code, 200)
-        self.assertContains(page, "Fastest / Slowest")
+        self.assertContains(page, "Fast / slow")       # compact scorecard label
         self.assertContains(page, "Recent lead times")
+        self.assertContains(page, "Lead time")
 
 
 class PerfumeBackfillCommandTests(TestCase):
