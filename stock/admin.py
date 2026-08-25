@@ -131,9 +131,21 @@ class ProductAdmin(admin.ModelAdmin):
 # ---------- Purchase ----------
 @admin.register(InboundOrder)
 class InboundOrderAdmin(admin.ModelAdmin):
-    list_display = ('id', 'supplier', 'invoice_no', 'invoice_date', 'total_amount', 'created_at')
-    list_filter = ('supplier', 'invoice_date', 'created_at')
+    list_display = ('id', 'supplier', 'invoice_no', 'invoice_date', 'total_amount',
+                    'status', 'placed_at', 'received_at', 'lead_time_label')
+    list_filter = ('status', 'supplier', 'invoice_date', 'created_at')
     search_fields = ('invoice_no', 'supplier__name')
+    # Editable on purpose: an order received before these timestamps existed
+    # has no lead time, and the shop is the only one who knows the real dates.
+    # Correcting them here is honest; guessing them in code would not be.
+    fields = ('supplier', 'invoice_no', 'invoice_date', 'total_amount', 'note',
+              'status', 'placed_at', 'received_at')
+
+    @admin.display(description='Lead time')
+    def lead_time_label(self, obj):
+        from stock.services.lead_time import humanise, why_not_measured
+        reason = why_not_measured(obj)
+        return reason or humanise(obj.lead_time_days)
 
 @admin.register(Purchase)
 class PurchaseAdmin(admin.ModelAdmin):

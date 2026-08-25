@@ -9,18 +9,8 @@ Read-only.
 from django.core.management.base import BaseCommand
 
 from stock.models import InboundOrder, Supplier
-from stock.services.lead_time import humanise, supplier_lead_stats
-
-
-def why_not(order):
-    """Why this order contributes nothing, or '' when it does."""
-    if order.status != 'received':
-        return 'not received yet'
-    if order.placed_at is None:
-        return 'no placed_at (predates lead-time tracking)'
-    if order.received_at is None:
-        return 'no received_at (received without stamping)'
-    return ''
+from stock.services.lead_time import (humanise, supplier_lead_stats,
+                                      why_not_measured)
 
 
 class Command(BaseCommand):
@@ -53,7 +43,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.MIGRATE_HEADING(f'{supplier.name} - {summary}'))
 
             for order in orders:
-                reason = why_not(order)
+                reason = why_not_measured(order)
                 if reason:
                     self.stdout.write(
                         f'  #{order.id:<6} {order.created_at:%Y-%m-%d}  '

@@ -4415,6 +4415,33 @@ class LeadTimeReportCommandTests(TestCase):
         self.assertIn("not received yet", self._run())
 
 
+class LeadTimeAdminCorrectionTests(TestCase):
+    """The shop can correct an order the app never timed."""
+
+    def test_setting_the_real_dates_makes_an_old_order_count(self):
+        from stock.models import InboundOrder, Supplier
+        from stock.services.lead_time import supplier_lead_stats, why_not_measured
+        supplier = Supplier.objects.create(name="PERFUME EUROPE")
+        order = InboundOrder.objects.create(supplier=supplier)
+        InboundOrder.objects.filter(pk=order.pk).update(placed_at=None, received_at=None)
+        order.refresh_from_db()
+
+        self.assertIsNone(supplier_lead_stats(supplier))
+        self.assertIn("no placed_at", why_not_measured(order))
+
+        order.placed_at = timezone.now() - timedelta(days=7)
+        order.received_at = timezone.now()
+        order.save(update_fields=['placed_at', 'received_at'])
+
+        self.assertEqual(why_not_measured(order), '')
+        self.assertAlmostEqual(supplier_lead_stats(supplier)['avg_days'], 7.0, places=0)
+
+    def test_the_admin_exposes_the_fields_needed_to_correct_it(self):
+        from stock.admin import InboundOrderAdmin
+        for field in ('placed_at', 'received_at', 'status'):
+            self.assertIn(field, InboundOrderAdmin.fields, field)
+
+
 class CreateCategoryTests(TestCase):
     """The shop adds its own categories; no developer, no migration."""
 

@@ -93,3 +93,17 @@ def recent_lead_times(supplier, limit=8):
         days = order.lead_time_days or 0.0
         rows.append({'order': order, 'days': days, 'label': humanise(days)})
     return rows
+
+def why_not_measured(order):
+    """Why this order contributes no lead time, or '' when it does.
+
+    One definition, shared by the admin column and the report command, so the
+    page and the command can never disagree about why an order was skipped.
+    """
+    if order.status != 'received':
+        return 'not received yet'
+    if order.placed_at is None:
+        return 'no placed_at (predates lead-time tracking)'
+    if order.received_at is None:
+        return 'no received_at (received without stamping)'
+    return ''

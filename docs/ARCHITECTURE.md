@@ -280,6 +280,11 @@ has_admin_access(user)          → is_superuser only
 **查为什么某一单没被统计**：`python manage.py lead_time_report --supplier PERFUME`
 会逐单打印 计入/跳过 和跳过的原因（只读）。
 
+**手工补一单**：Django admin → Inbound orders 里 `status` / `placed_at` / `received_at`
+是**可编辑**的，列表还有一列直接显示时效或跳过原因。
+在这两个字段存在之前收的货，只有店里知道真实日期 —— 让店里填是诚实的，代码去猜不是。
+跳过原因只有一个定义（`lead_time.why_not_measured()`），admin 和命令共用，不会两边说法不一致。
+
 ### 5.10 门店可售分类（Store sellable categories）
 
 库存、进货、供应商是全公司共享的；**卖什么**才是分门店的。
