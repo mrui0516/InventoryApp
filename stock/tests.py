@@ -4442,6 +4442,240 @@ class LeadTimeAdminCorrectionTests(TestCase):
             self.assertIn(field, InboundOrderAdmin.fields, field)
 
 
+class AccessoryListNoPhotosTests(TestCase):
+    """Accessories are identified by model and colour, not by a photo."""
+
+    def setUp(self):
+        self.perfumes = Category.objects.create(name="Perfumes", form_kind="perfume")
+        self.accessories = Category.objects.create(name="Accessories", form_kind="accessory")
+        self.cases = Category.objects.create(name="Cases", parent=self.accessories)
+        user = get_user_model().objects.create_superuser(
+            username="pl_mgr", password="pw123456", email="p@x.com")
+        self.client.force_login(user)
+
+    def _show_photos(self, category=None):
+        params = {'category': category.pk} if category else {}
+        return self.client.get(reverse('product_list'), params).context['show_photos']
+
+    def test_photos_are_hidden_for_an_accessory_category(self):
+        self.assertFalse(self._show_photos(self.accessories))
+
+    def test_photos_are_hidden_for_an_accessory_subcategory(self):
+        # form_kind is inherited, so Cases counts without being set directly.
+        self.assertFalse(self._show_photos(self.cases))
+
+    def test_photos_are_shown_for_perfume(self):
+        self.assertTrue(self._show_photos(self.perfumes))
+
+    def test_photos_are_shown_when_no_category_is_chosen(self):
+        self.assertTrue(self._show_photos())
+
+
+class ShelfMapTests(TestCase):
+    """Is there stock, and is there more above the shelf. Nothing is counted."""
+
+    def setUp(self):
+        from stock.models import CaseStyle, ShelfColour, DeviceModel
+        self.style = CaseStyle.objects.create(name="Normal silicone",
+                                              slug="normal-silicone")
+        self.apple = Brand.objects.create(name="Apple")
+        self.samsung = Brand.objects.create(name="Samsung")
+        self.black = ShelfColour.objects.create(name="Black", sort_order=1)
+        self.clear = ShelfColour.objects.create(name="Transparent", sort_order=2)
+        self.m15 = DeviceModel.objects.create(brand=self.apple, name="iPhone 15")
+        self.m9 = DeviceModel.objects.create(brand=self.apple, name="iPhone 9")
+        self.m11 = DeviceModel.objects.create(brand=self.apple, name="iPhone 11")
+
+        self.manager = get_user_model().objects.create_superuser(
+            username="shelf_mgr", password="pw123456", email="sm@x.com")
+        self.staff = get_user_model().objects.create_user(
+            username="shelf_staff", password="pw123456")
+        self.client.force_login(self.manager)
+
+    # -- natural ordering --------------------------------------------------
+    def test_models_sort_by_number_not_alphabetically(self):
+        from stock.models import DeviceModel
+        names = list(DeviceModel.objects.filter(brand=self.apple)
+                     .order_by('sort_key').values_list('name', flat=True))
+        self.assertEqual(names, ["iPhone 9", "iPhone 11", "iPhone 15"])
+
+    def test_a_newly_added_model_lands_in_its_place(self):
+        from stock.models import DeviceModel
+        response = self.client.post(reverse('shelf_add_model'),
+                                    {'brand': 'Apple', 'name': 'iPhone 12'})
+        self.assertEqual(response.status_code, 200)
+        names = list(DeviceModel.objects.filter(brand=self.apple)
+                     .order_by('sort_key').values_list('name', flat=True))
+        self.assertEqual(names, ["iPhone 9", "iPhone 11", "iPhone 12", "iPhone 15"])
+
+    def test_the_grid_lists_models_in_that_order_grouped_by_brand(self):
+        from stock.models import DeviceModel
+        DeviceModel.objects.create(brand=self.samsung, name="Galaxy S24")
+        response = self.client.get(reverse('shelf'))
+        order = [row['model'].name for row in response.context['rows']]
+        self.assertEqual(order, ["iPhone 9", "iPhone 11", "iPhone 15", "Galaxy S24"])
+
+    # -- state -------------------------------------------------------------
+    def _set(self, model, colour, **extra):
+        data = {'style': self.style.pk, 'model': model.pk, 'colour': colour.pk}
+        data.update(extra)
+        return self.client.post(reverse('shelf_set_state'), data)
+
+    def test_a_cell_starts_out_without_a_row_existing(self):
+        from stock.models import CaseStock
+        response = self.client.get(reverse('shelf'))
+        row = next(r for r in response.context['rows'] if r['model'] == self.m15)
+        self.assertEqual([c['state'] for c in row['cells']], ['out', 'out'])
+        self.assertEqual(CaseStock.objects.count(), 0)
+
+    def test_tapping_walks_out_then_on_shelf_then_extra_then_back(self):
+        self.assertEqual(self._set(self.m15, self.black).json()['state'], 'display')
+        self.assertEqual(self._set(self.m15, self.black).json()['state'], 'extra')
+        self.assertEqual(self._set(self.m15, self.black).json()['state'], 'out')
+
+    def test_a_state_can_be_set_directly(self):
+        payload = self._set(self.m15, self.black, state='extra').json()
+        self.assertEqual(payload['state'], 'extra')
+
+    def test_an_unknown_state_falls_back_to_cycling_rather_than_storing_junk(self):
+        from stock.models import CaseStock
+        payload = self._set(self.m15, self.black, state='nonsense').json()
+        self.assertEqual(payload['state'], 'display')
+        self.assertEqual(CaseStock.objects.get().state, 'display')
+
+    def test_colours_of_the_same_model_are_independent(self):
+        self._set(self.m15, self.black, state='extra')
+        response = self.client.get(reverse('shelf'))
+        row = next(r for r in response.context['rows'] if r['model'] == self.m15)
+        self.assertEqual([c['state'] for c in row['cells']], ['extra', 'out'])
+
+    def test_the_change_records_who_made_it(self):
+        from stock.models import CaseStock
+        self._set(self.m15, self.black)
+        self.assertEqual(CaseStock.objects.get().updated_by, self.manager)
+
+    def test_shop_floor_staff_can_mark_a_colour_out(self):
+        # Marking sold-out is the job of whoever is at the shelf.
+        self.client.force_login(self.staff)
+        response = self._set(self.m15, self.black, state='out')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['ok'])
+
+    def test_a_signed_out_visitor_cannot_change_anything(self):
+        from stock.models import CaseStock
+        self.client.logout()
+        self._set(self.m15, self.black)
+        self.assertEqual(CaseStock.objects.count(), 0)
+
+    def test_nothing_records_a_quantity(self):
+        from stock.models import CaseStock
+        self._set(self.m15, self.black, state='extra')
+        field_names = {f.name for f in CaseStock._meta.get_fields()}
+        self.assertNotIn('quantity', field_names)
+        self.assertEqual(CaseStock.objects.get().state, 'extra')
+
+    # -- notes -------------------------------------------------------------
+    def test_a_note_is_saved_against_the_model(self):
+        response = self.client.post(reverse('shelf_set_note'), {
+            'style': self.style.pk, 'model': self.m15.pk,
+            'note': 'same case as 14 Pro'})
+        self.assertEqual(response.json()['note'], 'same case as 14 Pro')
+
+    def test_a_note_does_not_link_the_states_of_two_models(self):
+        # Notes are a reminder for the person at the shelf, nothing more.
+        self.client.post(reverse('shelf_set_note'), {
+            'style': self.style.pk, 'model': self.m15.pk, 'note': 'same as 11'})
+        self._set(self.m15, self.black, state='extra')
+        response = self.client.get(reverse('shelf'))
+        other = next(r for r in response.context['rows'] if r['model'] == self.m11)
+        self.assertEqual([c['state'] for c in other['cells']], ['out', 'out'])
+
+    def test_a_note_is_searchable(self):
+        self.client.post(reverse('shelf_set_note'), {
+            'style': self.style.pk, 'model': self.m15.pk, 'note': 'same as 14 Pro'})
+        response = self.client.get(reverse('shelf'))
+        row = next(r for r in response.context['rows'] if r['model'] == self.m15)
+        self.assertIn('same as 14 pro', row['search'])
+
+    # -- adding colours and models ----------------------------------------
+    def test_a_colour_can_be_added(self):
+        from stock.models import ShelfColour
+        response = self.client.post(reverse('shelf_add_colour'), {'name': 'Beige'})
+        self.assertTrue(response.json()['ok'])
+        self.assertTrue(ShelfColour.objects.filter(name='Beige').exists())
+
+    def test_a_duplicate_colour_is_refused(self):
+        response = self.client.post(reverse('shelf_add_colour'), {'name': 'black'})
+        self.assertEqual(response.status_code, 409)
+
+    def test_a_duplicate_model_is_refused(self):
+        response = self.client.post(reverse('shelf_add_model'),
+                                    {'brand': 'Apple', 'name': 'iphone 15'})
+        self.assertEqual(response.status_code, 409)
+
+    def test_staff_cannot_add_models_or_colours(self):
+        from stock.models import DeviceModel, ShelfColour
+        self.client.force_login(self.staff)
+        self.assertEqual(self.client.post(reverse('shelf_add_model'),
+                         {'brand': 'Apple', 'name': 'iPhone 16'}).status_code, 403)
+        self.assertEqual(self.client.post(reverse('shelf_add_colour'),
+                         {'name': 'Teal'}).status_code, 403)
+        self.assertFalse(DeviceModel.objects.filter(name='iPhone 16').exists())
+        self.assertFalse(ShelfColour.objects.filter(name='Teal').exists())
+
+    # -- the page ----------------------------------------------------------
+    def test_the_page_renders_a_grid_with_no_photos(self):
+        html = self.client.get(reverse('shelf')).content.decode()
+        self.assertIn('id="shelf-body"', html)
+        self.assertIn('Transparent', html)
+        body = html[html.index('id="shelf-body"'):html.index('</table>')]
+        self.assertNotIn('<img', body)
+
+    def test_the_page_counts_how_many_models_are_fully_out(self):
+        self._set(self.m15, self.black, state='display')
+        response = self.client.get(reverse('shelf'))
+        self.assertEqual(response.context['total_models'], 3)
+        self.assertEqual(response.context['out_models'], 2)
+
+    def test_a_style_with_no_rows_yet_still_opens(self):
+        from stock.models import CaseStyle
+        style = CaseStyle.objects.create(name="MagSafe", slug="magsafe", sort_order=2)
+        response = self.client.get(reverse('shelf_style', args=[style.slug]))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['style'], style)
+
+    def test_each_style_keeps_its_own_states(self):
+        from stock.models import CaseStyle
+        magsafe = CaseStyle.objects.create(name="MagSafe", slug="magsafe", sort_order=2)
+        self._set(self.m15, self.black, state='extra')
+        response = self.client.get(reverse('shelf_style', args=[magsafe.slug]))
+        row = next(r for r in response.context['rows'] if r['model'] == self.m15)
+        self.assertEqual([c['state'] for c in row['cells']], ['out', 'out'])
+
+    def test_the_page_works_before_any_style_exists(self):
+        from stock.models import CaseStyle, CaseStock
+        CaseStock.objects.all().delete()
+        CaseStyle.objects.all().delete()
+        response = self.client.get(reverse('shelf'))
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.context['style'])
+
+
+class NaturalKeyTests(SimpleTestCase):
+    def test_numbers_compare_as_numbers(self):
+        from stock.models import natural_key
+        ordered = sorted(["iPhone 15", "iPhone 9", "iPhone 11", "iPhone 15 Pro"],
+                         key=natural_key)
+        self.assertEqual(ordered,
+                         ["iPhone 9", "iPhone 11", "iPhone 15", "iPhone 15 Pro"])
+
+    def test_it_copes_with_no_digits_and_with_empty(self):
+        from stock.models import natural_key
+        self.assertEqual(natural_key("Galaxy S"), "galaxy s")
+        self.assertEqual(natural_key(""), "")
+        self.assertEqual(natural_key(None), "")
+
+
 class SupplierOrderSortingTests(TestCase):
     """Supplier history is read newest-arrival first."""
 

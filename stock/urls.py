@@ -4,7 +4,7 @@ from django.contrib.auth import views as auth_views
 from django.conf import settings
 from django.conf.urls.static import static
 
-from . import views
+from . import shelf_views, views
 
 
 urlpatterns = [
@@ -21,6 +21,14 @@ urlpatterns = [
     path('check_barcode/', views.check_barcode, name='check_barcode'),
     path('add-product/', views.add_product_view, name='add_product'),
     path('categories/create/', views.create_category, name='create_category'),
+    # shelf map (accessories: is there stock, and is there more above the shelf)
+    path('shelf/', shelf_views.shelf_view, name='shelf'),
+    path('shelf/style/<slug:slug>/', shelf_views.shelf_view, name='shelf_style'),
+    path('shelf/state/', shelf_views.shelf_set_state, name='shelf_set_state'),
+    path('shelf/note/', shelf_views.shelf_set_note, name='shelf_set_note'),
+    path('shelf/model/add/', shelf_views.shelf_add_model, name='shelf_add_model'),
+    path('shelf/colour/add/', shelf_views.shelf_add_colour, name='shelf_add_colour'),
+    path('shelf/style/add/', shelf_views.shelf_add_style, name='shelf_add_style'),
     path('products/<int:pk>/', views.product_detail_view, name='product_detail'),
     path('sales-history/', views.product_sales_history_view, name='product_sales_history'),
     path('backup/download/', views.download_db_backup, name='download_db_backup'),

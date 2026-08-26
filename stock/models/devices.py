@@ -39,9 +39,12 @@ class DeviceModel(models.Model):
     normalised = models.CharField(max_length=80, db_index=True, editable=False)
     release_year = models.PositiveSmallIntegerField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
+    # Digits zero-padded so "iPhone 9" sorts before "iPhone 11" and a newly
+    # added model lands in its place with no re-sorting pass. See shelf.py.
+    sort_key = models.CharField(max_length=160, db_index=True, editable=False, default='')
 
     class Meta:
-        ordering = ['brand__name', '-release_year', 'name']
+        ordering = ['brand__name', 'sort_key', 'name']
         unique_together = [('brand', 'name')]
 
     def __str__(self):
@@ -52,6 +55,8 @@ class DeviceModel(models.Model):
         # "Apple iPhone 15 Pro Max". resolve_device() strips a leading brand
         # for the people who do type it.
         self.normalised = normalise_device_text(self.name)
+        from .shelf import natural_key
+        self.sort_key = natural_key(self.name)[:160]
         super().save(*args, **kwargs)
 
 

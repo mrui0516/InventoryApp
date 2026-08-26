@@ -43,7 +43,7 @@ from .forms import (
     PrintProfileForm, InboundOrderEditForm, InboundPurchaseFormSet, DirectPurchaseEditForm,
     InboundReceiveForm, InboundPendingFormSet, StoreForm,
 )
-from .models.catalog import FORM_KINDS, GENERAL, PERFUME
+from .models.catalog import ACCESSORY, FORM_KINDS, GENERAL, PERFUME
 from .models import (
     Product, Purchase, Sale, Supplier, Customer, ProductImage,
     Category, SaleOrder, InboundOrder, InboundPendingItem, ARInvoice, ARItem,
@@ -897,6 +897,12 @@ def product_list_view(request):
     stock_status = (request.GET.get('stock_status') or '').strip()
     sort_by = (request.GET.get('sort') or 'latest').strip()
     active_store, _is_all = resolve_active_store(request)
+    # Accessories are recognised by model and colour, not by a photo of a
+    # black case that looks like every other black case. Dropping the column
+    # buys back the width for the things that do identify them.
+    chosen = (Category.objects.filter(pk=selected_category).first()
+              if str(selected_category or '').isdigit() else None)
+    show_photos = not (chosen and chosen.effective_form_kind == ACCESSORY)
     state = get_filtered_product_list_state(
         show_sales_sensitive=show_sales_sensitive,
         query=query,
@@ -933,6 +939,7 @@ def product_list_view(request):
         'products': page_obj,
         'page_obj': page_obj,
         'query': query,
+        'show_photos': show_photos,
         'categories': categories,
         'brands': brand_options,
         'selected_category': selected_category_int,

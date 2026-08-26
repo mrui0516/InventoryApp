@@ -1,0 +1,291 @@
+{% extends 'stock/base.html' %}
+{% block title %}Shelf{% endblock %}
+
+{% block content %}
+<style>
+  .panel{background:#fff;border:1px solid var(--app-border);border-radius:var(--app-radius);box-shadow:var(--app-shadow)}
+  .sec-head{font-size:.72rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--app-muted);margin:0}
+
+  .shelf-top{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;padding:.6rem .7rem}
+  .shelf-title{font-size:1.15rem;font-weight:800;color:var(--app-text);margin:0}
+  .shelf-count{font-size:.72rem;font-weight:700;color:var(--app-muted);white-space:nowrap}
+  .shelf-count b{color:var(--app-text)}
+
+  .style-tabs{display:flex;gap:.3rem;flex-wrap:wrap}
+  .style-tab{padding:.3rem .65rem;border-radius:999px;border:1px solid var(--app-border);
+    background:#fff;font-size:.8rem;font-weight:700;color:var(--app-muted);text-decoration:none}
+  .style-tab.active{background:var(--app-accent-soft);border-color:var(--app-accent);color:var(--app-accent-ink)}
+
+  /* the grid ------------------------------------------------------------ */
+  .grid-wrap{overflow-x:auto}
+  table.shelf{width:100%;border-collapse:separate;border-spacing:0;font-size:.85rem}
+  .shelf th,.shelf td{padding:.3rem .35rem;border-bottom:1px solid var(--app-border)}
+  .shelf thead th{position:sticky;top:0;z-index:3;background:var(--app-surface-2);
+    font-size:.64rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--app-muted);white-space:nowrap;text-align:center}
+  .shelf thead th.model-col{text-align:left;z-index:4}
+  /* the model name stays put while colours scroll sideways */
+  .model-col{position:sticky;left:0;background:#fff;z-index:2;min-width:150px;max-width:220px}
+  .shelf thead .model-col{background:var(--app-surface-2)}
+  .brand-row td{background:var(--app-surface-2);font-size:.64rem;font-weight:800;
+    letter-spacing:.06em;text-transform:uppercase;color:var(--app-muted);
+    padding:.25rem .45rem;position:sticky;left:0}
+  .model-name{font-weight:700;color:var(--app-text);line-height:1.2;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .model-note{display:block;font-size:.66rem;color:var(--app-muted);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:text}
+  .model-note:empty::before{content:'+ note';opacity:.45}
+
+  .swatch{display:inline-block;width:9px;height:9px;border-radius:50%;
+    border:1px solid rgba(0,0,0,.25);vertical-align:middle;margin-right:.2rem}
+
+  /* one cell = one tap. Colour and glyph both carry the meaning, so it is
+     readable without relying on colour alone. */
+  .cell{width:44px;text-align:center}
+  .st{display:inline-flex;align-items:center;justify-content:center;
+    width:34px;height:28px;border-radius:.4rem;border:1px solid var(--app-border);
+    background:#fff;font-size:.7rem;font-weight:800;cursor:pointer;
+    color:var(--app-muted);line-height:1;transition:transform .08s ease}
+  .st:active{transform:scale(.92)}
+  .st[data-state="out"]{background:#fff;color:#cbd5e1;border-style:dashed}
+  .st[data-state="display"]{background:var(--app-good-soft,#dcfce7);color:#166534;border-color:#86efac}
+  .st[data-state="extra"]{background:#dbeafe;color:#1e40af;border-color:#93c5fd}
+  .st.busy{opacity:.45}
+
+  .legend{display:flex;gap:.6rem;flex-wrap:wrap;font-size:.7rem;color:var(--app-muted)}
+  .legend .st{width:26px;height:20px;font-size:.62rem;cursor:default;margin-right:.2rem}
+  .legend span{display:inline-flex;align-items:center}
+
+  .addbar{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center}
+  .addbar input,.addbar select{max-width:180px}
+  .add-error{font-size:.74rem;font-weight:600;color:var(--app-danger)}
+  tr[hidden]{display:none}
+
+  @media (max-width:575.98px){
+    .shelf-title{font-size:1rem}
+    .model-col{min-width:118px;max-width:140px}
+    .shelf th,.shelf td{padding:.25rem .25rem}
+    .cell{width:38px}
+    .st{width:30px;height:26px;font-size:.64rem}
+    .addbar input,.addbar select{max-width:none;flex:1 1 140px}
+  }
+</style>
+
+{% if not style %}
+  <div class="panel p-4">
+    <h1 class="shelf-title mb-2">Shelf</h1>
+    <form method="post" action="{% url 'shelf_add_style' %}" class="addbar">
+      {% csrf_token %}
+      <input type="text" name="name" class="form-control form-control-sm"
+             placeholder="First style, e.g. Normal silicone" required>
+      <button class="btn btn-primary btn-sm">Create</button>
+    </form>
+  </div>
+{% else %}
+<div class="d-grid gap-2">
+
+  <section class="panel shelf-top">
+    <h1 class="shelf-title">{{ style.name }}</h1>
+    <span class="shelf-count"><b>{{ total_models }}</b> models &middot; <b>{{ out_models }}</b> fully out</span>
+    <div class="style-tabs ms-auto">
+      {% for s in styles %}
+        <a class="style-tab {% if s.id == style.id %}active{% endif %}"
+           href="{% url 'shelf_style' s.slug %}">{{ s.name }}</a>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="panel p-2">
+    <div class="d-flex gap-2 flex-wrap align-items-center">
+      <input type="search" id="shelf-search" class="form-control form-control-sm"
+             style="max-width:280px" placeholder="Search model, brand or note"
+             autocomplete="off" aria-label="Search models">
+      <div class="legend ms-auto">
+        <span><span class="st" data-state="out">&ndash;</span>Out</span>
+        <span><span class="st" data-state="display">&#9679;</span>On shelf</span>
+        <span><span class="st" data-state="extra">&#9650;</span>Extra above</span>
+      </div>
+    </div>
+    <div id="no-hits" class="sec-head mt-2" hidden>No model matches that.</div>
+  </section>
+
+  <section class="panel">
+    <div class="grid-wrap">
+      <table class="shelf">
+        <thead>
+          <tr>
+            <th class="model-col">Model</th>
+            {% for colour in colours %}
+              <th class="cell" title="{{ colour.name }}">
+                {% if colour.swatch %}<span class="swatch" style="background:{{ colour.swatch }}"></span>{% endif %}
+                {{ colour.name|truncatechars:9 }}
+              </th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody id="shelf-body">
+          {% regroup rows by model.brand as brand_groups %}
+          {% for group in brand_groups %}
+            <tr class="brand-row" data-brand-row="{{ group.grouper.name }}">
+              <td colspan="{{ colours|length|add:1 }}">{{ group.grouper.name }}</td>
+            </tr>
+            {% for row in group.list %}
+              <tr data-search="{{ row.search }}" data-model="{{ row.model.id }}"
+                  data-brand-of="{{ group.grouper.name }}">
+                <td class="model-col">
+                  <div class="model-name">{{ row.model.name }}</div>
+                  <span class="model-note" data-note contenteditable="true"
+                        data-model="{{ row.model.id }}"
+                        role="textbox" aria-label="Note for {{ row.model.name }}">{{ row.note }}</span>
+                </td>
+                {% for cell in row.cells %}
+                  <td class="cell">
+                    <button type="button" class="st" data-state="{{ cell.state }}"
+                            data-model="{{ row.model.id }}" data-colour="{{ cell.colour.id }}"
+                            aria-label="{{ row.model.name }} {{ cell.colour.name }}">
+                      {% if cell.state == 'out' %}&ndash;{% elif cell.state == 'display' %}&#9679;{% else %}&#9650;{% endif %}
+                    </button>
+                  </td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if not colours %}
+      <div class="p-3 sec-head">No colours yet &mdash; add one below.</div>
+    {% endif %}
+  </section>
+
+  {% if can_edit_catalog %}
+    <section class="panel p-2 d-grid gap-2">
+      <form class="addbar" data-add="model">
+        <select name="brand" class="form-select form-select-sm" aria-label="Brand">
+          {% for b in brands %}<option value="{{ b.name }}">{{ b.name }}</option>{% endfor %}
+        </select>
+        <input type="text" name="name" class="form-control form-control-sm"
+               placeholder="New model, e.g. iPhone 16 Pro" maxlength="80">
+        <button class="btn btn-outline-primary btn-sm">Add model</button>
+        <span class="add-error" data-error></span>
+      </form>
+      <form class="addbar" data-add="colour">
+        <input type="text" name="name" class="form-control form-control-sm"
+               placeholder="New colour" maxlength="40">
+        <input type="color" name="swatch" class="form-control form-control-sm form-control-color" value="#000000">
+        <button class="btn btn-outline-primary btn-sm">Add colour</button>
+        <span class="add-error" data-error></span>
+      </form>
+      <form class="addbar" method="post" action="{% url 'shelf_add_style' %}">
+        {% csrf_token %}
+        <input type="text" name="name" class="form-control form-control-sm"
+               placeholder="New style, e.g. MagSafe" maxlength="60">
+        <button class="btn btn-outline-secondary btn-sm">Add style</button>
+      </form>
+    </section>
+  {% endif %}
+</div>
+
+<script>
+(function () {
+  const styleId = "{{ style.id }}";
+  // Taken from the context, not from a form on the page: an employee sees no
+  // add-forms at all, so there would be no hidden input to read the token from
+  // and every tap would fail.
+  const token = "{{ csrf_token }}";
+  const GLYPH = { out: '–', display: '●', extra: '▲' };
+
+  function post(url, data) {
+    const body = new FormData();
+    body.append('style', styleId);
+    Object.entries(data).forEach(([k, v]) => body.append(k, v));
+    return fetch(url, { method: 'POST', headers: { 'X-CSRFToken': token }, body })
+      .then((r) => r.json());
+  }
+
+  // ---- one tap advances a cell: out -> on shelf -> extra -> out.
+  // The button is disabled while in flight so a double tap cannot skip a
+  // state, and it reverts on failure rather than showing a state the server
+  // never accepted.
+  document.getElementById('shelf-body').addEventListener('click', (event) => {
+    const button = event.target.closest('.st');
+    if (!button || button.classList.contains('busy')) { return; }
+    const previous = button.dataset.state;
+    button.classList.add('busy');
+    post("{% url 'shelf_set_state' %}", {
+      model: button.dataset.model, colour: button.dataset.colour,
+    }).then((payload) => {
+      if (payload.ok) {
+        button.dataset.state = payload.state;
+        button.textContent = GLYPH[payload.state];
+      }
+    }).catch(() => {
+      button.dataset.state = previous;
+      button.textContent = GLYPH[previous];
+    }).finally(() => button.classList.remove('busy'));
+  });
+
+  // ---- notes save when you click away, so there is no button to hunt for
+  document.getElementById('shelf-body').addEventListener('focusout', (event) => {
+    const field = event.target.closest('[data-note]');
+    if (!field) { return; }
+    post("{% url 'shelf_set_note' %}", {
+      model: field.dataset.model, note: field.textContent.trim(),
+    });
+  });
+  document.getElementById('shelf-body').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && event.target.closest('[data-note]')) {
+      event.preventDefault();
+      event.target.blur();
+    }
+  });
+
+  // ---- live search: filters as you type, no Apply. Brand headings hide when
+  // nothing under them survives, so the page never shows an empty heading.
+  const search = document.getElementById('shelf-search');
+  const noHits = document.getElementById('no-hits');
+  const rows = Array.from(document.querySelectorAll('[data-search]'));
+  const brandRows = Array.from(document.querySelectorAll('[data-brand-row]'));
+
+  function applySearch() {
+    const q = search.value.trim().toLowerCase();
+    let shown = 0;
+    rows.forEach((row) => {
+      const hit = !q || row.dataset.search.includes(q);
+      row.hidden = !hit;
+      if (hit) { shown += 1; }
+    });
+    brandRows.forEach((heading) => {
+      const brand = heading.dataset.brandRow;
+      heading.hidden = !rows.some(
+        (row) => row.dataset.brandOf === brand && !row.hidden);
+    });
+    noHits.hidden = shown > 0;
+  }
+  search.addEventListener('input', applySearch);
+
+  // ---- adding a model or colour reloads, so the new row lands in its sorted
+  // place rather than being appended wherever it was typed.
+  document.querySelectorAll('[data-add]').forEach((form) => {
+    if (!form.dataset.add) { return; }
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const error = form.querySelector('[data-error]');
+      const url = form.dataset.add === 'model'
+        ? "{% url 'shelf_add_model' %}" : "{% url 'shelf_add_colour' %}";
+      const data = {};
+      form.querySelectorAll('input,select').forEach((field) => {
+        if (field.name) { data[field.name] = field.value; }
+      });
+      if (!(data.name || '').trim()) { error.textContent = 'Give it a name.'; return; }
+      error.textContent = '';
+      post(url, data).then((payload) => {
+        if (payload.ok) { window.location.reload(); }
+        else { error.textContent = payload.error || 'Could not add that.'; }
+      }).catch(() => { error.textContent = 'Could not reach the server.'; });
+    });
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}
