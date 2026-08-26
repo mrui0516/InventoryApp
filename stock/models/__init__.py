@@ -14,7 +14,7 @@ from .catalog import (Category, Brand, ProductSeries, Product, ProductImage,
                       Concentration, FragranceFamily, Inspiration)
 from .attributes import (CategoryAttribute, AttributeOption, ProductAttributeValue,
                          attributes_for_category, variant_attributes_for_category)
-from .shelf import (CaseStyle, ShelfColour, CaseStock, ModelShelfNote,
+from .shelf import (ShelfAxis, ShelfOption, ShelfStyle, ShelfStock, ModelShelfNote,
                     natural_key, OUT, DISPLAY, EXTRA, STOCK_STATES, NEXT_STATE)
 from .devices import (DeviceModel, DeviceAlias, CompatibilityGroup,
                       normalise_device_text, resolve_device, search_devices,
@@ -38,7 +38,8 @@ __all__ = [
     'CategoryAttribute', 'AttributeOption', 'ProductAttributeValue',
     'attributes_for_category', 'variant_attributes_for_category',
     # shelf map (cases)
-    'CaseStyle', 'ShelfColour', 'CaseStock', 'ModelShelfNote', 'natural_key',
+    'ShelfAxis', 'ShelfOption', 'ShelfStyle', 'ShelfStock', 'ModelShelfNote',
+    'natural_key',
     'OUT', 'DISPLAY', 'EXTRA', 'STOCK_STATES', 'NEXT_STATE',
     'normalise_device_text', 'resolve_device', 'search_devices',
     'products_fitting',

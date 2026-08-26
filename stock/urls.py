@@ -23,12 +23,14 @@ urlpatterns = [
     path('categories/create/', views.create_category, name='create_category'),
     # shelf map (accessories: is there stock, and is there more above the shelf)
     path('shelf/', shelf_views.shelf_view, name='shelf'),
-    path('shelf/style/<slug:slug>/', shelf_views.shelf_view, name='shelf_style'),
     path('shelf/state/', shelf_views.shelf_set_state, name='shelf_set_state'),
     path('shelf/note/', shelf_views.shelf_set_note, name='shelf_set_note'),
     path('shelf/model/add/', shelf_views.shelf_add_model, name='shelf_add_model'),
-    path('shelf/colour/add/', shelf_views.shelf_add_colour, name='shelf_add_colour'),
+    path('shelf/option/add/', shelf_views.shelf_add_option, name='shelf_add_option'),
+    # Before the slug route: <slug:slug> happily matches "add", which sent
+    # every attempt to create a style into the grid view and a 404.
     path('shelf/style/add/', shelf_views.shelf_add_style, name='shelf_add_style'),
+    path('shelf/style/<slug:slug>/', shelf_views.shelf_view, name='shelf_style'),
     path('products/<int:pk>/', views.product_detail_view, name='product_detail'),
     path('sales-history/', views.product_sales_history_view, name='product_sales_history'),
     path('backup/download/', views.download_db_backup, name='download_db_backup'),

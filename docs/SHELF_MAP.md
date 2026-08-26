@@ -21,16 +21,44 @@
 卖完了点成 OUT；上方的货全部补到货架后，把 EXTRA 点成 DISPLAY。都不需要填数字。
 点一下格子按 `OUT → DISPLAY → EXTRA → OUT` 循环——这正是现实中发生的顺序。
 
+## 两个轴都是数据
+
+网格的列**不是写死的颜色**。手机壳按颜色摆，钢化膜不是——膜按胶型和边型摆。
+所以每个款式指定它的**轴**（`ShelfAxis`），列就是这个轴下的选项（`ShelfOption`）：
+
+| 款式 | 轴 | 列 |
+|---|---|---|
+| Normal silicone | Colour | Black / Transparent / Blue / … |
+| Tempered glass | Glue & edge | Full glue flat / Full glue curved / … |
+
+加一种新货 = admin 或页面上加一个款式 + 选一个轴，**不改代码**。
+
+**手机型号是全 app 共用的**（`DeviceModel`）。录一次 iPhone 17 Pro，
+硅胶壳、MagSafe 壳、钢化膜的网格里**同时都有**——这正是重点。
+
+## 不走 Add product
+
+壳和膜**从来不是产品**：没有条码、没有价格、不进产品列表。
+`ShelfStyle.category` 把款式挂到目录分类上，所以在新增产品页选中 Cases 时，
+页面**直接给出对应网格的入口**，而不是一张不该填的表单。
+
+日常操作只有两件事：
+1. 出了新机型 → 在货架页加一行型号（自动排到正确位置）
+2. 某个颜色卖完 / 补货 → 点一下格子
+
+鼠标、键盘这类**有条码**的商品仍然走正常的产品流程，不在这里。
+
 ## 数据结构
 
 **不存** `"IP15 Pro: B(up), T"` 这种文字。四件事各自独立：
 
 | 表 | 作用 |
 |---|---|
-| `CaseStyle` | 款式：Normal silicone / MagSafe / … |
-| `DeviceModel` | 手机型号（复用已有的机型表，带品牌和别名） |
-| `ShelfColour` | 颜色，店里自己加 |
-| `CaseStock` | 上面三者的组合 + 一个 `state`（唯一约束） |
+| `ShelfAxis` | 列的含义：Colour / Glue & edge / … |
+| `ShelfOption` | 具体一列：Black、Full glue curved… |
+| `ShelfStyle` | 款式，指定自己的轴 + 对应的目录分类 |
+| `DeviceModel` | 手机型号（**全 app 共用**，带品牌和别名） |
+| `ShelfStock` | 款式 × 型号 × 选项 + 一个 `state`（唯一约束） |
 
 **行是懒创建的**：从没上过货的格子根本没有行，读起来和 OUT 一样。
 
@@ -40,9 +68,17 @@
 
 ## 排序
 
-`DeviceModel.sort_key` 把数字**补零**后存下来，所以 `iPhone 9` 排在 `iPhone 11` 前面
-（纯字母序会反过来）。排序键是存下来的，**新加的型号自动落到正确位置**，
-不需要重排。品牌用 `regroup` 分组显示。
+先按**发售年份**，再按 `DeviceModel.sort_key`（数字**补零**后存下来）。
+
+只按名字排会有两个问题：`iPhone 11` 会排在 `iPhone 9` 前面（补零解决），
+而 `iPhone X` 根本没有数字、会掉到 iPhone 16 后面（年份解决——X 回到 8 和 11 之间）。
+
+结果就是货架上的顺序：`6 → 6s → SE(2016) → 7 → 8 → X → XR → XS → 11 → … → 16e`。
+
+**没填年份的型号排在最后**（不是最前），这样手工新加、还没填年份的型号是显眼的，
+而不是悄悄跑到列表头部。页面上加型号时**默认填当年**。
+
+初始机型：`python manage.py seed_phone_models --apply`（iPhone 全系 + 常用简称别名）。
 
 ## 通用型号
 

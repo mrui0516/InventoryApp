@@ -115,10 +115,10 @@
         <thead>
           <tr>
             <th class="model-col">Model</th>
-            {% for colour in colours %}
-              <th class="cell" title="{{ colour.name }}">
-                {% if colour.swatch %}<span class="swatch" style="background:{{ colour.swatch }}"></span>{% endif %}
-                {{ colour.name|truncatechars:9 }}
+            {% for column in columns %}
+              <th class="cell" title="{{ column.name }}">
+                {% if column.swatch %}<span class="swatch" style="background:{{ column.swatch }}"></span>{% endif %}
+                {{ column.name|truncatechars:9 }}
               </th>
             {% endfor %}
           </tr>
@@ -127,7 +127,7 @@
           {% regroup rows by model.brand as brand_groups %}
           {% for group in brand_groups %}
             <tr class="brand-row" data-brand-row="{{ group.grouper.name }}">
-              <td colspan="{{ colours|length|add:1 }}">{{ group.grouper.name }}</td>
+              <td colspan="{{ columns|length|add:1 }}">{{ group.grouper.name }}</td>
             </tr>
             {% for row in group.list %}
               <tr data-search="{{ row.search }}" data-model="{{ row.model.id }}"
@@ -141,8 +141,8 @@
                 {% for cell in row.cells %}
                   <td class="cell">
                     <button type="button" class="st" data-state="{{ cell.state }}"
-                            data-model="{{ row.model.id }}" data-colour="{{ cell.colour.id }}"
-                            aria-label="{{ row.model.name }} {{ cell.colour.name }}">
+                            data-model="{{ row.model.id }}" data-option="{{ cell.option.id }}"
+                            aria-label="{{ row.model.name }} {{ cell.option.name }}">
                       {% if cell.state == 'out' %}&ndash;{% elif cell.state == 'display' %}&#9679;{% else %}&#9650;{% endif %}
                     </button>
                   </td>
@@ -153,8 +153,8 @@
         </tbody>
       </table>
     </div>
-    {% if not colours %}
-      <div class="p-3 sec-head">No colours yet &mdash; add one below.</div>
+    {% if not columns %}
+      <div class="p-3 sec-head">No {{ style.axis.name|lower }} columns yet &mdash; add one below.</div>
     {% endif %}
   </section>
 
@@ -169,17 +169,21 @@
         <button class="btn btn-outline-primary btn-sm">Add model</button>
         <span class="add-error" data-error></span>
       </form>
-      <form class="addbar" data-add="colour">
+      <form class="addbar" data-add="option">
+        <input type="hidden" name="axis" value="{{ style.axis.id }}">
         <input type="text" name="name" class="form-control form-control-sm"
-               placeholder="New colour" maxlength="40">
+               placeholder="New {{ style.axis.name|lower }}" maxlength="40">
         <input type="color" name="swatch" class="form-control form-control-sm form-control-color" value="#000000">
-        <button class="btn btn-outline-primary btn-sm">Add colour</button>
+        <button class="btn btn-outline-primary btn-sm">Add {{ style.axis.name|lower }}</button>
         <span class="add-error" data-error></span>
       </form>
       <form class="addbar" method="post" action="{% url 'shelf_add_style' %}">
         {% csrf_token %}
         <input type="text" name="name" class="form-control form-control-sm"
                placeholder="New style, e.g. MagSafe" maxlength="60">
+        <select name="axis" class="form-select form-select-sm" aria-label="Columns">
+          {% for a in axes %}<option value="{{ a.id }}">by {{ a.name|lower }}</option>{% endfor %}
+        </select>
         <button class="btn btn-outline-secondary btn-sm">Add style</button>
       </form>
     </section>
@@ -213,7 +217,7 @@
     const previous = button.dataset.state;
     button.classList.add('busy');
     post("{% url 'shelf_set_state' %}", {
-      model: button.dataset.model, colour: button.dataset.colour,
+      model: button.dataset.model, option: button.dataset.option,
     }).then((payload) => {
       if (payload.ok) {
         button.dataset.state = payload.state;
@@ -272,7 +276,7 @@
       event.preventDefault();
       const error = form.querySelector('[data-error]');
       const url = form.dataset.add === 'model'
-        ? "{% url 'shelf_add_model' %}" : "{% url 'shelf_add_colour' %}";
+        ? "{% url 'shelf_add_model' %}" : "{% url 'shelf_add_option' %}";
       const data = {};
       form.querySelectorAll('input,select').forEach((field) => {
         if (field.name) { data[field.name] = field.value; }

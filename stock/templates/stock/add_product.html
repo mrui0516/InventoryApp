@@ -209,6 +209,11 @@
   {% endfor %}
 </div>
 
+<div id="shelf-redirect" class="panel p-3" hidden>
+  <p class="pick-q mb-2">Tracked on the shelf</p>
+  <div class="pick-grid" id="shelf-links"></div>
+</div>
+
 <form id="product-form" method="post" enctype="multipart/form-data" class="card p-4 shadow-sm border ds-card">
   {% csrf_token %}
 
@@ -527,6 +532,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // classes at each click site is what let a stale highlight survive while
   // the form showed another category's fields.
   const kindByCategory = JSON.parse('{{ category_kind_json|escapejs }}');
+  // Categories whose stock lives on the shelf grid, not in the catalogue.
+  const shelfTargets = JSON.parse('{{ shelf_targets_json|escapejs }}');
+  const shelfPanel = document.getElementById('shelf-redirect');
+  const shelfLinks = document.getElementById('shelf-links');
   const stepPick = document.getElementById('step-pick');
   const stepForm = document.getElementById('step-form');
 
@@ -556,6 +565,25 @@ document.addEventListener('DOMContentLoaded', () => {
     subButtons().forEach((button) => {
       button.classList.toggle('is-chosen', button.dataset.pick === chosen);
     });
+
+    // A case or a screen protector is never a product: you add the handset
+    // once and then mark colours on the shelf. Offer the grid instead of a
+    // form that would create a row nobody wants.
+    const targets = chosen === null ? null : shelfTargets[chosen];
+    if (targets && targets.length) {
+      shelfLinks.replaceChildren(...targets.map((target) => {
+        const link = document.createElement('a');
+        link.className = 'pick-btn';
+        link.href = target.url;
+        link.innerHTML = '<span class="pick-name"></span><span class="pick-sub">open grid</span>';
+        link.querySelector('.pick-name').textContent = target.name;
+        return link;
+      }));
+      shelfPanel.hidden = false;
+      stepForm.hidden = true;
+      return;
+    }
+    shelfPanel.hidden = true;
 
     stepForm.hidden = chosen === null;
     if (chosen === null) { return; }

@@ -1576,6 +1576,26 @@ def build_category_kind_map():
             for c in Category.objects.select_related('parent')}
 
 
+def build_shelf_targets():
+    """``{category_id: [{name, url}]}`` for categories tracked on the shelf.
+
+    Cases and glass are never entered as products: the handset is added once
+    and then each colour is marked on the shelf. So choosing one of those
+    categories on the add-product page offers the grid rather than a form
+    nobody should be filling in.
+    """
+    from .models import ShelfStyle
+    targets = {}
+    for style in (ShelfStyle.objects
+                  .filter(is_active=True, category__isnull=False)
+                  .select_related('category')):
+        targets.setdefault(str(style.category_id), []).append({
+            'name': style.name,
+            'url': reverse('shelf_style', args=[style.slug]),
+        })
+    return targets
+
+
 @login_required
 @manager_required
 def add_product_view(request):
@@ -1592,6 +1612,7 @@ def add_product_view(request):
         'form': form,
         'category_groups': build_category_picker(),
         'category_kind_json': json.dumps(build_category_kind_map()),
+        'shelf_targets_json': json.dumps(build_shelf_targets()),
         'brand_series_map_json': json.dumps(build_brand_series_map()),
         'brand_catalog_json': json.dumps(build_brand_catalog()),
     })

@@ -9,9 +9,21 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils.text import slugify
 
-from stock.models import CaseStyle, ShelfColour
+from stock.models import Category, ShelfAxis, ShelfOption, ShelfStyle
 
-STYLES = [('Normal silicone', 1)]
+# style name -> which axis forms its columns
+# style name -> (axis slug, catalogue category it stands in for, order)
+STYLES = [('Normal silicone', 'colour', 'Cases', 1)]
+
+AXES = [('Colour', 'colour', 1), ('Glue & edge', 'glue-edge', 2)]
+
+# axis slug -> options
+OPTIONS = {'glue-edge': [
+    ('Full glue flat', '', 1),
+    ('Full glue curved', '', 2),
+    ('Edge glue flat', '', 3),
+    ('Privacy', '', 4),
+]}
 
 COLOURS = [
     ('Black', '#111827', 1),
@@ -36,21 +48,58 @@ class Command(BaseCommand):
 
     def handle(self, *args, **opts):
         apply = opts['apply']
-        made = {'styles': 0, 'colours': 0}
+        made = {'axes': 0, 'styles': 0, 'options': 0}
 
         with transaction.atomic():
-            for name, order in STYLES:
-                if not CaseStyle.objects.filter(slug=slugify(name)).exists():
+            axes = {}
+            for name, slug, order in AXES:
+                axis = ShelfAxis.objects.filter(slug=slug).first()
+                if axis is None:
+                    made['axes'] += 1
+                    if apply:
+                        axis = ShelfAxis.objects.create(name=name, slug=slug,
+                                                        sort_order=order)
+                axes[slug] = axis
+
+            for name, axis_slug, category_name, order in STYLES:
+                if not ShelfStyle.objects.filter(slug=slugify(name)).exists():
                     made['styles'] += 1
                     if apply:
-                        CaseStyle.objects.create(name=name, slug=slugify(name),
-                                                 sort_order=order)
+                        ShelfStyle.objects.create(
+                            name=name, slug=slugify(name), axis=axes[axis_slug],
+                            # Links the grid to the catalogue category, so
+                            # add-product sends people here instead of showing
+                            # them a form for goods that are never products.
+                            category=Category.objects.filter(
+                                name__iexact=category_name).first(),
+                            sort_order=order)
+
+            colour_axis = axes.get('colour')
             for name, swatch, order in COLOURS:
-                if not ShelfColour.objects.filter(name__iexact=name).exists():
-                    made['colours'] += 1
+                if colour_axis is None:
+                    made['options'] += 1
+                    continue
+                if not ShelfOption.objects.filter(axis=colour_axis,
+                                                  name__iexact=name).exists():
+                    made['options'] += 1
                     if apply:
-                        ShelfColour.objects.create(name=name, swatch=swatch,
-                                                   sort_order=order)
+                        ShelfOption.objects.create(axis=colour_axis, name=name,
+                                                   swatch=swatch, sort_order=order)
+
+            for axis_slug, options in OPTIONS.items():
+                axis = axes.get(axis_slug)
+                for name, swatch, order in options:
+                    if axis is None:
+                        made['options'] += 1
+                        continue
+                    if not ShelfOption.objects.filter(axis=axis,
+                                                      name__iexact=name).exists():
+                        made['options'] += 1
+                        if apply:
+                            ShelfOption.objects.create(axis=axis, name=name,
+                                                       swatch=swatch,
+                                                       sort_order=order)
+
             if not apply:
                 transaction.set_rollback(True)
 

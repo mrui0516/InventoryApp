@@ -1,4 +1,4 @@
-"""The shelf map screen: one grid of model x colour, tapped to change state.
+"""The shelf map screen: one grid of model x option, tapped to change state.
 
 Kept out of views.py because it shares nothing with the product catalogue -
 no photos, no prices, no barcodes. The whole page answers two questions: do we
@@ -7,29 +7,31 @@ have one, and is there more above the shelf.
 import json
 
 from django.contrib.auth.decorators import login_required
-from django.db.models import Prefetch
+from django.db.models import Value
+from django.db.models.functions import Coalesce
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 
-from .models import (Brand, CaseStock, CaseStyle, DeviceModel, ModelShelfNote,
-                     ShelfColour, natural_key)
+from .models import (Brand, DeviceModel, ModelShelfNote, ShelfAxis, ShelfOption,
+                     ShelfStock, ShelfStyle)
 from .models.shelf import NEXT_STATE, OUT, STOCK_STATES
 from .permissions import has_manager_access
 
 
 def _state_map(style):
-    """``{(model_id, colour_id): state}`` for one style, in a single query.
+    """``{(model_id, option_id): state}`` for one style, in a single query.
 
-    Rows are created lazily - a model x colour with no row has never been
+    Rows are created lazily - a model x option with no row has never been
     stocked, which reads the same as OUT - so the grid must not assume one
     exists for every cell.
     """
     return {
-        (row.model_id, row.colour_id): row.state
-        for row in CaseStock.objects.filter(style=style).only(
-            'model_id', 'colour_id', 'state')
+        (row.model_id, row.option_id): row.state
+        for row in ShelfStock.objects.filter(style=style).only(
+            'model_id', 'option_id', 'state')
     }
 
 
@@ -38,18 +40,24 @@ def _grid(style):
     states = _state_map(style)
     notes = {n.model_id: n.note
              for n in ModelShelfNote.objects.filter(style=style)}
-    colours = list(ShelfColour.objects.filter(is_active=True))
+    columns = list(style.columns())
+    # Year first, then the model number. "iPhone X" carries no digits, so a
+    # name-only sort drops it below iPhone 16 - the year puts it back between
+    # the 8 and the 11, which is where anyone looking down a shelf expects it.
+    # A handset with no year sorts last rather than first, so a hand-added one
+    # is visibly waiting for a year instead of silently heading the list.
     models = (DeviceModel.objects
               .filter(is_active=True)
               .select_related('brand')
-              .order_by('brand__name', 'sort_key', 'name'))
+              .annotate(year_order=Coalesce('release_year', Value(9999)))
+              .order_by('brand__name', 'year_order', 'sort_key', 'name'))
 
     rows = []
     for model in models:
         cells = [{
-            'colour': colour,
-            'state': states.get((model.id, colour.id), OUT),
-        } for colour in colours]
+            'option': option,
+            'state': states.get((model.id, option.id), OUT),
+        } for option in columns]
         rows.append({
             'model': model,
             'note': notes.get(model.id, ''),
@@ -62,26 +70,27 @@ def _grid(style):
             ])).lower(),
             'in_stock': any(cell['state'] != OUT for cell in cells),
         })
-    return colours, rows
+    return columns, rows
 
 
 @login_required
 def shelf_view(request, slug=None):
-    """The grid for one case style."""
-    styles = list(CaseStyle.objects.filter(is_active=True))
+    """The grid for one style."""
+    styles = list(ShelfStyle.objects.select_related('axis').filter(is_active=True))
     if not styles:
         return render(request, 'stock/shelf.html', {'styles': [], 'style': None})
 
-    style = (get_object_or_404(CaseStyle, slug=slug, is_active=True)
+    style = (get_object_or_404(ShelfStyle, slug=slug, is_active=True)
              if slug else styles[0])
-    colours, rows = _grid(style)
+    columns, rows = _grid(style)
 
     return render(request, 'stock/shelf.html', {
         'styles': styles,
         'style': style,
-        'colours': colours,
+        'columns': columns,
         'rows': rows,
         'brands': Brand.objects.order_by('name'),
+        'axes': ShelfAxis.objects.all(),
         'can_edit_catalog': has_manager_access(request.user),
         'state_cycle_json': json.dumps(NEXT_STATE),
         'state_labels_json': json.dumps(dict(STOCK_STATES)),
@@ -93,17 +102,17 @@ def shelf_view(request, slug=None):
 @login_required
 @require_POST
 def shelf_set_state(request):
-    """Change one cell. Any signed-in user: marking a colour sold out is the
+    """Change one cell. Any signed-in user: marking something sold out is the
     job of whoever is standing at the shelf, not a manager task."""
     try:
         style_id = int(request.POST['style'])
         model_id = int(request.POST['model'])
-        colour_id = int(request.POST['colour'])
+        option_id = int(request.POST['option'])
     except (KeyError, TypeError, ValueError):
         return JsonResponse({'ok': False, 'error': 'Bad request.'}, status=400)
 
-    row, _created = CaseStock.objects.get_or_create(
-        style_id=style_id, model_id=model_id, colour_id=colour_id)
+    row, _created = ShelfStock.objects.get_or_create(
+        style_id=style_id, model_id=model_id, option_id=option_id)
 
     wanted = (request.POST.get('state') or '').strip()
     if wanted and wanted in dict(STOCK_STATES):
@@ -155,57 +164,76 @@ def shelf_add_model(request):
         return JsonResponse({'ok': False, 'error': f'{existing} already exists.',
                              'id': existing.id}, status=409)
 
-    model = DeviceModel.objects.create(brand=brand, name=name)
+    year = (request.POST.get('release_year') or '').strip()
+    model = DeviceModel.objects.create(
+        brand=brand, name=name,
+        # Almost anything added by hand is a current handset, and a year keeps
+        # it in place in the ordering rather than parked at the bottom.
+        release_year=int(year) if year.isdigit() else timezone.now().year)
     return JsonResponse({'ok': True, 'id': model.id, 'name': model.name,
                          'brand': brand.name, 'sort_key': model.sort_key})
 
 
 @login_required
 @require_POST
-def shelf_add_colour(request):
-    """Add a colour the shop has started stocking."""
+def shelf_add_option(request):
+    """Add a column to one axis - a colour, a glue type, whatever it holds."""
     if not has_manager_access(request.user):
         return JsonResponse({'ok': False, 'error': 'Managers only.'}, status=403)
 
     name = (request.POST.get('name') or '').strip()
     if not name:
-        return JsonResponse({'ok': False, 'error': 'Give the colour a name.'}, status=400)
+        return JsonResponse({'ok': False, 'error': 'Give it a name.'}, status=400)
 
-    existing = ShelfColour.objects.filter(name__iexact=name).first()
+    axis = ShelfAxis.objects.filter(pk=request.POST.get('axis')).first()
+    if axis is None:
+        return JsonResponse({'ok': False, 'error': 'Unknown axis.'}, status=400)
+
+    existing = ShelfOption.objects.filter(axis=axis, name__iexact=name).first()
     if existing is not None:
-        if not existing.is_active:          # bringing a retired colour back
+        if not existing.is_active:          # bringing a retired column back
             existing.is_active = True
             existing.save(update_fields=['is_active'])
             return JsonResponse({'ok': True, 'id': existing.id, 'name': existing.name})
         return JsonResponse({'ok': False, 'error': f'"{existing.name}" already exists.',
                              'id': existing.id}, status=409)
 
-    last = ShelfColour.objects.order_by('-sort_order').first()
-    colour = ShelfColour.objects.create(
-        name=name,
+    last = ShelfOption.objects.filter(axis=axis).order_by('-sort_order').first()
+    option = ShelfOption.objects.create(
+        axis=axis, name=name,
         swatch=(request.POST.get('swatch') or '').strip()[:7],
         sort_order=(last.sort_order + 1) if last else 1)
-    return JsonResponse({'ok': True, 'id': colour.id, 'name': colour.name,
-                         'swatch': colour.swatch})
+    return JsonResponse({'ok': True, 'id': option.id, 'name': option.name,
+                         'swatch': option.swatch})
 
 
 @login_required
 @require_POST
 def shelf_add_style(request):
-    """Add a case style - clear TPU, MagSafe, and so on."""
+    """Add a style - MagSafe cases, tempered glass, and so on.
+
+    The axis decides what its columns are. Left unsaid it reuses Colour, which
+    is right for any case material; glass would pick a glue-and-edge axis.
+    """
     if not has_manager_access(request.user):
         return JsonResponse({'ok': False, 'error': 'Managers only.'}, status=403)
 
     name = (request.POST.get('name') or '').strip()
     if not name:
-        return JsonResponse({'ok': False, 'error': 'Give the style a name.'}, status=400)
+        return redirect('shelf')
 
     slug = slugify(name)[:60]
-    existing = CaseStyle.objects.filter(slug=slug).first()
+    existing = ShelfStyle.objects.filter(slug=slug).first()
     if existing is not None:
         return redirect('shelf_style', slug=existing.slug)
 
-    last = CaseStyle.objects.order_by('-sort_order').first()
-    style = CaseStyle.objects.create(
-        name=name, slug=slug, sort_order=(last.sort_order + 1) if last else 1)
+    axis = ShelfAxis.objects.filter(pk=request.POST.get('axis')).first()
+    if axis is None:
+        axis, _created = ShelfAxis.objects.get_or_create(
+            slug='colour', defaults={'name': 'Colour', 'sort_order': 1})
+
+    last = ShelfStyle.objects.order_by('-sort_order').first()
+    style = ShelfStyle.objects.create(
+        name=name, slug=slug, axis=axis,
+        sort_order=(last.sort_order + 1) if last else 1)
     return redirect('shelf_style', slug=style.slug)
