@@ -23,7 +23,7 @@ urlpatterns = [
     path('categories/create/', views.create_category, name='create_category'),
     # shelf map (accessories: is there stock, and is there more above the shelf)
     path('shelf/', shelf_views.shelf_view, name='shelf'),
-    path('shelf/state/', shelf_views.shelf_set_state, name='shelf_set_state'),
+    path('shelf/save/', shelf_views.shelf_save_states, name='shelf_save_states'),
     path('shelf/note/', shelf_views.shelf_set_note, name='shelf_set_note'),
     path('shelf/model/add/', shelf_views.shelf_add_model, name='shelf_add_model'),
     path('shelf/option/add/', shelf_views.shelf_add_option, name='shelf_add_option'),

@@ -60,6 +60,21 @@
   .addbar input,.addbar select{max-width:180px}
   .add-error{font-size:.74rem;font-weight:600;color:var(--app-danger)}
   tr[hidden]{display:none}
+  .price-tag{font-size:.74rem;font-weight:800;color:var(--app-accent-ink);
+    background:var(--app-accent-soft);border-radius:999px;padding:.15rem .5rem;white-space:nowrap}
+  .cat-label{font-size:.62rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--app-muted);align-self:center;margin-right:.15rem;padding-left:.2rem}
+  .cat-label:not(:first-child){border-left:1px solid var(--app-border);padding-left:.6rem;margin-left:.3rem}
+  .style-tab b{font-weight:800;margin-left:.3rem;color:var(--app-text)}
+  .style-tabs{align-items:center}
+
+  /* Read-only until Edit. The cursor and the dimmed border say so, and the
+     buttons simply do not respond, so a thumb on a phone cannot change stock. */
+  .st{cursor:default}
+  body.shelf-editing .st{cursor:pointer;box-shadow:0 0 0 1px var(--app-accent-soft)}
+  .st.changed{outline:2px solid var(--app-accent);outline-offset:1px}
+  .edit-hint{font-size:.72rem;font-weight:700;color:var(--app-accent-ink)}
+
 
   @media (max-width:575.98px){
     .shelf-title{font-size:1rem}
@@ -86,11 +101,23 @@
 
   <section class="panel shelf-top">
     <h1 class="shelf-title">{{ style.name }}</h1>
+    {% if style.wholesale_price %}<span class="price-tag">&euro;{{ style.wholesale_price|floatformat:2 }} wholesale</span>{% endif %}
     <span class="shelf-count"><b>{{ total_models }}</b> models &middot; <b>{{ out_models }}</b> fully out</span>
-    <div class="style-tabs ms-auto">
-      {% for s in styles %}
-        <a class="style-tab {% if s.id == style.id %}active{% endif %}"
-           href="{% url 'shelf_style' s.slug %}">{{ s.name }}</a>
+    <div class="ms-auto d-flex gap-1">
+      <button type="button" class="btn btn-sm btn-outline-primary" id="edit-btn">Edit</button>
+      <button type="button" class="btn btn-sm btn-primary" id="save-btn" hidden>Save</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="cancel-btn" hidden>Cancel</button>
+    </div>
+  </section>
+
+  <section class="panel p-2 d-grid gap-2">
+    <div class="style-tabs">
+      {% for group in groups %}
+        <span class="cat-label">{{ group.name }}</span>
+        {% for s in group.styles %}
+          <a class="style-tab {% if s.id == style.id %}active{% endif %}"
+             href="{% url 'shelf_style' s.slug %}">{{ s.name }}{% if s.wholesale_price %}<b>&euro;{{ s.wholesale_price|floatformat:2 }}</b>{% endif %}</a>
+        {% endfor %}
       {% endfor %}
     </div>
   </section>
@@ -107,6 +134,7 @@
       </div>
     </div>
     <div id="no-hits" class="sec-head mt-2" hidden>No model matches that.</div>
+    <div id="edit-hint" class="edit-hint mt-2" hidden>Editing &mdash; tap cells, then Save.</div>
   </section>
 
   <section class="panel">
@@ -141,6 +169,8 @@
                 {% for cell in row.cells %}
                   <td class="cell">
                     <button type="button" class="st" data-state="{{ cell.state }}"
+                            data-saved="{{ cell.state }}"
+                            data-key="{{ row.model.id }}:{{ cell.option.id }}"
                             data-model="{{ row.model.id }}" data-option="{{ cell.option.id }}"
                             aria-label="{{ row.model.name }} {{ cell.option.name }}">
                       {% if cell.state == 'out' %}&ndash;{% elif cell.state == 'display' %}&#9679;{% else %}&#9650;{% endif %}
@@ -207,26 +237,88 @@
       .then((r) => r.json());
   }
 
-  // ---- one tap advances a cell: out -> on shelf -> extra -> out.
-  // The button is disabled while in flight so a double tap cannot skip a
-  // state, and it reverts on failure rather than showing a state the server
-  // never accepted.
-  document.getElementById('shelf-body').addEventListener('click', (event) => {
-    const button = event.target.closest('.st');
-    if (!button || button.classList.contains('busy')) { return; }
-    const previous = button.dataset.state;
-    button.classList.add('busy');
-    post("{% url 'shelf_set_state' %}", {
-      model: button.dataset.model, option: button.dataset.option,
-    }).then((payload) => {
-      if (payload.ok) {
-        button.dataset.state = payload.state;
-        button.textContent = GLYPH[payload.state];
+  // ---- editing is explicit: the grid is read-only until Edit is pressed,
+  // so a passing thumb cannot silently change what is on the shelf. Changes
+  // are held here and written in one request on Save.
+  const CYCLE = { out: 'display', display: 'extra', extra: 'out' };
+  const editBtn = document.getElementById('edit-btn');
+  const saveBtn = document.getElementById('save-btn');
+  const cancelBtn = document.getElementById('cancel-btn');
+  const editHint = document.getElementById('edit-hint');
+  const body = document.getElementById('shelf-body');
+  let editing = false;
+  const pending = new Map();          // "model:option" -> state
+
+  function setEditing(on) {
+    editing = on;
+    document.body.classList.toggle('shelf-editing', on);
+    editBtn.hidden = on;
+    saveBtn.hidden = !on;
+    cancelBtn.hidden = !on;
+    editHint.hidden = !on;
+  }
+
+  function paint(button, state) {
+    button.dataset.state = state;
+    button.textContent = GLYPH[state];
+  }
+
+  editBtn.addEventListener('click', () => setEditing(true));
+
+  cancelBtn.addEventListener('click', () => {
+    // Put every touched cell back to what the server still holds.
+    pending.forEach((_state, key) => {
+      const button = body.querySelector(`.st[data-key="${key}"]`);
+      if (button) {
+        paint(button, button.dataset.saved);
+        button.classList.remove('changed');
       }
-    }).catch(() => {
-      button.dataset.state = previous;
-      button.textContent = GLYPH[previous];
-    }).finally(() => button.classList.remove('busy'));
+    });
+    pending.clear();
+    setEditing(false);
+  });
+
+  body.addEventListener('click', (event) => {
+    const button = event.target.closest('.st');
+    if (!button || !editing) { return; }
+    const next = CYCLE[button.dataset.state];
+    paint(button, next);
+    const key = button.dataset.key;
+    if (next === button.dataset.saved) {
+      pending.delete(key);            // back where it started, nothing to save
+      button.classList.remove('changed');
+    } else {
+      pending.set(key, next);
+      button.classList.add('changed');
+    }
+  });
+
+  saveBtn.addEventListener('click', () => {
+    if (!pending.size) { setEditing(false); return; }
+    const changes = Array.from(pending.entries()).map(([key, state]) => {
+      const [model, option] = key.split(':');
+      return { model, option, state };
+    });
+    saveBtn.disabled = true;
+    post("{% url 'shelf_save_states' %}", { changes: JSON.stringify(changes) })
+      .then((payload) => {
+        if (!payload.ok) { return; }
+        pending.forEach((state, key) => {
+          const button = body.querySelector(`.st[data-key="${key}"]`);
+          if (button) {
+            button.dataset.saved = state;   // this is the new truth
+            button.classList.remove('changed');
+          }
+        });
+        pending.clear();
+        setEditing(false);
+      })
+      .finally(() => { saveBtn.disabled = false; });
+  });
+
+  // Leaving with unsaved changes should not lose them silently.
+  window.addEventListener('beforeunload', (event) => {
+    if (pending.size) { event.preventDefault(); event.returnValue = ''; }
   });
 
   // ---- notes save when you click away, so there is no button to hunt for

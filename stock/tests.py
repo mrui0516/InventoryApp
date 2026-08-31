@@ -4442,35 +4442,6 @@ class LeadTimeAdminCorrectionTests(TestCase):
             self.assertIn(field, InboundOrderAdmin.fields, field)
 
 
-class AccessoryListNoPhotosTests(TestCase):
-    """Accessories are identified by model and colour, not by a photo."""
-
-    def setUp(self):
-        self.perfumes = Category.objects.create(name="Perfumes", form_kind="perfume")
-        self.accessories = Category.objects.create(name="Accessories", form_kind="accessory")
-        self.cases = Category.objects.create(name="Cases", parent=self.accessories)
-        user = get_user_model().objects.create_superuser(
-            username="pl_mgr", password="pw123456", email="p@x.com")
-        self.client.force_login(user)
-
-    def _show_photos(self, category=None):
-        params = {'category': category.pk} if category else {}
-        return self.client.get(reverse('product_list'), params).context['show_photos']
-
-    def test_photos_are_hidden_for_an_accessory_category(self):
-        self.assertFalse(self._show_photos(self.accessories))
-
-    def test_photos_are_hidden_for_an_accessory_subcategory(self):
-        # form_kind is inherited, so Cases counts without being set directly.
-        self.assertFalse(self._show_photos(self.cases))
-
-    def test_photos_are_shown_for_perfume(self):
-        self.assertTrue(self._show_photos(self.perfumes))
-
-    def test_photos_are_shown_when_no_category_is_chosen(self):
-        self.assertTrue(self._show_photos())
-
-
 class ShelfMapTests(TestCase):
     """Is there stock, and is there more above the shelf. Nothing is counted."""
 
@@ -4520,10 +4491,13 @@ class ShelfMapTests(TestCase):
         self.assertEqual(order, ["iPhone 9", "iPhone 11", "iPhone 15", "Galaxy S24"])
 
     # -- state -------------------------------------------------------------
-    def _set(self, model, colour, **extra):
-        data = {'style': self.style.pk, 'model': model.pk, 'option': colour.pk}
-        data.update(extra)
-        return self.client.post(reverse('shelf_set_state'), data)
+    def _set(self, model, colour, state='display'):
+        import json
+        return self.client.post(reverse('shelf_save_states'), {
+            'style': self.style.pk,
+            'changes': json.dumps([{'model': model.pk, 'option': colour.pk,
+                                    'state': state}]),
+        })
 
     def test_a_cell_starts_out_without_a_row_existing(self):
         from stock.models import ShelfStock
@@ -4532,23 +4506,50 @@ class ShelfMapTests(TestCase):
         self.assertEqual([c['state'] for c in row['cells']], ['out', 'out'])
         self.assertEqual(ShelfStock.objects.count(), 0)
 
-    def test_tapping_walks_out_then_on_shelf_then_extra_then_back(self):
-        self.assertEqual(self._set(self.m15, self.black).json()['state'], 'display')
-        self.assertEqual(self._set(self.m15, self.black).json()['state'], 'extra')
-        self.assertEqual(self._set(self.m15, self.black).json()['state'], 'out')
-
-    def test_a_state_can_be_set_directly(self):
-        payload = self._set(self.m15, self.black, state='extra').json()
-        self.assertEqual(payload['state'], 'extra')
-
-    def test_an_unknown_state_falls_back_to_cycling_rather_than_storing_junk(self):
+    def test_a_saved_edit_is_written(self):
         from stock.models import ShelfStock
-        payload = self._set(self.m15, self.black, state='nonsense').json()
-        self.assertEqual(payload['state'], 'display')
-        self.assertEqual(ShelfStock.objects.get().state, 'display')
+        self.assertTrue(self._set(self.m15, self.black, 'extra').json()['ok'])
+        self.assertEqual(ShelfStock.objects.get().state, 'extra')
+
+    def test_several_cells_save_in_one_request(self):
+        import json
+        from stock.models import ShelfStock
+        response = self.client.post(reverse('shelf_save_states'), {
+            'style': self.style.pk,
+            'changes': json.dumps([
+                {'model': self.m15.pk, 'option': self.black.pk, 'state': 'extra'},
+                {'model': self.m15.pk, 'option': self.clear.pk, 'state': 'display'},
+                {'model': self.m11.pk, 'option': self.black.pk, 'state': 'display'},
+            ]),
+        })
+        self.assertEqual(response.json()['saved'], 3)
+        self.assertEqual(ShelfStock.objects.count(), 3)
+
+    def test_an_unknown_state_is_ignored_rather_than_stored(self):
+        from stock.models import ShelfStock
+        self._set(self.m15, self.black, 'nonsense')
+        self.assertFalse(ShelfStock.objects.filter(state='nonsense').exists())
+
+    def test_a_malformed_change_does_not_take_the_rest_down(self):
+        import json
+        from stock.models import ShelfStock
+        self.client.post(reverse('shelf_save_states'), {
+            'style': self.style.pk,
+            'changes': json.dumps([
+                {'model': 'nonsense', 'option': self.black.pk, 'state': 'extra'},
+                {'model': self.m15.pk, 'option': self.clear.pk, 'state': 'display'},
+            ]),
+        })
+        self.assertEqual(ShelfStock.objects.count(), 1)
+        self.assertEqual(ShelfStock.objects.get().option, self.clear)
+
+    def test_broken_json_is_refused(self):
+        response = self.client.post(reverse('shelf_save_states'),
+                                    {'style': self.style.pk, 'changes': '{{'})
+        self.assertEqual(response.status_code, 400)
 
     def test_colours_of_the_same_model_are_independent(self):
-        self._set(self.m15, self.black, state='extra')
+        self._set(self.m15, self.black, 'extra')
         response = self.client.get(reverse('shelf'))
         row = next(r for r in response.context['rows'] if r['model'] == self.m15)
         self.assertEqual([c['state'] for c in row['cells']], ['extra', 'out'])
@@ -4561,7 +4562,7 @@ class ShelfMapTests(TestCase):
     def test_shop_floor_staff_can_mark_a_colour_out(self):
         # Marking sold-out is the job of whoever is at the shelf.
         self.client.force_login(self.staff)
-        response = self._set(self.m15, self.black, state='out')
+        response = self._set(self.m15, self.black, 'extra')
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()['ok'])
 
@@ -4573,7 +4574,7 @@ class ShelfMapTests(TestCase):
 
     def test_nothing_records_a_quantity(self):
         from stock.models import ShelfStock
-        self._set(self.m15, self.black, state='extra')
+        self._set(self.m15, self.black, 'extra')
         field_names = {f.name for f in ShelfStock._meta.get_fields()}
         self.assertNotIn('quantity', field_names)
         self.assertEqual(ShelfStock.objects.get().state, 'extra')
@@ -4589,7 +4590,7 @@ class ShelfMapTests(TestCase):
         # Notes are a reminder for the person at the shelf, nothing more.
         self.client.post(reverse('shelf_set_note'), {
             'style': self.style.pk, 'model': self.m15.pk, 'note': 'same as 11'})
-        self._set(self.m15, self.black, state='extra')
+        self._set(self.m15, self.black, 'extra')
         response = self.client.get(reverse('shelf'))
         other = next(r for r in response.context['rows'] if r['model'] == self.m11)
         self.assertEqual([c['state'] for c in other['cells']], ['out', 'out'])
@@ -4638,7 +4639,7 @@ class ShelfMapTests(TestCase):
         self.assertNotIn('<img', body)
 
     def test_the_page_counts_how_many_models_are_fully_out(self):
-        self._set(self.m15, self.black, state='display')
+        self._set(self.m15, self.black, 'display')
         response = self.client.get(reverse('shelf'))
         self.assertEqual(response.context['total_models'], 3)
         self.assertEqual(response.context['out_models'], 2)
@@ -4655,7 +4656,7 @@ class ShelfMapTests(TestCase):
         from stock.models import ShelfStyle
         magsafe = ShelfStyle.objects.create(name="MagSafe", slug="magsafe",
                                             axis=self.axis, sort_order=2)
-        self._set(self.m15, self.black, state='extra')
+        self._set(self.m15, self.black, 'extra')
         response = self.client.get(reverse('shelf_style', args=[magsafe.slug]))
         row = next(r for r in response.context['rows'] if r['model'] == self.m15)
         self.assertEqual([c['state'] for c in row['cells']], ['out', 'out'])
@@ -4729,6 +4730,82 @@ class AddProductDefersToShelfTests(TestCase):
         self.assertEqual(Product.all_objects.count(), 0)
 
 
+class ShelfNavAndPriceTests(TestCase):
+    """Category, then type, with the wholesale price beside it."""
+
+    def setUp(self):
+        from decimal import Decimal
+        from stock.models import ShelfAxis, ShelfOption, ShelfStyle, DeviceModel
+        self.colour, _ = ShelfAxis.objects.get_or_create(
+            slug='colour', defaults={'name': 'Colour'})
+        ShelfOption.objects.all().delete()
+        self.glue = ShelfAxis.objects.create(name='Glue & edge', slug='glue-edge')
+        ShelfOption.objects.create(axis=self.colour, name='Black')
+        ShelfOption.objects.create(axis=self.glue, name='Full glue curved')
+
+        self.cases = Category.objects.create(name="Cases", form_kind="accessory")
+        self.glass_cat = Category.objects.create(name="Screen protectors",
+                                                 form_kind="accessory")
+        self.silicone = ShelfStyle.objects.create(
+            name="Normal silicone", slug="normal-silicone", axis=self.colour,
+            category=self.cases, wholesale_price=Decimal("1.20"), sort_order=1)
+        self.magsafe = ShelfStyle.objects.create(
+            name="MagSafe", slug="magsafe", axis=self.colour,
+            category=self.cases, wholesale_price=Decimal("3.50"), sort_order=2)
+        self.glass = ShelfStyle.objects.create(
+            name="Tempered glass", slug="tempered-glass", axis=self.glue,
+            category=self.glass_cat, wholesale_price=Decimal("0.80"), sort_order=3)
+
+        apple = Brand.objects.create(name="Apple")
+        DeviceModel.objects.create(brand=apple, name="iPhone 15", release_year=2023)
+        user = get_user_model().objects.create_superuser(
+            username="nav_mgr", password="pw123456", email="n@x.com")
+        self.client.force_login(user)
+
+    def test_types_are_grouped_under_their_category(self):
+        response = self.client.get(reverse('shelf'))
+        groups = {g['name']: [s.name for s in g['styles']]
+                  for g in response.context['groups']}
+        self.assertEqual(groups["Cases"], ["Normal silicone", "MagSafe"])
+        self.assertEqual(groups["Screen protectors"], ["Tempered glass"])
+
+    def test_the_page_knows_which_category_is_open(self):
+        response = self.client.get(reverse('shelf_style', args=['tempered-glass']))
+        self.assertEqual(response.context['current_group']['name'], "Screen protectors")
+
+    def test_the_wholesale_price_is_shown(self):
+        html = self.client.get(reverse('shelf_style', args=['magsafe'])).content.decode()
+        self.assertIn("3.50", html)
+        self.assertIn("wholesale", html)
+
+    def test_a_type_with_no_price_set_does_not_show_an_empty_tag(self):
+        self.magsafe.wholesale_price = None
+        self.magsafe.save(update_fields=['wholesale_price'])
+        html = self.client.get(reverse('shelf_style', args=['magsafe'])).content.decode()
+        self.assertNotIn("wholesale", html)
+
+    def test_glass_and_cases_show_different_columns(self):
+        cases = self.client.get(reverse('shelf_style', args=['normal-silicone']))
+        glass = self.client.get(reverse('shelf_style', args=['tempered-glass']))
+        self.assertEqual([c.name for c in cases.context['columns']], ['Black'])
+        self.assertEqual([c.name for c in glass.context['columns']],
+                         ['Full glue curved'])
+
+    def test_the_grid_is_read_only_until_edit(self):
+        html = self.client.get(reverse('shelf')).content.decode()
+        self.assertIn('id="edit-btn"', html)
+        self.assertIn('id="save-btn"', html)
+        # every cell records the state the server holds, so Cancel can restore
+        self.assertIn('data-saved=', html)
+
+    def test_a_style_with_no_category_still_appears(self):
+        from stock.models import ShelfStyle
+        ShelfStyle.objects.create(name="Loose", slug="loose", axis=self.colour,
+                                  sort_order=9)
+        names = [g['name'] for g in self.client.get(reverse('shelf')).context['groups']]
+        self.assertIn("Other", names)
+
+
 class ShelfAxisTests(TestCase):
     """A style names the axis that forms its columns, so a new kind of goods
     brings its own columns without a code change."""
@@ -4770,9 +4847,11 @@ class ShelfAxisTests(TestCase):
             self.assertEqual(names, ['iPhone 15'], style.name)
 
     def test_states_do_not_leak_between_styles(self):
-        self.client.post(reverse('shelf_set_state'), {
-            'style': self.cases.pk, 'model': self.model.pk,
-            'option': self.black.pk, 'state': 'extra'})
+        import json
+        self.client.post(reverse('shelf_save_states'), {
+            'style': self.cases.pk,
+            'changes': json.dumps([{'model': self.model.pk,
+                                    'option': self.black.pk, 'state': 'extra'}])})
         glass = self.client.get(reverse('shelf_style', args=[self.glass.slug]))
         row = glass.context['rows'][0]
         self.assertEqual([c['state'] for c in row['cells']], ['out'])

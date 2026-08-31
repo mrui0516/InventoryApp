@@ -269,12 +269,10 @@
                 <tr>
                   <td>
                     <div class="product-block d-none d-sm-grid">
-                      {% if show_photos %}
-                        {% if product.primary_image_url %}
-                          <img src="{{ product.primary_image_url }}" alt="{{ product.display_name }}" class="thumb js-zoom" data-src="{{ product.primary_image_url }}">
-                        {% else %}
-                          <div class="thumb-empty">No Img</div>
-                        {% endif %}
+                      {% if product.primary_image_url %}
+                        <img src="{{ product.primary_image_url }}" alt="{{ product.display_name }}" class="thumb js-zoom" data-src="{{ product.primary_image_url }}">
+                      {% else %}
+                        <div class="thumb-empty">No Img</div>
                       {% endif %}
                       <div>
                         <div class="mini-row">
@@ -299,12 +297,10 @@
 
                     <div class="pm-item d-sm-none">
                       <a class="pm-row" href="{% url 'product_detail' product.id %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}">
-                        {% if show_photos %}
-                          {% if product.primary_image_url %}
-                            <img src="{{ product.primary_image_url }}" alt="" class="pm-thumb" loading="lazy">
-                          {% else %}
-                            <div class="pm-thumb pm-thumb-empty">&mdash;</div>
-                          {% endif %}
+                        {% if product.primary_image_url %}
+                          <img src="{{ product.primary_image_url }}" alt="" class="pm-thumb" loading="lazy">
+                        {% else %}
+                          <div class="pm-thumb pm-thumb-empty">&mdash;</div>
                         {% endif %}
                         <div class="pm-body">
                           <div class="pm-brand">{{ product.brand }}</div>

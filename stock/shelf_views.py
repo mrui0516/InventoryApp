@@ -10,6 +10,7 @@ from django.contrib.auth.decorators import login_required
 from django.db.models import Value
 from django.db.models.functions import Coalesce
 from django.http import JsonResponse
+from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.text import slugify
@@ -17,7 +18,7 @@ from django.views.decorators.http import require_POST
 
 from .models import (Brand, DeviceModel, ModelShelfNote, ShelfAxis, ShelfOption,
                      ShelfStock, ShelfStyle)
-from .models.shelf import NEXT_STATE, OUT, STOCK_STATES
+from .models.shelf import OUT, STOCK_STATES
 from .permissions import has_manager_access
 
 
@@ -75,25 +76,46 @@ def _grid(style):
 
 @login_required
 def shelf_view(request, slug=None):
-    """The grid for one style."""
-    styles = list(ShelfStyle.objects.select_related('axis').filter(is_active=True))
+    """One type's grid, under its category.
+
+    Two levels of navigation because that is how the goods sit: cases and
+    screen protectors are different things, and each has its own types.
+    """
+    styles = list(ShelfStyle.objects
+                  .select_related('axis', 'category')
+                  .filter(is_active=True))
     if not styles:
-        return render(request, 'stock/shelf.html', {'styles': [], 'style': None})
+        return render(request, 'stock/shelf.html', {'style': None, 'groups': []})
 
     style = (get_object_or_404(ShelfStyle, slug=slug, is_active=True)
              if slug else styles[0])
+
+    # Types grouped under their category, so the page can offer both levels.
+    groups, seen = [], {}
+    for candidate in styles:
+        key = candidate.category_id
+        if key not in seen:
+            seen[key] = {
+                'category': candidate.category,
+                'name': candidate.category.name if candidate.category else 'Other',
+                'styles': [],
+            }
+            groups.append(seen[key])
+        seen[key]['styles'].append(candidate)
+
     columns, rows = _grid(style)
+    current = next((g for g in groups
+                    if any(s.id == style.id for s in g['styles'])), None)
 
     return render(request, 'stock/shelf.html', {
-        'styles': styles,
+        'groups': groups,
+        'current_group': current,
         'style': style,
         'columns': columns,
         'rows': rows,
         'brands': Brand.objects.order_by('name'),
         'axes': ShelfAxis.objects.all(),
         'can_edit_catalog': has_manager_access(request.user),
-        'state_cycle_json': json.dumps(NEXT_STATE),
-        'state_labels_json': json.dumps(dict(STOCK_STATES)),
         'total_models': len(rows),
         'out_models': sum(1 for row in rows if not row['in_stock']),
     })
@@ -101,28 +123,44 @@ def shelf_view(request, slug=None):
 
 @login_required
 @require_POST
-def shelf_set_state(request):
-    """Change one cell. Any signed-in user: marking something sold out is the
-    job of whoever is standing at the shelf, not a manager task."""
+def shelf_save_states(request):
+    """Save a whole edit in one go.
+
+    The grid is read-only until Edit is pressed, so a passing thumb cannot
+    change stock. Every cell touched in that session arrives here together and
+    is written in one transaction - a half-applied edit would leave the shelf
+    describing something that was never true.
+    """
     try:
-        style_id = int(request.POST['style'])
-        model_id = int(request.POST['model'])
-        option_id = int(request.POST['option'])
-    except (KeyError, TypeError, ValueError):
+        style = ShelfStyle.objects.get(pk=request.POST['style'])
+        changes = json.loads(request.POST.get('changes') or '[]')
+    except (KeyError, ShelfStyle.DoesNotExist, ValueError):
         return JsonResponse({'ok': False, 'error': 'Bad request.'}, status=400)
 
-    row, _created = ShelfStock.objects.get_or_create(
-        style_id=style_id, model_id=model_id, option_id=option_id)
+    if not isinstance(changes, list):
+        return JsonResponse({'ok': False, 'error': 'Bad request.'}, status=400)
 
-    wanted = (request.POST.get('state') or '').strip()
-    if wanted and wanted in dict(STOCK_STATES):
-        row.state = wanted
-        row.updated_by = request.user
-        row.save(update_fields=['state', 'updated_at', 'updated_by'])
-    else:
-        row.cycle(request.user)
+    allowed = dict(STOCK_STATES)
+    saved = 0
+    with transaction.atomic():
+        for change in changes[:2000]:
+            try:
+                model_id = int(change['model'])
+                option_id = int(change['option'])
+                state = str(change['state'])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if state not in allowed:
+                continue
+            row, _created = ShelfStock.objects.get_or_create(
+                style=style, model_id=model_id, option_id=option_id)
+            if row.state != state:
+                row.state = state
+                row.updated_by = request.user
+                row.save(update_fields=['state', 'updated_at', 'updated_by'])
+                saved += 1
 
-    return JsonResponse({'ok': True, 'state': row.state})
+    return JsonResponse({'ok': True, 'saved': saved})
 
 
 @login_required

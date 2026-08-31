@@ -6,6 +6,7 @@ from .models import (
     Product, Purchase, Sale, SaleOrder, Brand, ProductSeries,
     Category, Supplier, Customer, ProductImage, DailySalesSummary, InboundOrder,
     DeviceModel, DeviceAlias, CompatibilityGroup,
+    ShelfAxis, ShelfOption, ShelfStyle,
     CategoryAttribute, AttributeOption, ProductAttributeValue,
     ARInvoice, ARItem, ARPayment, AttendanceRecord, PrintProfile, StockAdjustmentLog,
     SalesTarget, SaleOrderPayment, Store, StoreProfile
@@ -376,3 +377,26 @@ class ProductAttributeValueInline(admin.TabularInline):
     model = ProductAttributeValue
     extra = 0
     autocomplete_fields = ('attribute',)
+
+
+class ShelfOptionInline(admin.TabularInline):
+    """Columns live with their axis - defining what a grid is measured by and
+    what its columns are is one screen."""
+    model = ShelfOption
+    extra = 3
+
+
+@admin.register(ShelfAxis)
+class ShelfAxisAdmin(admin.ModelAdmin):
+    list_display = ('name', 'sort_order')
+    prepopulated_fields = {'slug': ('name',)}
+    inlines = [ShelfOptionInline]
+
+
+@admin.register(ShelfStyle)
+class ShelfStyleAdmin(admin.ModelAdmin):
+    list_display = ('name', 'category', 'axis', 'wholesale_price',
+                    'sort_order', 'is_active')
+    list_filter = ('category', 'axis', 'is_active')
+    list_editable = ('wholesale_price', 'sort_order', 'is_active')
+    prepopulated_fields = {'slug': ('name',)}

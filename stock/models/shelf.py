@@ -118,6 +118,12 @@ class ShelfStyle(models.Model):
     category = models.ForeignKey('stock.Category', null=True, blank=True,
                                  on_delete=models.SET_NULL,
                                  related_name='shelf_styles')
+    # What the shop pays for one. Shown beside the type so whoever is quoting
+    # a customer does not have to go and look it up. There is no retail price
+    # here on purpose: these are not products and are not sold through the
+    # till yet.
+    wholesale_price = models.DecimalField(max_digits=10, decimal_places=2,
+                                          null=True, blank=True)
     sort_order = models.PositiveSmallIntegerField(default=0)
     is_active = models.BooleanField(default=True)
 

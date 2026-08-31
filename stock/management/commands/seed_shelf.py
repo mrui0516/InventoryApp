@@ -13,7 +13,15 @@ from stock.models import Category, ShelfAxis, ShelfOption, ShelfStyle
 
 # style name -> which axis forms its columns
 # style name -> (axis slug, catalogue category it stands in for, order)
-STYLES = [('Normal silicone', 'colour', 'Cases', 1)]
+STYLES = [
+    # (name, axis slug, catalogue category, order)
+    ('Normal silicone', 'colour', 'Cases', 1),
+    ('Clear TPU', 'colour', 'Cases', 2),
+    ('MagSafe', 'colour', 'Cases', 3),
+    ('Flip / wallet', 'colour', 'Cases', 4),
+    ('Tempered glass', 'glue-edge', 'Screen protectors', 10),
+    ('Hydrogel film', 'glue-edge', 'Screen protectors', 11),
+]
 
 AXES = [('Colour', 'colour', 1), ('Glue & edge', 'glue-edge', 2)]
 
