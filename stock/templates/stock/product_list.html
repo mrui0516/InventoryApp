@@ -200,8 +200,12 @@
                   </div>
                 </div>
               </div>
-              <div class="d-flex align-items-end">
-                <button type="submit" class="btn btn-success w-100">Export Excel</button>
+              <div class="d-flex align-items-end gap-2">
+                <button type="submit" class="btn btn-success flex-fill">Excel</button>
+                {# xlsx photos are floating drawings; phone viewers skip them #}
+                <button type="submit" name="format" value="pdf"
+                        class="btn btn-outline-danger flex-fill"
+                        title="Photos always show - use this for WhatsApp">PDF</button>
               </div>
             </div>
           </form>

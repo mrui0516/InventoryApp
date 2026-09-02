@@ -4442,6 +4442,166 @@ class LeadTimeAdminCorrectionTests(TestCase):
             self.assertIn(field, InboundOrderAdmin.fields, field)
 
 
+class CatalogExportTests(TestCase):
+    """Availability wording, colours, and the PDF that WhatsApp can show."""
+
+    def setUp(self):
+        from stock.models import Supplier
+        self.category = Category.objects.create(name="Perfumes", form_kind="perfume")
+        self.supplier = Supplier.objects.create(name="PERFUME EUROPE")
+        self.user = get_user_model().objects.create_superuser(
+            username="exp_mgr", password="pw123456", email="e@x.com")
+        self.client.force_login(self.user)
+
+    def _product(self, name, barcode, stock=0):
+        from stock.models import Purchase
+        product = Product.objects.create(
+            name=name, barcode=barcode, brand="Khan", model="Line",
+            category=self.category, default_price=Decimal("50"),
+            wholesale_price=Decimal("25"))
+        if stock:
+            Purchase.objects.create(product=product, quantity=stock, remaining=stock,
+                                    cost_price=Decimal("10"))
+        return product
+
+    def _on_order(self, product):
+        from stock.models import InboundOrder, InboundPendingItem
+        order = InboundOrder.objects.create(supplier=self.supplier,
+                                            status='pending_receipt')
+        InboundPendingItem.objects.create(inbound_order=order, product=product,
+                                          quantity=5, cost_price=Decimal("10"))
+        return order
+
+    # -- the wording -------------------------------------------------------
+    def test_three_or_more_is_available_now(self):
+        from stock.views import get_catalog_availability_parts
+        self.assertEqual(get_catalog_availability_parts(3), ('Available now', 'in-stock'))
+        self.assertEqual(get_catalog_availability_parts(99)[0], 'Available now')
+
+    def test_one_or_two_is_low_stock(self):
+        from stock.views import get_catalog_availability_parts
+        self.assertEqual(get_catalog_availability_parts(1), ('Low stock', 'low-stock'))
+        self.assertEqual(get_catalog_availability_parts(2), ('Low stock', 'low-stock'))
+
+    def test_nothing_on_the_shelf_and_nothing_coming_is_unavailable(self):
+        from stock.views import get_catalog_availability_parts
+        self.assertEqual(get_catalog_availability_parts(0),
+                         ('Currently unavailable', 'out-stock'))
+
+    def test_nothing_on_the_shelf_but_on_order_is_in_stock_soon(self):
+        from stock.views import get_catalog_availability_parts
+        self.assertEqual(get_catalog_availability_parts(0, on_order=True),
+                         ('In stock soon', 'incoming'))
+
+    def test_low_stock_wins_over_incoming(self):
+        # What matters to someone buying today is what is on the shelf today.
+        from stock.views import get_catalog_availability_parts
+        self.assertEqual(get_catalog_availability_parts(1, on_order=True)[0], 'Low stock')
+
+    # -- what counts as on order ------------------------------------------
+    def test_a_pending_inbound_marks_a_product_as_coming(self):
+        from stock.views import product_ids_on_order
+        product = self._product("Oud", "9940000000001")
+        self.assertEqual(product_ids_on_order(), set())
+        self._on_order(product)
+        self.assertEqual(product_ids_on_order(), {product.id})
+
+    def test_a_received_order_no_longer_counts_as_coming(self):
+        from stock.views import product_ids_on_order
+        product = self._product("Oud", "9940000000002")
+        order = self._on_order(product)
+        order.mark_received()
+        order.pending_items.all().delete()
+        self.assertEqual(product_ids_on_order(), set())
+
+    # -- the spreadsheet ---------------------------------------------------
+    def _export(self, **params):
+        return self.client.get(reverse('export_product_list_excel'), params)
+
+    def test_the_export_settings_line_is_gone_and_a_legend_is_there(self):
+        from openpyxl import load_workbook
+        from io import BytesIO
+        self._product("Oud", "9940000000003", stock=5)
+        response = self._export()
+        book = load_workbook(BytesIO(b''.join(response.streaming_content)))
+        second_row = book.active.cell(row=2, column=1).value or ''
+        self.assertNotIn('Images:', second_row)
+        self.assertNotIn('Sort:', second_row)
+        self.assertIn('green', second_row)
+        self.assertIn('blue', second_row)
+        self.assertIn('under 3', second_row)
+
+    def test_the_availability_cell_is_coloured_per_state(self):
+        from openpyxl import load_workbook
+        from io import BytesIO
+        from stock.views import AVAILABILITY_STYLES
+        available = self._product("Plenty", "9940000000004", stock=5)
+        low = self._product("Nearly out", "9940000000005", stock=1)
+        coming = self._product("Coming", "9940000000006")
+        self._on_order(coming)
+        self._product("Gone", "9940000000007")
+
+        response = self._export()
+        sheet = load_workbook(BytesIO(b''.join(response.streaming_content))).active
+        found = {}
+        for row in sheet.iter_rows():
+            for cell in row:
+                if cell.value in ('Available now', 'Low stock', 'In stock soon',
+                                  'Currently unavailable'):
+                    found[cell.value] = cell.fill.fgColor.rgb
+        self.assertEqual(found['Available now'], AVAILABILITY_STYLES['in-stock'][0])
+        self.assertEqual(found['Low stock'], AVAILABILITY_STYLES['low-stock'][0])
+        self.assertEqual(found['In stock soon'], AVAILABILITY_STYLES['incoming'][0])
+        self.assertEqual(found['Currently unavailable'], AVAILABILITY_STYLES['out-stock'][0])
+
+    # -- the PDF -----------------------------------------------------------
+    def test_a_pdf_is_returned_when_asked_for(self):
+        self._product("Oud", "9940000000008", stock=5)
+        response = self._export(format='pdf')
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        body = b''.join(response.streaming_content)
+        self.assertTrue(body.startswith(b'%PDF'))
+        self.assertIn('.pdf', response['Content-Disposition'])
+
+    def test_the_pdf_carries_the_products_and_the_legend(self):
+        self._product("Khamrah", "9940000000009", stock=5)
+        body = b''.join(self._export(format='pdf').streaming_content)
+        # Uncompressed enough to check the text made it in.
+        self.assertGreater(len(body), 1000)
+
+    def test_the_pdf_really_embeds_the_photo(self):
+        """The whole reason the PDF exists: the picture is in the page, not a
+        floating drawing a phone viewer can decline to render."""
+        import tempfile, os
+        from PIL import Image as PILImage
+        from django.core.files import File
+        from stock.models import ProductImage
+        product = self._product("With photo", "9940000000011", stock=5)
+        path = os.path.join(tempfile.gettempdir(), 'shot.png')
+        PILImage.new('RGB', (300, 300), (10, 120, 200)).save(path)
+        with open(path, 'rb') as handle:
+            ProductImage.objects.create(product=product, image=File(handle, name='shot.png'))
+
+        body = b''.join(self._export(format='pdf', include_images='1').streaming_content)
+        self.assertTrue(body.startswith(b'%PDF'))
+        # an XObject image stream is what "the photo is in the page" looks like
+        self.assertIn(b'/Image', body)
+        self.assertIn(b'/XObject', body)
+
+    def test_a_product_with_a_missing_photo_file_does_not_break_the_pdf(self):
+        from stock.models import ProductImage
+        product = self._product("Broken photo", "9940000000012", stock=5)
+        ProductImage.objects.create(product=product, image='products/gone.jpg')
+        response = self._export(format='pdf', include_images='1')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(b''.join(response.streaming_content).startswith(b'%PDF'))
+
+    def test_excel_is_still_the_default(self):
+        self._product("Oud", "9940000000010", stock=5)
+        response = self._export()
+        self.assertIn('spreadsheetml', response['Content-Type'])
+
+
 class ShelfMapTests(TestCase):
     """Is there stock, and is there more above the shelf. Nothing is counted."""
 

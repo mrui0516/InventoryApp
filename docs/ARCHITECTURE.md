@@ -451,6 +451,44 @@ Audio / Mice & keyboards / Storage / Holders & mounts / Other electronics。
 
 表单校验失败重新渲染时，分类已经选好，页面**直接跳到第二步**，不用重选。
 
+### 5.15 客户产品清单：Excel 与 PDF
+
+**为什么 WhatsApp 发出去客户看不到图片**：Excel 里的照片是**浮动图形**
+（openpyxl `ws.add_image` → `oneCellAnchor` 锚在单元格上）。
+已验证文件本身没问题——`xl/media/` 里图片字节都在、`ext` 尺寸正确、
+桌面 Excel 打开完全正常，这就是**你自己下载能看到**的原因。
+
+问题在**打开方式**：WhatsApp 的文档预览、Google Sheets、手机上的表格 App
+**导入 xlsx 时会丢弃浮动图片**。文件是一样的字节，改文件解决不了。
+
+**所以给客户发用 PDF**（`services/catalog_pdf.py`，reportlab，已在 requirements）。
+PDF 里图片是页面的一部分，任何手机、任何预览、打印都能显示，也不会被重新排版。
+产品列表的导出框里 Excel / PDF 两个按钮并排，筛选条件完全一样。
+
+Excel 留给需要排序筛选的人；**发给客户一律 PDF**。
+
+### 5.16 库存状态与颜色
+
+| 状态 | 条件 | 颜色 |
+|---|---|---|
+| Available now | 库存 ≥ 3 | 淡绿 |
+| Low stock | 1–2 | 淡黄 |
+| In stock soon | 库存 0 **且在途** | 淡蓝 |
+| Currently unavailable | 库存 0 且没在途 | 红 |
+
+**「在途」不需要新字段**：`InboundOrder` 状态是 `pending_receipt`（已下单未收货）
+的订单里的产品**就是**在途——app 早就在记这件事。
+所以这个状态**自己保持正确**，不会有第二个需要人工维护、迟早会失准的标记。
+
+**库存 1–2 时不显示蓝色**：对今天要买的客户来说，重要的是货架上今天有几个。
+
+Excel 和 PDF 用**同一套判断和同一组颜色**，两份文件不会互相矛盾。
+颜色**不是唯一信息**——文字同时写出来，黑白打印或色盲也读得对。
+
+原来第 2 行那句 `Sort: … | Export: … | Price: … | Images: yes` 已删除
+（对客户没有意义），换成**颜色图例**，包含「低库存 = 少于 3 件」和
+「在途一般 3–7 天」的说明。
+
 ## 6. 前端架构
 
 ### 6.0 共享设计系统（`static/css/app.css`）

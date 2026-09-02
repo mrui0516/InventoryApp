@@ -182,12 +182,44 @@ def build_customer_product_title(product):
     return customer_catalog_case(' - '.join(title_parts) or name_part or build_product_label(product))
 
 
-def get_catalog_availability_parts(stock_val):
+# Fewer than three is "low stock": at one or two, a customer ordering a
+# couple can empty the shelf, so it is worth saying so rather than promising
+# availability we may not have by the time they arrive.
+LOW_STOCK_BELOW = 3
+
+
+def product_ids_on_order():
+    """Products sitting on an inbound order that has not landed yet.
+
+    Nothing new is recorded for this - an order placed with a supplier and not
+    yet received *is* the definition of in transit, and the app already tracks
+    it. So "in stock soon" stays true on its own, with nobody maintaining a
+    second flag that would drift out of date.
+    """
+    return set(InboundPendingItem.objects
+               .filter(inbound_order__status='pending_receipt')
+               .values_list('product_id', flat=True))
+
+
+# fill, font - light enough to read black text over, and distinct in greyscale
+AVAILABILITY_STYLES = {
+    'in-stock': ('FFDCFCE7', 'FF166534'),     # light green
+    'low-stock': ('FFFEF3C7', 'FF92400E'),    # light yellow
+    'incoming': ('FFDBEAFE', 'FF1E40AF'),     # light blue - on order
+    'out-stock': ('FFFEE2E2', 'FF991B1B'),    # red
+}
+
+
+def get_catalog_availability_parts(stock_val, on_order=False):
     stock_val = int(stock_val or 0)
-    if stock_val >= 4:
+    if stock_val >= LOW_STOCK_BELOW:
         return 'Available now', 'in-stock'
     if stock_val > 0:
+        # Still the honest answer even when more is coming: what matters to
+        # someone buying today is how many are on the shelf today.
         return 'Low stock', 'low-stock'
+    if on_order:
+        return 'In stock soon', 'incoming'
     return 'Currently unavailable', 'out-stock'
 
 
@@ -1151,6 +1183,7 @@ def export_product_list_excel(request):
     price_mode = (request.GET.get('price_mode') or 'retail').strip()
     only_in_stock = (request.GET.get('only_in_stock') or '').strip().lower() in {'1', 'true', 'on', 'yes'}
     include_images = (request.GET.get('include_images') or '').strip().lower() in {'1', 'true', 'on', 'yes'}
+    export_format = 'pdf' if (request.GET.get('format') or '').strip().lower() == 'pdf' else 'xlsx'
 
     if price_mode not in {'retail', 'wholesale', 'both'}:
         price_mode = 'retail'
@@ -1168,6 +1201,7 @@ def export_product_list_excel(request):
         products_qs = products_qs.filter(total_stock__gt=0)
 
     products = list(products_qs)
+    on_order_ids = product_ids_on_order()
     for product in products:
         product.export_title = build_customer_product_title(product)
         # Append the Specification (volume, e.g. "100ml") after the product name.
@@ -1177,7 +1211,8 @@ def export_product_list_excel(request):
         product.export_brand = customer_catalog_case((product.brand or '').strip()) or 'No Brand'
         product.export_model = customer_catalog_case((product.model or '').strip()) or 'Other Selections'
         product.export_category_name = customer_catalog_case(getattr(product.category, 'name', ''))
-        product.export_availability, _ = get_catalog_availability_parts(product.total_stock)
+        product.export_availability, product.export_state = get_catalog_availability_parts(
+            product.total_stock, product.id in on_order_ids)
 
     base_params = request.GET.copy()
     for key in ['price_mode', 'only_in_stock', 'include_images']:
@@ -1218,18 +1253,27 @@ def export_product_list_excel(request):
         sheet_names.add(candidate)
         return candidate
 
-    filter_summary_bits = [item['label'] for item in state['active_filter_labels']]
-    if only_in_stock:
-        filter_summary_bits.append('Export: only in-stock products')
-    filter_summary_bits.append(
-        {
-            'retail': 'Price: retail only',
-            'wholesale': 'Price: wholesale only',
-            'both': 'Price: retail + wholesale',
-        }[price_mode]
-    )
-    filter_summary_bits.append('Images: yes' if include_images else 'Images: no')
-    filter_summary = ' | '.join(filter_summary_bits)
+    # The old line here repeated the export settings - sort order, price mode,
+    # "Images: yes" - which mean nothing to a customer reading the list. What
+    # they do need is what the colours mean.
+    legend = ('Colours:  green = available now  |  '
+              f'yellow = low stock (under {LOW_STOCK_BELOW} left)  |  '
+              'blue = in stock soon (on order, usually 3-7 days)  |  '
+              'red = currently unavailable')
+
+    # PDF for anything being sent to a customer. The spreadsheet's photos are
+    # floating drawings, which WhatsApp's preview and most phone spreadsheet
+    # apps simply do not render - see services/catalog_pdf.py. Returned here,
+    # before the workbook is built, so a PDF request does no spreadsheet work.
+    if export_format == 'pdf':
+        from .services.catalog_pdf import build_catalog_pdf
+        response = FileResponse(
+            build_catalog_pdf(brand_groups, price_mode=price_mode,
+                              include_images=include_images, legend=legend),
+            as_attachment=True,
+            filename=f"Product_List_{timezone.localtime().strftime('%Y%m%d_%H%M')}.pdf")
+        response['Content-Type'] = 'application/pdf'
+        return response
 
     first_sheet = True
     for brand_name, brand_products in brand_groups.items():
@@ -1265,9 +1309,10 @@ def export_product_list_excel(request):
         ws.cell(row=1, column=1).alignment = Alignment(vertical='center')
 
         ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max_col)
-        ws.cell(row=2, column=1, value=filter_summary)
+        ws.cell(row=2, column=1, value=legend)
         ws.cell(row=2, column=1).alignment = wrap
-        ws.cell(row=2, column=1).font = Font(color='FF5B6675')
+        ws.cell(row=2, column=1).font = Font(color='FF5B6675', size=9)
+        ws.row_dimensions[2].height = 26
 
         current_row = 4
         model_groups = {}
@@ -1340,16 +1385,22 @@ def export_product_list_excel(request):
                 availability_cell = ws.cell(row=row_idx, column=col_idx, value=product.export_availability)
                 availability_cell.border = border
                 availability_cell.alignment = center
+                # Colour and words both, so the list still reads correctly
+                # printed in black and white or by someone colour-blind.
+                style = AVAILABILITY_STYLES.get(product.export_state)
+                if style:
+                    availability_cell.fill = PatternFill('solid', fgColor=style[0])
+                    availability_cell.font = Font(color=style[1], bold=True)
                 current_row += 1
 
             current_row += 1
 
         ws.freeze_panes = 'A5'
 
+    ts = timezone.localtime().strftime('%Y%m%d_%H%M')
     export_buffer = _BytesIO()
     wb.save(export_buffer)
     export_buffer.seek(0)
-    ts = timezone.localtime().strftime('%Y%m%d_%H%M')
     filename = f'Customer_Product_List_{ts}.xlsx'
     response = FileResponse(export_buffer, as_attachment=True, filename=filename)
     response['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
