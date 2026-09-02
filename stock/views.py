@@ -182,8 +182,13 @@ def build_customer_product_title(product):
     return customer_catalog_case(' - '.join(title_parts) or name_part or build_product_label(product))
 
 
-# Fewer than three is "low stock": at one or two, a customer ordering a
-# couple can empty the shelf, so it is worth saying so rather than promising
+# The last one on the shelf is the display sample, not something to sell, so
+# it never counts towards what a customer can have. A list that offers the
+# sample either loses the display or disappoints whoever ordered it.
+SAMPLE_RESERVE = 1
+
+# Fewer than three sellable is "low stock": at one or two, a customer ordering
+# a couple can empty the shelf, so it is worth saying so rather than promising
 # availability we may not have by the time they arrive.
 LOW_STOCK_BELOW = 3
 
@@ -210,11 +215,16 @@ AVAILABILITY_STYLES = {
 }
 
 
+def sellable_stock(stock_val):
+    """What a customer can actually be sold, with the display sample held back."""
+    return max(int(stock_val or 0) - SAMPLE_RESERVE, 0)
+
+
 def get_catalog_availability_parts(stock_val, on_order=False):
-    stock_val = int(stock_val or 0)
-    if stock_val >= LOW_STOCK_BELOW:
+    sellable = sellable_stock(stock_val)
+    if sellable >= LOW_STOCK_BELOW:
         return 'Available now', 'in-stock'
-    if stock_val > 0:
+    if sellable > 0:
         # Still the honest answer even when more is coming: what matters to
         # someone buying today is how many are on the shelf today.
         return 'Low stock', 'low-stock'
@@ -1198,7 +1208,10 @@ def export_product_list_excel(request):
     )
     products_qs = state['products_qs']
     if only_in_stock:
-        products_qs = products_qs.filter(total_stock__gt=0)
+        # Above the sample, not above zero: a product with only the display
+        # unit left prints as unavailable, so listing it here would contradict
+        # the very column beside it.
+        products_qs = products_qs.filter(total_stock__gt=SAMPLE_RESERVE)
 
     products = list(products_qs)
     on_order_ids = product_ids_on_order()
@@ -1259,7 +1272,8 @@ def export_product_list_excel(request):
     legend = ('Colours:  green = available now  |  '
               f'yellow = low stock (under {LOW_STOCK_BELOW} left)  |  '
               'blue = in stock soon (on order, usually 3-7 days)  |  '
-              'red = currently unavailable')
+              'red = currently unavailable.      '
+              'The last unit is our display sample and is not counted as stock.')
 
     # PDF for anything being sent to a customer. The spreadsheet's photos are
     # floating drawings, which WhatsApp's preview and most phone spreadsheet

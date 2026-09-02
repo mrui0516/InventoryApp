@@ -469,12 +469,19 @@ Excel 留给需要排序筛选的人；**发给客户一律 PDF**。
 
 ### 5.16 库存状态与颜色
 
-| 状态 | 条件 | 颜色 |
-|---|---|---|
-| Available now | 库存 ≥ 3 | 淡绿 |
-| Low stock | 1–2 | 淡黄 |
-| In stock soon | 库存 0 **且在途** | 淡蓝 |
-| Currently unavailable | 库存 0 且没在途 | 红 |
+**货架上最后一件是样品，不算可售**（`SAMPLE_RESERVE = 1`）。
+可售数 = 库存 − 1。清单上把样品当作可卖，要么丢了展示样，要么让下单的客户失望。
+
+| 状态 | 实际库存 | 可售 | 颜色 |
+|---|---|---|---|
+| Available now | ≥ 4 | ≥ 3 | 淡绿 |
+| Low stock | 2–3 | 1–2 | 淡黄 |
+| In stock soon | 0–1 **且在途** | 0 | 淡蓝 |
+| Currently unavailable | 0–1 且没在途 | 0 | 红 |
+
+**只剩 1 件 = 只剩样品 = 显示无货**（有在途则显示在途）。
+导出选项里的「只导出有库存的产品」也按**可售数**过滤（`total_stock > SAMPLE_RESERVE`），
+否则会列出一行、旁边那一列却写着 Currently unavailable，自相矛盾。
 
 **「在途」不需要新字段**：`InboundOrder` 状态是 `pending_receipt`（已下单未收货）
 的订单里的产品**就是**在途——app 早就在记这件事。

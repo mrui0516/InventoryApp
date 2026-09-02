@@ -4473,30 +4473,45 @@ class CatalogExportTests(TestCase):
         return order
 
     # -- the wording -------------------------------------------------------
-    def test_three_or_more_is_available_now(self):
+    def test_the_last_unit_is_the_sample_and_is_not_for_sale(self):
+        # One left means the display piece and nothing to sell.
+        from stock.views import get_catalog_availability_parts, sellable_stock
+        self.assertEqual(sellable_stock(1), 0)
+        self.assertEqual(get_catalog_availability_parts(1),
+                         ('Currently unavailable', 'out-stock'))
+
+    def test_the_sample_is_held_back_from_every_count(self):
+        from stock.views import sellable_stock
+        self.assertEqual([sellable_stock(n) for n in range(6)], [0, 0, 1, 2, 3, 4])
+
+    def test_four_or_more_is_available_now(self):
+        # Four on the shelf is three sellable, which clears the low-stock line.
         from stock.views import get_catalog_availability_parts
-        self.assertEqual(get_catalog_availability_parts(3), ('Available now', 'in-stock'))
+        self.assertEqual(get_catalog_availability_parts(4), ('Available now', 'in-stock'))
         self.assertEqual(get_catalog_availability_parts(99)[0], 'Available now')
 
-    def test_one_or_two_is_low_stock(self):
+    def test_two_or_three_is_low_stock(self):
         from stock.views import get_catalog_availability_parts
-        self.assertEqual(get_catalog_availability_parts(1), ('Low stock', 'low-stock'))
         self.assertEqual(get_catalog_availability_parts(2), ('Low stock', 'low-stock'))
+        self.assertEqual(get_catalog_availability_parts(3), ('Low stock', 'low-stock'))
 
     def test_nothing_on_the_shelf_and_nothing_coming_is_unavailable(self):
         from stock.views import get_catalog_availability_parts
         self.assertEqual(get_catalog_availability_parts(0),
                          ('Currently unavailable', 'out-stock'))
 
-    def test_nothing_on_the_shelf_but_on_order_is_in_stock_soon(self):
+    def test_only_the_sample_left_but_on_order_reads_in_stock_soon(self):
+        # The two rules meeting: nothing sellable, but more is coming.
         from stock.views import get_catalog_availability_parts
+        self.assertEqual(get_catalog_availability_parts(1, on_order=True),
+                         ('In stock soon', 'incoming'))
         self.assertEqual(get_catalog_availability_parts(0, on_order=True),
                          ('In stock soon', 'incoming'))
 
     def test_low_stock_wins_over_incoming(self):
         # What matters to someone buying today is what is on the shelf today.
         from stock.views import get_catalog_availability_parts
-        self.assertEqual(get_catalog_availability_parts(1, on_order=True)[0], 'Low stock')
+        self.assertEqual(get_catalog_availability_parts(2, on_order=True)[0], 'Low stock')
 
     # -- what counts as on order ------------------------------------------
     def test_a_pending_inbound_marks_a_product_as_coming(self):
@@ -4536,8 +4551,8 @@ class CatalogExportTests(TestCase):
         from io import BytesIO
         from stock.views import AVAILABILITY_STYLES
         available = self._product("Plenty", "9940000000004", stock=5)
-        low = self._product("Nearly out", "9940000000005", stock=1)
-        coming = self._product("Coming", "9940000000006")
+        low = self._product("Nearly out", "9940000000005", stock=2)
+        coming = self._product("Coming", "9940000000006", stock=1)
         self._on_order(coming)
         self._product("Gone", "9940000000007")
 
@@ -4553,6 +4568,27 @@ class CatalogExportTests(TestCase):
         self.assertEqual(found['Low stock'], AVAILABILITY_STYLES['low-stock'][0])
         self.assertEqual(found['In stock soon'], AVAILABILITY_STYLES['incoming'][0])
         self.assertEqual(found['Currently unavailable'], AVAILABILITY_STYLES['out-stock'][0])
+
+    def test_only_in_stock_does_not_list_a_product_that_prints_unavailable(self):
+        from openpyxl import load_workbook
+        from io import BytesIO
+        self._product("Sample only", "9940000000020", stock=1)
+        self._product("Really there", "9940000000021", stock=5)
+        response = self._export(only_in_stock='1')
+        sheet = load_workbook(BytesIO(b''.join(response.streaming_content))).active
+        # The export title-cases product names, so compare case-insensitively.
+        text = ' '.join(str(c.value) for row in sheet.iter_rows() for c in row).lower()
+        self.assertIn("really there", text)
+        self.assertNotIn("sample only", text)
+
+    def test_the_legend_explains_the_sample(self):
+        from openpyxl import load_workbook
+        from io import BytesIO
+        self._product("Oud", "9940000000022", stock=5)
+        response = self._export()
+        legend = load_workbook(BytesIO(b''.join(response.streaming_content))).active.cell(
+            row=2, column=1).value or ''
+        self.assertIn('display sample', legend)
 
     # -- the PDF -----------------------------------------------------------
     def test_a_pdf_is_returned_when_asked_for(self):
