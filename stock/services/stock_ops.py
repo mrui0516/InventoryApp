@@ -16,6 +16,7 @@ from django.db import transaction
 from django.db.models import F
 
 from ..models import Purchase
+from .shopify_push import queue_inventory_push
 
 
 class StockConflictError(ValidationError):
@@ -74,6 +75,10 @@ def consume_stock_fifo(product, quantity):
 
     from .pricing import sync_perfume_price
     sync_perfume_price(product)
+    # These helpers move stock with QuerySet.update(), which fires no model
+    # signal, so a manual "decrease stock" adjustment would never have reached
+    # Shopify. Queued here, at the one place the change actually happens.
+    queue_inventory_push(product)
     return cost_basis.quantize(Decimal('0.01'))
 
 
@@ -117,3 +122,4 @@ def restore_stock_fifo(product, quantity):
 
     from .pricing import sync_perfume_price
     sync_perfume_price(product)
+    queue_inventory_push(product)

@@ -251,6 +251,10 @@ SHOPIFY_INVENTORY_SYNC = os.environ.get('SHOPIFY_INVENTORY_SYNC', '') in {'1', '
 # store has more than one location so the sync targets the right one; empty =
 # fall back to the store's first location.
 SHOPIFY_LOCATION_ID = os.environ.get('SHOPIFY_LOCATION_ID', '').strip()
+# Push stock in a background thread so the till never waits on Shopify. Turned
+# off in tests, and available as an escape hatch if threads ever misbehave on
+# the host - the push then runs inline, which is correct but slower.
+SHOPIFY_PUSH_BACKGROUND = os.environ.get('SHOPIFY_PUSH_BACKGROUND', '1') not in {'0', 'false', 'False', 'no', 'off'}
 
 # --- Cloudinary (product image mirror) ---
 CLOUDINARY_CLOUD_NAME = os.environ.get('CLOUDINARY_CLOUD_NAME', 'bulvpmzg')

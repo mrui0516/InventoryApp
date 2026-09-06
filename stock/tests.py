@@ -4442,6 +4442,169 @@ class LeadTimeAdminCorrectionTests(TestCase):
             self.assertIn(field, InboundOrderAdmin.fields, field)
 
 
+class ShopifyStockPushTests(TestCase):
+    """Stock moving here reaches Shopify on its own - and nothing comes back."""
+
+    def setUp(self):
+        from stock.models import Supplier
+        self.category = Category.objects.create(name="Perfumes", form_kind="perfume",
+                                                sync_to_shopify=True)
+        self.offline = Category.objects.create(name="Cases", form_kind="accessory",
+                                               sync_to_shopify=False)
+        self.supplier = Supplier.objects.create(name="Sup")
+        self.product = Product.objects.create(
+            name="Oud", barcode="9950000000001", brand="Khan",
+            category=self.category, default_price=Decimal("50"))
+
+    def _stock(self, product, qty):
+        from stock.models import Purchase
+        return Purchase.objects.create(product=product, quantity=qty, remaining=qty,
+                                       cost_price=Decimal("10"))
+
+    def _sell(self, product, qty=1):
+        from stock.models import Sale, SaleOrder
+        from stock.services.stock_ops import consume_stock_fifo
+        order = SaleOrder.objects.create()
+        cost = consume_stock_fifo(product, qty)
+        return Sale.objects.create(order=order, product=product, quantity=qty,
+                                   unit_price=Decimal("50"), payment_method="cash",
+                                   cost_basis=cost)
+
+    def _patched(self):
+        """Run pushes inline and capture what would have gone to Shopify."""
+        from unittest.mock import patch
+        return patch('stock.services.shopify_sync.sync_product_price_inventory',
+                     return_value=('ok', 'done'))
+
+    # -- the switch --------------------------------------------------------
+    def test_nothing_is_pushed_while_the_sync_is_off(self):
+        with self.settings(SHOPIFY_INVENTORY_SYNC=False, SHOPIFY_PUSH_BACKGROUND=False):
+            with self._patched() as push:
+                with self.captureOnCommitCallbacks(execute=True):
+                    self._stock(self.product, 5)
+                self.assertFalse(push.called)
+
+    # -- inbound -----------------------------------------------------------
+    def test_receiving_stock_pushes_the_new_quantity(self):
+        with self.settings(SHOPIFY_INVENTORY_SYNC=True, SHOPIFY_PUSH_BACKGROUND=False):
+            with self._patched() as push:
+                with self.captureOnCommitCallbacks(execute=True):
+                    self._stock(self.product, 5)
+                self.assertEqual(push.call_count, 1)
+                self.assertEqual(push.call_args.args[0].pk, self.product.pk)
+                self.assertFalse(push.call_args.kwargs['do_price'])
+                self.assertTrue(push.call_args.kwargs['do_inventory'])
+
+    # -- outbound ----------------------------------------------------------
+    def test_selling_pushes_the_new_quantity(self):
+        self._stock(self.product, 5)
+        with self.settings(SHOPIFY_INVENTORY_SYNC=True, SHOPIFY_PUSH_BACKGROUND=False):
+            with self._patched() as push:
+                with self.captureOnCommitCallbacks(execute=True):
+                    self._sell(self.product, 2)
+                self.assertEqual(push.call_count, 1)
+
+    def test_a_multi_line_order_pushes_each_product_once(self):
+        # The reason for the queue: three lines of the same product used to be
+        # three round trips to Shopify, with the till waiting for all of them.
+        other = Product.objects.create(name="Musk", barcode="9950000000002",
+                                       brand="Khan", category=self.category,
+                                       default_price=Decimal("40"))
+        self._stock(self.product, 10)
+        self._stock(other, 10)
+        with self.settings(SHOPIFY_INVENTORY_SYNC=True, SHOPIFY_PUSH_BACKGROUND=False):
+            with self._patched() as push:
+                with self.captureOnCommitCallbacks(execute=True):
+                    self._sell(self.product, 1)
+                    self._sell(self.product, 1)
+                    self._sell(other, 1)
+                pushed = {call.args[0].pk for call in push.call_args_list}
+                self.assertEqual(pushed, {self.product.pk, other.pk})
+                self.assertEqual(push.call_count, 2)
+
+    # -- the gap that made this worth doing --------------------------------
+    def test_a_manual_decrease_pushes_too(self):
+        """consume_stock_fifo moves stock with QuerySet.update(), which fires no
+        model signal - so a "decrease stock" adjustment used to leave Shopify
+        holding the old number for ever."""
+        from stock.services.stock_ops import consume_stock_fifo
+        self._stock(self.product, 5)
+        with self.settings(SHOPIFY_INVENTORY_SYNC=True, SHOPIFY_PUSH_BACKGROUND=False):
+            with self._patched() as push:
+                with self.captureOnCommitCallbacks(execute=True):
+                    consume_stock_fifo(self.product, 2)
+                self.assertEqual(push.call_count, 1)
+
+    def test_putting_stock_back_pushes_too(self):
+        from stock.services.stock_ops import consume_stock_fifo, restore_stock_fifo
+        self._stock(self.product, 5)
+        consume_stock_fifo(self.product, 3)
+        with self.settings(SHOPIFY_INVENTORY_SYNC=True, SHOPIFY_PUSH_BACKGROUND=False):
+            with self._patched() as push:
+                with self.captureOnCommitCallbacks(execute=True):
+                    restore_stock_fifo(self.product, 3)
+                self.assertEqual(push.call_count, 1)
+
+    # -- what must not be pushed ------------------------------------------
+    def test_a_category_that_is_not_sold_online_is_not_pushed(self):
+        offline_product = Product.objects.create(
+            name="Case", barcode="9950000000003", brand="Generic",
+            category=self.offline, default_price=Decimal("9"))
+        with self.settings(SHOPIFY_INVENTORY_SYNC=True, SHOPIFY_PUSH_BACKGROUND=False):
+            with self._patched() as push:
+                with self.captureOnCommitCallbacks(execute=True):
+                    self._stock(offline_product, 5)
+                self.assertFalse(push.called)
+
+    def test_a_product_with_no_barcode_is_not_pushed(self):
+        from stock.services.barcodes import assign_internal_barcode
+        with self.settings(SHOPIFY_INVENTORY_SYNC=True, SHOPIFY_PUSH_BACKGROUND=False):
+            with self._patched() as push:
+                nameless = Product(name="No code", brand="Khan",
+                                   category=self.category, default_price=Decimal("5"))
+                assign_internal_barcode(nameless)
+                # An internal barcode is still a barcode, so this one *does*
+                # push - the guard is for a genuinely empty one.
+                Product.objects.filter(pk=nameless.pk).update(barcode='')
+                push.reset_mock()
+                with self.captureOnCommitCallbacks(execute=True):
+                    self._stock(Product.objects.get(pk=nameless.pk), 3)
+                self.assertFalse(push.called)
+
+    # -- one-way -----------------------------------------------------------
+    def test_nothing_reads_stock_back_from_shopify(self):
+        """Shopify sales are typed into the app by hand. A two-way sync would
+        have to decide which side wins, and getting that wrong loses stock."""
+        import inspect
+        from stock.services import shopify_push
+        source = inspect.getsource(shopify_push)
+        for pulling in ('get_inventory', 'fetch_inventory', 'read_inventory',
+                        'inventory_levels('):
+            self.assertNotIn(pulling, source)
+
+    def test_a_shopify_failure_does_not_break_the_sale(self):
+        from unittest.mock import patch
+        from stock.models import Sale
+        self._stock(self.product, 5)
+        with self.settings(SHOPIFY_INVENTORY_SYNC=True, SHOPIFY_PUSH_BACKGROUND=False):
+            with patch('stock.services.shopify_sync.sync_product_price_inventory',
+                       side_effect=RuntimeError('Shopify down')):
+                with self.captureOnCommitCallbacks(execute=True):
+                    self._sell(self.product, 1)
+        self.assertEqual(Sale.objects.count(), 1)      # the sale still stands
+        self.assertEqual(self.product.total_stock(), 4)
+
+    def test_the_push_runs_off_the_request_thread_by_default(self):
+        from unittest.mock import patch
+        self._stock(self.product, 5)
+        with self.settings(SHOPIFY_INVENTORY_SYNC=True):
+            with patch('stock.services.shopify_push.threading.Thread') as thread:
+                with self.captureOnCommitCallbacks(execute=True):
+                    self._sell(self.product, 1)
+                self.assertTrue(thread.called, 'the till must not wait on Shopify')
+                self.assertTrue(thread.call_args.kwargs['daemon'])
+
+
 class CatalogExportTests(TestCase):
     """Availability wording, colours, and the PDF that WhatsApp can show."""
 
@@ -6622,7 +6785,8 @@ class ShopifyInventorySignalTests(TestCase):
     def test_sale_pushes_inventory_when_enabled(self):
         from unittest import mock
         p = self._make_product("B1")  # created while sync is OFF -> no push yet
-        with override_settings(SHOPIFY_INVENTORY_SYNC=True), \
+        with override_settings(SHOPIFY_INVENTORY_SYNC=True,
+                               SHOPIFY_PUSH_BACKGROUND=False), \
              mock.patch("stock.services.shopify_sync.sync_product_price_inventory",
                         return_value=("inv_updated", "")) as push:
             with self.captureOnCommitCallbacks(execute=True):
@@ -6648,7 +6812,8 @@ class ShopifyInventorySignalTests(TestCase):
     def test_price_change_pushes_price_when_enabled(self):
         from unittest import mock
         p = self._make_product("B3")  # created while sync is OFF
-        with override_settings(SHOPIFY_INVENTORY_SYNC=True), \
+        with override_settings(SHOPIFY_INVENTORY_SYNC=True,
+                               SHOPIFY_PUSH_BACKGROUND=False), \
              mock.patch("stock.services.shopify_sync.sync_product_price_inventory",
                         return_value=("inv_updated", "")) as push:
             with self.captureOnCommitCallbacks(execute=True):
@@ -6663,7 +6828,8 @@ class ShopifyInventorySignalTests(TestCase):
     def test_price_unchanged_no_push(self):
         from unittest import mock
         p = self._make_product("B4")
-        with override_settings(SHOPIFY_INVENTORY_SYNC=True), \
+        with override_settings(SHOPIFY_INVENTORY_SYNC=True,
+                               SHOPIFY_PUSH_BACKGROUND=False), \
              mock.patch("stock.services.shopify_sync.sync_product_price_inventory") as push:
             with self.captureOnCommitCallbacks(execute=True):
                 p.name = "Renamed"   # save without touching price

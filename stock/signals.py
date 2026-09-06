@@ -10,6 +10,7 @@ from django.utils import timezone
 from .models import AttendanceRecord, Product, ProductImage, Purchase, Sale
 from .permissions import has_manager_access
 from .services import schedule_summary_recalc
+from .services.shopify_push import queue_inventory_push
 
 logger = logging.getLogger(__name__)
 
@@ -131,24 +132,27 @@ def _push_shopify(product, *, do_price=False, do_inventory=False):
     transaction.on_commit(_sync)
 
 
+# Stock pushes go through the queue rather than straight out: on_commit runs
+# inline in the request thread, so a five-line sale would have made the till
+# wait on fifteen Shopify calls. See services/shopify_push.py.
 @receiver(post_save, sender=Sale)
 def push_inventory_on_sale(sender, instance, **kwargs):
-    _push_shopify(instance.product, do_inventory=True)
+    queue_inventory_push(instance.product)
 
 
 @receiver(post_delete, sender=Sale)
 def push_inventory_on_sale_delete(sender, instance, **kwargs):
-    _push_shopify(instance.product, do_inventory=True)
+    queue_inventory_push(instance.product)
 
 
 @receiver(post_save, sender=Purchase)
 def push_inventory_on_purchase(sender, instance, **kwargs):
-    _push_shopify(instance.product, do_inventory=True)
+    queue_inventory_push(instance.product)
 
 
 @receiver(post_delete, sender=Purchase)
 def push_inventory_on_purchase_delete(sender, instance, **kwargs):
-    _push_shopify(instance.product, do_inventory=True)
+    queue_inventory_push(instance.product)
 
 
 @receiver(pre_save, sender=Product)

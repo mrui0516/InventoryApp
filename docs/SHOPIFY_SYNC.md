@@ -9,6 +9,41 @@ variant SKU**.
 这个开关同时管住：四个覆盖全部产品的 sync 命令、产品页的单品同步按钮、
 以及**上传照片时的自动同步 signal**（否则给配件拍张照就把它挂到网店上了）。
 
+## 库存自动同步（app → Shopify，单向）
+
+**开关**：`.env` 里 `SHOPIFY_INVENTORY_SYNC=1`。关着的时候什么都不推。
+
+打开后，**app 里任何一次库存变动都会自动推到 Shopify**，不需要手动调：
+
+| 动作 | 触发点 |
+|---|---|
+| 卖出（收银台） | `Sale` post_save |
+| 进货收货 | `Purchase` post_save |
+| 删除销售/采购记录 | 对应的 post_delete |
+| **手动调整库存（减少）** | `consume_stock_fifo` |
+| 订单更正、退回库存 | `restore_stock_fifo` |
+| 改售价 | `Product` post_save（只推价格） |
+
+**为什么减少库存要单独挂**：`consume_stock_fifo` / `restore_stock_fifo` 用
+`QuerySet.update()` 改 `Purchase.remaining`（SQLite 上 `select_for_update` 是空操作，
+只能用条件 UPDATE），而 **`.update()` 不触发任何 model signal**。
+所以「手动减少库存」以前**永远不会推到 Shopify**，线上数量会一直停在旧值。
+现在挂在这两个函数里——变动真正发生的那一个地方。
+
+**收银台不等 Shopify**：`transaction.on_commit` 的回调是**在请求线程里同步跑的**，
+直接在 signal 里推，一张 5 行的单子就要等 15 个 Shopify API 调用才返回。
+现在改成：事务里先收集产品（**按产品去重**，同一产品 3 行只推 1 次），
+提交后交给**后台线程**。`SHOPIFY_PUSH_BACKGROUND=0` 可以改回内联（更慢但确定）。
+
+**推送是绝对值**，重复推没有副作用；worker 被回收导致某次推送丢失时，
+`sync_shopify_inventory --apply` 可以把全部产品对齐一次（**建议每晚跑一次兜底**）。
+
+**只推不拉**：Shopify 上卖出的单子由店里**手动录入 app**，
+app 不会从 Shopify 读库存。双向同步必须决定「两边都改了听谁的」，
+判断错了就是悄悄丢库存——所以刻意不做。
+
+不上网店的分类（`Category.sync_to_shopify=False`，比如配件）和没有条码的产品**不推**。
+
 Entry points, all driven by the same service:
 
 - **`python manage.py sync_shopify_images`** — attach photos to products that
