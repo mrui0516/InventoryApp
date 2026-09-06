@@ -4442,6 +4442,159 @@ class LeadTimeAdminCorrectionTests(TestCase):
             self.assertIn(field, InboundOrderAdmin.fields, field)
 
 
+class ShopifyCreateFormatTests(TestCase):
+    """A product created from the app must look like the ones already there."""
+
+    def setUp(self):
+        from stock.models import Concentration
+        self.perfumes = Category.objects.create(name="Perfumes", form_kind="perfume",
+                                                sync_to_shopify=True)
+        self.edp = Concentration.objects.create(name="Eau de Parfum", short="EDP")
+
+    def _perfume(self, **kwargs):
+        from stock.models import Purchase
+        fields = dict(name="Waha EDP", model="Khamrah", brand="LATTAFA",
+                      barcode="6290362349730", category=self.perfumes,
+                      default_price=Decimal("40.00"), volume_ml=100,
+                      concentration=self.edp, gender='unisex')
+        stock = kwargs.pop('stock', 5)
+        fields.update(kwargs)
+        product = Product.objects.create(**fields)
+        if stock:
+            Purchase.objects.create(product=product, quantity=stock, remaining=stock,
+                                    cost_price=Decimal("10"))
+        return product
+
+    def _created_payload(self, product):
+        """Create it against a fake client and return what Shopify was sent."""
+        from unittest.mock import MagicMock
+        from stock.services import shopify_sync
+        client = MagicMock()
+        client.get_location_id.return_value = 'gid://shopify/Location/1'
+        client.product_set.return_value = 'gid://shopify/Product/1'
+        code, detail = shopify_sync.create_product_in_shopify(product, client=client,
+                                                              status='ACTIVE')
+        self.assertEqual(code, shopify_sync.CREATED, detail)
+        return client.product_set.call_args.args[0]
+
+    # -- the three sizes ---------------------------------------------------
+    def test_a_full_bottle_is_created_with_its_three_sizes(self):
+        payload = self._created_payload(self._perfume())
+        skus = [v['sku'] for v in payload['variants']]
+        self.assertEqual(skus, ["6290362349730", "6290362349730-10ML",
+                                "6290362349730-5ML"])
+
+    def test_the_size_option_matches_the_storefront(self):
+        payload = self._created_payload(self._perfume())
+        self.assertEqual(payload['productOptions'][0]['name'], 'Tamanho')
+        names = [v['name'] for v in payload['productOptions'][0]['values']]
+        self.assertEqual(names, ['100ml', '10ml', '5ml'])
+        for variant in payload['variants']:
+            self.assertEqual(variant['optionValues'][0]['optionName'], 'Tamanho')
+
+    def test_a_small_bottle_gets_one_variant_only(self):
+        payload = self._created_payload(self._perfume(volume_ml=30,
+                                                      barcode="6290362349731"))
+        self.assertEqual(len(payload['variants']), 1)
+        self.assertEqual(payload['variants'][0]['optionValues'][0]['name'], '30ml')
+
+    def test_a_non_perfume_gets_one_variant_only(self):
+        others = Category.objects.create(name="Shisha", sync_to_shopify=True)
+        payload = self._created_payload(self._perfume(
+            category=others, volume_ml=None, barcode="6290362349732"))
+        self.assertEqual(len(payload['variants']), 1)
+
+    # -- the reserve -------------------------------------------------------
+    def test_two_bottles_are_held_back_as_samples(self):
+        payload = self._created_payload(self._perfume(stock=5))
+        quantities = {v['sku']: v['inventoryQuantities'][0]['quantity']
+                      for v in payload['variants']}
+        self.assertEqual(quantities["6290362349730"], 3)          # 5 - 2 samples
+        self.assertEqual(quantities["6290362349730-10ML"], 10)
+        self.assertEqual(quantities["6290362349730-5ML"], 10)
+
+    def test_a_single_bottle_sells_no_full_bottles_but_still_decants(self):
+        payload = self._created_payload(self._perfume(stock=1))
+        quantities = {v['sku']: v['inventoryQuantities'][0]['quantity']
+                      for v in payload['variants']}
+        self.assertEqual(quantities["6290362349730"], 0)
+        self.assertEqual(quantities["6290362349730-10ML"], 10)
+
+    def test_nothing_in_stock_means_nothing_available(self):
+        payload = self._created_payload(self._perfume(stock=0))
+        for variant in payload['variants']:
+            self.assertEqual(variant['inventoryQuantities'][0]['quantity'], 0)
+
+    # -- prices ------------------------------------------------------------
+    def test_decant_prices_follow_the_full_bottle(self):
+        # stock=0 so sync_perfume_price does not recompute the retail price
+        # from cost, which is what it does whenever a batch arrives.
+        payload = self._created_payload(
+            self._perfume(default_price=Decimal("40.00"), stock=0))
+        prices = {v['sku']: v['price'] for v in payload['variants']}
+        self.assertEqual(prices["6290362349730"], '40.00')
+        self.assertEqual(prices["6290362349730-10ML"], '7.00')     # 17.5%
+        self.assertEqual(prices["6290362349730-5ML"], '4.60')      # 11.5%
+
+    def test_decant_prices_round_to_five_cents(self):
+        from stock.services.shopify_sync import decant_price
+        self.assertEqual(decant_price(Decimal("49.99"), '-10ML'), Decimal("8.75"))
+        self.assertEqual(decant_price(Decimal("34.00"), '-5ML'), Decimal("3.90"))
+
+    def test_only_the_full_bottle_carries_the_cost(self):
+        # A decant is a share of a bottle; the bottle's cost on a 5ml would
+        # make every decant look like it was sold at a loss.
+        payload = self._created_payload(self._perfume())
+        by_sku = {v['sku']: v['inventoryItem'] for v in payload['variants']}
+        self.assertIn('cost', by_sku["6290362349730"])
+        self.assertNotIn('cost', by_sku["6290362349730-10ML"])
+
+    # -- the name ----------------------------------------------------------
+    def test_the_title_carries_brand_series_name_strength_and_size(self):
+        payload = self._created_payload(self._perfume())
+        self.assertEqual(payload['title'], 'Lattafa Khamrah Waha EDP 100ml')
+
+    def test_the_size_comes_from_volume_even_with_no_spec(self):
+        # The size moved to volume_ml; reading only the spec left every
+        # recently entered product without its size in the title.
+        product = self._perfume(spec='', barcode="6290362349733")
+        self.assertIn('100ml', self._created_payload(product)['title'])
+
+    def test_a_series_repeating_the_name_is_not_said_twice(self):
+        product = self._perfume(model="Pharaoh", name="Pharaoh",
+                                brand="RAYHAAN", barcode="6290362349734")
+        self.assertEqual(self._created_payload(product)['title'],
+                         'Rayhaan Pharaoh EDP 100ml')
+
+    def test_the_strength_is_not_repeated_when_the_name_already_has_it(self):
+        product = self._perfume(name="Waha EDP", barcode="6290362349735")
+        self.assertEqual(self._created_payload(product)['title'].count('EDP'), 1)
+
+    # -- tags and SEO ------------------------------------------------------
+    def test_tags_match_the_shape_the_collections_filter_on(self):
+        payload = self._created_payload(self._perfume())
+        self.assertEqual(payload['tags'],
+                         ['100ml', 'Khamrah', 'Lattafa', 'Perfume unissexo',
+                          'Perfume Árabe', 'Scentory', 'Unissexo', 'Waha EDP'])
+
+    def test_seo_says_the_range_and_where_it_ships(self):
+        product = self._perfume(description="Khamrah Waha, da Lattafa, é uma Eau de Parfum.")
+        payload = self._created_payload(product)
+        self.assertEqual(payload['seo']['title'],
+                         'Lattafa Khamrah Waha EDP 100ml | Perfume Árabe')
+        self.assertTrue(payload['seo']['description'].endswith(
+            '| Scentory — envio para Portugal'))
+        self.assertIn('Khamrah Waha', payload['seo']['description'])
+
+    def test_seo_is_not_left_empty_when_there_is_no_description(self):
+        payload = self._created_payload(self._perfume(description=''))
+        self.assertIn('Lattafa', payload['seo']['description'])
+
+    def test_the_seo_title_stays_within_shopify_limit(self):
+        product = self._perfume(name="A" * 90, barcode="6290362349736")
+        self.assertLessEqual(len(self._created_payload(product)['seo']['title']), 70)
+
+
 class ShopifyStockPushTests(TestCase):
     """Stock moving here reaches Shopify on its own - and nothing comes back."""
 

@@ -13,7 +13,7 @@ ProductImage signal.
 import logging
 import os
 import re
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.utils.html import linebreaks
 
@@ -56,6 +56,58 @@ def _price_str(value):
 DECANT_RESERVE = 2          # full bottles kept back; 100ml shows on-hand minus this
 DECANT_AVAILABLE = 10       # 10ml/5ml available quantity while any bottle exists
 DECANT_SUFFIXES = ('-10ML', '-5ML')
+
+# Only a full bottle is worth decanting: a 30ml costs little, and taking two of
+# them as samples would empty the stock. Matches what is already on the store,
+# where every product carrying decants is a 100ml.
+DECANTABLE_VOLUME_ML = 100
+
+# Decant prices as a share of the full bottle, rounded to 5 cents. Taken from
+# the prices already on the storefront (10ml sits at 17-18%, 5ml at 11-12%) so
+# newly created products land beside the existing ones rather than looking
+# arbitrary. Shopify keeps whatever is set afterwards - the app only writes the
+# full-bottle price - so these are a sensible start, not a policy.
+DECANT_PRICE_RATIO = {'-10ML': Decimal('0.175'), '-5ML': Decimal('0.115')}
+DECANT_PRICE_STEP = Decimal('0.05')
+
+# The storefront is Portuguese and its size option is called Tamanho; a new
+# product using a different option name would not sit with the others.
+SIZE_OPTION_NAME = 'Tamanho'
+ARABIC_PERFUME_TAG = 'Perfume Árabe'
+STORE_TAG = 'Scentory'
+SEO_SUFFIX = 'Scentory — envio para Portugal'
+GENDER_PHRASE = {'Homem': 'Perfume masculino',
+                 'Mulher': 'Perfume feminino',
+                 'Unissexo': 'Perfume unissexo'}
+
+
+def is_perfume(product):
+    return bool(product.category_id) and 'perfum' in (
+        getattr(product.category, 'name', '') or '').lower()
+
+
+def volume_label(product):
+    """"100ml" from the structured volume, falling back to the old free text."""
+    if getattr(product, 'volume_ml', None):
+        return f'{product.volume_ml}ml'
+    return (getattr(product, 'spec', '') or '').strip()
+
+
+def is_decantable(product):
+    """A full bottle of perfume, which is what decants are poured from."""
+    return is_perfume(product) and getattr(product, 'volume_ml', None) == DECANTABLE_VOLUME_ML
+
+
+def decant_price(full_price, suffix):
+    """A starting price for one decant size, rounded to the nearest 5 cents."""
+    if full_price is None:
+        return Decimal('0.00')
+    ratio = DECANT_PRICE_RATIO.get(suffix)
+    if ratio is None:
+        return Decimal('0.00')
+    raw = Decimal(full_price) * ratio
+    steps = (raw / DECANT_PRICE_STEP).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+    return (steps * DECANT_PRICE_STEP).quantize(Decimal('0.01'))
 
 
 def _variant_label(barcode, sku):
@@ -184,21 +236,69 @@ def _local_image_path(product):
     return path if (path and os.path.exists(path)) else None
 
 
-def _shopify_title(product):
-    """A clean storefront title from the app's structured fields."""
-    parts = [product.brand, getattr(product, 'model', ''), product.name, getattr(product, 'spec', '')]
-    text = ' '.join(str(p).strip() for p in parts if p and str(p).strip())
+def _pretty(text):
+    """Title case, keeping the perfume abbreviations upright.
+
+    The app stores brands and series shouting ("RAYHAAN"); the storefront
+    writes them as words, and a tag that differs only in case is a second,
+    useless tag.
+    """
+    text = (text or '').strip()
+    if not text:
+        return ''
     text = text.title()
+    return re.sub(r'\b(Edp|Edt|Edc)\b', lambda m: m.group(1).upper(), text)
+
+
+def _shopify_title(product):
+    """A clean storefront title from the app's structured fields.
+
+    Brand, series, name, strength, size - "Lattafa Khamrah Waha EDP 100ml".
+
+    Two things this has to handle. The size lives in ``volume_ml`` now, not in
+    the free-text spec, so reading only the spec left every recently entered
+    product without its size. And a series that repeats the name produced
+    "Rayhaan Pharaoh Pharaoh", which is what the shop noticed.
+    """
+    brand = (product.brand or '').strip()
+    series = (getattr(product, 'model', '') or '').strip()
+    name = (product.name or '').strip()
+    if series and name and series.lower() == name.lower():
+        series = ''                      # "Pharaoh Pharaoh" -> "Pharaoh"
+
+    text = ' '.join(p for p in [brand, series, name] if p).title()
     # Restore perfume tokens that Title() mangles.
     text = re.sub(r'\b(Edp|Edt|Edc)\b', lambda m: m.group(1).upper(), text)
+
+    strength = getattr(getattr(product, 'concentration', None), 'short', '') or ''
+    if strength and not re.search(r'\b' + re.escape(strength) + r'\b', text, re.IGNORECASE):
+        text = (text + ' ' + strength).strip()
+
+    size = volume_label(product)
+    if size and size.lower() not in text.lower():
+        text = (text + ' ' + size).strip()
     text = re.sub(r'(\d)\s*Ml\b', r'\1ml', text)  # "100Ml" -> "100ml"
     return text or product.display_name
 
 
 def _shopify_tags(product):
+    """Tags in the shape the storefront already uses.
+
+    An existing product carries its size, series, brand, the Portuguese gender
+    phrase, "Perfume Arabe", "Scentory", the plain gender word and its name.
+    The collections filter on these, so a product missing them simply never
+    turns up in them.
+    """
     category = getattr(product.category, 'name', '') if product.category_id else ''
-    gender_tag = getattr(product, 'gender_shopify_tag', '')
-    raw = [product.brand, getattr(product, 'model', ''), category, getattr(product, 'spec', ''), gender_tag, 'Scentory']
+    gender_tag = (getattr(product, 'gender_shopify_tag', '') or '').strip()
+
+    raw = [volume_label(product), _pretty(getattr(product, 'model', '')),
+           _pretty(product.brand)]
+    if gender_tag:
+        raw.append(GENDER_PHRASE.get(gender_tag, ''))
+    raw.append(ARABIC_PERFUME_TAG if is_perfume(product) else category)
+    raw += [STORE_TAG, gender_tag, _pretty(product.name)]
+
     seen, tags = set(), []
     for tag in raw:
         tag = (tag or '').strip()
@@ -206,6 +306,25 @@ def _shopify_tags(product):
             seen.add(tag.lower())
             tags.append(tag)
     return tags
+
+
+def _shopify_seo(product, title):
+    """Search title and description, following the storefront's own pattern.
+
+    The title says which range it belongs to; the description leads with the
+    product's own words and closes with the shop and where it ships, which is
+    what somebody in Portugal is actually searching for.
+    """
+    suffix = ARABIC_PERFUME_TAG if is_perfume(product) else STORE_TAG
+    seo_title = _truncate(title + ' | ' + suffix, 70)
+
+    body = ' '.join((product.description or '').split())
+    if not body:
+        # No description yet: say what it is rather than leaving SEO blank.
+        body = ' '.join(x for x in [title, volume_label(product)] if x)
+    tail = ' | ' + SEO_SUFFIX
+    return {'title': seo_title,
+            'description': _truncate(body, 320 - len(tail)) + tail}
 
 
 def _truncate(text, limit):
@@ -251,7 +370,16 @@ def sync_product_image(product, client=None, *, overwrite=False, dry_run=False):
 
 
 def create_product_in_shopify(product, client=None, *, status='DRAFT', dry_run=False):
-    """Create a missing product in Shopify (variant / inventory / SEO / image)."""
+    """Create a missing product in Shopify, in the shape the storefront uses.
+
+    A full bottle of perfume is created with its three sizes - 100ml, 10ml and
+    5ml - under the Tamanho option, because that is how every decanted product
+    already on the store is built, and a product created with a single
+    "Default Title" variant cannot be given decants later without rebuilding
+    it. Quantities follow the same reserve rule as the update path: two bottles
+    are held back as samples, and the decants show as available while any
+    bottle remains.
+    """
     client = client or ShopifyClient()
     barcode = (product.barcode or '').strip()
     if not barcode:
@@ -263,30 +391,42 @@ def create_product_in_shopify(product, client=None, *, status='DRAFT', dry_run=F
 
     try:
         location_id = client.get_location_id()
-        price = f'{product.default_price:.2f}' if product.default_price is not None else '0.00'
+        full_price = product.default_price
         try:
-            qty = int(product.total_stock() or 0)
+            on_hand = int(product.total_stock() or 0)
         except Exception:
-            qty = 0
-        cost = None
+            on_hand = 0
         try:
             cost = product.current_fifo_cost_price()
         except Exception:
             cost = None
 
-        inventory_item = {'tracked': True, 'sku': barcode}
-        if cost is not None:
-            inventory_item['cost'] = f'{cost:.2f}'
-        variant = {
-            'optionValues': [{'optionName': 'Title', 'name': 'Default Title'}],
-            'price': price,
-            'sku': barcode,
-            'barcode': barcode,
-            'inventoryItem': inventory_item,
-            'inventoryQuantities': [{'locationId': location_id, 'name': 'available', 'quantity': qty}],
-        }
+        decanted = is_decantable(product)
+        size_label = volume_label(product) or 'Default Title'
+        skus = [barcode] + ([barcode + s for s in DECANT_SUFFIXES] if decanted else [])
+        targets = _inventory_targets(barcode, on_hand, set(skus))
 
-        description = (product.description or '').strip() or title
+        variants = []
+        for sku in skus:
+            suffix = sku[len(barcode):]
+            label = size_label if not suffix else suffix.lstrip('-').lower()
+            price = (_price_str(full_price) if not suffix
+                     else _price_str(decant_price(full_price, suffix)))
+            inventory_item = {'tracked': True, 'sku': sku}
+            # Cost is what a full bottle cost us; a decant is a share of one,
+            # so claiming the same cost would make every decant look like a loss.
+            if cost is not None and not suffix:
+                inventory_item['cost'] = f'{cost:.2f}'
+            variants.append({
+                'optionValues': [{'optionName': SIZE_OPTION_NAME, 'name': label}],
+                'price': price,
+                'sku': sku,
+                'barcode': barcode,
+                'inventoryItem': inventory_item,
+                'inventoryQuantities': [{'locationId': location_id, 'name': 'available',
+                                         'quantity': int(targets.get(sku, 0))}],
+            })
+
         description_html = _shopify_description_html(product) or title
         product_type = (getattr(product.category, 'name', '') if product.category_id else '') or 'Perfume'
         product_input = {
@@ -296,13 +436,16 @@ def create_product_in_shopify(product, client=None, *, status='DRAFT', dry_run=F
             'productType': product_type,
             'tags': _shopify_tags(product),
             'status': status,
-            'seo': {'title': _truncate(title, 70), 'description': _truncate(description, 320)},
-            'productOptions': [{'name': 'Title', 'values': [{'name': 'Default Title'}]}],
-            'variants': [variant],
+            'seo': _shopify_seo(product, title),
+            'productOptions': [{
+                'name': SIZE_OPTION_NAME,
+                'values': [{'name': v['optionValues'][0]['name']} for v in variants],
+            }],
+            'variants': variants,
         }
 
         # Perfumes get the "Eaux de Parfum" standard category.
-        if product.category_id and 'perfum' in (getattr(product.category, 'name', '') or '').lower():
+        if is_perfume(product):
             product_input['category'] = EAU_DE_PARFUM_TAXONOMY_GID
 
         image_path = _local_image_path(product)
@@ -311,7 +454,8 @@ def create_product_in_shopify(product, client=None, *, status='DRAFT', dry_run=F
             product_input['files'] = [{'originalSource': resource_url, 'contentType': 'IMAGE', 'alt': title}]
 
         gid = client.product_set(product_input)
-        return CREATED, f'{title} ({gid})'
+        shape = f'{len(variants)} variant(s)'
+        return CREATED, f'{title} ({shape}, {gid})'
     except ShopifyError as exc:
         return ERROR, str(exc)
 
