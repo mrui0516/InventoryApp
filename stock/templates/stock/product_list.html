@@ -182,10 +182,18 @@
               <div>
                 <label class="form-label fw-bold">Price In Export</label>
                 <select name="price_mode" class="form-select">
-                  <option value="retail" {% if export_defaults.price_mode == 'retail' %}selected{% endif %}>Retail price only</option>
-                  <option value="wholesale">Wholesale price only</option>
-                  <option value="both">Retail + wholesale</option>
+                  <option value="retail" {% if export_defaults.price_mode == 'retail' %}selected{% endif %}>PVP only</option>
+                  <option value="wholesale">Wholesale only</option>
+                  <option value="both">PVP + wholesale</option>
                 </select>
+              </div>
+              <div>
+                <label class="form-label fw-bold" for="exportDiscount">Discount off wholesale</label>
+                <div class="input-group">
+                  <span class="input-group-text">&euro;</span>
+                  <input type="number" name="discount" id="exportDiscount" class="form-control"
+                         min="0" step="0.10" placeholder="0.00" inputmode="decimal">
+                </div>
               </div>
               <div style="grid-column:span 2">
                 <label class="form-label fw-bold">Extra Options</label>

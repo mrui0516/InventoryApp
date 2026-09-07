@@ -1,6 +1,6 @@
 # stock/views.py
 import csv
-from decimal import Decimal,ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation,ROUND_HALF_UP
 import hashlib
 import json
 from io import BytesIO
@@ -213,6 +213,40 @@ AVAILABILITY_STYLES = {
     'incoming': ('FFDBEAFE', 'FF1E40AF'),     # light blue - on order
     'out-stock': ('FFFEE2E2', 'FF991B1B'),    # red
 }
+
+
+# The customer list is written in European Portuguese: it goes to customers in
+# Portugal, and a list half in English reads as somebody else's paperwork.
+PT_AVAILABILITY = {
+    'in-stock': 'Disponível',
+    'low-stock': 'Stock reduzido',
+    'incoming': 'Brevemente em stock',
+    'out-stock': 'Indisponível',
+}
+
+# PVP is the recommended retail price shown to customers, which the shop sets
+# above its own till price. Held here rather than on each product so it is one
+# number to change, not several hundred.
+PVP_UPLIFT = Decimal('2.00')
+
+
+def pvp_price(retail):
+    """The price a customer is quoted: the till price plus the PVP uplift."""
+    if retail is None:
+        return None
+    return (Decimal(retail) + PVP_UPLIFT).quantize(Decimal('0.01'))
+
+
+def discounted_wholesale(wholesale, discount):
+    """Wholesale less whatever discount this export is being sent with.
+
+    Never negative: a list quoting a price below zero would be worse than
+    quoting the full one.
+    """
+    if wholesale is None:
+        return None
+    value = Decimal(wholesale) - (discount or Decimal('0'))
+    return max(value, Decimal('0')).quantize(Decimal('0.01'))
 
 
 def sellable_stock(stock_val):
@@ -1194,6 +1228,13 @@ def export_product_list_excel(request):
     only_in_stock = (request.GET.get('only_in_stock') or '').strip().lower() in {'1', 'true', 'on', 'yes'}
     include_images = (request.GET.get('include_images') or '').strip().lower() in {'1', 'true', 'on', 'yes'}
     export_format = 'pdf' if (request.GET.get('format') or '').strip().lower() == 'pdf' else 'xlsx'
+    # A per-export discount off wholesale, so one customer can be quoted a
+    # better price without the shop's own numbers being touched.
+    try:
+        discount = Decimal((request.GET.get('discount') or '0').replace(',', '.').strip() or '0')
+    except (InvalidOperation, AttributeError):
+        discount = Decimal('0')
+    discount = max(discount, Decimal('0'))
 
     if price_mode not in {'retail', 'wholesale', 'both'}:
         price_mode = 'retail'
@@ -1224,8 +1265,16 @@ def export_product_list_excel(request):
         product.export_brand = customer_catalog_case((product.brand or '').strip()) or 'No Brand'
         product.export_model = customer_catalog_case((product.model or '').strip()) or 'Other Selections'
         product.export_category_name = customer_catalog_case(getattr(product.category, 'name', ''))
-        product.export_availability, product.export_state = get_catalog_availability_parts(
+        _label, product.export_state = get_catalog_availability_parts(
             product.total_stock, product.id in on_order_ids)
+        product.export_availability = PT_AVAILABILITY.get(product.export_state, _label)
+        # Low stock and more already on the way are two different facts, and a
+        # customer wants both: the row says what is on the shelf now, and a
+        # second line under it says more is coming.
+        product.export_incoming_note = (
+            product.export_state == 'low-stock' and product.id in on_order_ids)
+        product.export_pvp = pvp_price(product.default_price)
+        product.export_wholesale = discounted_wholesale(product.wholesale_price, discount)
 
     base_params = request.GET.copy()
     for key in ['price_mode', 'only_in_stock', 'include_images']:
@@ -1266,14 +1315,13 @@ def export_product_list_excel(request):
         sheet_names.add(candidate)
         return candidate
 
-    # The old line here repeated the export settings - sort order, price mode,
-    # "Images: yes" - which mean nothing to a customer reading the list. What
-    # they do need is what the colours mean.
-    legend = ('Colours:  green = available now  |  '
-              f'yellow = low stock (under {LOW_STOCK_BELOW} left)  |  '
-              'blue = in stock soon (on order, usually 3-7 days)  |  '
-              'red = currently unavailable.      '
-              'The last unit is our display sample and is not counted as stock.')
+    # What the colours mean, in the customer's language. The export settings
+    # that used to sit here - sort order, "Images: yes" - meant nothing to
+    # anyone reading the list.
+    legend = ('Cores:  verde = disponível  |  '
+              f'amarelo = stock reduzido (menos de {LOW_STOCK_BELOW} unidades)  |  '
+              'azul = brevemente em stock (encomendado, normalmente 3-7 dias)  |  '
+              'vermelho = indisponível')
 
     # PDF for anything being sent to a customer. The spreadsheet's photos are
     # floating drawings, which WhatsApp's preview and most phone spreadsheet
@@ -1300,24 +1348,24 @@ def export_product_list_excel(request):
 
         columns = []
         if include_images:
-            columns.append(('Image', 16))
+            columns.append(('Foto', 16))
         columns.extend([
-            ('Product', 34),
+            ('Produto', 34),
             ('EAN', 16),
-            ('Category', 18),
+            ('Categoria', 18),
         ])
         if price_mode in {'retail', 'both'}:
-            columns.append(('Retail Price', 15))
+            columns.append(('PVP', 15))
         if price_mode in {'wholesale', 'both'}:
-            columns.append(('Wholesale Price', 17))
-        columns.append(('Availability', 20))
+            columns.append(('Preço grossista', 17))
+        columns.append(('Disponibilidade', 20))
 
         for idx, (_, width) in enumerate(columns, start=1):
             ws.column_dimensions[get_column_letter(idx)].width = width
 
         max_col = len(columns)
         ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max_col)
-        ws.cell(row=1, column=1, value=f'{brand_name} | Customer Product List')
+        ws.cell(row=1, column=1, value=f'{brand_name} | Lista de Produtos')
         ws.cell(row=1, column=1).fill = title_fill
         ws.cell(row=1, column=1).font = Font(bold=True, size=15)
         ws.cell(row=1, column=1).alignment = Alignment(vertical='center')
@@ -1385,13 +1433,13 @@ def export_product_list_excel(request):
                 col_idx += 1
 
                 if price_mode in {'retail', 'both'}:
-                    retail_cell = ws.cell(row=row_idx, column=col_idx, value=float(product.default_price) if product.default_price is not None else None)
+                    retail_cell = ws.cell(row=row_idx, column=col_idx, value=float(product.export_pvp) if product.export_pvp is not None else None)
                     retail_cell.number_format = '"EUR" #,##0.00'
                     retail_cell.border = border
                     col_idx += 1
 
                 if price_mode in {'wholesale', 'both'}:
-                    wholesale_cell = ws.cell(row=row_idx, column=col_idx, value=float(product.wholesale_price) if product.wholesale_price is not None else None)
+                    wholesale_cell = ws.cell(row=row_idx, column=col_idx, value=float(product.export_wholesale) if product.export_wholesale is not None else None)
                     wholesale_cell.number_format = '"EUR" #,##0.00'
                     wholesale_cell.border = border
                     col_idx += 1
@@ -1406,6 +1454,21 @@ def export_product_list_excel(request):
                     availability_cell.fill = PatternFill('solid', fgColor=style[0])
                     availability_cell.font = Font(color=style[1], bold=True)
                 current_row += 1
+
+                if product.export_incoming_note:
+                    # A line of its own directly under the product, so "only a
+                    # couple left" and "more arriving" are both visible without
+                    # either one overwriting the other.
+                    note_row = current_row
+                    for column in range(1, max_col + 1):
+                        ws.cell(row=note_row, column=column).border = border
+                    note_cell = ws.cell(row=note_row, column=max_col,
+                                        value=PT_AVAILABILITY['incoming'])
+                    note_cell.alignment = center
+                    incoming_style = AVAILABILITY_STYLES['incoming']
+                    note_cell.fill = PatternFill('solid', fgColor=incoming_style[0])
+                    note_cell.font = Font(color=incoming_style[1], bold=True)
+                    current_row += 1
 
             current_row += 1
 

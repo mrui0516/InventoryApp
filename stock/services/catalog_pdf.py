@@ -84,21 +84,21 @@ def build_catalog_pdf(brand_groups, *, price_mode='retail', include_images=True,
     style = _styles()
     story = []
 
-    headers = (['Photo'] if include_images else []) + ['Product', 'EAN']
+    headers = (['Foto'] if include_images else []) + ['Produto', 'EAN']
     widths = ([THUMB_MM * mm + 4 * mm] if include_images else []) + [62 * mm, 26 * mm]
     if price_mode in {'retail', 'both'}:
-        headers.append('Retail')
+        headers.append('PVP')
         widths.append(20 * mm)
     if price_mode in {'wholesale', 'both'}:
-        headers.append('Wholesale')
-        widths.append(22 * mm)
-    headers.append('Availability')
-    widths.append(28 * mm)
+        headers.append('Preço grossista')
+        widths.append(24 * mm)
+    headers.append('Disponibilidade')
+    widths.append(30 * mm)
 
     for index, (brand_name, products) in enumerate(brand_groups.items()):
         if index:
             story.append(PageBreak())
-        story.append(Paragraph(f'{brand_name} | Product list', style['title']))
+        story.append(Paragraph(f'{brand_name} | Lista de Produtos', style['title']))
         if legend:
             story.append(Paragraph(legend, style['legend']))
 
@@ -111,19 +111,30 @@ def build_catalog_pdf(brand_groups, *, price_mode='retail', include_images=True,
 
             rows = [[Paragraph(h, style['head']) for h in headers]]
             highlights = []
-            for position, product in enumerate(model_products, start=1):
+            for product in model_products:
                 row = []
                 if include_images:
                     row.append(_thumb(product) or '')
                 row.append(Paragraph(product.export_title, style['cell']))
                 row.append(Paragraph(product.barcode or '-', style['cell']))
+                # The same numbers the spreadsheet prints: PVP is the till
+                # price plus the uplift, wholesale carries this export's
+                # discount. Both are worked out before we get here.
                 if price_mode in {'retail', 'both'}:
-                    row.append(_money(product.default_price))
+                    row.append(_money(getattr(product, 'export_pvp', None)))
                 if price_mode in {'wholesale', 'both'}:
-                    row.append(_money(product.wholesale_price))
+                    row.append(_money(getattr(product, 'export_wholesale', None)))
                 row.append(Paragraph(product.export_availability, style['cell']))
                 rows.append(row)
-                highlights.append((position, getattr(product, 'export_state', '')))
+                highlights.append((len(rows) - 1, getattr(product, 'export_state', '')))
+
+                if getattr(product, 'export_incoming_note', False):
+                    # Low stock and more on the way are both true; the second
+                    # line says so without overwriting the first.
+                    note = [''] * (len(headers) - 1)
+                    note.append(Paragraph('Brevemente em stock', style['cell']))
+                    rows.append(note)
+                    highlights.append((len(rows) - 1, 'incoming'))
 
             table = Table(rows, colWidths=widths, repeatRows=1)
             commands = [
@@ -146,7 +157,7 @@ def build_catalog_pdf(brand_groups, *, price_mode='retail', include_images=True,
             story.append(Spacer(1, 3))
 
     if not story:
-        story.append(Paragraph('No products matched.', style['cell']))
+        story.append(Paragraph('Nenhum produto encontrado.', style['cell']))
 
     doc.build(story)
     buffer.seek(0)
@@ -154,4 +165,4 @@ def build_catalog_pdf(brand_groups, *, price_mode='retail', include_images=True,
 
 
 def _money(value):
-    return '' if value is None else f'EUR {value:,.2f}'
+    return '' if value is None else f'{value:,.2f} EUR'

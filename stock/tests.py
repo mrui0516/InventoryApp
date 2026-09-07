@@ -4442,6 +4442,167 @@ class LeadTimeAdminCorrectionTests(TestCase):
             self.assertIn(field, InboundOrderAdmin.fields, field)
 
 
+class ExportPortugueseAndPricingTests(TestCase):
+    """The customer list is Portuguese, quotes PVP, and can carry a discount."""
+
+    def setUp(self):
+        from stock.models import Supplier
+        self.category = Category.objects.create(name="Perfumes", form_kind="perfume")
+        self.supplier = Supplier.objects.create(name="Sup")
+        user = get_user_model().objects.create_superuser(
+            username="pt_mgr", password="pw123456", email="pt@x.com")
+        self.client.force_login(user)
+
+    def _product(self, name, barcode, stock=0, retail="40.00", wholesale="25.00"):
+        from stock.models import Purchase
+        product = Product.objects.create(
+            name=name, barcode=barcode, brand="Khan", model="Linha",
+            category=self.category, default_price=Decimal(retail),
+            wholesale_price=Decimal(wholesale))
+        if stock:
+            Purchase.objects.create(product=product, quantity=stock, remaining=stock,
+                                    cost_price=Decimal("10"))
+            product.refresh_from_db()
+        return product
+
+    def _on_order(self, product):
+        from stock.models import InboundOrder, InboundPendingItem
+        order = InboundOrder.objects.create(supplier=self.supplier,
+                                            status='pending_receipt')
+        InboundPendingItem.objects.create(inbound_order=order, product=product,
+                                          quantity=5, cost_price=Decimal("10"))
+
+    def _sheet(self, **params):
+        from openpyxl import load_workbook
+        from io import BytesIO
+        response = self.client.get(reverse('export_product_list_excel'), params)
+        return load_workbook(BytesIO(b''.join(response.streaming_content))).active
+
+    def _cells(self, sheet):
+        return [str(c.value) for row in sheet.iter_rows() for c in row if c.value is not None]
+
+    def _numbers(self, sheet):
+        # openpyxl writes a whole number as int, so float alone misses 20.
+        return [float(c.value) for row in sheet.iter_rows() for c in row
+                if isinstance(c.value, (int, float)) and not isinstance(c.value, bool)]
+
+    # -- PVP ---------------------------------------------------------------
+    def test_pvp_is_the_till_price_plus_two(self):
+        from stock.views import pvp_price
+        self.assertEqual(pvp_price(Decimal("40.00")), Decimal("42.00"))
+        self.assertEqual(pvp_price(Decimal("0")), Decimal("2.00"))
+        self.assertIsNone(pvp_price(None))
+
+    def test_the_sheet_quotes_pvp_not_the_till_price(self):
+        # stock=0 so sync_perfume_price does not recompute the price from
+        # cost the moment a batch lands - the uplift is what is under test.
+        self._product("Oud", "9960000000001", stock=0, retail="40.00")
+        values = self._numbers(self._sheet(price_mode='retail'))
+        self.assertIn(42.0, values)
+        self.assertNotIn(40.0, values)
+
+    def test_the_column_is_called_pvp(self):
+        self._product("Oud", "9960000000002", stock=5)
+        text = self._cells(self._sheet(price_mode='both'))
+        self.assertIn('PVP', text)
+        self.assertNotIn('Retail Price', text)
+
+    # -- the discount ------------------------------------------------------
+    def test_a_discount_comes_off_the_wholesale_price(self):
+        from stock.views import discounted_wholesale
+        self.assertEqual(discounted_wholesale(Decimal("25.00"), Decimal("3")),
+                         Decimal("22.00"))
+
+    def test_a_discount_never_produces_a_negative_price(self):
+        from stock.views import discounted_wholesale
+        self.assertEqual(discounted_wholesale(Decimal("2.00"), Decimal("10")),
+                         Decimal("0.00"))
+
+    def test_the_sheet_shows_the_discounted_wholesale(self):
+        self._product("Oud", "9960000000003", stock=0, wholesale="25.00")
+        values = self._numbers(self._sheet(price_mode='wholesale', discount='3'))
+        self.assertIn(22.0, values)
+        self.assertNotIn(25.0, values)
+
+    def test_no_discount_leaves_wholesale_alone(self):
+        self._product("Oud", "9960000000004", stock=0, wholesale="25.00")
+        self.assertIn(25.0, self._numbers(self._sheet(price_mode='wholesale')))
+
+    def test_a_comma_decimal_discount_is_understood(self):
+        # Portuguese keyboards write 2,50 rather than 2.50.
+        self._product("Oud", "9960000000005", stock=0, wholesale="25.00")
+        self.assertIn(22.5, self._numbers(self._sheet(price_mode='wholesale', discount='2,50')))
+
+    def test_nonsense_in_the_discount_box_is_ignored_not_fatal(self):
+        self._product("Oud", "9960000000006", stock=0, wholesale="25.00")
+        self.assertIn(25.0, self._numbers(self._sheet(price_mode='wholesale', discount='abc')))
+
+    # -- Portuguese --------------------------------------------------------
+    def test_the_sheet_is_written_in_portuguese(self):
+        self._product("Oud", "9960000000007", stock=5)
+        text = ' '.join(self._cells(self._sheet(price_mode='both')))
+        for word in ('Produto', 'Categoria', 'PVP', 'Preço grossista',
+                     'Disponibilidade', 'Lista de Produtos'):
+            self.assertIn(word, text)
+        for english in ('Product', 'Availability', 'Customer Product List'):
+            self.assertNotIn(english + ' ', text + ' ')
+
+    def test_availability_wording_is_portuguese(self):
+        self._product("Cheio", "9960000000008", stock=5)
+        self._product("Pouco", "9960000000009", stock=2)
+        self._product("Nada", "9960000000010", stock=0)
+        text = ' '.join(self._cells(self._sheet()))
+        self.assertIn('Disponível', text)
+        self.assertIn('Stock reduzido', text)
+        self.assertIn('Indisponível', text)
+        self.assertNotIn('Available now', text)
+
+    def test_the_legend_is_portuguese_and_drops_the_sample_sentence(self):
+        self._product("Oud", "9960000000011", stock=5)
+        legend = self._sheet().cell(row=2, column=1).value
+        self.assertIn('verde', legend)
+        self.assertIn('azul', legend)
+        self.assertIn('menos de 3 unidades', legend)
+        self.assertNotIn('display sample', legend)
+        self.assertNotIn('Colours', legend)
+
+    # -- the extra "coming soon" line --------------------------------------
+    def test_a_low_stock_product_with_more_coming_gets_a_second_line(self):
+        low = self._product("Quase", "9960000000012", stock=2)
+        self._on_order(low)
+        text = self._cells(self._sheet())
+        self.assertIn('Stock reduzido', text)
+        self.assertIn('Brevemente em stock', text)
+
+    def test_the_second_line_sits_directly_under_its_product(self):
+        low = self._product("Quase", "9960000000013", stock=2)
+        self._on_order(low)
+        sheet = self._sheet()
+        rows = [[c.value for c in row] for row in sheet.iter_rows()]
+        low_row = next(i for i, r in enumerate(rows) if 'Stock reduzido' in r)
+        self.assertIn('Brevemente em stock', rows[low_row + 1])
+
+    def test_a_low_stock_product_with_nothing_coming_gets_no_extra_line(self):
+        self._product("Quase", "9960000000014", stock=2)
+        text = self._cells(self._sheet())
+        self.assertIn('Stock reduzido', text)
+        self.assertNotIn('Brevemente em stock', text)
+
+    def test_an_out_of_stock_product_on_order_still_reads_coming_soon(self):
+        coming = self._product("Vazio", "9960000000015", stock=0)
+        self._on_order(coming)
+        self.assertIn('Brevemente em stock', self._cells(self._sheet()))
+
+    # -- the PDF agrees ----------------------------------------------------
+    def test_the_pdf_uses_the_same_prices_and_language(self):
+        self._product("Oud", "9960000000016", stock=5, retail="40.00", wholesale="25.00")
+        response = self.client.get(reverse('export_product_list_excel'),
+                                   {'format': 'pdf', 'price_mode': 'both', 'discount': '3'})
+        body = b''.join(response.streaming_content)
+        self.assertTrue(body.startswith(b'%PDF'))
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+
+
 class ShopifyCreateFormatTests(TestCase):
     """A product created from the app must look like the ones already there."""
 
@@ -4858,9 +5019,10 @@ class CatalogExportTests(TestCase):
         second_row = book.active.cell(row=2, column=1).value or ''
         self.assertNotIn('Images:', second_row)
         self.assertNotIn('Sort:', second_row)
-        self.assertIn('green', second_row)
-        self.assertIn('blue', second_row)
-        self.assertIn('under 3', second_row)
+        # The list goes to customers in Portugal, so the legend is Portuguese.
+        self.assertIn('verde', second_row)
+        self.assertIn('azul', second_row)
+        self.assertIn('menos de 3 unidades', second_row)
 
     def test_the_availability_cell_is_coloured_per_state(self):
         from openpyxl import load_workbook
@@ -4874,16 +5036,15 @@ class CatalogExportTests(TestCase):
 
         response = self._export()
         sheet = load_workbook(BytesIO(b''.join(response.streaming_content))).active
+        from stock.views import PT_AVAILABILITY
         found = {}
+        wanted = set(PT_AVAILABILITY.values())
         for row in sheet.iter_rows():
             for cell in row:
-                if cell.value in ('Available now', 'Low stock', 'In stock soon',
-                                  'Currently unavailable'):
+                if cell.value in wanted:
                     found[cell.value] = cell.fill.fgColor.rgb
-        self.assertEqual(found['Available now'], AVAILABILITY_STYLES['in-stock'][0])
-        self.assertEqual(found['Low stock'], AVAILABILITY_STYLES['low-stock'][0])
-        self.assertEqual(found['In stock soon'], AVAILABILITY_STYLES['incoming'][0])
-        self.assertEqual(found['Currently unavailable'], AVAILABILITY_STYLES['out-stock'][0])
+        for state, label in PT_AVAILABILITY.items():
+            self.assertEqual(found[label], AVAILABILITY_STYLES[state][0], label)
 
     def test_only_in_stock_does_not_list_a_product_that_prints_unavailable(self):
         from openpyxl import load_workbook
@@ -4896,15 +5057,6 @@ class CatalogExportTests(TestCase):
         text = ' '.join(str(c.value) for row in sheet.iter_rows() for c in row).lower()
         self.assertIn("really there", text)
         self.assertNotIn("sample only", text)
-
-    def test_the_legend_explains_the_sample(self):
-        from openpyxl import load_workbook
-        from io import BytesIO
-        self._product("Oud", "9940000000022", stock=5)
-        response = self._export()
-        legend = load_workbook(BytesIO(b''.join(response.streaming_content))).active.cell(
-            row=2, column=1).value or ''
-        self.assertIn('display sample', legend)
 
     # -- the PDF -----------------------------------------------------------
     def test_a_pdf_is_returned_when_asked_for(self):
