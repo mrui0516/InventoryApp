@@ -4453,12 +4453,15 @@ class ExportPortugueseAndPricingTests(TestCase):
             username="pt_mgr", password="pw123456", email="pt@x.com")
         self.client.force_login(user)
 
-    def _product(self, name, barcode, stock=0, retail="40.00", wholesale="25.00"):
+    def _product(self, name, barcode, stock=0, retail="40.00", wholesale="25.00",
+                 volume_ml=100):
+        # 100ml by default: that is what most of the shop's perfume is, and it
+        # is what the wholesale discount applies to.
         from stock.models import Purchase
         product = Product.objects.create(
             name=name, barcode=barcode, brand="Khan", model="Linha",
             category=self.category, default_price=Decimal(retail),
-            wholesale_price=Decimal(wholesale))
+            volume_ml=volume_ml, wholesale_price=Decimal(wholesale))
         if stock:
             Purchase.objects.create(product=product, quantity=stock, remaining=stock,
                                     cost_price=Decimal("10"))
@@ -4536,6 +4539,74 @@ class ExportPortugueseAndPricingTests(TestCase):
     def test_nonsense_in_the_discount_box_is_ignored_not_fatal(self):
         self._product("Oud", "9960000000006", stock=0, wholesale="25.00")
         self.assertIn(25.0, self._numbers(self._sheet(price_mode='wholesale', discount='abc')))
+
+    def test_the_discount_is_only_for_full_bottles(self):
+        """A few euros off a 50ml or a body mist would take most of its margin."""
+        from stock.views import discount_applies
+        from stock.models import Concentration
+
+        full = self._product("Cheio", "9960000000030", stock=0, wholesale="25.00")
+        full.volume_ml = 100
+        full.save(update_fields=['volume_ml'])
+        self.assertTrue(discount_applies(full))
+
+        small = self._product("Pequeno", "9960000000031", stock=0, wholesale="12.00")
+        small.volume_ml = 50
+        small.save(update_fields=['volume_ml'])
+        self.assertFalse(discount_applies(small))
+
+        # A 250ml body mist is a big bottle and still not a bottle of perfume.
+        mist = self._product("Bruma", "9960000000032", stock=0, wholesale="9.00")
+        mist.volume_ml = 250
+        mist.concentration = Concentration.objects.create(name="Body Mist", short="Mist")
+        mist.save(update_fields=['volume_ml', 'concentration'])
+        self.assertFalse(discount_applies(mist))
+
+    def test_a_bigger_bottle_than_100_still_counts(self):
+        from stock.views import discount_applies
+        big = self._product("Grande", "9960000000033", stock=0)
+        big.volume_ml = 250
+        big.save(update_fields=['volume_ml'])
+        self.assertTrue(discount_applies(big))
+
+    def test_an_unknown_volume_is_left_out_rather_than_guessed(self):
+        # Discounting something we did not mean to costs margin quietly;
+        # missing one is visible and easy to correct.
+        from stock.views import discount_applies
+        unknown = self._product("Sem volume", "9960000000034", stock=0,
+                                 volume_ml=None)
+        self.assertIsNone(unknown.volume_ml)
+        self.assertFalse(discount_applies(unknown))
+
+    def test_a_non_perfume_never_takes_the_discount(self):
+        from stock.views import discount_applies
+        others = Category.objects.create(name="Accessories", form_kind="accessory")
+        item = self._product("Cabo", "9960000000035", stock=0)
+        item.category = others
+        item.volume_ml = 100
+        item.save(update_fields=['category', 'volume_ml'])
+        self.assertFalse(discount_applies(item))
+
+    def test_the_sheet_discounts_the_full_bottle_and_leaves_the_small_one(self):
+        full = self._product("Cheio", "9960000000036", stock=0, wholesale="25.00")
+        full.volume_ml = 100
+        full.save(update_fields=['volume_ml'])
+        small = self._product("Pequeno", "9960000000037", stock=0, wholesale="12.00")
+        small.volume_ml = 50
+        small.save(update_fields=['volume_ml'])
+
+        values = self._numbers(self._sheet(price_mode='wholesale', discount='3'))
+        self.assertIn(22.0, values)      # 25 - 3, full bottle
+        self.assertIn(12.0, values)      # untouched, 50ml
+
+    def test_pvp_is_never_discounted(self):
+        # The suggested retail price is not a trade price; a discount off
+        # wholesale should not quietly reprice the shelf.
+        full = self._product("Cheio", "9960000000038", stock=0, retail="40.00")
+        full.volume_ml = 100
+        full.save(update_fields=['volume_ml'])
+        values = self._numbers(self._sheet(price_mode='retail', discount='5'))
+        self.assertIn(42.0, values)      # 40 + 2 uplift, discount ignored
 
     # -- Portuguese --------------------------------------------------------
     def test_the_sheet_is_written_in_portuguese(self):

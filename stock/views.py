@@ -237,6 +237,29 @@ def pvp_price(retail):
     return (Decimal(retail) + PVP_UPLIFT).quantize(Decimal('0.01'))
 
 
+# A wholesale discount is margin off a full bottle. A 50ml or a body mist is
+# already cheap, so the same few euros off would take most of its margin.
+DISCOUNT_MIN_VOLUME_ML = 100
+
+
+def discount_applies(product):
+    """Whether an export discount may come off this product's wholesale price.
+
+    Full-size perfume bottles only. A product with no volume recorded is left
+    out on purpose: quoting a discount we did not mean costs the shop margin
+    quietly, while missing one is visible and easily corrected.
+    """
+    category = getattr(product.category, 'name', '') if product.category_id else ''
+    if 'perfum' not in (category or '').lower():
+        return False
+    volume = getattr(product, 'volume_ml', None)
+    if volume is None or volume < DISCOUNT_MIN_VOLUME_ML:
+        return False
+    # A 250ml body mist is a big bottle and still not a full bottle of perfume.
+    strength = getattr(getattr(product, 'concentration', None), 'name', '') or ''
+    return 'mist' not in strength.lower()
+
+
 def discounted_wholesale(wholesale, discount):
     """Wholesale less whatever discount this export is being sent with.
 
@@ -1274,7 +1297,9 @@ def export_product_list_excel(request):
         product.export_incoming_note = (
             product.export_state == 'low-stock' and product.id in on_order_ids)
         product.export_pvp = pvp_price(product.default_price)
-        product.export_wholesale = discounted_wholesale(product.wholesale_price, discount)
+        product.export_wholesale = discounted_wholesale(
+            product.wholesale_price,
+            discount if discount_applies(product) else Decimal('0'))
 
     base_params = request.GET.copy()
     for key in ['price_mode', 'only_in_stock', 'include_images']:
