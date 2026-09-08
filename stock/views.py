@@ -1285,14 +1285,19 @@ def export_product_list_excel(request):
         sort_by=sort_by,
     )
     products_qs = state['products_qs']
+    on_order_ids = product_ids_on_order()
     if only_in_stock:
         # Above the sample, not above zero: a product with only the display
-        # unit left prints as unavailable, so listing it here would contradict
-        # the very column beside it.
-        products_qs = products_qs.filter(total_stock__gt=SAMPLE_RESERVE)
+        # unit left prints as unavailable, so listing it would contradict the
+        # very column beside it.
+        #
+        # Anything already on order stays in, though. It prints as "Brevemente
+        # em stock", which is a real answer for a customer - dropping it would
+        # mean losing an order over something arriving this week.
+        products_qs = products_qs.filter(
+            Q(total_stock__gt=SAMPLE_RESERVE) | Q(pk__in=on_order_ids))
 
     products = list(products_qs)
-    on_order_ids = product_ids_on_order()
     for product in products:
         # Series, name, strength, size - from the recorded volume, not the old
         # free-text spec. Perfume spec was defaulted to "100ML" at one point,
@@ -5575,9 +5580,29 @@ def products_autocomplete(request):
         .select_related('brand_master', 'series_master')
         .prefetch_related('images'))
 
+    # Sold out means nothing to sell, so it is noise at the till - but only at
+    # the till. Inbound asks the same endpoint for the whole catalogue
+    # (?scope=stock), because receiving stock is exactly what you do for a
+    # product you have none of.
+    selling = request.GET.get('scope') != 'stock'
+
     if product_id.isdigit():
+        # Asked for by id, so the caller already knows which product it means -
+        # reloading a till line, or opening an order correction whose products
+        # may well have sold out since. Filtering here would make those lines
+        # disappear, so the stock rule belongs on the search below, not here.
         matches = base_qs.filter(id=int(product_id))[:1]
     elif q:
+        if selling:
+            stock_left = (Purchase.objects
+                          .filter(product=OuterRef('pk'))
+                          .values('product')
+                          .annotate(total=Sum('remaining'))
+                          .values('total')[:1])
+            base_qs = base_qs.annotate(
+                stock_left=Coalesce(Subquery(stock_left, output_field=IntegerField()),
+                                    Value(0))
+            ).filter(stock_left__gt=0)
         text_match = (
             Q(name__icontains=q) |
             Q(brand__icontains=q) |
@@ -5594,11 +5619,23 @@ def products_autocomplete(request):
         if device_ids:
             text_match |= (Q(device_models__in=device_ids) |
                            Q(compatibility_groups__devices__in=device_ids))
+        # Best sellers first: whoever is at the till is usually reaching for
+        # the thing that sells, and a dozen results ordered by brand buries it.
+        # A subquery rather than a join, so the text filter above cannot
+        # multiply rows and inflate the total.
+        sold_total = (Sale.objects
+                      .filter(product=OuterRef('pk'))
+                      .values('product')
+                      .annotate(total=Sum('quantity'))
+                      .values('total')[:1])
         matches = (
             base_qs
             .filter(text_match)
             .distinct()
-            .order_by('brand', 'model', 'name', 'spec', 'color')[:12]
+            .annotate(sold_total=Coalesce(Subquery(sold_total,
+                                                   output_field=IntegerField()),
+                                          Value(0)))
+            .order_by('-sold_total', 'brand', 'model', 'name', 'spec', 'color')[:12]
         )
 
     for p in matches:

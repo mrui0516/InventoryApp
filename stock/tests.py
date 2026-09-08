@@ -4964,6 +4964,32 @@ class ExportPortugueseAndPricingTests(TestCase):
         values = self._numbers(self._sheet(price_mode='retail', discount='5'))
         self.assertIn(42.0, values)      # 40 + 2 uplift, discount ignored
 
+    def test_only_in_stock_keeps_a_product_that_is_on_the_way(self):
+        """"Brevemente em stock" is a real answer for a customer, so dropping
+        it would mean losing an order over something arriving this week."""
+        coming = self._product("A caminho", "9960000000080", stock=0)
+        self._on_order(coming)
+        self._product("Cheio", "9960000000081", stock=5)
+
+        text = ' '.join(self._cells(self._sheet(only_in_stock='1'))).lower()
+
+        self.assertIn('a caminho', text)
+        self.assertIn('brevemente em stock', text)
+
+    def test_only_in_stock_still_drops_what_is_neither_here_nor_coming(self):
+        self._product("Cheio", "9960000000082", stock=5)
+        self._product("Esgotado", "9960000000083", stock=0)
+        text = ' '.join(self._cells(self._sheet(only_in_stock='1'))).lower()
+        self.assertIn('cheio', text)
+        self.assertNotIn('esgotado', text)
+
+    def test_a_sample_only_product_that_is_on_order_is_kept(self):
+        # One left is not sellable, but more arriving makes it worth listing.
+        sample = self._product("Só amostra", "9960000000084", stock=1)
+        self._on_order(sample)
+        text = ' '.join(self._cells(self._sheet(only_in_stock='1'))).lower()
+        self.assertIn('só amostra', text)
+
     # -- Portuguese --------------------------------------------------------
     def test_the_sheet_is_written_in_portuguese(self):
         self._product("Oud", "9960000000007", stock=5)
@@ -6645,6 +6671,94 @@ class DeviceFitmentTests(TestCase):
         self.assertIn(self.pro_max, search_devices("pro max"))
 
 
+class TillSearchTests(TestCase):
+    """At the till: what sells comes first, and what is gone is not offered."""
+
+    def setUp(self):
+        self.category = Category.objects.create(name="Perfumes", form_kind="perfume")
+        self.user = get_user_model().objects.create_user(username="till_s",
+                                                         password="pw123456")
+        self.client.force_login(self.user)
+
+    def _product(self, name, barcode, stock=0, sold=0):
+        from stock.models import Purchase, Sale, SaleOrder
+        product = Product.objects.create(
+            name=name, barcode=barcode, brand="Khan", model="Oud",
+            category=self.category, default_price=Decimal("40"))
+        if stock or sold:
+            Purchase.objects.create(product=product, quantity=stock + sold,
+                                    remaining=stock, cost_price=Decimal("10"))
+        if sold:
+            order = SaleOrder.objects.create()
+            Sale.objects.create(order=order, product=product, quantity=sold,
+                                unit_price=Decimal("40"), payment_method="cash")
+        return product
+
+    def _search(self, q, **extra):
+        params = {'q': q}
+        params.update(extra)
+        response = self.client.get(reverse('products_autocomplete'), params)
+        return [row['name'] for row in response.json()['results']]
+
+    # -- ordering ----------------------------------------------------------
+    def test_the_best_seller_comes_first(self):
+        self._product("Oud Slow", "9990000000001", stock=5, sold=1)
+        self._product("Oud Fast", "9990000000002", stock=5, sold=40)
+        self._product("Oud Middling", "9990000000003", stock=5, sold=10)
+        self.assertEqual(self._search("Oud"),
+                         ["Oud Fast", "Oud Middling", "Oud Slow"])
+
+    def test_something_never_sold_still_appears_last(self):
+        self._product("Oud New", "9990000000004", stock=5)
+        self._product("Oud Popular", "9990000000005", stock=5, sold=9)
+        self.assertEqual(self._search("Oud"), ["Oud Popular", "Oud New"])
+
+    def test_the_totals_are_not_inflated_by_the_text_filter(self):
+        """A join would multiply rows once several sales match; a subquery
+        cannot, so a product sold twice does not count as sold twice over."""
+        from stock.models import Sale, SaleOrder
+        product = self._product("Oud Repeat", "9990000000006", stock=9, sold=3)
+        order = SaleOrder.objects.create()
+        Sale.objects.create(order=order, product=product, quantity=2,
+                            unit_price=Decimal("40"), payment_method="cash")
+        self._product("Oud Bigger", "9990000000007", stock=5, sold=6)
+        # 3 + 2 = 5, which is less than 6 - inflated totals would reverse this.
+        self.assertEqual(self._search("Oud"), ["Oud Bigger", "Oud Repeat"])
+
+    # -- sold out ----------------------------------------------------------
+    def test_a_sold_out_product_is_not_offered(self):
+        self._product("Oud Gone", "9990000000008", stock=0, sold=12)
+        self._product("Oud Here", "9990000000009", stock=2, sold=1)
+        self.assertEqual(self._search("Oud"), ["Oud Here"])
+
+    def test_the_last_unit_can_still_be_sold(self):
+        # One left is not offered on the customer list, but the shop can sell
+        # the display piece, so the till must still find it.
+        self._product("Oud Last", "9990000000010", stock=1)
+        self.assertEqual(self._search("Oud"), ["Oud Last"])
+
+    def test_a_sold_out_product_is_still_reachable_by_its_id(self):
+        # Order correction reloads its existing lines by id, and those products
+        # may have sold out since - hiding them would empty the correction.
+        product = self._product("Oud Gone", "9990000000011", stock=0, sold=3)
+        response = self.client.get(reverse('products_autocomplete'),
+                                   {'product_id': product.id})
+        self.assertEqual([r['name'] for r in response.json()['results']], ["Oud Gone"])
+
+    # -- the boundary that matters ----------------------------------------
+    def test_inbound_still_sees_a_sold_out_product(self):
+        """Receiving stock is exactly what you do for a product you have none
+        of, so the stock filter must not reach the inbound page."""
+        self._product("Oud Gone", "9990000000012", stock=0, sold=4)
+        self.assertEqual(self._search("Oud", scope='stock'), ["Oud Gone"])
+
+    def test_inbound_is_not_reordered_by_sales(self):
+        self._product("Oud A", "9990000000013", stock=0)
+        self._product("Oud B", "9990000000014", stock=0, sold=50)
+        self.assertEqual(sorted(self._search("Oud", scope='stock')),
+                         ["Oud A", "Oud B"])
+
+
 class TillDeviceSearchTests(TestCase):
     """Typing a handset at the till must return the accessories that fit it."""
 
@@ -6663,6 +6777,9 @@ class TillDeviceSearchTests(TestCase):
             product = Product(name=name, brand="Generic", category=self.accessories,
                               default_price=Decimal("9"), **kw)
             assign_internal_barcode(product)
+            # Stock, or the till search will rightly not offer it.
+            Purchase.objects.create(product=product, quantity=5, remaining=5,
+                                    cost_price=Decimal("1"))
             return product
 
         self.case = make("Clear TPU")
@@ -6865,6 +6982,11 @@ class StoreSellableCategoryTests(TestCase):
         self.case = Product.objects.create(
             name="Case", barcode="9400000000002", brand="B",
             category=self.accessories, default_price=Decimal("9"))
+        # The till hides what is sold out, so a fixture with no stock
+        # would never appear in a search whatever the category rules say.
+        for item in (self.perfume, self.case):
+            Purchase.objects.create(product=item, quantity=5, remaining=5,
+                                    cost_price=Decimal("1"))
 
         self.user = get_user_model().objects.create_user(username="till", password="pw123456")
         StoreProfile.objects.create(user=self.user, store=self.scentory)
