@@ -4451,6 +4451,161 @@ class LeadTimeAdminCorrectionTests(TestCase):
             self.assertIn(field, InboundOrderAdmin.fields, field)
 
 
+class NoteParserTests(SimpleTestCase):
+    """Reading the note layers out of a description somebody already typed."""
+
+    def _parse(self, text):
+        from stock.services.note_parser import parse_notes
+        return parse_notes(text)
+
+    # -- the shapes the shop actually wrote --------------------------------
+    def test_the_short_labelled_form(self):
+        got = self._parse(
+            "Saída: Gengibre, Canela, Cardamomo\n\n"
+            "Coração: Praliné, Frutas Cristalizadas\n\n"
+            "Base: Café Arábica, Fava Tonka")
+        self.assertEqual(got['top'], "Gengibre, Canela, Cardamomo")
+        self.assertEqual(got['heart'], "Praliné, Frutas Cristalizadas")
+        self.assertEqual(got['base'], "Café Arábica, Fava Tonka")
+
+    def test_the_notas_de_form(self):
+        got = self._parse(
+            "Notas de Topo: Bergamota, Pêssego;\n"
+            "Notas de Coração: Jasmim;\n"
+            "Notas de Base: Baunilha.")
+        self.assertEqual(got['top'], "Bergamota, Pêssego")
+        self.assertEqual(got['heart'], "Jasmim")
+        self.assertEqual(got['base'], "Baunilha")
+
+    def test_the_cabeca_corpo_wording(self):
+        got = self._parse(
+            "Notas de Cabeça: Rose milk;\n"
+            "Notas de Corpo: Amêndoa, Merengue;\n"
+            "Notas de Base: Baunilha, Sândalo")
+        self.assertEqual(got['top'], "Rose milk")
+        self.assertEqual(got['heart'], "Amêndoa, Merengue")
+        self.assertEqual(got['base'], "Baunilha, Sândalo")
+
+    def test_the_prose_form_from_the_manufacturer_blurb(self):
+        got = self._parse(
+            "As notas de saída são Canela, Cardamomo e Gengibre; "
+            "as notas de coração são Praliné e Flores Brancas; "
+            "as notas de fundo são Café e Baunilha.")
+        self.assertIn("Canela", got['top'])
+        self.assertIn("Praliné", got['heart'])
+        self.assertIn("Café", got['base'])
+
+    # -- what it must refuse -----------------------------------------------
+    def test_a_sentence_about_the_notes_is_not_taken_as_the_notes(self):
+        """"Notas de Topo: A abertura é marcada pela bergamota" is prose about
+        the notes. Putting that paragraph in a three-word field would be worse
+        than leaving it empty."""
+        got = self._parse(
+            "Notas de Topo: A abertura do Afeef é marcada pela bergamota, "
+            "pimenta rosa e pêssego, proporcionando uma introdução fresca.")
+        self.assertEqual(got['top'], '')
+
+    def test_a_description_with_no_notes_yields_nothing(self):
+        got = self._parse("Uma fragrância quente e envolvente para o inverno.")
+        self.assertEqual(got, {'top': '', 'heart': '', 'base': ''})
+
+    def test_an_empty_description_is_safe(self):
+        self.assertEqual(self._parse(''), {'top': '', 'heart': '', 'base': ''})
+        self.assertEqual(self._parse(None), {'top': '', 'heart': '', 'base': ''})
+
+    def test_only_some_layers_present_is_fine(self):
+        got = self._parse("Notas de Base: Baunilha, Âmbar")
+        self.assertEqual(got['base'], "Baunilha, Âmbar")
+        self.assertEqual(got['top'], '')
+
+    def test_trailing_punctuation_is_trimmed(self):
+        self.assertEqual(self._parse("Base: Baunilha, Âmbar.")['base'],
+                         "Baunilha, Âmbar")
+
+    def test_a_very_long_value_is_not_taken(self):
+        got = self._parse("Notas de Base: " + "Baunilha, " * 40)
+        self.assertEqual(got['base'], '')
+
+
+class BackfillPerfumeNotesTests(TestCase):
+    def setUp(self):
+        from django.core.management import call_command
+        self.call = call_command
+        self.category = Category.objects.create(name="Perfumes", form_kind="perfume")
+
+    def _perfume(self, name, barcode, description='', **kwargs):
+        return Product.objects.create(
+            name=name, barcode=barcode, brand="Khan", category=self.category,
+            default_price=Decimal("40"), description=description, **kwargs)
+
+    def _run(self, *args):
+        from io import StringIO
+        out = StringIO()
+        self.call('backfill_perfume_notes', *args, stdout=out)
+        return out.getvalue()
+
+    def test_dry_run_writes_nothing(self):
+        product = self._perfume("Oud", "9995000000001",
+                                "Saída: Bergamota\nCoração: Jasmim\nBase: Âmbar")
+        self._run()
+        product.refresh_from_db()
+        self.assertEqual(product.notes_top, '')
+
+    def test_apply_fills_the_fields(self):
+        product = self._perfume("Oud", "9995000000002",
+                                "Saída: Bergamota\nCoração: Jasmim\nBase: Âmbar")
+        self._run('--apply')
+        product.refresh_from_db()
+        self.assertEqual(product.notes_top, "Bergamota")
+        self.assertEqual(product.notes_heart, "Jasmim")
+        self.assertEqual(product.notes_base, "Âmbar")
+
+    def test_the_description_itself_is_left_untouched(self):
+        # The paragraph stays; composed_description adds the notes under it.
+        text = "Saída: Bergamota\nCoração: Jasmim\nBase: Âmbar"
+        product = self._perfume("Oud", "9995000000003", text)
+        self._run('--apply')
+        product.refresh_from_db()
+        self.assertEqual(product.description, text)
+
+    def test_notes_already_entered_by_hand_are_not_overwritten(self):
+        product = self._perfume("Oud", "9995000000004",
+                                "Saída: Bergamota", notes_top="Escrito à mão")
+        self._run('--apply')
+        product.refresh_from_db()
+        self.assertEqual(product.notes_top, "Escrito à mão")
+
+    def test_overwrite_replaces_them_when_asked(self):
+        product = self._perfume("Oud", "9995000000005",
+                                "Saída: Bergamota", notes_top="Escrito à mão")
+        self._run('--apply', '--overwrite')
+        product.refresh_from_db()
+        self.assertEqual(product.notes_top, "Bergamota")
+
+    def test_it_names_the_products_it_could_not_read(self):
+        """The whole point of the report: which products still need a human."""
+        self._perfume("Sem notas", "9995000000006", "Uma fragrância quente.")
+        output = self._run()
+        self.assertIn('nothing found', output)
+        self.assertIn('Sem notas', output)
+
+    def test_it_flags_the_ones_it_only_partly_read(self):
+        self._perfume("Meio", "9995000000007", "Notas de Base: Baunilha")
+        output = self._run()
+        self.assertIn('Partly read', output)
+        self.assertIn('Meio', output)
+
+    def test_a_non_perfume_is_left_out_entirely(self):
+        others = Category.objects.create(name="Accessories")
+        case = Product.objects.create(
+            name="Case", barcode="9995000000008", brand="Generic",
+            category=others, default_price=Decimal("9"),
+            description="Saída: Bergamota")
+        self._run('--apply')
+        case.refresh_from_db()
+        self.assertEqual(case.notes_top, '')
+
+
 class PerfumeInfoTests(TestCase):
     """How a perfume is named, and the details written under its description."""
 
