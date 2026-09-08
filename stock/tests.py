@@ -4657,13 +4657,26 @@ class ExportPortugueseAndPricingTests(TestCase):
         self.assertIn('Stock reduzido', text)
         self.assertIn('Brevemente em stock', text)
 
-    def test_the_second_line_sits_directly_under_its_product(self):
+    def test_the_note_sits_beside_the_product_not_under_it(self):
+        # One product, one line: "a couple left" and "more arriving" are read
+        # across the row rather than down the page.
         low = self._product("Quase", "9960000000013", stock=2)
         self._on_order(low)
-        sheet = self._sheet()
-        rows = [[c.value for c in row] for row in sheet.iter_rows()]
-        low_row = next(i for i, r in enumerate(rows) if 'Stock reduzido' in r)
-        self.assertIn('Brevemente em stock', rows[low_row + 1])
+        rows = [[c.value for c in row] for row in self._sheet().iter_rows()]
+        low_row = next(r for r in rows if 'Stock reduzido' in r)
+        self.assertIn('Brevemente em stock', low_row)
+        self.assertEqual(low_row.index('Brevemente em stock'),
+                         low_row.index('Stock reduzido') + 1)
+
+    def test_the_extra_column_is_headed_and_only_appears_when_needed(self):
+        low = self._product("Quase", "9960000000017", stock=2)
+        self._on_order(low)
+        self.assertIn('A chegar', self._cells(self._sheet()))
+
+    def test_no_extra_column_when_nothing_is_on_the_way(self):
+        # An always-present empty column would take width from the rest.
+        self._product("Cheio", "9960000000018", stock=5)
+        self.assertNotIn('A chegar', self._cells(self._sheet()))
 
     def test_a_low_stock_product_with_nothing_coming_gets_no_extra_line(self):
         self._product("Quase", "9960000000014", stock=2)
@@ -4675,6 +4688,14 @@ class ExportPortugueseAndPricingTests(TestCase):
         coming = self._product("Vazio", "9960000000015", stock=0)
         self._on_order(coming)
         self.assertIn('Brevemente em stock', self._cells(self._sheet()))
+
+    def test_the_pdf_also_puts_it_beside_rather_than_under(self):
+        low = self._product("Quase", "9960000000019", stock=2)
+        self._on_order(low)
+        response = self.client.get(reverse('export_product_list_excel'),
+                                   {'format': 'pdf'})
+        body = b''.join(response.streaming_content)
+        self.assertTrue(body.startswith(b'%PDF'))
 
     # -- the PDF agrees ----------------------------------------------------
     def test_the_pdf_uses_the_same_prices_and_language(self):

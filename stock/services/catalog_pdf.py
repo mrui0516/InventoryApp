@@ -94,6 +94,12 @@ def build_catalog_pdf(brand_groups, *, price_mode='retail', include_images=True,
         widths.append(24 * mm)
     headers.append('Disponibilidade')
     widths.append(30 * mm)
+    # Beside availability rather than under it: one product, one line.
+    show_incoming = any(getattr(p, 'export_incoming_note', False)
+                        for products in brand_groups.values() for p in products)
+    if show_incoming:
+        headers.append('A chegar')
+        widths.append(28 * mm)
 
     for index, (brand_name, products) in enumerate(brand_groups.items()):
         if index:
@@ -125,16 +131,13 @@ def build_catalog_pdf(brand_groups, *, price_mode='retail', include_images=True,
                 if price_mode in {'wholesale', 'both'}:
                     row.append(_money(getattr(product, 'export_wholesale', None)))
                 row.append(Paragraph(product.export_availability, style['cell']))
+                incoming = getattr(product, 'export_incoming_note', False)
+                if show_incoming:
+                    row.append(Paragraph('Brevemente em stock', style['cell'])
+                               if incoming else '')
                 rows.append(row)
-                highlights.append((len(rows) - 1, getattr(product, 'export_state', '')))
-
-                if getattr(product, 'export_incoming_note', False):
-                    # Low stock and more on the way are both true; the second
-                    # line says so without overwriting the first.
-                    note = [''] * (len(headers) - 1)
-                    note.append(Paragraph('Brevemente em stock', style['cell']))
-                    rows.append(note)
-                    highlights.append((len(rows) - 1, 'incoming'))
+                highlights.append((len(rows) - 1,
+                                   getattr(product, 'export_state', ''), incoming))
 
             table = Table(rows, colWidths=widths, repeatRows=1)
             commands = [
@@ -147,9 +150,18 @@ def build_catalog_pdf(brand_groups, *, price_mode='retail', include_images=True,
                 ('TOPPADDING', (0, 0), (-1, -1), 2),
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
             ]
-            for row_number, state in highlights:
+            # Availability is the last column unless the incoming one is
+            # present, in which case it is the one before it.
+            state_col = -2 if show_incoming else -1
+            for row_number, state, incoming in highlights:
                 fill, ink = STATE_COLOURS.get(state, (None, None))
                 if fill is not None:
+                    commands.append(('BACKGROUND', (state_col, row_number),
+                                     (state_col, row_number), fill))
+                    commands.append(('TEXTCOLOR', (state_col, row_number),
+                                     (state_col, row_number), ink))
+                if incoming and show_incoming:
+                    fill, ink = STATE_COLOURS['incoming']
                     commands.append(('BACKGROUND', (-1, row_number), (-1, row_number), fill))
                     commands.append(('TEXTCOLOR', (-1, row_number), (-1, row_number), ink))
             table.setStyle(TableStyle(commands))

@@ -1368,6 +1368,13 @@ def export_product_list_excel(request):
         response['Content-Type'] = 'application/pdf'
         return response
 
+    # An extra column beside availability, not an extra row beneath it: the
+    # product keeps one line, and "a couple left" and "more arriving" are read
+    # across rather than down. Added only when something really is on the way,
+    # so an empty column never takes width from the rest.
+    show_incoming_column = any(getattr(p, 'export_incoming_note', False)
+                               for p in products)
+
     first_sheet = True
     for brand_name, brand_products in brand_groups.items():
         if first_sheet:
@@ -1390,6 +1397,8 @@ def export_product_list_excel(request):
         if price_mode in {'wholesale', 'both'}:
             columns.append(('Preço grossista', 17))
         columns.append(('Disponibilidade', 20))
+        if show_incoming_column:
+            columns.append(('A chegar', 22))
 
         for idx, (_, width) in enumerate(columns, start=1):
             ws.column_dimensions[get_column_letter(idx)].width = width
@@ -1484,22 +1493,19 @@ def export_product_list_excel(request):
                 if style:
                     availability_cell.fill = PatternFill('solid', fgColor=style[0])
                     availability_cell.font = Font(color=style[1], bold=True)
-                current_row += 1
 
-                if product.export_incoming_note:
-                    # A line of its own directly under the product, so "only a
-                    # couple left" and "more arriving" are both visible without
-                    # either one overwriting the other.
-                    note_row = current_row
-                    for column in range(1, max_col + 1):
-                        ws.cell(row=note_row, column=column).border = border
-                    note_cell = ws.cell(row=note_row, column=max_col,
-                                        value=PT_AVAILABILITY['incoming'])
+                if show_incoming_column:
+                    col_idx += 1
+                    note_cell = ws.cell(row=row_idx, column=col_idx)
+                    note_cell.border = border
                     note_cell.alignment = center
-                    incoming_style = AVAILABILITY_STYLES['incoming']
-                    note_cell.fill = PatternFill('solid', fgColor=incoming_style[0])
-                    note_cell.font = Font(color=incoming_style[1], bold=True)
-                    current_row += 1
+                    if product.export_incoming_note:
+                        note_cell.value = PT_AVAILABILITY['incoming']
+                        incoming_style = AVAILABILITY_STYLES['incoming']
+                        note_cell.fill = PatternFill('solid', fgColor=incoming_style[0])
+                        note_cell.font = Font(color=incoming_style[1], bold=True)
+
+                current_row += 1
 
             current_row += 1
 
