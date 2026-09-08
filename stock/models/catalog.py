@@ -154,7 +154,10 @@ class ActiveProductManager(models.Manager):
 
 
 class Product(models.Model):
-    name = models.CharField(max_length=100, db_index=True)
+    # Optional: many perfumes are known by their series alone ("Khamrah"), and
+    # requiring a name made people repeat the series into it - which is how
+    # "Rayhaan Pharaoh Pharaoh" came about.
+    name = models.CharField(max_length=100, db_index=True, blank=True, default='')
     model = models.CharField(max_length=100, blank=True, null=True, db_index=True)
     barcode = models.CharField(max_length=13, unique=True, db_index=True)
     # True when we minted the barcode ourselves because the goods arrived
@@ -202,6 +205,16 @@ class Product(models.Model):
     fragrance_families = models.ManyToManyField('FragranceFamily', blank=True, related_name='products')
     inspired_by = models.ForeignKey('Inspiration', on_delete=models.SET_NULL,
                                     null=True, blank=True, related_name='products')
+    # Typed in rather than chosen: the reference differs for almost every
+    # bottle, so the lookup table meant maintaining a list nobody reused. The
+    # FK above stays only so the handful of existing rows are not lost.
+    inspired_by_text = models.CharField(max_length=120, blank=True, default='')
+
+    # The three note layers, as the shop writes them on the bottle. Free text
+    # on purpose: these are prose ("Bergamota, Maca Verde"), not a fixed list.
+    notes_top = models.CharField(max_length=200, blank=True, default='')
+    notes_heart = models.CharField(max_length=200, blank=True, default='')
+    notes_base = models.CharField(max_length=200, blank=True, default='')
 
     objects = ActiveProductManager()   # live catalogue
     all_objects = models.Manager()     # includes archived — history, admin
@@ -304,6 +317,87 @@ class Product(models.Model):
         if total > len(parts):
             parts.append(f'+{total - len(parts)}')
         return ', '.join(parts)
+
+    # -- how a perfume reads ----------------------------------------------
+    @property
+    def volume_label(self):
+        """"100ml", from the structured volume rather than the old free text.
+
+        ``spec`` was defaulted to 100ML for perfumes at one point, so a 20ml
+        bottle can still be carrying "100ML" there. The recorded volume wins.
+        """
+        if self.volume_ml:
+            return f'{self.volume_ml}ml'
+        return (self.spec or '').strip()
+
+    @property
+    def strength_label(self):
+        return getattr(self.concentration, 'short', '') or ''
+
+    def title_parts(self, include_brand=True):
+        """Brand, series, name, strength, size - skipping whatever is missing.
+
+        The name is optional and often repeats the series, so a series equal to
+        the name is said once.
+        """
+        series = (self.model or '').strip()
+        name = (self.name or '').strip()
+        if series and name and series.lower() == name.lower():
+            name = ''
+        parts = [(self.brand or '').strip() if include_brand else '', series, name]
+        text = ' '.join(p for p in parts if p)
+
+        strength = self.strength_label
+        if strength and strength.lower() not in text.lower():
+            text = f'{text} {strength}'.strip()
+        size = self.volume_label
+        if size and size.lower() not in text.lower():
+            text = f'{text} {size}'.strip()
+        return text
+
+    @property
+    def inspiration_label(self):
+        """What this is inspired by - the typed text, or the old lookup row."""
+        typed = (self.inspired_by_text or '').strip()
+        return typed or (str(self.inspired_by) if self.inspired_by_id else '')
+
+    @property
+    def note_lines(self):
+        """``[(label, notes)]`` for the layers that have been filled in."""
+        pairs = [('Notas de Topo', self.notes_top),
+                 ('Notas de Coração', self.notes_heart),
+                 ('Notas de Base', self.notes_base)]
+        return [(label, value.strip()) for label, value in pairs if (value or '').strip()]
+
+    def composed_description(self, include_inspiration=True):
+        """The short description with the structured details written under it.
+
+        The shop writes one paragraph; the family, the three note layers and
+        the reference are already recorded as fields, so repeating them by hand
+        into every description is copying data that is already there - and the
+        copy goes stale the moment a field changes.
+        """
+        blocks = []
+        body = (self.description or '').strip()
+        if body:
+            blocks.append(body)
+
+        families = ', '.join(f.name for f in self.fragrance_families.all())
+        if families:
+            blocks.append(f'Família olfativa: {families}')
+
+        notes = [f'{label}: {value}' for label, value in self.note_lines]
+        if notes:
+            blocks.append(chr(10).join(notes))
+
+        # Named on the shop's own paperwork, not on the public storefront:
+        # printing another house's product on a listing is a trademark risk the
+        # shop should take deliberately, not as a side effect of tidying up a
+        # description. shopify_sync passes include_inspiration=False.
+        inspiration = self.inspiration_label if include_inspiration else ''
+        if inspiration:
+            blocks.append(f'Inspirado em: {inspiration}')
+        return (chr(10) * 2).join(blocks)
 
     @property
     def variant_label(self):

@@ -333,10 +333,14 @@ def _truncate(text, limit):
 
 
 def _shopify_description_html(product):
-    """The product description as HTML, preserving the saved formatting (blank
-    lines -> paragraphs, single newlines -> <br>) instead of collapsing it into
-    one run of text. Content is escaped by ``linebreaks``."""
-    text = (product.description or '').strip()
+    """The composed description as HTML, formatting preserved.
+
+    Composed, not raw: the family, the three note layers and the reference are
+    already fields on the product, so they are written under the shop's own
+    paragraph rather than copied into it by hand - a copy that goes stale the
+    moment one of those fields changes.
+    """
+    text = (product.composed_description(include_inspiration=False) or '').strip()
     return linebreaks(text) if text else ''
 
 

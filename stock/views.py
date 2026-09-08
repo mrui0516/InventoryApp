@@ -3,6 +3,7 @@ import csv
 from decimal import Decimal, InvalidOperation,ROUND_HALF_UP
 import hashlib
 import json
+import re
 from io import BytesIO
 from collections import defaultdict
 from datetime import timedelta, datetime, date
@@ -165,10 +166,17 @@ def annotate_catalog_metrics(queryset):
 
 
 def customer_catalog_case(value):
+    """Title case for the customer list, keeping the perfume tokens upright.
+
+    Plain ``.title()`` turns "100ml" into "100Ml" and "EDP" into "Edp", which
+    is how a 20ml bottle came to print as "20Ml" beside the real thing.
+    """
     value = (value or '').strip()
     if not value:
         return ''
-    return value.title()
+    value = value.title()
+    value = re.sub(r'\b(Edp|Edt|Edc)\b', lambda m: m.group(1).upper(), value)
+    return re.sub(r'(\d)\s*Ml\b', r'\1ml', value)
 
 
 def build_customer_product_title(product):
@@ -1286,11 +1294,12 @@ def export_product_list_excel(request):
     products = list(products_qs)
     on_order_ids = product_ids_on_order()
     for product in products:
-        product.export_title = build_customer_product_title(product)
-        # Append the Specification (volume, e.g. "100ml") after the product name.
-        spec = (product.spec or '').strip()
-        if spec:
-            product.export_title = f'{product.export_title} {spec}'
+        # Series, name, strength, size - from the recorded volume, not the old
+        # free-text spec. Perfume spec was defaulted to "100ML" at one point,
+        # so a 20ml bottle can still be carrying that and was printing 100ml.
+        # The brand heads its own sheet, so it is not repeated in every row.
+        product.export_title = customer_catalog_case(
+            product.title_parts(include_brand=False)) or build_product_label(product)
         product.export_brand = customer_catalog_case((product.brand or '').strip()) or 'No Brand'
         product.export_model = customer_catalog_case((product.model or '').strip()) or 'Other Selections'
         product.export_category_name = customer_catalog_case(getattr(product.category, 'name', ''))

@@ -66,7 +66,10 @@ class ProductForm(forms.ModelForm):
             'volume_ml',
             'concentration',
             'fragrance_families',
-            'inspired_by',
+            'notes_top',
+            'notes_heart',
+            'notes_base',
+            'inspired_by_text',
             'default_price',
             'wholesale_price',
             'price_locked',
@@ -77,7 +80,6 @@ class ProductForm(forms.ModelForm):
             'device_models': forms.SelectMultiple(attrs={'size': 8}),
             'compatibility_groups': forms.SelectMultiple(attrs={'size': 5}),
             'concentration': forms.Select(attrs={'class': 'form-select'}),
-            'inspired_by': forms.Select(attrs={'class': 'form-select'}),
             # a perfume usually sits in several families
             'fragrance_families': forms.CheckboxSelectMultiple(),
             'volume_ml': forms.NumberInput(attrs={
@@ -105,8 +107,6 @@ class ProductForm(forms.ModelForm):
         self.fields['concentration'].label = 'Concentration'
         self.fields['concentration'].empty_label = 'Not set'
         self.fields['fragrance_families'].label = 'Fragrance family'
-        self.fields['inspired_by'].label = 'Inspired by (internal)'
-        self.fields['inspired_by'].empty_label = 'Not set'
         def parse_pk(value):
             if value in (None, ''):
                 return None
@@ -154,6 +154,13 @@ class ProductForm(forms.ModelForm):
         self.fields['name'].label = 'Product Name'
         self.fields['spec'].label = 'Specification'
         self.fields['color'].label = 'Color'
+        # A perfume is often known by its series alone, so the name is optional.
+        self.fields['name'].required = False
+        self.fields['name'].label = 'Product Name (optional)'
+        self.fields['notes_top'].label = 'Notas de Topo'
+        self.fields['notes_heart'].label = 'Notas de Coração'
+        self.fields['notes_base'].label = 'Notas de Base'
+        self.fields['inspired_by_text'].label = 'Inspired by'
         self.fields['universal_fit'].label = 'Fits every device'
         self.fields['device_models'].label = 'Fits these models'
         self.fields['compatibility_groups'].label = 'Fits these groups'

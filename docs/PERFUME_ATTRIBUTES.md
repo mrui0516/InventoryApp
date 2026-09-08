@@ -13,6 +13,42 @@
 
 第 3 层尚未实现；1+2 层已上线。
 
+## 描述自动合成
+
+店里只写**一段短描述**。香型、三段香调、灵感来源都已经是字段，
+再手工复制进描述里就是在复制已有数据——而且字段一改，复制的那份就过期了。
+
+`Product.composed_description()` 把它们拼在短描述下面：
+
+```
+Uma fragrância quente e envolvente.
+
+Família olfativa: Oud, Doce
+
+Notas de Topo: Bergamota
+Notas de Coração: Canela
+Notas de Base: Baunilha
+
+Inspirado em: Baccarat Rouge 540      ← 只在 app / 批发清单，不上网店
+```
+
+Shopify 走 `composed_description(include_inspiration=False)`。
+
+## 香水名怎么拼
+
+`Product.title_parts()`：**品牌 + 系列 + 名称（可空）+ 浓度 + 容量**。
+
+- **Product Name 可以留空**——很多香水就叫系列名（Khamrah），
+  强制填名字导致有人把系列名又抄一遍，于是出现 `Rayhaan Pharaoh Pharaoh`。
+  系列和名称相同时只说一次。
+- 名称里已经有 EDP 就不再补一次。
+- **容量取 `volume_ml`，不是 `spec`**。`spec` 曾经被默认填成 "100ML"，
+  所以 20ml 的瓶子会印成 100ml——这就是 Asmotra 那批全显示 100ml 的原因。
+- 导出清单里品牌是表名，所以行内用 `title_parts(include_brand=False)`。
+
+**注意** `customer_catalog_case()` 原本是纯 `.title()`，会把 `100ml` 变成 `100Ml`、
+`EDP` 变成 `Edp`，现在会把这两类词还原。
+
 ## 2. 数据模型
 
 ```
@@ -31,7 +67,13 @@ Product.inspired_by         FK → Inspiration (SET_NULL)
 
 ## 3. 灵感来源：仅内部
 
-`Inspiration` **不同步到 Shopify**，也不写进商品描述。用途是店内搜索和员工答客（「哪款是 Baccarat 那个味」）。
+`Inspiration` **不同步到 Shopify**，也不写进**网店的**商品描述。
+用途是店内搜索、员工答客（「哪款是 Baccarat 那个味」）、以及给批发客户的 Excel/PDF。
+公开列出别家品牌的产品名有商标风险，这一条 2026-08-27 再次确认保留。
+
+**灵感来源现在是自己输入的文本**（`Product.inspired_by_text`），不再从列表里选——
+每瓶的参照几乎都不一样，维护一张没人复用的表没有意义。
+原来那 5 条 FK 记录已由迁移 0056 复制进文本字段，`Inspiration` 表本身保留但不再使用。
 在欧盟公开标注他牌商标有法律风险，故刻意不外显。产品详情页也只对经理显示。
 
 ## 4. 回填命令

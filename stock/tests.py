@@ -4451,6 +4451,151 @@ class LeadTimeAdminCorrectionTests(TestCase):
             self.assertIn(field, InboundOrderAdmin.fields, field)
 
 
+class PerfumeInfoTests(TestCase):
+    """How a perfume is named, and the details written under its description."""
+
+    def setUp(self):
+        from stock.models import Concentration, FragranceFamily
+        self.category = Category.objects.create(name="Perfumes", form_kind="perfume")
+        self.edp = Concentration.objects.create(name="Eau de Parfum", short="EDP")
+        self.oud = FragranceFamily.objects.create(name="Oud")
+        self.sweet = FragranceFamily.objects.create(name="Doce")
+
+    def _perfume(self, **kwargs):
+        fields = dict(brand="LATTAFA", model="Khamrah", name="Waha",
+                      barcode="9980000000001", category=self.category,
+                      default_price=Decimal("40"), volume_ml=100,
+                      concentration=self.edp)
+        fields.update(kwargs)
+        return Product.objects.create(**fields)
+
+    # -- the name ----------------------------------------------------------
+    def test_the_name_may_be_left_empty(self):
+        product = self._perfume(name='')
+        self.assertEqual(product.title_parts(), 'LATTAFA Khamrah EDP 100ml')
+
+    def test_the_full_order_is_brand_series_name_strength_size(self):
+        self.assertEqual(self._perfume().title_parts(),
+                         'LATTAFA Khamrah Waha EDP 100ml')
+
+    def test_a_series_repeating_the_name_is_said_once(self):
+        product = self._perfume(model="Pharaoh", name="Pharaoh", brand="RAYHAAN")
+        self.assertEqual(product.title_parts(), 'RAYHAAN Pharaoh EDP 100ml')
+
+    def test_the_strength_is_not_repeated_when_the_name_carries_it(self):
+        product = self._perfume(name="Waha EDP")
+        self.assertEqual(product.title_parts().count('EDP'), 1)
+
+    def test_the_brand_can_be_left_out_for_a_sheet_that_is_already_per_brand(self):
+        self.assertEqual(self._perfume().title_parts(include_brand=False),
+                         'Khamrah Waha EDP 100ml')
+
+    # -- the volume bug ----------------------------------------------------
+    def test_the_recorded_volume_beats_a_stale_spec(self):
+        """Perfume spec was defaulted to 100ML at one point, so a 20ml bottle
+        can still be carrying it - which is why 20ml products printed 100ml."""
+        product = self._perfume(volume_ml=20, spec='100ML')
+        self.assertEqual(product.volume_label, '20ml')
+        self.assertIn('20ml', product.title_parts())
+        self.assertNotIn('100ml', product.title_parts())
+
+    def test_the_spec_is_still_used_when_no_volume_is_recorded(self):
+        product = self._perfume(volume_ml=None, spec='50ml')
+        self.assertEqual(product.volume_label, '50ml')
+
+    def test_the_export_prints_the_recorded_volume(self):
+        self._perfume(volume_ml=20, spec='100ML')
+        user = get_user_model().objects.create_superuser(
+            username="pf_mgr", password="pw123456", email="pf@x.com")
+        self.client.force_login(user)
+        from openpyxl import load_workbook
+        from io import BytesIO
+        response = self.client.get(reverse('export_product_list_excel'))
+        sheet = load_workbook(BytesIO(b''.join(response.streaming_content))).active
+        text = ' '.join(str(c.value) for row in sheet.iter_rows()
+                        for c in row if c.value is not None)
+        self.assertIn('20ml', text)
+        self.assertNotIn('100ml', text)
+
+    # -- the notes ---------------------------------------------------------
+    def test_the_three_note_layers_are_free_text(self):
+        product = self._perfume(notes_top="Bergamota, Maçã Verde",
+                                notes_heart="Jasmim, Canela",
+                                notes_base="Baunilha, Âmbar")
+        self.assertEqual(product.note_lines,
+                         [('Notas de Topo', 'Bergamota, Maçã Verde'),
+                          ('Notas de Coração', 'Jasmim, Canela'),
+                          ('Notas de Base', 'Baunilha, Âmbar')])
+
+    def test_a_layer_left_blank_is_simply_absent(self):
+        product = self._perfume(notes_top="Bergamota")
+        self.assertEqual([label for label, _ in product.note_lines], ['Notas de Topo'])
+
+    # -- inspired by -------------------------------------------------------
+    def test_inspired_by_is_typed_in(self):
+        product = self._perfume(inspired_by_text="Baccarat Rouge 540")
+        self.assertEqual(product.inspiration_label, "Baccarat Rouge 540")
+
+    def test_an_older_product_keeps_the_reference_it_already_had(self):
+        from stock.models import Inspiration
+        reference = Inspiration.objects.create(house="Dior", name="Sauvage")
+        product = self._perfume(inspired_by=reference)
+        self.assertIn("Dior", product.inspiration_label)
+
+    # -- the composed description ------------------------------------------
+    def test_the_details_are_written_under_the_short_paragraph(self):
+        """Family, notes and reference are already fields, so copying them into
+        every description by hand is duplicating data that goes stale."""
+        product = self._perfume(
+            description="Uma fragrância quente e envolvente.",
+            notes_top="Bergamota", notes_heart="Canela", notes_base="Baunilha",
+            inspired_by_text="Baccarat Rouge 540")
+        product.fragrance_families.set([self.oud, self.sweet])
+
+        composed = product.composed_description()
+
+        self.assertTrue(composed.startswith("Uma fragrância quente e envolvente."))
+        # FragranceFamily orders by sort_order then name, so alphabetical here.
+        self.assertIn("Família olfativa: Doce, Oud", composed)
+        self.assertIn("Notas de Topo: Bergamota", composed)
+        self.assertIn("Notas de Coração: Canela", composed)
+        self.assertIn("Notas de Base: Baunilha", composed)
+        self.assertIn("Inspirado em: Baccarat Rouge 540", composed)
+
+    def test_a_product_with_only_a_paragraph_gets_just_that(self):
+        product = self._perfume(description="Só isto.")
+        self.assertEqual(product.composed_description(), "Só isto.")
+
+    def test_a_product_with_no_paragraph_still_gets_its_details(self):
+        product = self._perfume(description='', notes_top="Bergamota")
+        self.assertEqual(product.composed_description(), "Notas de Topo: Bergamota")
+
+    def test_nothing_at_all_composes_to_nothing(self):
+        self.assertEqual(self._perfume(description='').composed_description(), '')
+
+    def test_shopify_sends_the_composed_description(self):
+        from stock.services.shopify_sync import _shopify_description_html
+        product = self._perfume(description="Curto.", notes_top="Bergamota")
+        html = _shopify_description_html(product)
+        self.assertIn("Curto.", html)
+        self.assertIn("Notas de Topo: Bergamota", html)
+
+    # -- the form ----------------------------------------------------------
+    def test_the_form_accepts_a_perfume_with_no_name(self):
+        from stock.models import Brand
+        brand = Brand.objects.create(name="Lattafa")
+        form = ProductForm(data={
+            'barcode': '9980000000009', 'category': self.category.id,
+            'brand_master': brand.id, 'name': '', 'default_price': '40.00',
+            'notes_top': 'Bergamota', 'inspired_by_text': 'Baccarat Rouge 540',
+        })
+        self.assertTrue(form.is_valid(), form.errors.as_json())
+        product = form.save()
+        self.assertEqual(product.name, '')
+        self.assertEqual(product.notes_top, 'Bergamota')
+        self.assertEqual(product.inspired_by_text, 'Baccarat Rouge 540')
+
+
 class InboundRollbackTests(TestCase):
     """Undoing a receipt confirmed by mistake - and refusing when it is unsafe."""
 
@@ -6844,13 +6989,13 @@ class PerfumeAttributeTests(TestCase):
             "name": "Khamrah", "default_price": "30.00",
             "volume_ml": "100", "concentration": self.edp.id,
             "fragrance_families": [self.floral.id, self.oud.id],
-            "inspired_by": self.insp.id,
+            "inspired_by_text": "Givenchy",
         })
         self.assertIn(resp.status_code, (200, 302))
         p.refresh_from_db()
         self.assertEqual(p.volume_ml, 100)
         self.assertEqual(p.concentration, self.edp)
-        self.assertEqual(p.inspired_by, self.insp)
+        self.assertEqual(p.inspired_by_text, "Givenchy")
         self.assertEqual(set(p.fragrance_families.all()), {self.floral, self.oud})
 
     def test_inspired_by_is_internal_and_never_sent_to_shopify(self):
@@ -6881,7 +7026,8 @@ class ProductEditFormGroupingTests(TestCase):
                                    category=self.perfumes, default_price=Decimal("30"))
         import re
         html = self.client.get(reverse("edit_product", args=[p.pk])).content.decode()
-        for field in ['color', 'spec', 'gender', 'volume_ml', 'concentration', 'inspired_by']:
+        for field in ['color', 'spec', 'gender', 'volume_ml', 'concentration',
+                      'inspired_by_text', 'notes_top', 'notes_heart', 'notes_base']:
             # count real widgets only - the page's JS also mentions these names
             widgets = re.findall(r'<(?:input|select|textarea)[^>]*name="%s"' % field, html)
             self.assertEqual(len(widgets), 1, f'{field}: {len(widgets)} widgets')
@@ -6892,7 +7038,8 @@ class ProductEditFormGroupingTests(TestCase):
     def test_add_form_is_grouped_and_renders_each_field_once(self):
         import re
         html = self.client.get(reverse("add_product")).content.decode()
-        for field in ['color', 'spec', 'gender', 'volume_ml', 'concentration', 'inspired_by']:
+        for field in ['color', 'spec', 'gender', 'volume_ml', 'concentration',
+                      'inspired_by_text', 'notes_top', 'notes_heart', 'notes_base']:
             widgets = re.findall(r'<(?:input|select|textarea)[^>]*name="%s"' % field, html)
             self.assertEqual(len(widgets), 1, f'{field}: {len(widgets)} widgets')
         # Groups are tagged with the category kinds they belong to.
@@ -7615,18 +7762,26 @@ class SyncAllPerfumesButtonTests(TestCase):
         Thread.assert_not_called()
 
 
-class ShopifyDescriptionFormatTests(SimpleTestCase):
+class ShopifyDescriptionFormatTests(TestCase):
+    """A real product now rather than a stand-in: the description is
+    composed from the product's own fields, so those fields must exist."""
+
+    def _product(self, description):
+        return Product.objects.create(
+            name="Oud", barcode="9985000000001", brand="Khan",
+            category=Category.objects.create(name="Perfumes"),
+            default_price=Decimal("40"), description=description)
+
     def test_linebreaks_preserved(self):
-        from types import SimpleNamespace
         from stock.services.shopify_sync import _shopify_description_html
-        html = _shopify_description_html(SimpleNamespace(description="Line one\nLine two\n\nNew para"))
+        html = _shopify_description_html(
+            self._product("Line one\nLine two\n\nNew para"))
         self.assertIn("<br>", html)    # single newline -> <br>
         self.assertIn("<p>", html)     # blank line -> paragraph
 
     def test_empty_description(self):
-        from types import SimpleNamespace
         from stock.services.shopify_sync import _shopify_description_html
-        self.assertEqual(_shopify_description_html(SimpleNamespace(description="")), "")
+        self.assertEqual(_shopify_description_html(self._product("")), "")
 
 
 class SyncShopifyPerfumesCollectionTests(TestCase):

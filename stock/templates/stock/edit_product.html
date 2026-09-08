@@ -237,9 +237,21 @@
               <label class="form-label">Fragrance family</label>
               <div class="fam-picker">{{ form.fragrance_families }}</div>
             </div>
+            <div class="col-md-4">
+              <label class="form-label">Notas de Topo</label>
+              {% render_field form.notes_top class="form-control" placeholder="Bergamota, Ma&ccedil;&atilde; Verde" %}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Notas de Cora&ccedil;&atilde;o</label>
+              {% render_field form.notes_heart class="form-control" placeholder="Jasmim, Canela" %}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Notas de Base</label>
+              {% render_field form.notes_base class="form-control" placeholder="Baunilha, &Acirc;mbar" %}
+            </div>
             <div class="col-12">
-              <label class="form-label">Inspired by <span class="text-muted">(internal &mdash; not shown on the shop)</span></label>
-              {% render_field form.inspired_by class="form-select" %}
+              <label class="form-label">Inspired by</label>
+              {% render_field form.inspired_by_text class="form-control" placeholder="e.g. Baccarat Rouge 540" %}
             </div>
           </div>
         </fieldset>
