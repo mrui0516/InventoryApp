@@ -237,25 +237,31 @@ def pvp_price(retail):
     return (Decimal(retail) + PVP_UPLIFT).quantize(Decimal('0.01'))
 
 
-# A wholesale discount is margin off a full bottle. A 50ml or a body mist is
-# already cheap, so the same few euros off would take most of its margin.
-DISCOUNT_MIN_VOLUME_ML = 100
+# A wholesale discount is margin off a normal bottle of perfume. A 50ml is
+# already cheap, so the same few euros off would take most of its margin; a
+# 200ml is a body spray, priced by the litre rather than by the fragrance.
+# Both ends of the range matter - this is not "big bottles", it is "the size a
+# bottle of perfume comes in".
+DISCOUNT_MIN_VOLUME_ML = 60
+DISCOUNT_MAX_VOLUME_ML = 120
 
 
 def discount_applies(product):
     """Whether an export discount may come off this product's wholesale price.
 
-    Full-size perfume bottles only. A product with no volume recorded is left
-    out on purpose: quoting a discount we did not mean costs the shop margin
-    quietly, while missing one is visible and easily corrected.
+    Normal bottles of perfume only - 60ml to 120ml. A product with no volume
+    recorded is left out on purpose: quoting a discount we did not mean costs
+    the shop margin quietly, while missing one is visible and easily
+    corrected.
     """
     category = getattr(product.category, 'name', '') if product.category_id else ''
     if 'perfum' not in (category or '').lower():
         return False
     volume = getattr(product, 'volume_ml', None)
-    if volume is None or volume < DISCOUNT_MIN_VOLUME_ML:
+    if volume is None or not (DISCOUNT_MIN_VOLUME_ML <= volume <= DISCOUNT_MAX_VOLUME_ML):
         return False
-    # A 250ml body mist is a big bottle and still not a full bottle of perfume.
+    # Size already excludes the 200ml sprays; this catches a body mist that
+    # happens to be bottled at 100ml.
     strength = getattr(getattr(product, 'concentration', None), 'name', '') or ''
     return 'mist' not in strength.lower()
 

@@ -4555,19 +4555,31 @@ class ExportPortugueseAndPricingTests(TestCase):
         small.save(update_fields=['volume_ml'])
         self.assertFalse(discount_applies(small))
 
-        # A 250ml body mist is a big bottle and still not a bottle of perfume.
+        # A body mist bottled at 100ml would pass the size check, so the
+        # concentration is what keeps it out.
         mist = self._product("Bruma", "9960000000032", stock=0, wholesale="9.00")
-        mist.volume_ml = 250
+        mist.volume_ml = 100
         mist.concentration = Concentration.objects.create(name="Body Mist", short="Mist")
         mist.save(update_fields=['volume_ml', 'concentration'])
         self.assertFalse(discount_applies(mist))
 
-    def test_a_bigger_bottle_than_100_still_counts(self):
+    def test_a_body_spray_sized_bottle_is_excluded_by_its_size(self):
+        # 150ml and up is a body spray, priced by the litre rather than by the
+        # fragrance, so the same euros off would be most of its margin.
         from stock.views import discount_applies
-        big = self._product("Grande", "9960000000033", stock=0)
-        big.volume_ml = 250
-        big.save(update_fields=['volume_ml'])
-        self.assertTrue(discount_applies(big))
+        for index, volume in enumerate((150, 200, 250)):
+            spray = self._product(f"Spray {volume}", f"996000000004{index}",
+                                  stock=0, volume_ml=volume)
+            self.assertFalse(discount_applies(spray), volume)
+
+    def test_the_range_is_the_size_a_bottle_of_perfume_comes_in(self):
+        from stock.views import discount_applies
+        cases = {30: False, 50: False, 59: False, 60: True, 80: True,
+                 100: True, 120: True, 121: False, 200: False}
+        for index, (volume, expected) in enumerate(cases.items()):
+            product = self._product(f"V{volume}", f"99600000005{index:02d}",
+                                    stock=0, volume_ml=volume)
+            self.assertEqual(discount_applies(product), expected, f'{volume}ml')
 
     def test_an_unknown_volume_is_left_out_rather_than_guessed(self):
         # Discounting something we did not mean to costs margin quietly;
