@@ -4495,6 +4495,57 @@ class NoteParserTests(SimpleTestCase):
         self.assertIn("Praliné", got['heart'])
         self.assertIn("Café", got['base'])
 
+    def test_a_dash_instead_of_a_colon(self):
+        got = self._parse("Notas de cabeca - Maca, Bergamota\n"
+                          "Notas de coracao - Salvia, Zimbro\n"
+                          "Notas de base - Cedro")
+        self.assertEqual(got['top'], "Maca, Bergamota")
+        self.assertEqual(got['heart'], "Salvia, Zimbro")
+        self.assertEqual(got['base'], "Cedro")
+
+    def test_no_separator_at_all(self):
+        got = self._parse("Notas de topo Bergamota, menta\n"
+                          "Notas de coracao Cha preto\n"
+                          "Notas de base Almiscar")
+        self.assertEqual(got['top'], "Bergamota, menta")
+        self.assertEqual(got['base'], "Almiscar")
+
+    def test_notas_without_de(self):
+        got = self._parse("Notas Cabeca - gengibre, clementina\n"
+                          "Notas Corpo - lavanda, praline")
+        self.assertEqual(got['top'], "gengibre, clementina")
+        self.assertEqual(got['heart'], "lavanda, praline")
+
+    def test_a_verb_before_the_colon(self):
+        got = self._parse("As notas de topo sao: Acafrao e Jasmim.\n"
+                          "As notas de coracao sao: Ambar Cinzento.")
+        self.assertEqual(got['top'], "Acafrao e Jasmim")
+        self.assertEqual(got['heart'], "Ambar Cinzento")
+
+    def test_the_value_on_the_lines_beneath_the_label(self):
+        got = self._parse("Notas de cabeca (topo):\n"
+                          "Pistache fresco\n"
+                          "Tons cremosos suaves\n"
+                          "\n"
+                          "Notas de corpo (coracao):\n"
+                          "Cacau intenso")
+        self.assertEqual(got['top'], "Pistache fresco, Tons cremosos suaves")
+        self.assertEqual(got['heart'], "Cacau intenso")
+
+    def test_windows_line_endings_are_handled(self):
+        got = self._parse("Notas de topo Bergamota\r\nNotas de base Cedro")
+        self.assertEqual(got['top'], "Bergamota")
+        self.assertEqual(got['base'], "Cedro")
+
+    def test_a_descriptive_tail_is_cut_off(self):
+        """A flourish after the notes is not part of them: "Abacaxi e creme
+        brulee, proporcionando uma abertura doce" is two notes and a phrase."""
+        got = self._parse(
+            "Notas de Topo: Abacaxi e creme brulee, proporcionando uma abertura doce.\n"
+            "Notas de Fundo: Baunilha, sandalo, oferecendo uma base quente.")
+        self.assertEqual(got['top'], "Abacaxi e creme brulee")
+        self.assertEqual(got['base'], "Baunilha, sandalo")
+
     # -- what it must refuse -----------------------------------------------
     def test_a_sentence_about_the_notes_is_not_taken_as_the_notes(self):
         """"Notas de Topo: A abertura é marcada pela bergamota" is prose about
