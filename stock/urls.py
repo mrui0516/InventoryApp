@@ -20,6 +20,8 @@ urlpatterns = [
     path('products/export-shopify-csv/', views.export_shopify_inventory_csv, name='export_shopify_inventory_csv'),
     path('check_barcode/', views.check_barcode, name='check_barcode'),
     path('add-product/', views.add_product_view, name='add_product'),
+    path('inbound-orders/<int:order_id>/rollback/', views.inbound_order_rollback,
+         name='inbound_order_rollback'),
     path('categories/create/', views.create_category, name='create_category'),
     # shelf map (accessories: is there stock, and is there more above the shelf)
     path('shelf/', shelf_views.shelf_view, name='shelf'),

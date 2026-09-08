@@ -258,6 +258,27 @@ has_admin_access(user)          → is_superuser only
 - **打印小票抬头按店铺**：`PrintProfile` 加 `store` OneToOne（迁移 0030/0031：原单例抬头挂到默认店铺，其余店铺各建一份，从默认抬头 + 店名播种）。`PrintProfile.get_for_store(store)` 按店铺取/建；`get_solo()` 退化为默认店铺抬头。小票（`sale_order_detail`）用**该订单店铺**的抬头；抬头编辑页（`print_profile_edit_view`）编辑**当前活动店铺**的抬头（All stores 时编辑默认店铺）。
 - **仍待接入**：按分类的销售目标 `SalesTarget` 改为按店铺（模型变更；当前仪表盘目标进度用店铺销售额对比全局分类目标，为已知局限）；员工创建/编辑表单增加显式店铺选择（当前新建按活动/默认店铺自动分配）。
 
+### 5.8c 撤销收货（Inbound rollback）
+
+确认收货是一下点击，点错了就凭空多出一批库存。
+供应商详情页每张**已收货**的入库单旁边有 **Undo receipt**，
+把收货那一步整个反过来做（`services/inbound_rollback.py`）：
+
+1. 删掉这张单产生的 `Purchase` 批次 → 库存跟着回退
+2. 按批次原样重建 `InboundPendingItem` → 单子回到「待收货」，可以重新确认
+3. `status='pending_receipt'`、`received_at=None` → 同时**退出供应商时效统计**（本来就没到货）
+
+**唯一的硬规则：这批货一件都不能卖过。**
+卖掉一件，它的成本就写进了那笔销售的 `cost_basis`；删掉批次会让那笔销售
+描述一批 app 认为不存在的库存。所以只要有任何批次 `remaining != quantity`，
+**整个操作直接拒绝**（而不是做一半），页面上把按钮换成 "Cannot undo"
+并在 tooltip 里说明原因。事务内会**重新检查一次**——页面打开期间可能刚好卖掉一件。
+
+**批次是一条一条删的**，不是 queryset 批量删：批量删不触发 per-row signal，
+而那个 signal 正是通知 Shopify 库存减少、以及重算香水价格的地方。
+
+限经理操作（删库存的动作，不该和误点收货的是同一个人随手完成）。
+
 ### 5.9b 供应商到货时效（Supplier lead time）
 
 时效 = `InboundOrder.placed_at`（下单给供应商）→ `received_at`（确认收货）。

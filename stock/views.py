@@ -1644,6 +1644,29 @@ def export_shopify_inventory_csv(request):
 @login_required
 @manager_required
 @require_POST
+def inbound_order_rollback(request, order_id):
+    """Undo a receipt confirmed by mistake, from the supplier's order list.
+
+    Manager-only: this removes stock, and the person who mis-tapped Confirm is
+    often the person who would tap Undo just as quickly.
+    """
+    from .services.inbound_rollback import roll_back_receipt
+
+    order = get_object_or_404(InboundOrder, pk=order_id)
+    ok, message = roll_back_receipt(order, request.user)
+    (messages.success if ok else messages.error)(request, message)
+
+    nxt = request.POST.get('next') or ''
+    if nxt.startswith('/'):
+        return redirect(nxt)
+    if order.supplier_id:
+        return redirect('supplier_detail', supplier_id=order.supplier_id)
+    return redirect('inbound')
+
+
+@login_required
+@manager_required
+@require_POST
 def create_category(request):
     """Add a category, or a subcategory, from the add-product page.
 
@@ -3121,6 +3144,8 @@ def supplier_list_view(request):
 @login_required
 @manager_required
 def supplier_detail_view(request, supplier_id):
+    from .services.inbound_rollback import can_roll_back
+
     supplier = get_object_or_404(Supplier.objects.prefetch_related('product_types'), id=supplier_id)
     query = (request.GET.get('q') or '').strip()
     start_date = parse_date((request.GET.get('start_date') or '').strip())
@@ -3208,6 +3233,7 @@ def supplier_detail_view(request, supplier_id):
         sort_dt = comparable_recorded_at(
             created_anchor.replace(year=sort_at.year, month=sort_at.month, day=sort_at.day)
         )
+        rollback_ok, rollback_reason = can_roll_back(order)
         history_rows.append({
             'kind': 'Inbound order',
             'title': order.invoice_no or f'Inbound Order #{order.id}',
@@ -3223,6 +3249,12 @@ def supplier_detail_view(request, supplier_id):
             'items': items,
             'note': order.note or '',
             'edit_url': f"{reverse('inbound_order_edit', args=[order.id])}?{urlencode({'next': next_url})}",
+            # Offered only on orders that were actually received, and only
+            # while none of the stock has moved - see services/inbound_rollback.
+            'rollback_url': (reverse('inbound_order_rollback', args=[order.id])
+                             if order.status == 'received' else ''),
+            'rollback_reason': rollback_reason,
+            'can_rollback': rollback_ok,
         })
         history_total_amount += row_amount
         history_total_qty += row_qty

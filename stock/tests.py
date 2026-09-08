@@ -4442,6 +4442,196 @@ class LeadTimeAdminCorrectionTests(TestCase):
             self.assertIn(field, InboundOrderAdmin.fields, field)
 
 
+class InboundRollbackTests(TestCase):
+    """Undoing a receipt confirmed by mistake - and refusing when it is unsafe."""
+
+    def setUp(self):
+        from stock.models import Supplier
+        self.category = Category.objects.create(name="Perfumes", form_kind="perfume")
+        self.supplier = Supplier.objects.create(name="PERFUME EUROPE")
+        self.product = Product.objects.create(
+            name="Oud", barcode="9970000000001", brand="Khan",
+            category=self.category, default_price=Decimal("50"), volume_ml=100)
+        self.other = Product.objects.create(
+            name="Musk", barcode="9970000000002", brand="Khan",
+            category=self.category, default_price=Decimal("40"), volume_ml=100)
+        self.manager = get_user_model().objects.create_superuser(
+            username="rb_mgr", password="pw123456", email="rb@x.com")
+        self.staff = get_user_model().objects.create_user(
+            username="rb_staff", password="pw123456")
+        self.client.force_login(self.manager)
+
+    def _received_order(self, lines=None):
+        """An order in exactly the state Confirm receipt leaves it."""
+        from stock.models import InboundOrder, Purchase
+        lines = lines or [(self.product, 5, "10.00"), (self.other, 3, "8.00")]
+        order = InboundOrder.objects.create(supplier=self.supplier,
+                                            status='pending_receipt')
+        for product, qty, cost in lines:
+            Purchase.objects.create(inbound_order=order, product=product,
+                                    supplier=self.supplier, quantity=qty,
+                                    remaining=qty, cost_price=Decimal(cost))
+        order.mark_received()
+        return order
+
+    # -- the happy path ----------------------------------------------------
+    def test_rolling_back_removes_the_stock_it_added(self):
+        from stock.services.inbound_rollback import roll_back_receipt
+        order = self._received_order()
+        self.assertEqual(self.product.total_stock(), 5)
+        self.assertEqual(self.other.total_stock(), 3)
+
+        ok, message = roll_back_receipt(order, self.manager)
+
+        self.assertTrue(ok, message)
+        self.assertEqual(self.product.total_stock(), 0)
+        self.assertEqual(self.other.total_stock(), 0)
+
+    def test_the_lines_go_back_to_awaiting_receipt(self):
+        from stock.services.inbound_rollback import roll_back_receipt
+        order = self._received_order()
+        roll_back_receipt(order, self.manager)
+        order.refresh_from_db()
+
+        self.assertEqual(order.status, 'pending_receipt')
+        self.assertIsNone(order.received_at)
+        pending = {(p.product_id, p.quantity, p.cost_price)
+                   for p in order.pending_items.all()}
+        self.assertEqual(pending, {(self.product.id, 5, Decimal("10.00")),
+                                   (self.other.id, 3, Decimal("8.00"))})
+
+    def test_the_purchase_batches_are_gone(self):
+        from stock.models import Purchase
+        from stock.services.inbound_rollback import roll_back_receipt
+        order = self._received_order()
+        roll_back_receipt(order, self.manager)
+        self.assertFalse(Purchase.objects.filter(inbound_order=order).exists())
+
+    def test_it_can_be_confirmed_again_afterwards(self):
+        # The point of putting the lines back: the order is usable, not lost.
+        from stock.services.inbound_rollback import roll_back_receipt
+        order = self._received_order()
+        roll_back_receipt(order, self.manager)
+        order.refresh_from_db()
+        self.assertEqual(order.pending_items.count(), 2)
+
+    def test_the_order_leaves_the_suppliers_lead_time_again(self):
+        # It never actually arrived, so it should not count as a delivery.
+        from stock.services.inbound_rollback import roll_back_receipt
+        from stock.services.lead_time import measurable_orders
+        order = self._received_order()
+        InboundOrder = type(order)
+        InboundOrder.objects.filter(pk=order.pk).update(
+            placed_at=timezone.now() - timedelta(days=4))
+        self.assertIn(order, measurable_orders())
+
+        order.refresh_from_db()
+        roll_back_receipt(order, self.manager)
+        self.assertNotIn(order, measurable_orders())
+
+    # -- the refusal that matters -----------------------------------------
+    def test_it_refuses_once_any_of_the_stock_has_been_sold(self):
+        """The whole safety of this: a sold unit has its cost written into the
+        sale, and removing the batch would leave that sale describing stock the
+        app no longer believes existed."""
+        from stock.services.inbound_rollback import roll_back_receipt
+        from stock.services.stock_ops import consume_stock_fifo
+        order = self._received_order()
+        consume_stock_fifo(self.product, 1)
+
+        ok, message = roll_back_receipt(order, self.manager)
+
+        self.assertFalse(ok)
+        self.assertIn('already been sold', message)
+        self.assertIn('Oud', message)
+
+    def test_a_refusal_changes_nothing_at_all(self):
+        from stock.models import Purchase
+        from stock.services.inbound_rollback import roll_back_receipt
+        from stock.services.stock_ops import consume_stock_fifo
+        order = self._received_order()
+        consume_stock_fifo(self.product, 1)
+
+        roll_back_receipt(order, self.manager)
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'received')
+        self.assertIsNotNone(order.received_at)
+        self.assertEqual(Purchase.objects.filter(inbound_order=order).count(), 2)
+        self.assertEqual(order.pending_items.count(), 0)
+        self.assertEqual(self.product.total_stock(), 4)
+
+    def test_an_order_that_was_never_received_cannot_be_rolled_back(self):
+        from stock.models import InboundOrder
+        from stock.services.inbound_rollback import roll_back_receipt
+        pending = InboundOrder.objects.create(supplier=self.supplier,
+                                              status='pending_receipt')
+        ok, message = roll_back_receipt(pending, self.manager)
+        self.assertFalse(ok)
+        self.assertIn('not been received', message)
+
+    def test_an_order_with_no_batches_is_refused(self):
+        from stock.models import InboundOrder
+        from stock.services.inbound_rollback import roll_back_receipt
+        empty = InboundOrder.objects.create(supplier=self.supplier)
+        ok, message = roll_back_receipt(empty, self.manager)
+        self.assertFalse(ok)
+
+    # -- the button --------------------------------------------------------
+    def test_the_supplier_page_offers_undo_on_a_received_order(self):
+        self._received_order()
+        html = self.client.get(reverse('supplier_detail',
+                                       args=[self.supplier.pk])).content.decode()
+        self.assertIn('Undo receipt', html)
+
+    def test_the_page_says_why_when_undo_is_not_possible(self):
+        from stock.services.stock_ops import consume_stock_fifo
+        self._received_order()
+        consume_stock_fifo(self.product, 1)
+        html = self.client.get(reverse('supplier_detail',
+                                       args=[self.supplier.pk])).content.decode()
+        self.assertIn('Cannot undo', html)
+        self.assertIn('already been sold', html)
+        self.assertNotIn('Undo receipt', html)
+
+    def test_the_button_rolls_back_and_comes_back_to_the_supplier(self):
+        order = self._received_order()
+        response = self.client.post(
+            reverse('inbound_order_rollback', args=[order.pk]), follow=True)
+        self.assertEqual(response.status_code, 200)
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'pending_receipt')
+        self.assertEqual(self.product.total_stock(), 0)
+
+    def test_staff_cannot_roll_back_stock(self):
+        order = self._received_order()
+        self.client.force_login(self.staff)
+        self.client.post(reverse('inbound_order_rollback', args=[order.pk]))
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'received')
+        self.assertEqual(self.product.total_stock(), 5)
+
+    def test_it_only_answers_post(self):
+        order = self._received_order()
+        response = self.client.get(reverse('inbound_order_rollback', args=[order.pk]))
+        self.assertEqual(response.status_code, 405)
+
+    # -- Shopify -----------------------------------------------------------
+    def test_shopify_is_told_the_stock_is_gone(self):
+        """Batches are deleted one at a time on purpose: a queryset delete
+        fires no per-row signal, and that signal is what pushes to Shopify."""
+        from unittest.mock import patch
+        from stock.services.inbound_rollback import roll_back_receipt
+        order = self._received_order()
+        with self.settings(SHOPIFY_INVENTORY_SYNC=True, SHOPIFY_PUSH_BACKGROUND=False):
+            with patch('stock.services.shopify_sync.sync_product_price_inventory',
+                       return_value=('ok', '')) as push:
+                with self.captureOnCommitCallbacks(execute=True):
+                    roll_back_receipt(order, self.manager)
+                pushed = {call.args[0].pk for call in push.call_args_list}
+                self.assertEqual(pushed, {self.product.pk, self.other.pk})
+
+
 class ExportPortugueseAndPricingTests(TestCase):
     """The customer list is Portuguese, quotes PVP, and can carry a discount."""
 

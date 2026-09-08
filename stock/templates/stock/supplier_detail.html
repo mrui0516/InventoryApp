@@ -34,6 +34,11 @@
     border-radius:var(--app-radius-sm);background:#fff}
   .history-title{font-size:.92rem;font-weight:700;color:var(--app-text)}
   .history-amt{font-size:.95rem;font-weight:800;font-variant-numeric:tabular-nums}
+  /* Shown instead of the button when stock from this receipt has moved; the
+     tooltip carries the reason so the answer is one hover away. */
+  .rollback-blocked{display:inline-block;font-size:.72rem;font-weight:700;
+    color:var(--app-muted);border:1px dashed var(--app-border);
+    border-radius:var(--app-radius-sm);padding:.15rem .45rem;cursor:help}
   .thumb-wrap,.thumb-empty{width:34px;height:34px;border-radius:.5rem;
     border:1px solid var(--app-border);background:var(--app-surface-2)}
   .thumb-wrap{overflow:hidden;display:block}
@@ -175,6 +180,20 @@
             <div class="sub">{{ row.qty }} units</div>
             {% if row.edit_url %}
               <a href="{{ row.edit_url }}" class="btn btn-sm btn-outline-primary mt-2">Adjust record</a>
+            {% endif %}
+            {% if row.rollback_url %}
+              {% if row.can_rollback %}
+                <form method="post" action="{{ row.rollback_url }}" class="d-inline"
+                      onsubmit="return confirm('Undo this receipt?
+
+The stock it added will be removed and the lines go back to awaiting receipt.');">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <button class="btn btn-sm btn-outline-danger mt-2">Undo receipt</button>
+                </form>
+              {% else %}
+                <span class="rollback-blocked mt-2" title="{{ row.rollback_reason }}">Cannot undo</span>
+              {% endif %}
             {% endif %}
           </div>
         </div>
