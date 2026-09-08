@@ -1393,9 +1393,9 @@ def export_product_list_excel(request):
             ('Categoria', 18),
         ])
         if price_mode in {'retail', 'both'}:
-            columns.append(('PVP', 15))
+            columns.append(('PVP (EUR)', 15))
         if price_mode in {'wholesale', 'both'}:
-            columns.append(('Preço grossista', 17))
+            columns.append(('Preço grossista (EUR)', 20))
         columns.append(('Disponibilidade', 20))
         if show_incoming_column:
             columns.append(('A chegar', 22))
@@ -1474,13 +1474,18 @@ def export_product_list_excel(request):
 
                 if price_mode in {'retail', 'both'}:
                     retail_cell = ws.cell(row=row_idx, column=col_idx, value=float(product.export_pvp) if product.export_pvp is not None else None)
-                    retail_cell.number_format = '"EUR" #,##0.00'
+                    # Built-in format (numFmtId 4), never a custom one: a
+                    # custom format carrying "EUR" is id 164, and a viewer that
+                    # cannot resolve it falls back to a built-in - landing on
+                    # m/d/yy, which is why customers saw prices as dates. The
+                    # currency lives in the column heading instead.
+                    retail_cell.number_format = '#,##0.00'
                     retail_cell.border = border
                     col_idx += 1
 
                 if price_mode in {'wholesale', 'both'}:
                     wholesale_cell = ws.cell(row=row_idx, column=col_idx, value=float(product.export_wholesale) if product.export_wholesale is not None else None)
-                    wholesale_cell.number_format = '"EUR" #,##0.00'
+                    wholesale_cell.number_format = '#,##0.00'
                     wholesale_cell.border = border
                     col_idx += 1
 

@@ -1474,7 +1474,15 @@ class EmployeeProductEditExportTests(TestCase):
                   for v in row if v is not None]
         self.assertTrue(any(v.endswith("77ml") for v in values))  # name column ends with the spec
 
-    def test_product_excel_uses_excel_safe_currency_number_format(self):
+    def test_product_excel_avoids_a_custom_currency_number_format(self):
+        """This test used to require '"EUR" #,##0.00', which turned out to be
+        the bug rather than the safeguard.
+
+        A format carrying a currency literal is written as a *custom* format
+        (numFmtId 164). A viewer that cannot resolve it falls back to a
+        built-in and lands on m/d/yy, which is how customers came to see
+        prices as dates. The currency belongs in the column heading.
+        """
         self.client.login(username="edit_emp", password="pw123456")
 
         resp = self.client.get(reverse("export_product_list_excel"))
@@ -1487,7 +1495,8 @@ class EmployeeProductEditExportTests(TestCase):
             node.attrib["formatCode"]
             for node in styles.findall("main:numFmts/main:numFmt", namespace)
         }
-        self.assertIn('"EUR" #,##0.00', format_codes)
+        for code in format_codes:
+            self.assertNotIn('EUR', code, 'currency belongs in the heading')
 
     def test_delete_archives_product_but_keeps_sales_and_profit(self):
         """Regression: 'delete' used to cascade the product away, taking its
@@ -4697,7 +4706,7 @@ class ExportPortugueseAndPricingTests(TestCase):
     def test_the_column_is_called_pvp(self):
         self._product("Oud", "9960000000002", stock=5)
         text = self._cells(self._sheet(price_mode='both'))
-        self.assertIn('PVP', text)
+        self.assertIn('PVP (EUR)', text)
         self.assertNotIn('Retail Price', text)
 
     # -- the discount ------------------------------------------------------
@@ -4879,6 +4888,36 @@ class ExportPortugueseAndPricingTests(TestCase):
         self._on_order(coming)
         self.assertIn('Brevemente em stock', self._cells(self._sheet()))
 
+    def test_photos_are_shrunk_before_going_into_the_pdf(self):
+        """reportlab embeds whatever it is handed and only scales the box it
+        draws into, so the original shop photos made a 267 MB file that took
+        90 seconds and never finished downloading."""
+        import tempfile, os
+        from PIL import Image as PILImage
+        from django.core.files import File
+        from stock.models import ProductImage
+
+        product = self._product("Com foto", "9960000000070", stock=5)
+        path = os.path.join(tempfile.gettempdir(), 'big.jpg')
+        # Random pixels, not a flat colour: a solid image compresses to almost
+        # nothing, so the file never gets big and the test passes either way.
+        # This one only stays large if it is genuinely not being resized.
+        noise = PILImage.frombytes('RGB', (1200, 1200), os.urandom(1200 * 1200 * 3))
+        noise.save(path, quality=95)
+        original = os.path.getsize(path)
+        self.assertGreater(original, 500_000, 'the fixture must be a big photo')
+        with open(path, 'rb') as handle:
+            ProductImage.objects.create(product=product, image=File(handle, name='big.jpg'))
+
+        response = self.client.get(reverse('export_product_list_excel'),
+                                   {'format': 'pdf', 'include_images': '1'})
+        body = b''.join(response.streaming_content)
+
+        self.assertTrue(body.startswith(b'%PDF'))
+        self.assertIn(b'/Image', body)          # the photo is still there
+        self.assertLess(len(body), original,
+                        'the whole PDF must be smaller than one original photo')
+
     def test_the_pdf_also_puts_it_beside_rather_than_under(self):
         low = self._product("Quase", "9960000000019", stock=2)
         self._on_order(low)
@@ -4886,6 +4925,39 @@ class ExportPortugueseAndPricingTests(TestCase):
                                    {'format': 'pdf'})
         body = b''.join(response.streaming_content)
         self.assertTrue(body.startswith(b'%PDF'))
+
+    def test_prices_use_a_built_in_number_format_not_a_custom_one(self):
+        """Customers were seeing prices as dates.
+
+        A format carrying a currency literal is stored as a *custom* format
+        (numFmtId 164). A viewer that cannot resolve it falls back to a
+        built-in and lands on m/d/yy - so 9.00 rendered as 1/9/00. Built-in
+        formats need no resolving, so every reader shows the number.
+        """
+        self._product("Oud", "9960000000060", stock=0, retail="40.00",
+                      wholesale="25.00")
+        sheet = self._sheet(price_mode='both')
+        priced = [c for row in sheet.iter_rows() for c in row
+                  if isinstance(c.value, (int, float)) and not isinstance(c.value, bool)]
+        self.assertTrue(priced)
+        for cell in priced:
+            self.assertEqual(cell.number_format, '#,##0.00')
+            self.assertNotIn('EUR', cell.number_format)
+
+    def test_the_currency_is_named_in_the_heading_instead(self):
+        self._product("Oud", "9960000000061", stock=0)
+        text = self._cells(self._sheet(price_mode='both'))
+        self.assertIn('PVP (EUR)', text)
+        self.assertIn('Preço grossista (EUR)', text)
+
+    def test_no_price_cell_is_stored_as_a_date(self):
+        # The symptom itself, asserted directly.
+        self._product("Oud", "9960000000062", stock=0, retail="40.00")
+        sheet = self._sheet(price_mode='retail')
+        for row in sheet.iter_rows():
+            for cell in row:
+                if isinstance(cell.value, (int, float)):
+                    self.assertFalse(cell.is_date, cell.coordinate)
 
     # -- the PDF agrees ----------------------------------------------------
     def test_the_pdf_uses_the_same_prices_and_language(self):

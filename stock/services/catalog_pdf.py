@@ -17,6 +17,8 @@ list to a customer.
 """
 from io import BytesIO
 
+from PIL import Image as PILImage
+
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import A4
@@ -34,6 +36,9 @@ STATE_COLOURS = {
 }
 
 THUMB_MM = 18
+# Printed at 18mm, so a little over 200px is already more than the page can
+# show. Anything larger is weight in the file and nothing on the paper.
+THUMB_PX = 220
 
 
 def _styles():
@@ -54,14 +59,26 @@ def _styles():
 
 
 def _thumb(product):
-    """The product's first photo, sized for the table, or None.
+    """The product's first photo, shrunk to the size it is actually printed at.
+
+    reportlab embeds whatever file it is handed and only scales the *box* it
+    draws into, so passing the original shop photo put a multi-megabyte image
+    into the page for every product - a catalogue of 238 came to 267 MB and
+    took a minute and a half to build, which is a download that never
+    finishes. Resizing first makes each one a few kilobytes.
 
     A missing or unreadable file must not take the whole catalogue down, so
     anything that goes wrong here simply leaves the cell empty.
     """
     try:
-        image = product.images.all()[0]
-        return Image(image.image.path, width=THUMB_MM * mm, height=THUMB_MM * mm,
+        source = product.images.all()[0].image.path
+        with PILImage.open(source) as picture:
+            picture = picture.convert('RGB')
+            picture.thumbnail((THUMB_PX, THUMB_PX))
+            buffer = BytesIO()
+            picture.save(buffer, format='JPEG', quality=80, optimize=True)
+        buffer.seek(0)
+        return Image(buffer, width=THUMB_MM * mm, height=THUMB_MM * mm,
                      kind='proportional')
     except Exception:
         return None
