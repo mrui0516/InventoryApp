@@ -432,11 +432,17 @@ def create_product_in_shopify(product, client=None, *, status='DRAFT', dry_run=F
             })
 
         description_html = _shopify_description_html(product) or title
-        product_type = (getattr(product.category, 'name', '') if product.category_id else '') or 'Perfume'
+        # Match what is already on the store: every listing there is vendor
+        # "Lattafa" and productType "Perfume". The app stores brands shouting
+        # and its category is plural, and a vendor that differs only in case
+        # drops the new product out of that brand's collection.
+        product_type = 'Perfume' if is_perfume(product) else (
+            (getattr(product.category, 'name', '') if product.category_id else '')
+            or 'Perfume')
         product_input = {
             'title': title,
             'descriptionHtml': description_html,
-            'vendor': (product.brand or '').strip(),
+            'vendor': _pretty(product.brand),
             'productType': product_type,
             'tags': _shopify_tags(product),
             'status': status,

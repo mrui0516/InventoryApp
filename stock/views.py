@@ -2107,7 +2107,13 @@ def sync_all_perfumes_to_shopify(request):
             # and survives if the worker is recycled mid-run.
             with open(log_path, 'a', encoding='utf-8', buffering=1) as f:
                 f.write(f'\n=== sync started {timezone.now():%Y-%m-%d %H:%M} ===\n')
-                call_command('sync_shopify_perfumes', apply=True, stdout=f, stderr=f)
+                # create=True is the point of the button: a perfume that is
+                # not on Shopify is exactly what "sync all" is expected to put
+                # there. Without it the command counted those as "missing" and
+                # skipped them, so deleting a product and re-syncing did
+                # nothing at all.
+                call_command('sync_shopify_perfumes', apply=True, create=True,
+                             stdout=f, stderr=f)
         except Exception as exc:  # noqa: BLE001 — record any crash to the log
             try:
                 with open(log_path, 'a', encoding='utf-8') as f:
@@ -2116,8 +2122,11 @@ def sync_all_perfumes_to_shopify(request):
                 pass
 
     threading.Thread(target=_run, daemon=True).start()
-    messages.success(request, 'Syncing all perfumes to Shopify in the background — '
-                              'this takes a few minutes. Progress: logs/shopify_perfumes_sync.log')
+    messages.success(
+        request,
+        'Syncing all perfumes to Shopify in the background. Perfumes not yet '
+        'on Shopify are created and published, with their 10ml and 5ml sizes. '
+        'This takes a few minutes — progress: logs/shopify_perfumes_sync.log')
     return redirect('product_list')
 
 

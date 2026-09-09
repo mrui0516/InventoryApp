@@ -262,11 +262,17 @@ track the out→in transition.*
 ## Bulk button (product list)
 
 The product list has a manager-only **"Sync all perfumes to Shopify"** button. It
-launches `manage.py sync_shopify_perfumes --apply` in a detached background
-process (200+ products would time out a web request), writing progress to
-`logs/shopify_perfumes_sync.log`. It creates missing perfumes, updates
-descriptions (formatted), and pushes price + decant-aware inventory for all
-perfumes (category contains "perfum").
+launches `manage.py sync_shopify_perfumes --apply --create` in a detached
+background process (200+ products would time out a web request), writing progress
+to `logs/shopify_perfumes_sync.log`. It updates descriptions (formatted) and
+pushes price + decant-aware inventory for every perfume, and **creates the ones
+that are not on Shopify yet**, published ACTIVE, in the full listing shape (see
+below).
+
+`--create` is what makes the button able to re-list a product deleted in Shopify.
+Without it those perfumes were counted as "missing" and skipped, so the button
+appeared to do nothing at all. The queryset is `shopify_syncable(...)` filtered on
+"perfum", so a category switched off for Shopify is never published by it.
 
 **Descriptions** are uploaded as HTML that preserves the saved formatting (blank
 lines → paragraphs, single newlines → `<br>`) instead of collapsing into one run
@@ -276,11 +282,36 @@ of text — applied on create and on every sync of an existing product.
 
 Perfume product pages show a manager-only **"Sync to Shopify"** button
 (`sync_product_to_shopify`). One click: creates the product on Shopify if it's
-missing (ACTIVE, with variant/price/inventory/image/SEO), then pushes its price +
+missing (ACTIVE, with variants/price/inventory/image/SEO), then pushes its price +
 decant-aware inventory. Only shown for products whose category contains "perfum".
 A reliable manual alternative to the real-time signals — good for listing a new
-perfume or a one-off re-sync. (Newly created products get a single 100ml variant;
-the 10ml/5ml decant variants are added separately.)
+perfume or a one-off re-sync.
+
+## What a created perfume looks like
+
+Both buttons create through `create_product_in_shopify`, which builds the listing
+the way the storefront's existing ones are built — a product created with a single
+"Default Title" variant cannot be given decants later without rebuilding it:
+
+- **Three sizes under the `Tamanho` option**: `100ml`, `10ml`, `5ml`, with SKUs
+  `<barcode>`, `<barcode>-10ML`, `<barcode>-5ML`.
+- **Quantities follow the same reserve rule as the update path**: the 100ml gets
+  `on-hand − 2` (the last two bottles are the shop's samples), and the decants show
+  `10` available while any bottle remains, `0` when the product is fully out. So a
+  perfume with 9 on hand lists 7 full bottles and both decants.
+- **Prices**: the app's price on the 100ml; the decants at 17.5% and 11.5% of it,
+  rounded to 5 cents, matching what is already on the store. Cost is set on the
+  full bottle only.
+- **Title**: brand + series + name + EDP/EDT + volume, prettified (`Lattafa Khamrah
+  Qahwa 100ml`), never the app's shouty upper case.
+- **Vendor** = the prettified brand (`Lattafa`) — vendor drives the store's brand
+  collections, so `LATTAFA` would split them — and **product type** `Perfume`,
+  both matching the existing listings.
+- **SEO** title `<title> | Perfume Árabe` and a description built from the
+  product's own text, closing with the shop and where it ships; tag `Perfume
+  Árabe`; the product photo uploaded if there is one.
+- *Inspired by* is deliberately **never** sent to Shopify (trademark decision);
+  it stays an internal field.
 
 ## Behaviour & limitations
 
@@ -291,10 +322,12 @@ the 10ml/5ml decant variants are added separately.)
   the app, then re-run.
 - **Only fills missing images** by default (products with no image on Shopify).
   Use `--overwrite` / `--overwrite-image` to replace.
-- **Single variant.** Created products get one default variant (matches this
-  catalog: one barcode = one variant). Multi-variant products aren't modelled.
-- **Created as DRAFT** by default so a mistake never goes live instantly —
-  publish from Shopify or use `--status active`. **Test with one product first**
+- **Variants.** A perfume is created with its three `Tamanho` sizes (above);
+  everything else gets one default variant (one barcode = one variant).
+- **Created as DRAFT** by default (`sync_shopify_products`) so a mistake never
+  goes live instantly — publish from Shopify or use `--status active`. The two
+  perfume buttons create **ACTIVE**: a perfume the shop is selling belongs on the
+  storefront the moment it is listed. **Test with one product first**
   (`--barcode … --apply`) before a bulk run.
 - **Idempotent:** re-running skips products that already exist with an image, so
   it's safe to run repeatedly.

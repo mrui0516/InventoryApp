@@ -6,8 +6,10 @@ the GID from one bulk fetch, so there's no per-product lookup. Opt-ins:
   --create   also create perfumes missing on Shopify (with category/description/image)
   --full     also re-push descriptions for existing products (slower)
 
-"Perfume" = a product whose category name contains "perfum". The product-list
-"Sync all perfumes to Shopify" button runs this (fast, no --create/--full).
+"Perfume" = a product whose category name contains "perfum", in a category
+that is switched on for Shopify. The product-list "Sync all perfumes to
+Shopify" button runs this with --create, so a perfume missing from Shopify
+is created and published rather than skipped.
 
   python manage.py sync_shopify_perfumes                    # preview
   python manage.py sync_shopify_perfumes --apply            # inventory + collections
@@ -41,7 +43,10 @@ class Command(BaseCommand):
             return
 
         dry_run = not opts['apply']
-        qs = (Product.objects
+        # The category switch decides what belongs online, the same one the
+        # other sync commands read - so a category turned off cannot be
+        # published by this button either.
+        qs = (shopify_sync.shopify_syncable(Product.objects)
               .filter(category__name__icontains='perfum')
               .exclude(barcode='').exclude(barcode__isnull=True)
               .order_by('brand', 'name'))

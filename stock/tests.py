@@ -5381,6 +5381,25 @@ class ShopifyCreateFormatTests(TestCase):
         self.assertEqual(code, shopify_sync.CREATED, detail)
         return client.product_set.call_args.args[0]
 
+    def test_the_vendor_and_type_match_the_existing_listings(self):
+        """Brand collections filter on vendor, so "LATTAFA" instead of
+        "Lattafa" would quietly drop a new product out of its own brand."""
+        payload = self._created_payload(self._perfume(brand="LATTAFA"))
+        self.assertEqual(payload['vendor'], 'Lattafa')
+        self.assertEqual(payload['productType'], 'Perfume')
+
+    def test_a_created_perfume_carries_everything_a_listing_needs(self):
+        payload = self._created_payload(self._perfume(
+            description="Uma fragrancia quente."))
+        for field in ('title', 'descriptionHtml', 'vendor', 'productType',
+                      'tags', 'status', 'seo', 'productOptions', 'variants'):
+            self.assertIn(field, payload)
+        self.assertTrue(payload['seo']['title'])
+        self.assertTrue(payload['seo']['description'])
+        self.assertTrue(payload['tags'])
+        self.assertEqual(payload['category'],
+                         'gid://shopify/TaxonomyCategory/hb-3-2-8-3')
+
     # -- the three sizes ---------------------------------------------------
     def test_a_full_bottle_is_created_with_its_three_sizes(self):
         payload = self._created_payload(self._perfume())
@@ -8061,6 +8080,41 @@ class SyncProductToShopifyButtonTests(TestCase):
 
 
 class SyncAllPerfumesButtonTests(TestCase):
+    def test_the_background_run_creates_perfumes_missing_from_shopify(self):
+        """The bug this fixes: the button ran without --create, so a perfume
+        that was not on Shopify counted as "missing" and was skipped. Deleting
+        a product and pressing Sync all did nothing at all."""
+        from unittest import mock
+        get_user_model().objects.create_superuser("allmgr3", password="pw123456")
+        self.client.login(username="allmgr3", password="pw123456")
+
+        with mock.patch("stock.services.shopify_client.ShopifyClient") as Client, \
+             mock.patch("django.core.management.call_command") as call_command, \
+             mock.patch("threading.Thread") as Thread:
+            Client.return_value.is_configured.return_value = True
+            self.client.post(reverse("sync_all_perfumes_to_shopify"))
+            # The view hands the work to a thread; run its target here.
+            Thread.call_args.kwargs['target']()
+
+        call_command.assert_called_once()
+        self.assertEqual(call_command.call_args.args[0], 'sync_shopify_perfumes')
+        self.assertTrue(call_command.call_args.kwargs['apply'])
+        self.assertTrue(call_command.call_args.kwargs.get('create'),
+                        'without create=True a deleted product is never re-listed')
+
+    def test_the_command_skips_a_category_switched_off_for_shopify(self):
+        """Accessories are shop-floor only; the button must not publish them
+        even though it filters on the word "perfum"."""
+        from stock.services import shopify_sync
+        offline = Category.objects.create(name="Perfume accessories",
+                                          sync_to_shopify=False)
+        hidden = Product.objects.create(
+            name="Caixa", barcode="9975000000001", brand="Khan",
+            category=offline, default_price=Decimal("5"))
+        allowed = shopify_sync.shopify_syncable(Product.objects).filter(
+            category__name__icontains='perfum')
+        self.assertNotIn(hidden, allowed)
+
     def test_manager_launches_background_sync(self):
         from unittest import mock
         get_user_model().objects.create_superuser("allmgr", password="pw123456")
