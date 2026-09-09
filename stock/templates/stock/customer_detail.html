@@ -50,6 +50,29 @@
       font-weight:900;
       letter-spacing:-.02em;
     }
+    .hero-heading{
+      display:flex;
+      align-items:center;
+      gap:.6rem;
+      flex-wrap:wrap;
+    }
+    .kind-pill{
+      display:inline-flex;
+      align-items:center;
+      padding:.3rem .7rem;
+      border-radius:999px;
+      font-size:.78rem;
+      font-weight:900;
+      background:#f1f5f9;
+      color:#475569;
+      border:1px solid #cbd5e1;
+      white-space:nowrap;
+    }
+    .kind-pill.revenda{
+      background:#ede9fe;
+      color:#5b21b6;
+      border-color:#c4b5fd;
+    }
     .hero-sub{
       margin:.3rem 0 0;
       color:var(--muted);
@@ -721,7 +744,10 @@
     <div class="hero-main">
       <div class="avatar">{{ customer.name|default:"?"|first|upper }}</div>
       <div class="hero-text">
-        <h1 class="hero-title">{{ customer.name }}</h1>
+        <div class="hero-heading">
+          <h1 class="hero-title">{{ customer.name }}</h1>
+          <span class="kind-pill{% if customer.is_revenda %} revenda{% endif %}">{{ customer.kind_label }}</span>
+        </div>
         {% if show_sensitive %}
           <div class="hero-grid">
             <div class="hero-field">

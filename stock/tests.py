@@ -8508,3 +8508,119 @@ class BackupDbCommandTests(TestCase):
                 self.assertEqual(con.execute("PRAGMA integrity_check").fetchone()[0], "ok")
             finally:
                 con.close()
+
+
+class CustomerKindTests(TestCase):
+    """Retail and Revenda are different businesses; the app has to tell them
+    apart before a wholesale login can mean anything."""
+
+    def setUp(self):
+        self.manager = get_user_model().objects.create_superuser(
+            "kindmgr", password="pw123456")
+        self.client.login(username="kindmgr", password="pw123456")
+
+    def _customer(self, nif, name, **kwargs):
+        return Customer.objects.create(nif=nif, name=name, **kwargs)
+
+    # -- the field ---------------------------------------------------------
+    def test_a_new_customer_is_retail_until_told_otherwise(self):
+        customer = self._customer("900000001", "Walk-in")
+        self.assertEqual(customer.kind, Customer.RETAIL)
+        self.assertFalse(customer.is_revenda)
+        self.assertEqual(customer.kind_label, "Retail")
+
+    def test_a_revenda_says_so(self):
+        customer = self._customer("900000002", "Kapaika", kind=Customer.REVENDA)
+        self.assertTrue(customer.is_revenda)
+        self.assertEqual(customer.kind_label, "Revenda")
+
+    # -- the backfill ------------------------------------------------------
+    def test_the_backfill_marks_names_that_say_revenda_and_leaves_the_rest(self):
+        """The word was typed into the name in whatever form was to hand, and
+        the migration gets one shot at it on the live database."""
+        import io as _io
+        import importlib
+        from contextlib import redirect_stdout
+        from django.apps import apps as django_apps
+
+        module = importlib.import_module('stock.migrations.0057_customer_kind')
+        marked = [self._customer("900000010", "Kapaika Revenda"),
+                  self._customer("900000011", "REVENDA Lisboa"),
+                  self._customer("900000012", "Jose revendedor"),
+                  self._customer("900000013", "Revenda")]
+        untouched = [self._customer("900000014", "FEIRA RELOGIO"),
+                     self._customer("900000015", "Zé Perfume")]
+
+        with redirect_stdout(_io.StringIO()) as out:
+            module.mark_revenda_from_name(django_apps, None)
+
+        for customer in marked:
+            customer.refresh_from_db()
+            self.assertEqual(customer.kind, Customer.REVENDA, customer.name)
+        for customer in untouched:
+            customer.refresh_from_db()
+            self.assertEqual(customer.kind, Customer.RETAIL, customer.name)
+        # It reports what it changed - this runs once, on a live shop database.
+        self.assertIn("Kapaika Revenda", out.getvalue())
+        self.assertNotIn("FEIRA RELOGIO", out.getvalue())
+
+    # -- the customer page -------------------------------------------------
+    def test_the_page_filters_by_kind(self):
+        self._customer("900000020", "Retail One")
+        self._customer("900000021", "Revenda One", kind=Customer.REVENDA)
+
+        response = self.client.get(reverse("customer_search"), {"kind": "revenda"})
+        self.assertContains(response, "Revenda One")
+        self.assertNotContains(response, "Retail One")
+
+    def test_the_tabs_keep_counting_both_kinds_while_one_is_filtered(self):
+        """A tab that shows 0 for the kind you are not looking at is useless -
+        the counts have to be taken before the filter is applied."""
+        self._customer("900000030", "Retail One")
+        self._customer("900000031", "Retail Two")
+        self._customer("900000032", "Revenda One", kind=Customer.REVENDA)
+
+        response = self.client.get(reverse("customer_search"), {"kind": "revenda"})
+        counts = response.context["kind_counts"]
+        self.assertEqual(counts["all_count"], 3)
+        self.assertEqual(counts["retail_count"], 2)
+        self.assertEqual(counts["revenda_count"], 1)
+
+    def test_a_nonsense_kind_shows_everybody_rather_than_nobody(self):
+        self._customer("900000040", "Retail One")
+        response = self.client.get(reverse("customer_search"), {"kind": "../etc"})
+        self.assertEqual(response.context["kind_filter"], "")
+        self.assertContains(response, "Retail One")
+
+    def test_the_search_text_survives_the_kind_tabs(self):
+        self._customer("900000050", "Revenda One", kind=Customer.REVENDA)
+        response = self.client.get(reverse("customer_search"), {"q": "Revenda One"})
+        self.assertEqual(response.context["query_qs"], "q=Revenda+One&")
+
+    # -- creating one ------------------------------------------------------
+    def test_quick_add_can_create_a_revenda(self):
+        self.client.post(reverse("add_customer_ajax"), {
+            "nif": "900000060", "name": "Nova Revenda", "kind": "revenda"})
+        self.assertEqual(Customer.objects.get(nif="900000060").kind,
+                         Customer.REVENDA)
+
+    def test_quick_add_from_the_till_still_works_without_a_kind(self):
+        """The till posts to the same endpoint and sends no kind at all."""
+        self.client.post(reverse("add_customer_ajax"), {
+            "nif": "900000061", "name": "Balcao"})
+        self.assertEqual(Customer.objects.get(nif="900000061").kind,
+                         Customer.RETAIL)
+
+    def test_an_unknown_kind_does_not_become_the_stored_value(self):
+        self.client.post(reverse("add_customer_ajax"), {
+            "nif": "900000062", "name": "Estranho", "kind": "wholesale"})
+        self.assertEqual(Customer.objects.get(nif="900000062").kind,
+                         Customer.RETAIL)
+
+    def test_the_edit_form_can_change_the_kind(self):
+        customer = self._customer("900000070", "Muda-me")
+        self.client.post(reverse("edit_customer", args=[customer.id]), {
+            "nif": "900000070", "name": "Muda-me", "kind": "revenda",
+            "phone": "", "email": "", "notes": ""})
+        customer.refresh_from_db()
+        self.assertEqual(customer.kind, Customer.REVENDA)

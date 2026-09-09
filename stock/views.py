@@ -10,6 +10,7 @@ from datetime import timedelta, datetime, date
 import qrcode
 import base64
 from calendar import monthrange, Calendar
+from urllib.parse import quote_plus
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
@@ -5026,6 +5027,11 @@ def add_customer(request):
     phone = (request.POST.get('phone') or '').strip() or None
     email = (request.POST.get('email') or '').strip() or None
     notes = (request.POST.get('notes') or '').strip() or None
+    # Anything but a known kind falls back to Retail: this endpoint is posted to
+    # from the till as well, where no kind is sent at all.
+    kind = (request.POST.get('kind') or '').strip().lower()
+    if kind not in (Customer.RETAIL, Customer.REVENDA):
+        kind = Customer.RETAIL
 
     # 基本必填校验
     if not nif or not name:
@@ -5041,7 +5047,7 @@ def add_customer(request):
 
     # 创建客户
     customer = Customer.objects.create(
-        nif=nif, name=name, phone=phone, email=email, notes=notes
+        nif=nif, name=name, kind=kind, phone=phone, email=email, notes=notes
     )
 
     return JsonResponse({
@@ -5076,6 +5082,9 @@ def customer_search_view(request):
     if not has_manager_access(request.user):
         return _employee_customer_search_view(request)
     query = request.GET.get('q', '').strip()
+    kind_filter = (request.GET.get('kind') or '').strip().lower()
+    if kind_filter not in (Customer.RETAIL, Customer.REVENDA):
+        kind_filter = ''
     show_sensitive = has_manager_access(request.user)
     show_sales_sensitive = has_sales_sensitive_access(request.user)
     money_field = DecimalField(max_digits=12, decimal_places=2)
@@ -5148,6 +5157,17 @@ def customer_search_view(request):
     if not store_is_all and active_store is not None:
         customers_qs = customers_qs.filter(total_orders__gt=0)
 
+    # Counted before the kind filter is applied, so the tabs keep showing how
+    # many there are of each rather than collapsing to the one being viewed.
+    kind_counts = customers_qs.aggregate(
+        all_count=Count('id'),
+        retail_count=Count('id', filter=Q(kind=Customer.RETAIL)),
+        revenda_count=Count('id', filter=Q(kind=Customer.REVENDA)),
+    )
+
+    if kind_filter:
+        customers_qs = customers_qs.filter(kind=kind_filter)
+
     customers_qs = customers_qs.order_by('-last_order_at', '-total_orders', 'name')
 
     customer_summary = customers_qs.aggregate(
@@ -5190,8 +5210,14 @@ def customer_search_view(request):
             customer.activity_class = 'neutral'
         customers.append(customer)
 
+    # Carried on the pagination and tab links so a filtered view survives them.
+    query_qs = f"q={quote_plus(query)}&" if query else ''
+
     return render(request, 'stock/customer_search.html', {
         'query': query,
+        'kind_filter': kind_filter,
+        'kind_counts': kind_counts,
+        'query_qs': query_qs,
         'customers': customers,
         'page_obj': page_obj,
         'customer_summary': customer_summary,

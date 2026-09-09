@@ -184,8 +184,12 @@
 
 入口：`/customers/`、`/customers/<id>/`、`/customers/<id>/edit/`、`/customers/delete/<pk>/`
 
-- **F2.6.1** 客户档案字段：NIF（葡萄牙税号，9 位数字，唯一）、姓名、邮箱、电话、备注。
-- **F2.6.2** **客户搜索页**（`customer_search_view`）：支持按姓名/NIF 搜索；列表附带统计子查询——订单数（`order_count`）、累计消费（`spent`）、AR 余额（`balance`），近 60 天活跃判断。敏感统计仅经理及以上可见。
+- **F2.6.1** 客户档案字段：NIF（葡萄牙税号，9 位数字，唯一）、姓名、**客户类型**、邮箱、电话、备注。
+  - **F2.6.1.1 客户类型（`Customer.kind`）**：`retail`（零售，默认）/ `revenda`（批发转售）。两者是不同的生意：Revenda 按批发价、按量拿货，并且是**未来批发目录唯一会给登录账号的客户类型**。
+    - 这个区分原来靠往姓名里打「Revenda」，迁移 `0057_customer_kind` 据此回填（匹配词干 `revend`，同时覆盖 Revenda / REVENDA / revendedor），并在 migrate 时**逐条打印改动的姓名**供核对；**姓名一个字不改**，分类只由字段表达。
+    - 姓名里没写 Revenda 的转售客户**一律保持 Retail**——按下单量猜会把真正的零售客户推到批发侧；由人在客户页逐个改。
+    - 新建客户默认 Retail。收银台走的快速新增接口不传类型时同样落 Retail。
+- **F2.6.2** **客户搜索页**（`customer_search_view`）：支持按姓名/NIF 搜索；**顶部 All / Retail / Revenda 三个筛选页签并各带计数**（计数在套用类型筛选*之前*统计，所以切到 Revenda 时仍看得到 Retail 有多少）；类型筛选与搜索词互相保留，并跟随分页；卡片上 Revenda 客户带紫色 `Revenda` 标记；列表附带统计子查询——订单数（`order_count`）、累计消费（`spent`）、AR 余额（`balance`），近 60 天活跃判断。敏感统计仅经理及以上可见。
   - **F2.6.2.1 活跃度可视化**：页面顶部展示一张活跃度环形图（Chart.js doughnut，数据 `activity_breakdown`：Active 60 天 / Quiet（有订单但非近活跃）/ No orders），数据来自已有的 `customer_summary` 计数，不产生逐行查询；客户数为 0 时不渲染。
 - **F2.6.3** **客户详情页**（`customer_detail_view`）：
   - **F2.6.3.0 日期范围筛选**：页头提供预设（All time=整体 / This month / This year）+ 自定义起止日期；默认 `整体（all）`。该筛选**统一作用于**汇总 KPI、可视化图表、Top Products 与订单时间线（`created_at__date` 落入区间），后端用 `preset` 或 `start_date`/`end_date`（`parse_date`）解析为有效区间，并回传 `range_key`/`range_label`/`range_active` 与有效起止日期用于回填输入与高亮预设。AR 概览不随区间变化（反映当前未结清状态）。
