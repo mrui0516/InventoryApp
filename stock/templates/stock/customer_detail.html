@@ -762,6 +762,10 @@
               <span class="hero-label">Email</span>
               <span class="hero-value">{{ customer.email|default:"-" }}</span>
             </div>
+            <div class="hero-field">
+              <span class="hero-label">Address</span>
+              <span class="hero-value">{{ customer.address|default:"-"|linebreaksbr }}</span>
+            </div>
           </div>
           {% if customer.notes %}
             <div class="notes-card">{{ customer.notes }}</div>

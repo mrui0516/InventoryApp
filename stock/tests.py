@@ -8617,6 +8617,59 @@ class CustomerKindTests(TestCase):
         self.assertEqual(Customer.objects.get(nif="900000062").kind,
                          Customer.RETAIL)
 
+    # -- the address, and every dialog that creates a customer -------------
+    def test_quick_add_stores_the_address(self):
+        self.client.post(reverse("add_customer_ajax"), {
+            "nif": "900000080", "name": "Loja do Bairro", "kind": "revenda",
+            "address": "Rua das Flores 12\n2700-123 Amadora"})
+        customer = Customer.objects.get(nif="900000080")
+        self.assertEqual(customer.address, "Rua das Flores 12\n2700-123 Amadora")
+
+    def test_a_customer_added_without_an_address_has_an_empty_one(self):
+        """Blank, not None - so templates and the wholesale paperwork never
+        have to guard against a null."""
+        self.client.post(reverse("add_customer_ajax"), {
+            "nif": "900000081", "name": "Sem Morada"})
+        self.assertEqual(Customer.objects.get(nif="900000081").address, "")
+
+    def test_the_till_dialog_asks_for_the_type_and_the_address(self):
+        """Most customers are created at the till, so the type has to be
+        askable there or the classification never gets filled in."""
+        response = self.client.get(reverse("outbound"))
+        self.assertContains(response, 'id="ac-kind"')
+        self.assertContains(response, 'value="revenda"')
+        self.assertContains(response, 'id="ac-address"')
+
+    def test_the_employee_dialog_asks_for_them_too(self):
+        employee = get_user_model().objects.create_user(
+            "kindemp", password="pw123456")
+        self.client.force_login(employee)
+        response = self.client.get(reverse("customer_search"))
+        self.assertContains(response, 'id="ac_kind"')
+        self.assertContains(response, 'id="ac_address"')
+        # and its hand-built request body actually sends them
+        self.assertContains(response, "body.append('kind'")
+        self.assertContains(response, "body.append('address'")
+
+    def test_the_manager_dialog_asks_for_them_too(self):
+        response = self.client.get(reverse("customer_search"))
+        self.assertContains(response, 'name="kind"')
+        self.assertContains(response, 'name="address"')
+
+    def test_the_edit_form_can_change_the_address(self):
+        customer = self._customer("900000090", "Muda Morada")
+        self.client.post(reverse("edit_customer", args=[customer.id]), {
+            "nif": "900000090", "name": "Muda Morada", "kind": "retail",
+            "phone": "", "email": "", "address": "Av. Central 3", "notes": ""})
+        customer.refresh_from_db()
+        self.assertEqual(customer.address, "Av. Central 3")
+
+    def test_the_detail_page_shows_the_address(self):
+        customer = self._customer("900000091", "Com Morada",
+                                  address="Rua Longa 9")
+        response = self.client.get(reverse("customer_detail", args=[customer.id]))
+        self.assertContains(response, "Rua Longa 9")
+
     def test_the_edit_form_can_change_the_kind(self):
         customer = self._customer("900000070", "Muda-me")
         self.client.post(reverse("edit_customer", args=[customer.id]), {

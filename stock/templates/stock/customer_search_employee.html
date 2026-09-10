@@ -61,8 +61,10 @@
         <div id="addCustomerError" class="text-danger mb-2" role="alert"></div>
         <div class="mb-2"><label class="form-label" for="ac_nif">NIF (9 digits)</label><input id="ac_nif" class="form-control"></div>
         <div class="mb-2"><label class="form-label" for="ac_name">Name</label><input id="ac_name" class="form-control"></div>
+        <div class="mb-2"><label class="form-label" for="ac_kind">Customer type</label><select id="ac_kind" class="form-select"><option value="retail" selected>Retail</option><option value="revenda">Revenda</option></select></div>
         <div class="mb-2"><label class="form-label" for="ac_phone">Phone</label><input id="ac_phone" class="form-control"></div>
         <div class="mb-2"><label class="form-label" for="ac_email">Email</label><input id="ac_email" class="form-control"></div>
+        <div class="mb-2"><label class="form-label" for="ac_address">Address</label><textarea id="ac_address" class="form-control" rows="2"></textarea></div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-primary" id="ac_save">Save</button>
@@ -78,6 +80,8 @@ document.getElementById('ac_save').addEventListener('click', function () {
   body.append('name', document.getElementById('ac_name').value);
   body.append('phone', document.getElementById('ac_phone').value);
   body.append('email', document.getElementById('ac_email').value);
+  body.append('kind', document.getElementById('ac_kind').value);
+  body.append('address', document.getElementById('ac_address').value);
   fetch('{% url "add_customer_ajax" %}', {
     method: 'POST',
     headers: {'X-CSRFToken': '{{ csrf_token }}'},

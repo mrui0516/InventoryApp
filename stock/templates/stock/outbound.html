@@ -294,12 +294,23 @@
           <input type="text" id="ac-name" name="name" class="form-control" required>
         </div>
         <div class="mb-2">
+          <label for="ac-kind" class="form-label">Customer type</label>
+          <select id="ac-kind" name="kind" class="form-select">
+            <option value="retail" selected>Retail</option>
+            <option value="revenda">Revenda</option>
+          </select>
+        </div>
+        <div class="mb-2">
           <label for="ac-phone" class="form-label">Phone</label>
           <input type="text" id="ac-phone" name="phone" class="form-control">
         </div>
         <div class="mb-2">
           <label for="ac-email" class="form-label">Email</label>
           <input type="email" id="ac-email" name="email" class="form-control">
+        </div>
+        <div class="mb-2">
+          <label for="ac-address" class="form-label">Address</label>
+          <textarea id="ac-address" name="address" class="form-control" rows="2"></textarea>
         </div>
         <div class="mb-2">
           <label for="ac-notes" class="form-label">Notes</label>

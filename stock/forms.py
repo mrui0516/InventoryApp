@@ -627,8 +627,11 @@ class SaleForm(forms.ModelForm):
 class CustomerForm(forms.ModelForm):
     class Meta:
         model = Customer
-        fields = ['nif', 'name', 'kind', 'phone', 'email', 'notes']
-        widgets = {'notes': forms.Textarea(attrs={'rows': 2})}
+        fields = ['nif', 'name', 'kind', 'phone', 'email', 'address', 'notes']
+        widgets = {
+            'address': forms.Textarea(attrs={'rows': 2}),
+            'notes': forms.Textarea(attrs={'rows': 2}),
+        }
 
 
 class ARInvoiceForm(forms.ModelForm):

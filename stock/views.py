@@ -5027,6 +5027,7 @@ def add_customer(request):
     phone = (request.POST.get('phone') or '').strip() or None
     email = (request.POST.get('email') or '').strip() or None
     notes = (request.POST.get('notes') or '').strip() or None
+    address = (request.POST.get('address') or '').strip()
     # Anything but a known kind falls back to Retail: this endpoint is posted to
     # from the till as well, where no kind is sent at all.
     kind = (request.POST.get('kind') or '').strip().lower()
@@ -5047,7 +5048,8 @@ def add_customer(request):
 
     # 创建客户
     customer = Customer.objects.create(
-        nif=nif, name=name, kind=kind, phone=phone, email=email, notes=notes
+        nif=nif, name=name, kind=kind, phone=phone, email=email,
+        address=address, notes=notes
     )
 
     return JsonResponse({

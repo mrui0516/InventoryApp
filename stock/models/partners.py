@@ -43,6 +43,10 @@ class Customer(models.Model):
                             db_index=True, verbose_name="Customer type")
     email = models.EmailField(blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
+    # Free text on purpose: a Portuguese address is written as a block
+    # ("Rua X, nº 12, 2º Esq / 2700-123 Amadora") and a Revenda's delivery
+    # address is what gets copied onto the paperwork, not queried on.
+    address = models.TextField(blank=True, default='', verbose_name="Address")
     notes = models.TextField(blank=True, null=True, verbose_name="Notes")
 
     def __str__(self):
