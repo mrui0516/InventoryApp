@@ -69,6 +69,7 @@
         {% endif %}
         <a class="erp-nav-link {% if current_url == 'outbound' %}active{% endif %}" href="{% url 'outbound' %}">Outbound</a>
         {% if user|is_manager_user %}
+        <a class="erp-nav-link {% if current_url == 'pedido' %}active{% endif %}" href="{% url 'pedido' %}">Pedido</a>
         <a class="erp-nav-link {% if current_url == 'attendance' %}active{% endif %}" href="{% url 'attendance' %}">Attendance</a>
         {% endif %}
 

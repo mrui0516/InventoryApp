@@ -48,6 +48,28 @@ class StoreProfile(models.Model):
         return f"{self.user} @ {self.store or 'no store'}"
 
 
+# What the shop tells a customer about paying, printed at the foot of a quote.
+# It lives on the print profile rather than in this file so a changed phone
+# number or IBAN is an edit on the Print Header page, not a deploy. Written
+# without emoji on purpose: the PDF's standard fonts have no glyphs for them,
+# so they would print as blanks or boxes - what is typed here is what prints.
+DEFAULT_PAYMENT_INFO = """Relativamente ao pagamento, pode escolher uma das seguintes opções:
+
+MB WAY
+Número: 920303435
+
+Transferência bancária
+IBAN: PT50 0033 0000 45602078635 05
+Titular: RUI MAO
+
+Revolut
+Número: 920303435
+ou
+Revolut: https://revolut.me/rm0516
+
+Após efetuar o pagamento, agradecemos que nos envie o comprovativo para podermos confirmar e dar seguimento à preparação da encomenda."""
+
+
 class PrintProfile(models.Model):
     store = models.OneToOneField(
         Store, on_delete=models.CASCADE, null=True, blank=True, related_name='print_profile',
@@ -58,6 +80,8 @@ class PrintProfile(models.Model):
     address = models.CharField(max_length=255, blank=True, default='CENTRO BABILONIA LOJA 90A, AMADORA, 2700-337')
     email = models.EmailField(blank=True, default='SADIWALIKHAN@YAHOO.COM')
     footer_note = models.CharField(max_length=160, blank=True, default='Thank you for your purchase.')
+    payment_info = models.TextField(blank=True, default=DEFAULT_PAYMENT_INFO,
+                                    verbose_name='Payment instructions')
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

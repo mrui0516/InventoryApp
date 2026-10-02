@@ -8677,3 +8677,270 @@ class CustomerKindTests(TestCase):
             "phone": "", "email": "", "notes": ""})
         customer.refresh_from_db()
         self.assertEqual(customer.kind, Customer.REVENDA)
+
+
+class PedidoMathTests(TestCase):
+    """A quote is thrown away; only its arithmetic has to be right."""
+
+    def _lines(self, *pairs):
+        return [{'quantity': q, 'unit_price': Decimal(p)} for q, p in pairs]
+
+    def test_the_subtotal_is_the_lines_added_up(self):
+        from stock.services import pedido
+        totals = pedido.compute_totals(self._lines((2, '40.00'), (3, '7.50')))
+        self.assertEqual(totals['subtotal'], Decimal('102.50'))
+        self.assertEqual(totals['total'], Decimal('102.50'))
+
+    def test_transport_and_fees_are_added_after_the_discount(self):
+        from stock.services import pedido
+        totals = pedido.compute_totals(
+            self._lines((10, '10.00')), shipping='15.00',
+            extras=[{'label': 'Embalagem', 'amount': '5.00'}],
+            discount_value='20.00')
+        self.assertEqual(totals['subtotal'], Decimal('100.00'))
+        self.assertEqual(totals['discount'], Decimal('20.00'))
+        self.assertEqual(totals['total'], Decimal('100.00'))
+
+    def test_a_percentage_discount_spares_the_transport_and_the_fees(self):
+        """Nobody means "10% off the shipping too" when they take 10% off a
+        wholesale order, and discounting a pass-through fee gives money away."""
+        from stock.services import pedido
+        totals = pedido.compute_totals(
+            self._lines((10, '10.00')), shipping='20.00',
+            extras=[{'label': 'Alfândega', 'amount': '30.00'}],
+            discount_value='10', discount_kind=pedido.PERCENT)
+        self.assertEqual(totals['discount'], Decimal('10.00'))
+        self.assertEqual(totals['total'], Decimal('140.00'))
+
+    def test_a_percentage_above_a_hundred_cannot_become_a_surcharge(self):
+        from stock.services import pedido
+        totals = pedido.compute_totals(self._lines((1, '50.00')),
+                                       discount_value='250',
+                                       discount_kind=pedido.PERCENT)
+        self.assertEqual(totals['discount'], Decimal('50.00'))
+        self.assertEqual(totals['total'], Decimal('0.00'))
+
+    def test_the_discount_never_exceeds_the_goods(self):
+        from stock.services import pedido
+        totals = pedido.compute_totals(self._lines((1, '30.00')),
+                                       discount_value='500.00')
+        self.assertEqual(totals['discount'], Decimal('30.00'))
+
+    def test_an_empty_spare_fee_row_never_reaches_the_paper(self):
+        from stock.services import pedido
+        totals = pedido.compute_totals(
+            self._lines((1, '10.00')),
+            extras=[{'label': '', 'amount': ''},
+                    {'label': 'Portes extra', 'amount': '4.00'}])
+        self.assertEqual([e['label'] for e in totals['extras']], ['Portes extra'])
+        self.assertEqual(totals['extras_total'], Decimal('4.00'))
+
+    def test_a_fee_with_an_amount_but_no_name_is_still_charged(self):
+        from stock.services import pedido
+        totals = pedido.compute_totals(self._lines((1, '10.00')),
+                                       extras=[{'label': '', 'amount': '2.50'}])
+        self.assertEqual(totals['extras'][0]['label'], 'Outros')
+        self.assertEqual(totals['total'], Decimal('12.50'))
+
+    def test_a_credit_cannot_push_the_total_below_zero(self):
+        from stock.services import pedido
+        totals = pedido.compute_totals(
+            self._lines((1, '10.00')),
+            extras=[{'label': 'Crédito', 'amount': '-999.00'}])
+        self.assertEqual(totals['total'], Decimal('0.00'))
+
+
+class PedidoPdfTextTests(TestCase):
+    def test_emoji_are_dropped_and_portuguese_survives(self):
+        """The standard PDF fonts have no emoji glyphs and reportlab does not
+        complain - it leaves a blank or a box on a customer's quote."""
+        from stock.services.pedido_pdf import pdf_safe
+        out = pdf_safe('MB WAY \U0001F4F1 Número: 920303435 — Transferência')
+        self.assertNotIn('\U0001F4F1', out)
+        self.assertIn('Número', out)
+        self.assertIn('Transferência', out)
+
+    def test_money_is_written_the_portuguese_way(self):
+        from stock.services.pedido_pdf import money
+        self.assertEqual(money(Decimal('1234.50')), '1.234,50 EUR')
+        self.assertEqual(money(Decimal('7.00')), '7,00 EUR')
+
+
+class PedidoViewTests(TestCase):
+    """The quote screen: wholesale prices, sold-out products allowed, PDF out."""
+
+    def setUp(self):
+        self.manager = get_user_model().objects.create_superuser(
+            "pedmgr", password="pw123456")
+        self.client.login(username="pedmgr", password="pw123456")
+        self.category = Category.objects.create(name="Perfumes")
+        self.priced = Product.objects.create(
+            name="Khamrah", brand="LATTAFA", barcode="9990000000001",
+            category=self.category, default_price=Decimal("42.00"),
+            wholesale_price=Decimal("30.00"), volume_ml=100)
+        Purchase.objects.create(product=self.priced, quantity=5, remaining=5,
+                                cost_price=Decimal("10"))
+        self.unpriced = Product.objects.create(
+            name="Sem Grossista", brand="KHAN", barcode="9990000000002",
+            category=self.category, default_price=Decimal("20.00"))
+        self.sold_out = Product.objects.create(
+            name="Esgotado", brand="KHAN", barcode="9990000000003",
+            category=self.category, default_price=Decimal("25.00"),
+            wholesale_price=Decimal("18.00"))
+
+    def _post(self, **extra):
+        data = {'product_id': [str(self.priced.id)], 'quantity': ['2'],
+                'unit_price': ['30,00'], 'customer_name': 'Loja do Bairro'}
+        data.update(extra)
+        return self.client.post(reverse("pedido"), data)
+
+    # -- access ------------------------------------------------------------
+    def test_the_page_opens_for_a_manager(self):
+        response = self.client.get(reverse("pedido"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Pedido')
+
+    def test_an_employee_cannot_quote_wholesale_prices(self):
+        employee = get_user_model().objects.create_user("pedemp", password="pw123456")
+        self.client.force_login(employee)
+        response = self.client.get(reverse("pedido"))
+        self.assertEqual(response.status_code, 302)
+
+    # -- the PDF -----------------------------------------------------------
+    def test_a_filled_form_hands_back_a_pdf(self):
+        response = self._post()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        self.assertIn('attachment;', response['Content-Disposition'])
+        self.assertTrue(response.content.startswith(b'%PDF'))
+        self.assertGreater(len(response.content), 1000)
+
+    def _captured(self, **extra):
+        from unittest import mock
+        with mock.patch('stock.pedido_views.pedido_pdf.build_pedido_pdf',
+                        return_value=b'%PDF-x') as build:
+            self._post(**extra)
+        return build.call_args.kwargs
+
+    def test_the_pdf_carries_the_phone_and_never_the_nif(self):
+        """Most customers here never gave a usable NIF, so the field would be a
+        blank line on the paper more often than not."""
+        sent = self._captured(customer_phone='920303435')
+        self.assertEqual(sent['customer_phone'], '920303435')
+        self.assertNotIn('nif', {k.lower() for k in sent})
+
+    def test_the_address_on_the_form_is_the_one_printed(self):
+        """Re-reading the stored customer would throw away a corrected delivery
+        address - the field most likely to be wrong in the record."""
+        sent = self._captured(customer_address='Rua Nova 3, 2700-123 Amadora')
+        self.assertEqual(sent['customer_address'], 'Rua Nova 3, 2700-123 Amadora')
+
+    def test_the_payment_instructions_come_from_the_print_profile(self):
+        sent = self._captured()
+        self.assertIn('MB WAY', sent['payment_info'])
+        self.assertIn('IBAN', sent['payment_info'])
+
+    def test_the_totals_reach_the_pdf_already_added_up(self):
+        sent = self._captured(shipping='10,00', discount_value='5,00')
+        self.assertEqual(sent['totals']['subtotal'], Decimal('60.00'))
+        self.assertEqual(sent['totals']['total'], Decimal('65.00'))
+
+    def test_the_quote_states_how_long_it_is_valid(self):
+        sent = self._captured(valid_days='3')
+        self.assertTrue(sent['valid_until_label'])
+        self.assertNotEqual(sent['valid_until_label'], sent['date_label'])
+
+    # -- the rules that matter ---------------------------------------------
+    def test_a_product_without_a_wholesale_price_is_refused_not_guessed(self):
+        """Falling back to the retail price would quietly send a retail number
+        to a reseller."""
+        response = self.client.post(reverse("pedido"), {
+            'product_id': [str(self.unpriced.id)], 'quantity': ['1'],
+            'unit_price': [''], 'customer_name': 'X'})
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, 'sem preço grossista', status_code=400)
+
+    def test_a_rejected_quote_reports_inside_a_pd_errors_box(self):
+        """The page submits over fetch and lifts the complaints out of the
+        response by this selector, so that the rows already typed in are not
+        thrown away. Rename the class and the user loses their work silently."""
+        response = self.client.post(reverse("pedido"), {
+            'product_id': [str(self.unpriced.id)], 'quantity': ['1'],
+            'unit_price': [''], 'customer_name': 'X'})
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, 'class="pd-errors"', status_code=400)
+
+    def test_a_sold_out_product_can_still_be_quoted(self):
+        """A reseller orders what is on the way - this is the whole reason the
+        product search here is not the till's."""
+        response = self.client.post(reverse("pedido"), {
+            'product_id': [str(self.sold_out.id)], 'quantity': ['6'],
+            'unit_price': ['18,00'], 'customer_name': 'X'})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.content.startswith(b'%PDF'))
+
+    def test_an_empty_form_says_so_instead_of_making_a_blank_pdf(self):
+        response = self.client.post(reverse("pedido"), {'customer_name': 'X'})
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, 'Adicione pelo menos um produto',
+                            status_code=400)
+
+    def test_a_line_with_no_quantity_is_refused(self):
+        response = self.client.post(reverse("pedido"), {
+            'product_id': [str(self.priced.id)], 'quantity': ['0'],
+            'unit_price': ['30,00'], 'customer_name': 'X'})
+        self.assertEqual(response.status_code, 400)
+
+    def test_a_comma_decimal_is_read_as_a_decimal(self):
+        """Portuguese keyboards type 30,00 - read as 3000 that would be a
+        hundredfold overcharge."""
+        sent = self._captured()
+        self.assertEqual(sent['totals']['subtotal'], Decimal('60.00'))
+
+
+class PedidoAutocompleteTests(TestCase):
+    """Both pickers on the quote screen are the shared autocomplete endpoints."""
+
+    def setUp(self):
+        self.manager = get_user_model().objects.create_superuser(
+            "pedac", password="pw123456")
+        self.client.login(username="pedac", password="pw123456")
+        self.category = Category.objects.create(name="Perfumes")
+        self.in_stock = Product.objects.create(
+            name="Tem Stock", brand="LATTAFA", barcode="9991000000001",
+            category=self.category, default_price=Decimal("40.00"),
+            wholesale_price=Decimal("28.00"))
+        Purchase.objects.create(product=self.in_stock, quantity=9, remaining=9,
+                                cost_price=Decimal("10"))
+        self.sold_out = Product.objects.create(
+            name="Sem Stock", brand="LATTAFA", barcode="9991000000002",
+            category=self.category, default_price=Decimal("40.00"))
+
+    def _search(self, query, **params):
+        params['q'] = query
+        response = self.client.get(reverse("products_autocomplete"), params)
+        return response.json()['results']
+
+    def test_the_catalogue_scope_carries_the_availability_wording(self):
+        """The quote screen and the PDF must describe the same stock the same
+        way, so the label is decided once, on the server."""
+        results = {r['barcode']: r for r in self._search('LATTAFA', scope='stock')}
+        self.assertEqual(results['9991000000001']['availability'], 'Disponível')
+        self.assertEqual(results['9991000000002']['availability'], 'Indisponível')
+        self.assertEqual(results['9991000000001']['stock_left'], 9)
+
+    def test_the_till_still_hides_what_is_sold_out(self):
+        barcodes = {r['barcode'] for r in self._search('LATTAFA')}
+        self.assertIn('9991000000001', barcodes)
+        self.assertNotIn('9991000000002', barcodes)
+
+    def test_a_customer_can_be_found_by_phone(self):
+        """Most customers have no usable NIF; the phone is often all there is."""
+        Customer.objects.create(nif="991000001", name="Loja Azul",
+                                phone="920303435", address="Rua A 1")
+        results = self.client.get(reverse("customers_autocomplete"),
+                                  {'q': '920303'}).json()['results']
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]['phone'], '920303435')
+        self.assertEqual(results[0]['address'], 'Rua A 1')
+        self.assertEqual(results[0]['kind'], 'retail')

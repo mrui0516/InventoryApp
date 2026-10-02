@@ -5010,11 +5010,18 @@ def customers_autocomplete(request):
     results = []
 
     if query:
+        # Phone is searchable because most customers here never gave a usable
+        # NIF, so it is often the only thing that identifies them.
         customers = Customer.objects.filter(
             Q(name__icontains=query) | Q(nif__icontains=query)
+            | Q(phone__icontains=query)
         ).order_by('name')[:10]
 
-        results = [{'id': c.id, 'name': c.name, 'nif': c.nif} for c in customers]
+        # Extra keys are additive - the till reads name and id and ignores the
+        # rest; the quote screen shows the phone and address it will print.
+        results = [{'id': c.id, 'name': c.name, 'nif': c.nif,
+                    'phone': c.phone or '', 'address': c.address or '',
+                    'kind': c.kind} for c in customers]
 
     return JsonResponse({'results': results})
 
@@ -5623,6 +5630,19 @@ def products_autocomplete(request):
     # product you have none of.
     selling = request.GET.get('scope') != 'stock'
 
+    # Annotated before the branch rather than inside the search, because every
+    # caller now wants to know the stock: the till filters on it, and the quote
+    # screen prints the same availability wording the catalogue uses.
+    stock_left = (Purchase.objects
+                  .filter(product=OuterRef('pk'))
+                  .values('product')
+                  .annotate(total=Sum('remaining'))
+                  .values('total')[:1])
+    base_qs = base_qs.annotate(
+        stock_left=Coalesce(Subquery(stock_left, output_field=IntegerField()),
+                            Value(0))
+    )
+
     if product_id.isdigit():
         # Asked for by id, so the caller already knows which product it means -
         # reloading a till line, or opening an order correction whose products
@@ -5631,15 +5651,7 @@ def products_autocomplete(request):
         matches = base_qs.filter(id=int(product_id))[:1]
     elif q:
         if selling:
-            stock_left = (Purchase.objects
-                          .filter(product=OuterRef('pk'))
-                          .values('product')
-                          .annotate(total=Sum('remaining'))
-                          .values('total')[:1])
-            base_qs = base_qs.annotate(
-                stock_left=Coalesce(Subquery(stock_left, output_field=IntegerField()),
-                                    Value(0))
-            ).filter(stock_left__gt=0)
+            base_qs = base_qs.filter(stock_left__gt=0)
         text_match = (
             Q(name__icontains=q) |
             Q(brand__icontains=q) |
@@ -5675,10 +5687,18 @@ def products_autocomplete(request):
             .order_by('-sold_total', 'brand', 'model', 'name', 'spec', 'color')[:12]
         )
 
+    matches = list(matches)
+    # One query for the lot rather than one per row, and only when somebody is
+    # actually going to read it.
+    on_order_ids = product_ids_on_order() if matches else set()
     for p in matches:
+        _label, state = get_catalog_availability_parts(
+            int(getattr(p, 'stock_left', 0) or 0), on_order=p.id in on_order_ids)
         results.append({
             'id': p.id,
             'name': p.name,
+            'stock_left': int(getattr(p, 'stock_left', 0) or 0),
+            'availability': PT_AVAILABILITY.get(state, ''),
             'display_name': p.display_name,
             'brand': p.brand or '',
             'model': p.model or '',

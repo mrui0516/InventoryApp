@@ -4,7 +4,7 @@ from django.contrib.auth import views as auth_views
 from django.conf import settings
 from django.conf.urls.static import static
 
-from . import shelf_views, views
+from . import pedido_views, shelf_views, views
 
 
 urlpatterns = [
@@ -15,6 +15,7 @@ urlpatterns = [
     path('sales-trend/', views.yearly_sales_view, name='sales_trend'),
     path('inbound/', views.inbound_view, name='inbound'),
     path('outbound/', views.outbound_view, name='outbound'),
+    path('pedido/', pedido_views.pedido_view, name='pedido'),
     path('products/', views.product_list_view, name='product_list'),
     path('products/export-excel/', views.export_product_list_excel, name='export_product_list_excel'),
     path('products/export-shopify-csv/', views.export_shopify_inventory_csv, name='export_shopify_inventory_csv'),

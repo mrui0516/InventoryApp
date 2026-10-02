@@ -60,6 +60,13 @@
         {{ form.footer_note }}
         {% if form.footer_note.errors %}<div class="text-danger small mt-1">{{ form.footer_note.errors|join:', ' }}</div>{% endif %}
       </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-bold" for="{{ form.payment_info.id_for_label }}">Payment instructions (quote PDF)</label>
+        {{ form.payment_info }}
+        <div class="form-text">Printed at the foot of a Pedido. Emoji are dropped - the PDF fonts have no glyphs for them.</div>
+        {% if form.payment_info.errors %}<div class="text-danger small mt-1">{{ form.payment_info.errors|join:', ' }}</div>{% endif %}
+      </div>
     </div>
 
     <div class="d-flex gap-2 flex-wrap mt-4">

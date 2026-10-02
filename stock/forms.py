@@ -474,7 +474,8 @@ class DirectPurchaseEditForm(forms.ModelForm):
 class PrintProfileForm(forms.ModelForm):
     class Meta:
         model = PrintProfile
-        fields = ['name', 'nif', 'phone', 'address', 'email', 'footer_note']
+        fields = ['name', 'nif', 'phone', 'address', 'email', 'footer_note',
+                  'payment_info']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Store name'}),
             'nif': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Tax / NIF'}),
@@ -482,6 +483,8 @@ class PrintProfileForm(forms.ModelForm):
             'address': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Address'}),
             'email': forms.EmailInput(attrs={'class': 'form-control', 'placeholder': 'Email'}),
             'footer_note': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Footer note on printed receipt'}),
+            'payment_info': forms.Textarea(attrs={'class': 'form-control', 'rows': 12,
+                                                  'placeholder': 'Payment options printed on a quote'}),
         }
 
 

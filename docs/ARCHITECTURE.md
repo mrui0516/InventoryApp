@@ -55,9 +55,11 @@ InventoryApp/
 │   ├── admin.py                       # Django Admin 自定义（270 行）
 │   ├── urls.py                        # 路由表（60 条 path）
 │   ├── permissions.py                 # 角色判定 + 装饰器
+│   ├── shelf_views.py                 # 货架图页面（与产品目录无共用，单独拆出）
+│   ├── pedido_views.py                # 报价单页面（表单 → PDF，不落库）
 │   ├── signals.py                     # Sale 信号→每日汇总重算；ProductImage 信号→镜像图片到 Cloudinary/Shopify（门控）
 │   ├── apps.py                        # AppConfig，ready() 中注册 signals
-│   ├── tests.py                       # 178 个测试用例（约 3400 行）
+│   ├── tests.py                       # 659 个测试用例
 │   │
 │   ├── services/                      # 业务逻辑层（从 views 中抽出的可复用逻辑）
 │   │   ├── dashboard.py               # 月度快照 + MoM 同期对比 + 销售目标 + 多店铺对比
@@ -66,6 +68,8 @@ InventoryApp/
 │   │   ├── stock_ops.py                # FIFO 库存原子条件更新：consume_stock_fifo / restore_stock_fifo
 │   │   ├── summaries.py                # DailySalesSummary 重算逻辑
 │   │   ├── inventory.py                # build_inventory_snapshot（库存快照）
+│   │   ├── pedido.py                   # 报价单金额:折扣只打在货上,运费/额外费用在折扣后相加
+│   │   ├── pedido_pdf.py               # 报价单 PDF（reportlab，欧洲葡语，emoji 剔除）
 │   │   ├── shopify_client.py / shopify_sync.py       # Shopify Admin API：按 barcode=SKU 挂图/建品
 │   │   ├── cloudinary_client.py / cloudinary_sync.py # 产品主图镜像到 Cloudinary（public_id=条码, asset_folder=product_images/<品牌>）
 │   │   └── cloudinary_urls.py                        # 读取 Cloudinary 命名约定（public_id=条码），构造公开交付 URL；纯字符串拼接，不发网络请求、不读凭据；供 Shopify CSV 导出使用
