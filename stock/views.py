@@ -5086,16 +5086,81 @@ def _employee_customer_search_view(request):
     })
 
 
+# What the customer list can be narrowed to. Each one mirrors a label the page
+# already showed, so a filter never means something different from the badge.
+CUSTOMER_STATUSES = ('active', 'quiet', 'new', 'debt')
+
+# Sortable columns, by the querystring name. A whitelist rather than taking the
+# field name from the URL: an arbitrary order_by is an open door.
+CUSTOMER_SORTS = {
+    'last': 'last_order_at',
+    'orders': 'total_orders',
+    'spent': 'total_spent',
+    'balance': 'balance_due',
+    'name': 'name',
+}
+# Money columns. Today nobody without the permission reaches this view at all
+# (employees are handed a different one), so these guards never fire - they are
+# here to keep the sort options and the columns in step if
+# has_sales_sensitive_access ever stops being an alias for manager access,
+# which is the only reason it is a separate function.
+CUSTOMER_SENSITIVE_SORTS = {'spent', 'balance'}
+
+
+def _customer_status_q(status, cutoff):
+    """The same three activity states the rows show, plus open balance."""
+    if status == 'active':
+        return Q(last_order_at__gte=cutoff)
+    if status == 'quiet':
+        return (Q(total_orders__gt=0)
+                & (Q(last_order_at__lt=cutoff) | Q(last_order_at__isnull=True)))
+    if status == 'new':
+        return Q(total_orders=0)
+    if status == 'debt':
+        return Q(balance_due__gt=0)
+    return Q()
+
+
+def _querystring(**params):
+    """``a=1&b=2&`` - trailing separator included so a template can append.
+
+    Blank values are dropped, so a link carries only the filters actually in
+    force and the URL stays readable.
+    """
+    pairs = [f'{key}={quote_plus(str(value))}'
+             for key, value in params.items() if value not in (None, '')]
+    return ('&'.join(pairs) + '&') if pairs else ''
+
+
 @login_required
 def customer_search_view(request):
     if not has_manager_access(request.user):
         return _employee_customer_search_view(request)
     query = request.GET.get('q', '').strip()
+    show_sensitive = has_manager_access(request.user)
+    show_sales_sensitive = has_sales_sensitive_access(request.user)
+
     kind_filter = (request.GET.get('kind') or '').strip().lower()
     if kind_filter not in (Customer.RETAIL, Customer.REVENDA):
         kind_filter = ''
-    show_sensitive = has_manager_access(request.user)
-    show_sales_sensitive = has_sales_sensitive_access(request.user)
+
+    status_filter = (request.GET.get('status') or '').strip().lower()
+    if status_filter not in CUSTOMER_STATUSES:
+        status_filter = ''
+    if status_filter == 'debt' and not show_sensitive:
+        status_filter = ''
+
+    sort_key = (request.GET.get('sort') or '').strip().lower()
+    if sort_key not in CUSTOMER_SORTS:
+        sort_key = 'last'
+    if sort_key in CUSTOMER_SENSITIVE_SORTS and not show_sales_sensitive:
+        sort_key = 'last'
+    # Names read naturally A-Z; everything else is a "most first" question.
+    default_dir = 'asc' if sort_key == 'name' else 'desc'
+    sort_dir = (request.GET.get('dir') or '').strip().lower()
+    if sort_dir not in ('asc', 'desc'):
+        sort_dir = default_dir
+
     money_field = DecimalField(max_digits=12, decimal_places=2)
     recent_cutoff = timezone.now() - timedelta(days=60)
 
@@ -5144,7 +5209,7 @@ def customer_search_view(request):
         .values('created_at')[:1]
     )
 
-    customers_qs = (
+    base_qs = (
         Customer.objects
         .annotate(
             total_orders=Coalesce(Subquery(order_count_subquery, output_field=IntegerField()), Value(0)),
@@ -5155,7 +5220,7 @@ def customer_search_view(request):
     )
 
     if query:
-        customers_qs = customers_qs.filter(
+        base_qs = base_qs.filter(
             Q(nif__icontains=query)
             | Q(name__icontains=query)
             | Q(phone__icontains=query)
@@ -5164,20 +5229,34 @@ def customer_search_view(request):
 
     # Under a specific store, show only customers who have bought there.
     if not store_is_all and active_store is not None:
-        customers_qs = customers_qs.filter(total_orders__gt=0)
+        base_qs = base_qs.filter(total_orders__gt=0)
 
-    # Counted before the kind filter is applied, so the tabs keep showing how
-    # many there are of each rather than collapsing to the one being viewed.
-    kind_counts = customers_qs.aggregate(
+    kind_q = Q(kind=kind_filter) if kind_filter else Q()
+    status_q = _customer_status_q(status_filter, recent_cutoff)
+
+    # Each set of counts is taken before its own filter and after the other, so
+    # the numbers on screen always match what clicking them would show. Counted
+    # the other way round, picking "Revenda" would leave every status reading 0.
+    kind_counts = base_qs.filter(status_q).aggregate(
         all_count=Count('id'),
         retail_count=Count('id', filter=Q(kind=Customer.RETAIL)),
         revenda_count=Count('id', filter=Q(kind=Customer.REVENDA)),
     )
+    status_counts = base_qs.filter(kind_q).aggregate(
+        all_count=Count('id'),
+        active_count=Count('id', filter=_customer_status_q('active', recent_cutoff)),
+        quiet_count=Count('id', filter=_customer_status_q('quiet', recent_cutoff)),
+        new_count=Count('id', filter=_customer_status_q('new', recent_cutoff)),
+        debt_count=Count('id', filter=_customer_status_q('debt', recent_cutoff)),
+    )
 
-    if kind_filter:
-        customers_qs = customers_qs.filter(kind=kind_filter)
+    customers_qs = base_qs.filter(kind_q).filter(status_q)
 
-    customers_qs = customers_qs.order_by('-last_order_at', '-total_orders', 'name')
+    sort_field = CUSTOMER_SORTS[sort_key]
+    order = F(sort_field).asc(nulls_last=True) if sort_dir == 'asc' \
+        else F(sort_field).desc(nulls_last=True)
+    # A second key so equal rows keep a stable order between pages.
+    customers_qs = customers_qs.order_by(order, 'name', 'id')
 
     customer_summary = customers_qs.aggregate(
         customer_count=Count('id'),
@@ -5190,15 +5269,21 @@ def customer_search_view(request):
         0,
         (customer_summary['customer_count'] or 0) - (customer_summary['with_orders_count'] or 0),
     )
-    _active = customer_summary['active_count'] or 0
-    _returning = customer_summary['with_orders_count'] or 0
-    activity_breakdown = [
-        {'label': 'Active (60d)', 'value': _active},
-        {'label': 'Quiet', 'value': max(0, _returning - _active)},
-        {'label': 'No orders', 'value': customer_summary['new_count']},
-    ]
 
-    paginator = Paginator(customers_qs, 18)
+    # Which direction a header should ask for when clicked, and the arrow it
+    # wears now. Worked out here because a template cannot flip a value without
+    # a thicket of ifs, and getting it wrong makes a column un-reversible.
+    sort_next, sort_arrow = {}, {}
+    for key in CUSTOMER_SORTS:
+        key_default = 'asc' if key == 'name' else 'desc'
+        if key == sort_key:
+            sort_next[key] = 'asc' if sort_dir == 'desc' else 'desc'
+            sort_arrow[key] = '↑' if sort_dir == 'asc' else '↓'
+        else:
+            sort_next[key] = key_default
+            sort_arrow[key] = ''
+
+    paginator = Paginator(customers_qs, 40)
     page_obj = paginator.get_page(request.GET.get('page'))
     customers = []
     for customer in page_obj.object_list:
@@ -5219,22 +5304,31 @@ def customer_search_view(request):
             customer.activity_class = 'neutral'
         customers.append(customer)
 
-    # Carried on the pagination and tab links so a filtered view survives them.
-    query_qs = f"q={quote_plus(query)}&" if query else ''
-
     return render(request, 'stock/customer_search.html', {
         'query': query,
         'kind_filter': kind_filter,
         'kind_counts': kind_counts,
-        'query_qs': query_qs,
+        'status_filter': status_filter,
+        'status_counts': status_counts,
+        'sort_key': sort_key,
+        'sort_dir': sort_dir,
+        'sort_next': sort_next,
+        'sort_arrow': sort_arrow,
+        # Each link changes one thing and keeps the rest, pagination included.
+        'qs_keep_all': _querystring(q=query, kind=kind_filter, status=status_filter,
+                                    sort=sort_key, dir=sort_dir),
+        'qs_without_kind': _querystring(q=query, status=status_filter,
+                                        sort=sort_key, dir=sort_dir),
+        'qs_without_status': _querystring(q=query, kind=kind_filter,
+                                          sort=sort_key, dir=sort_dir),
+        'qs_without_sort': _querystring(q=query, kind=kind_filter,
+                                        status=status_filter),
         'customers': customers,
         'page_obj': page_obj,
         'customer_summary': customer_summary,
-        'activity_breakdown': activity_breakdown,
         'show_sensitive': show_sensitive,
         'show_sales_sensitive': show_sales_sensitive,
     })
-
 
 def _employee_customer_orders_view(request, customer_id):
     """Employee: a customer's orders only (for reconciliation) - no analytics."""

@@ -2,660 +2,270 @@
 {% block title %}Customer Management{% endblock %}
 
 {% block content %}
-<div class="container my-4 customer-page">
-  <style>
-    /* Neutrals/radius/shadow inherited from app.css; keep page-local aliases */
-    .customer-page{
-      --page-bg:var(--app-bg);
-      --primary:var(--app-accent);
-      --primary-soft:var(--app-accent-soft);
-    }
-    .customer-shell{
-      display:grid;
-      gap:1rem;
-    }
-    .hero-card,
-    .toolbar-card,
-    .metric-card,
-    .customer-card,
-    .empty-card,
-    .pagination-card{
-      background:var(--card);
-      border:1px solid var(--border);
-      border-radius:var(--radius);
-      box-shadow:var(--shadow);
-    }
-    .hero-card{
-      padding:1.35rem;
-      display:flex;
-      justify-content:space-between;
-      gap:1rem;
-      align-items:flex-start;
-    }
-    .hero-title{
-      margin:0;
-      color:var(--text);
-      font-size:2rem;
-      font-weight:900;
-      letter-spacing:-.03em;
-    }
-    .hero-copy{
-      margin:.45rem 0 0;
-      color:var(--muted);
-      max-width:48rem;
-      font-size:1rem;
-      line-height:1.6;
-      font-weight:600;
-    }
-    .hero-tools{
-      display:flex;
-      gap:.7rem;
-      flex-wrap:wrap;
-      justify-content:flex-end;
-    }
-    .hero-tools .btn,
-    .toolbar-card .btn,
-    .customer-actions .btn,
-    .pagination .page-link{
-      border-radius:14px;
-      font-weight:800;
-    }
-    .metric-grid{
-      display:grid;
-      grid-template-columns:repeat(4, minmax(0, 1fr));
-      gap:1rem;
-    }
-    .metric-card{
-      padding:1rem 1.1rem;
-    }
-    .metric-label{
-      color:var(--muted);
-      font-size:.84rem;
-      text-transform:uppercase;
-      letter-spacing:.06em;
-      font-weight:900;
-    }
-    .metric-value{
-      margin-top:.35rem;
-      color:var(--text);
-      font-size:1.65rem;
-      line-height:1.05;
-      font-weight:900;
-    }
-    .metric-sub{
-      margin-top:.35rem;
-      color:var(--muted);
-      font-size:.9rem;
-      font-weight:700;
-    }
-    .toolbar-card{
-      padding:1rem;
-      position:sticky;
-      top:.75rem;
-      z-index:3;
-    }
-    .toolbar-grid{
-      display:grid;
-      grid-template-columns:minmax(0, 1fr) auto;
-      gap:1rem;
-      align-items:end;
-    }
-    .toolbar-label{
-      color:var(--muted);
-      font-size:.84rem;
-      text-transform:uppercase;
-      letter-spacing:.06em;
-      font-weight:900;
-      margin-bottom:.5rem;
-    }
-    .search-row{
-      display:flex;
-      gap:.8rem;
-      flex-wrap:wrap;
-      align-items:center;
-    }
-    .search-row .form-control{
-      min-height:52px;
-      border-radius:16px;
-      border:1px solid var(--border);
-      padding:.85rem 1rem;
-      box-shadow:none;
-    }
-    .search-row .form-control:focus{
-      border-color:#93c5fd;
-      box-shadow:0 0 0 .25rem rgba(59,130,246,.14);
-    }
-    .results-head{
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      gap:1rem;
-      margin-top:.2rem;
-    }
-    .results-title{
-      margin:0;
-      color:var(--text);
-      font-size:1.1rem;
-      font-weight:900;
-    }
-    .results-note{
-      color:var(--muted);
-      font-size:.92rem;
-      font-weight:700;
-    }
-    .customer-grid{
-      display:grid;
-      grid-template-columns:repeat(2, minmax(0, 1fr));
-      gap:1rem;
-    }
-    .customer-card{
-      padding:1.05rem;
-      display:grid;
-      gap:.95rem;
-    }
-    .customer-head{
-      display:flex;
-      justify-content:space-between;
-      gap:1rem;
-      align-items:flex-start;
-    }
-    .customer-main{
-      display:flex;
-      gap:.9rem;
-      min-width:0;
-    }
-    .customer-avatar{
-      width:54px;
-      height:54px;
-      border-radius:18px;
-      display:grid;
-      place-items:center;
-      flex:0 0 54px;
-      background:linear-gradient(180deg,#dbeafe,#eff6ff);
-      border:1px solid #bfdbfe;
-      color:#0f172a;
-      font-size:1.15rem;
-      font-weight:900;
-    }
-    .customer-name{
-      margin:0;
-      color:var(--text);
-      font-size:1.1rem;
-      font-weight:900;
-      line-height:1.25;
-    }
-    .customer-line{
-      margin:.35rem 0 0;
-      color:var(--muted);
-      font-size:.92rem;
-      font-weight:700;
-      line-height:1.45;
-    }
-    .status-pill{
-      display:inline-flex;
-      align-items:center;
-      padding:.35rem .78rem;
-      border-radius:999px;
-      font-size:.8rem;
-      font-weight:900;
-      white-space:nowrap;
-    }
-    .status-pill.success{
-      background:var(--success-soft);
-      color:var(--success);
-      border:1px solid #a7f3d0;
-    }
-    .status-pill.warning{
-      background:var(--warning-soft);
-      color:var(--warning);
-      border:1px solid #fdba74;
-    }
-    .status-pill.neutral{
-      background:#f8fafc;
-      color:#475569;
-      border:1px solid #cbd5e1;
-    }
-    .status-pill.revenda{
-      background:#ede9fe;
-      color:#5b21b6;
-      border:1px solid #c4b5fd;
-    }
-    .head-pills{
-      display:flex;
-      gap:.4rem;
-      flex-wrap:wrap;
-      justify-content:flex-end;
-    }
-    .kind-tabs{
-      display:inline-flex;
-      gap:.35rem;
-      flex-wrap:wrap;
-      margin-top:.6rem;
-    }
-    .kind-tab{
-      display:inline-flex;
-      align-items:center;
-      gap:.4rem;
-      padding:.42rem .85rem;
-      border-radius:999px;
-      border:1px solid var(--border);
-      background:#fff;
-      color:#475569;
-      font-size:.85rem;
-      font-weight:800;
-      text-decoration:none;
-      white-space:nowrap;
-    }
-    .kind-tab:hover{ border-color:#93c5fd; color:#1d4ed8; }
-    .kind-tab.is-active{
-      background:#1d4ed8;
-      border-color:#1d4ed8;
-      color:#fff;
-    }
-    .kind-tab .n{ opacity:.75; font-weight:900; }
-    .customer-metrics{
-      display:grid;
-      grid-template-columns:repeat(4, minmax(0, 1fr));
-      gap:.75rem;
-    }
-    .customer-metric{
-      padding:.78rem .85rem;
-      border-radius:16px;
-      background:#f8fafc;
-      border:1px solid rgba(148,163,184,.16);
-    }
-    .customer-metric .label{
-      color:var(--muted);
-      font-size:.76rem;
-      text-transform:uppercase;
-      letter-spacing:.05em;
-      font-weight:900;
-    }
-    .customer-metric .value{
-      margin-top:.25rem;
-      color:var(--text);
-      font-size:1rem;
-      font-weight:900;
-      line-height:1.2;
-      word-break:break-word;
-    }
-    .customer-metric.balance .value{
-      color:#b45309;
-    }
-    .customer-actions{
-      display:flex;
-      gap:.65rem;
-      flex-wrap:wrap;
-      justify-content:flex-end;
-    }
-    .empty-card{
-      padding:1.6rem;
-      text-align:center;
-    }
-    .empty-card h3{
-      margin:0;
-      color:var(--text);
-      font-size:1.2rem;
-      font-weight:900;
-    }
-    .empty-card p{
-      margin:.6rem auto 0;
-      max-width:32rem;
-      color:var(--muted);
-      font-weight:700;
-      line-height:1.6;
-    }
-    .pagination-card{
-      padding:1rem;
-    }
-    .pagination{
-      margin:0;
-      justify-content:center;
-      gap:.35rem;
-    }
-    .pagination .page-link{
-      border:1px solid var(--border);
-      color:var(--text);
-      min-width:42px;
-      text-align:center;
-    }
-    .pagination .active .page-link{
-      background:var(--primary);
-      border-color:var(--primary);
-      color:#fff;
-    }
-    .modal-content{
-      border-radius:22px;
-      border:1px solid var(--border);
-    }
-    .modal-header,
-    .modal-footer{
-      border-color:var(--border);
-    }
-    .form-label{
-      color:var(--text);
-      font-weight:800;
-    }
-    .form-control{
-      border-radius:14px;
-      border:1px solid var(--border);
-      min-height:46px;
-    }
-    .form-control:focus{
-      border-color:#93c5fd;
-      box-shadow:0 0 0 .25rem rgba(59,130,246,.14);
-    }
-    .help-inline{
-      font-size:.87rem;
-    }
-    .text-error{
-      color:#b91c1c;
-    }
-    .activity-card{
-      display:grid;
-      grid-template-columns:190px 1fr;
-      gap:1.3rem;
-      align-items:center;
-      padding:1.1rem 1.2rem;
-    }
-    .activity-chart{
-      position:relative;
-      height:170px;
-    }
-    .activity-legend{
-      display:grid;
-      gap:.55rem;
-      align-content:center;
-    }
-    .activity-legend .row{
-      display:flex;
-      align-items:center;
-      gap:.6rem;
-      color:var(--text);
-      font-weight:800;
-    }
-    .activity-legend .dot{
-      width:12px;
-      height:12px;
-      border-radius:4px;
-      flex:0 0 12px;
-    }
-    .activity-legend .dot[data-i="0"]{background:#2563eb}
-    .activity-legend .dot[data-i="1"]{background:#f59e0b}
-    .activity-legend .dot[data-i="2"]{background:#94a3b8}
-    .activity-legend .val{
-      margin-left:auto;
-      font-weight:900;
-    }
+<div class="container my-3 cl-page">
+<style>
+  .cl-page{ --border:rgba(0,0,0,.09); --muted:#64748b; --ink:#0f172a;
+            --accent:#1d4ed8; --danger:#b91c1c; --ok:#166534; --warn:#92400e; }
 
-    @media (max-width: 1199.98px){
-      .metric-grid,
-      .customer-metrics{
-        grid-template-columns:repeat(2, minmax(0, 1fr));
-      }
-    }
-    @media (max-width: 991.98px){
-      .hero-card,
-      .toolbar-grid,
-      .customer-head{
-        grid-template-columns:1fr;
-        display:grid;
-      }
-      .hero-tools,
-      .customer-actions{
-        justify-content:flex-start;
-      }
-      .customer-grid{
-        grid-template-columns:1fr;
-      }
-    }
-    @media (max-width: 575.98px){
-      .metric-grid,
-      .customer-metrics{
-        grid-template-columns:1fr;
-      }
-      .activity-card{
-        grid-template-columns:1fr;
-      }
-      .hero-title{
-        font-size:1.65rem;
-      }
-      .search-row{
-        flex-direction:column;
-        align-items:stretch;
-      }
-      .search-row .btn{
-        width:100%;
-      }
-    }
-    /* KPI tiles are a summary strip, not the page's main content */
-  .snapshot-card,.metric-card{ padding:.55rem .7rem; }
-  .metric-label{ font-size:.64rem; letter-spacing:.04em; }
-  .metric-value{ margin-top:.15rem; font-size:1.2rem; }
-  .metric-sub{ margin-top:.1rem; font-size:.72rem; }
-  @media (max-width:575.98px){
-    .snapshot-grid,.stat-grid{ grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:.4rem; }
-    .snapshot-card,.metric-card{ padding:.45rem .55rem; }
-    .metric-value{ font-size:1.05rem; }
+  .cl-top{ display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; margin-bottom:.7rem; }
+  .cl-top h1{ margin:0; font-size:1.3rem; font-weight:900; letter-spacing:-.01em; color:var(--ink); }
+  .cl-top .spacer{ flex:1 1 auto; }
+
+  /* One strip, not four cards: these are a footnote to the list, not the page */
+  .cl-stats{ display:flex; gap:1.3rem; flex-wrap:wrap; align-items:baseline;
+             border:1px solid var(--border); border-radius:.7rem; background:#fff;
+             padding:.5rem .8rem; margin-bottom:.7rem; }
+  .cl-stat{ display:flex; align-items:baseline; gap:.4rem; font-size:.84rem; color:var(--muted); }
+  .cl-stat b{ font-size:1.02rem; color:var(--ink); font-variant-numeric:tabular-nums; }
+  .cl-stat.debt b{ color:var(--danger); }
+
+  .cl-filters{ border:1px solid var(--border); border-radius:.7rem; background:#fff;
+               padding:.7rem .8rem; margin-bottom:.7rem; display:grid; gap:.6rem; }
+  .cl-searchrow{ display:flex; gap:.5rem; }
+  .cl-searchrow input{ flex:1 1 auto; min-width:0; border:1px solid var(--border);
+                       border-radius:.55rem; padding:.5rem .7rem; font-size:.95rem; }
+  .cl-searchrow input:focus{ outline:none; border-color:#93c5fd;
+                             box-shadow:0 0 0 .2rem rgba(59,130,246,.14); }
+  .cl-chiprow{ display:flex; gap:1.1rem; flex-wrap:wrap; }
+  .cl-chipset{ display:flex; gap:.3rem; flex-wrap:wrap; align-items:center; }
+  .cl-chipset .cap{ font-size:.7rem; font-weight:900; text-transform:uppercase;
+                    letter-spacing:.06em; color:var(--muted); margin-right:.15rem; }
+  .cl-chip{ display:inline-flex; align-items:center; gap:.3rem; padding:.3rem .65rem;
+            border-radius:999px; border:1px solid var(--border); background:#fff;
+            color:#475569; font-size:.82rem; font-weight:800; text-decoration:none;
+            white-space:nowrap; }
+  .cl-chip:hover{ border-color:#93c5fd; color:var(--accent); }
+  .cl-chip.on{ background:var(--accent); border-color:var(--accent); color:#fff; }
+  .cl-chip .n{ font-variant-numeric:tabular-nums; opacity:.72; font-weight:900; }
+
+  .cl-tablewrap{ border:1px solid var(--border); border-radius:.7rem; background:#fff;
+                 overflow:hidden; }
+  .cl-scroll{ overflow-x:auto; }
+  table.cl{ width:100%; border-collapse:collapse; }
+  table.cl th{ font-size:.7rem; text-transform:uppercase; letter-spacing:.05em;
+               color:var(--muted); font-weight:900; text-align:left; white-space:nowrap;
+               padding:.5rem .6rem; border-bottom:1px solid var(--border); background:#f8fafc; }
+  table.cl th a{ color:inherit; text-decoration:none; }
+  table.cl th a:hover{ color:var(--accent); }
+  table.cl th.on a{ color:var(--accent); }
+  table.cl th.num, table.cl td.num{ text-align:right; }
+  table.cl td{ padding:.45rem .6rem; border-bottom:1px solid #f1f5f9;
+               font-size:.9rem; vertical-align:middle; }
+  table.cl tbody tr:hover{ background:#f8fbff; }
+  table.cl tbody tr:last-child td{ border-bottom:0; }
+  .cl-name{ font-weight:800; color:var(--ink); text-decoration:none; }
+  .cl-name:hover{ color:var(--accent); text-decoration:underline; }
+  .cl-sub{ font-size:.74rem; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .cl-num{ font-variant-numeric:tabular-nums; }
+  .cl-debt{ color:var(--danger); font-weight:900; }
+  .cl-tag{ display:inline-block; padding:.12rem .45rem; border-radius:.35rem;
+           font-size:.7rem; font-weight:900; background:#ede9fe; color:#5b21b6;
+           border:1px solid #c4b5fd; }
+  .cl-state{ font-size:.73rem; font-weight:800; }
+  .cl-state.success{ color:var(--ok); }
+  .cl-state.warning{ color:var(--warn); }
+  .cl-state.neutral{ color:var(--muted); }
+  .cl-act{ display:inline-block; font-size:.78rem; font-weight:800; color:var(--accent);
+           text-decoration:none; white-space:nowrap; }
+  .cl-act + .cl-act{ margin-left:.55rem; }
+
+  .cl-empty{ padding:1.6rem .9rem; text-align:center; color:var(--muted); font-size:.92rem; }
+  .cl-foot{ display:flex; align-items:center; gap:.7rem; flex-wrap:wrap;
+            padding:.55rem .8rem; border-top:1px solid var(--border); background:#fcfdff; }
+  .cl-foot .count{ font-size:.82rem; color:var(--muted); }
+  .cl-foot .pages{ margin-left:auto; display:flex; gap:.25rem; flex-wrap:wrap; }
+  .cl-pg{ padding:.26rem .58rem; border-radius:.4rem; border:1px solid var(--border);
+          background:#fff; color:#475569; font-size:.8rem; font-weight:800;
+          text-decoration:none; }
+  .cl-pg:hover{ border-color:#93c5fd; color:var(--accent); }
+  .cl-pg.on{ background:var(--accent); border-color:var(--accent); color:#fff; }
+
+  /* Phone: the table becomes one block per customer, labels inline. */
+  @media (max-width: 860px){
+    table.cl thead{ display:none; }
+    table.cl, table.cl tbody, table.cl tr, table.cl td{ display:block; width:100%; }
+    .cl-scroll{ overflow-x:visible; }
+    table.cl tr{ padding:.55rem .7rem; border-bottom:1px solid #eef2f7; }
+    table.cl td{ border:0; padding:.1rem 0; font-size:.88rem; }
+    table.cl td.num{ text-align:left; }
+    table.cl td[data-l]{ display:flex; gap:.4rem; align-items:baseline; }
+    table.cl td[data-l]::before{ content:attr(data-l); flex:0 0 5.6rem;
+                                 font-size:.7rem; font-weight:900; color:var(--muted);
+                                 text-transform:uppercase; letter-spacing:.04em; }
+    table.cl td.cl-cell-name{ margin-bottom:.2rem; }
+    table.cl td.cl-cell-actions{ margin-top:.3rem; }
+    .cl-stats{ gap:.8rem; }
+    .cl-sortbar{ display:flex; }
   }
+  .cl-sortbar{ display:none; }
 </style>
 
-  <div class="customer-shell">
-    <section class="hero-card">
-      <div>
-        <h1 class="hero-title">Customer Management</h1>
-      </div>
-      <div class="hero-tools">
-        {% if query %}
-          <a href="{% url 'customer_search' %}" class="btn btn-outline-secondary">Clear Search</a>
-        {% endif %}
-        {% if show_sensitive %}
-          <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addCustomerModal">Add Customer</button>
-        {% endif %}
-      </div>
-    </section>
-
-    <section class="metric-grid">
-      <article class="metric-card">
-        <div class="metric-label">Visible Customers</div>
-        <div class="metric-value">{{ customer_summary.customer_count }}</div>
-      </article>
-      <article class="metric-card">
-        <div class="metric-label">Active in 60 Days</div>
-        <div class="metric-value">{{ customer_summary.active_count }}</div>
-      </article>
-      <article class="metric-card">
-        <div class="metric-label">No Orders Yet</div>
-        <div class="metric-value">{{ customer_summary.new_count }}</div>
-      </article>
-      <article class="metric-card">
-        {% if show_sensitive %}
-          <div class="metric-label">Open Balance</div>
-          <div class="metric-value">EUR {{ customer_summary.open_balance_total|floatformat:2 }}</div>
-          <div class="metric-sub">{{ customer_summary.open_balance_count }} customers currently have open AR</div>
-        {% else %}
-          <div class="metric-label">Returning Customers</div>
-          <div class="metric-value">{{ customer_summary.with_orders_count }}</div>
-        {% endif %}
-      </article>
-    </section>
-
-    {% if customer_summary.customer_count %}
-      <section class="metric-card activity-card">
-        {{ activity_breakdown|json_script:"activityData" }}
-        <div class="activity-chart"><canvas id="activityChart"></canvas></div>
-        <div class="activity-legend">
-          {% for a in activity_breakdown %}
-            <div class="row"><span class="dot" data-i="{{ forloop.counter0 }}"></span>{{ a.label }}<span class="val">{{ a.value }}</span></div>
-          {% endfor %}
-        </div>
-      </section>
+  <div class="cl-top">
+    <h1>Customer Management</h1>
+    <div class="spacer"></div>
+    {% if query or kind_filter or status_filter %}
+      <a href="{% url 'customer_search' %}" class="btn btn-outline-secondary btn-sm">Clear filters</a>
     {% endif %}
+    {% if show_sensitive %}
+      <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addCustomerModal">Add Customer</button>
+    {% endif %}
+  </div>
 
-    <section class="toolbar-card">
-      <form method="get" role="search">
-        <div class="toolbar-grid">
-          <div>
-            <div class="toolbar-label">Customer Search</div>
-            <div class="search-row">
-              <input
-                type="text"
-                name="q"
-                class="form-control flex-grow-1"
-                placeholder="Search by name, NIF, phone, or email"
-                value="{{ query }}"
-                autofocus
-              >
-              <button type="submit" class="btn btn-primary px-4">Search</button>
-            </div>
-            <div class="kind-tabs">
-              <a class="kind-tab{% if not kind_filter %} is-active{% endif %}"
-                 href="?{{ query_qs }}">All <span class="n">{{ kind_counts.all_count }}</span></a>
-              <a class="kind-tab{% if kind_filter == 'retail' %} is-active{% endif %}"
-                 href="?{{ query_qs }}kind=retail">Retail <span class="n">{{ kind_counts.retail_count }}</span></a>
-              <a class="kind-tab{% if kind_filter == 'revenda' %} is-active{% endif %}"
-                 href="?{{ query_qs }}kind=revenda">Revenda <span class="n">{{ kind_counts.revenda_count }}</span></a>
-            </div>
-          </div>
-          {% if query %}
-            <div class="results-note">Showing results for “{{ query }}”</div>
-          {% else %}
-            <div class="results-note">Showing recent and active customers by default</div>
-          {% endif %}
-        </div>
-      </form>
-    </section>
+  <div class="cl-stats">
+    <div class="cl-stat"><b>{{ customer_summary.customer_count }}</b> shown</div>
+    <div class="cl-stat"><b>{{ customer_summary.active_count }}</b> active (60d)</div>
+    <div class="cl-stat"><b>{{ customer_summary.new_count }}</b> no orders</div>
+    {% if show_sensitive %}
+      <div class="cl-stat debt"><b>EUR {{ customer_summary.open_balance_total|floatformat:2 }}</b> open in {{ customer_summary.open_balance_count }}</div>
+    {% else %}
+      <div class="cl-stat"><b>{{ customer_summary.with_orders_count }}</b> returning</div>
+    {% endif %}
+  </div>
 
-    <div class="results-head">
-      <div>
-        <h2 class="results-title">{% if query %}Matching Customers{% else %}Customer Directory{% endif %}</h2>
-        <div class="results-note">{{ page_obj.paginator.count }} customer{{ page_obj.paginator.count|pluralize }} found</div>
+  <div class="cl-filters">
+    <form method="get" role="search" class="cl-searchrow">
+      <input type="text" name="q" value="{{ query }}" placeholder="Name, NIF, phone or email">
+      {% if kind_filter %}<input type="hidden" name="kind" value="{{ kind_filter }}">{% endif %}
+      {% if status_filter %}<input type="hidden" name="status" value="{{ status_filter }}">{% endif %}
+      <input type="hidden" name="sort" value="{{ sort_key }}">
+      <input type="hidden" name="dir" value="{{ sort_dir }}">
+      <button type="submit" class="btn btn-primary btn-sm px-3">Search</button>
+    </form>
+
+    <div class="cl-chiprow">
+      <div class="cl-chipset">
+        <span class="cap">Type</span>
+        <a class="cl-chip{% if not kind_filter %} on{% endif %}" href="?{{ qs_without_kind }}">All <span class="n">{{ kind_counts.all_count }}</span></a>
+        <a class="cl-chip{% if kind_filter == 'retail' %} on{% endif %}" href="?{{ qs_without_kind }}kind=retail">Retail <span class="n">{{ kind_counts.retail_count }}</span></a>
+        <a class="cl-chip{% if kind_filter == 'revenda' %} on{% endif %}" href="?{{ qs_without_kind }}kind=revenda">Revenda <span class="n">{{ kind_counts.revenda_count }}</span></a>
       </div>
-      {% if page_obj.paginator.num_pages > 1 %}
-        <div class="results-note">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</div>
-      {% endif %}
+
+      <div class="cl-chipset">
+        <span class="cap">Status</span>
+        <a class="cl-chip{% if not status_filter %} on{% endif %}" href="?{{ qs_without_status }}">All <span class="n">{{ status_counts.all_count }}</span></a>
+        <a class="cl-chip{% if status_filter == 'active' %} on{% endif %}" href="?{{ qs_without_status }}status=active">Active <span class="n">{{ status_counts.active_count }}</span></a>
+        <a class="cl-chip{% if status_filter == 'quiet' %} on{% endif %}" href="?{{ qs_without_status }}status=quiet">Quiet <span class="n">{{ status_counts.quiet_count }}</span></a>
+        <a class="cl-chip{% if status_filter == 'new' %} on{% endif %}" href="?{{ qs_without_status }}status=new">No orders <span class="n">{{ status_counts.new_count }}</span></a>
+        {% if show_sensitive %}
+          <a class="cl-chip{% if status_filter == 'debt' %} on{% endif %}" href="?{{ qs_without_status }}status=debt">Open balance <span class="n">{{ status_counts.debt_count }}</span></a>
+        {% endif %}
+      </div>
+
+      {# Headers do the sorting on a wide screen; this row replaces them on a phone. #}
+      <div class="cl-chipset cl-sortbar">
+        <span class="cap">Sort</span>
+        <a class="cl-chip{% if sort_key == 'last' %} on{% endif %}" href="?{{ qs_without_sort }}sort=last&amp;dir={{ sort_next.last }}">Last order {{ sort_arrow.last }}</a>
+        <a class="cl-chip{% if sort_key == 'orders' %} on{% endif %}" href="?{{ qs_without_sort }}sort=orders&amp;dir={{ sort_next.orders }}">Orders {{ sort_arrow.orders }}</a>
+        {% if show_sales_sensitive %}
+          <a class="cl-chip{% if sort_key == 'spent' %} on{% endif %}" href="?{{ qs_without_sort }}sort=spent&amp;dir={{ sort_next.spent }}">Spent {{ sort_arrow.spent }}</a>
+        {% endif %}
+        {% if show_sensitive %}
+          <a class="cl-chip{% if sort_key == 'balance' %} on{% endif %}" href="?{{ qs_without_sort }}sort=balance&amp;dir={{ sort_next.balance }}">Balance {{ sort_arrow.balance }}</a>
+        {% endif %}
+        <a class="cl-chip{% if sort_key == 'name' %} on{% endif %}" href="?{{ qs_without_sort }}sort=name&amp;dir={{ sort_next.name }}">Name {{ sort_arrow.name }}</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="cl-tablewrap">
+    <div class="cl-scroll">
+      <table class="cl">
+        <thead>
+          <tr>
+            <th class="{% if sort_key == 'name' %}on{% endif %}">
+              <a href="?{{ qs_without_sort }}sort=name&amp;dir={{ sort_next.name }}">Customer {{ sort_arrow.name }}</a>
+            </th>
+            <th>Contact</th>
+            <th class="num {% if sort_key == 'orders' %}on{% endif %}">
+              <a href="?{{ qs_without_sort }}sort=orders&amp;dir={{ sort_next.orders }}">Orders {{ sort_arrow.orders }}</a>
+            </th>
+            <th class="{% if sort_key == 'last' %}on{% endif %}">
+              <a href="?{{ qs_without_sort }}sort=last&amp;dir={{ sort_next.last }}">Last order {{ sort_arrow.last }}</a>
+            </th>
+            {% if show_sales_sensitive %}
+              <th class="num {% if sort_key == 'spent' %}on{% endif %}">
+                <a href="?{{ qs_without_sort }}sort=spent&amp;dir={{ sort_next.spent }}">Spent {{ sort_arrow.spent }}</a>
+              </th>
+            {% endif %}
+            {% if show_sensitive %}
+              <th class="num {% if sort_key == 'balance' %}on{% endif %}">
+                <a href="?{{ qs_without_sort }}sort=balance&amp;dir={{ sort_next.balance }}">Balance {{ sort_arrow.balance }}</a>
+              </th>
+            {% endif %}
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for customer in customers %}
+            <tr>
+              <td class="cl-cell-name">
+                <a class="cl-name" href="{% url 'customer_detail' customer.id %}">{{ customer.name }}</a>
+                {% if customer.is_revenda %} <span class="cl-tag">Revenda</span>{% endif %}
+                {% if show_sensitive and customer.nif %}<div class="cl-sub">NIF {{ customer.nif }}</div>{% endif %}
+              </td>
+              <td data-l="Contact">
+                {% if customer.phone %}<span class="cl-num">{{ customer.phone }}</span>{% endif %}
+                {% if customer.phone and customer.email %}<span class="cl-sub"> · </span>{% endif %}
+                {% if customer.email %}<span class="cl-sub">{{ customer.email }}</span>{% endif %}
+                {% if not customer.phone and not customer.email %}<span class="cl-sub">-</span>{% endif %}
+              </td>
+              <td class="num cl-num" data-l="Orders">{{ customer.total_orders }}</td>
+              <td data-l="Last order">
+                {% if customer.last_order_at %}
+                  <span class="cl-num">{{ customer.last_order_at|date:"Y-m-d" }}</span>
+                {% else %}
+                  <span class="cl-sub">-</span>
+                {% endif %}
+                <span class="cl-state {{ customer.activity_class }}">{{ customer.activity_label }}</span>
+              </td>
+              {% if show_sales_sensitive %}
+                <td class="num cl-num" data-l="Spent">{{ customer.total_spent|floatformat:2 }}</td>
+              {% endif %}
+              {% if show_sensitive %}
+                <td class="num cl-num{% if customer.balance_due > 0 %} cl-debt{% endif %}" data-l="Balance">{{ customer.balance_due|floatformat:2 }}</td>
+              {% endif %}
+              <td class="cl-cell-actions">
+                <a class="cl-act" href="{% url 'customer_detail' customer.id %}">Profile</a>
+                {% if show_sensitive %}
+                  <a class="cl-act" href="{% url 'ar_new' %}?customer={{ customer.id }}">New IOU</a>
+                {% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td class="cl-empty" colspan="7">
+                {% if query or kind_filter or status_filter %}
+                  No customer matches these filters.
+                {% else %}
+                  No customers yet.
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
 
-    {% if customers %}
-      <section class="customer-grid">
-        {% for customer in customers %}
-          <article class="customer-card">
-            <div class="customer-head">
-              <div class="customer-main">
-                <div class="customer-avatar">{{ customer.name|default:"?"|first|upper }}</div>
-                <div>
-                  <h3 class="customer-name">{{ customer.name }}</h3>
-                  {% if show_sensitive %}
-                    <p class="customer-line">
-                      NIF {{ customer.nif }}
-                      {% if customer.phone %} · {{ customer.phone }}{% endif %}
-                      {% if customer.email %} · {{ customer.email }}{% endif %}
-                    </p>
-                  {% else %}
-                    <p class="customer-line">
-                      {% if customer.last_order_at %}
-                        Last order {{ customer.last_order_at|date:"Y-m-d H:i" }}
-                      {% else %}
-                        No order history yet
-                      {% endif %}
-                    </p>
-                  {% endif %}
-                </div>
-              </div>
-              <div class="head-pills">
-                {% if customer.is_revenda %}<span class="status-pill revenda">Revenda</span>{% endif %}
-                <span class="status-pill {{ customer.activity_class }}">{{ customer.activity_label }}</span>
-              </div>
-            </div>
-
-            <div class="customer-metrics">
-              <div class="customer-metric">
-                <div class="label">Orders</div>
-                <div class="value">{{ customer.total_orders }}</div>
-              </div>
-              <div class="customer-metric">
-                <div class="label">Last Order</div>
-                <div class="value">
-                  {% if customer.last_order_at %}
-                    {{ customer.last_order_at|date:"Y-m-d" }}
-                  {% else %}
-                    -
-                  {% endif %}
-                </div>
-              </div>
-              {% if show_sales_sensitive %}
-                <div class="customer-metric">
-                  <div class="label">Total Spent</div>
-                  <div class="value">EUR {{ customer.total_spent|floatformat:2 }}</div>
-                </div>
-              {% else %}
-                <div class="customer-metric">
-                  <div class="label">Status</div>
-                  <div class="value">{{ customer.activity_label }}</div>
-                </div>
-              {% endif %}
-              {% if show_sensitive %}
-                <div class="customer-metric balance">
-                  <div class="label">Open Balance</div>
-                  <div class="value">EUR {{ customer.balance_due|floatformat:2 }}</div>
-                </div>
-              {% else %}
-                <div class="customer-metric">
-                  <div class="label">Record</div>
-                  <div class="value">{% if customer.phone or customer.email %}Complete{% else %}Basic{% endif %}</div>
-                </div>
-              {% endif %}
-            </div>
-
-            <div class="customer-actions">
-              <a href="{% url 'customer_detail' customer.id %}" class="btn btn-outline-primary">Open Profile</a>
-              {% if show_sensitive %}
-                <a href="{% url 'ar_new' %}?customer={{ customer.id }}" class="btn btn-outline-success">New IOU</a>
-              {% endif %}
-            </div>
-          </article>
-        {% endfor %}
-      </section>
-    {% else %}
-      <section class="empty-card">
-        <h3>{% if query %}No customer matched this search{% else %}No customers yet{% endif %}</h3>
-        <p>
-          {% if query %}
-            Try a different name, NIF, phone number, or email address. You can also clear the search and browse the full directory.
-          {% else %}
-            Start by adding your first customer record so order history and follow-up stay organized in one place.
+    <div class="cl-foot">
+      <span class="count">{{ page_obj.paginator.count }} customer{{ page_obj.paginator.count|pluralize }}{% if page_obj.paginator.num_pages > 1 %} · page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}{% endif %}</span>
+      {% if page_obj.paginator.num_pages > 1 %}
+        <span class="pages">
+          {% if page_obj.has_previous %}
+            <a class="cl-pg" href="?{{ qs_keep_all }}page={{ page_obj.previous_page_number }}">Prev</a>
           {% endif %}
-        </p>
-      </section>
-    {% endif %}
-
-    {% if page_obj.paginator.num_pages > 1 %}
-      <section class="pagination-card">
-        <nav aria-label="Customer pagination">
-          <ul class="pagination">
-            {% if page_obj.has_previous %}
-              <li class="page-item">
-                <a class="page-link" href="?{{ query_qs }}{% if kind_filter %}kind={{ kind_filter }}&amp;{% endif %}page={{ page_obj.previous_page_number }}">Previous</a>
-              </li>
+          {% for page_num in page_obj.paginator.page_range %}
+            {% if page_num == page_obj.number %}
+              <span class="cl-pg on">{{ page_num }}</span>
+            {% elif page_num >= page_obj.number|add:"-2" and page_num <= page_obj.number|add:"2" %}
+              <a class="cl-pg" href="?{{ qs_keep_all }}page={{ page_num }}">{{ page_num }}</a>
             {% endif %}
-            {% for page_num in page_obj.paginator.page_range %}
-              {% if page_num == page_obj.number %}
-                <li class="page-item active"><span class="page-link">{{ page_num }}</span></li>
-              {% elif page_num >= page_obj.number|add:"-2" and page_num <= page_obj.number|add:"2" %}
-                <li class="page-item">
-                  <a class="page-link" href="?{{ query_qs }}{% if kind_filter %}kind={{ kind_filter }}&amp;{% endif %}page={{ page_num }}">{{ page_num }}</a>
-                </li>
-              {% endif %}
-            {% endfor %}
-            {% if page_obj.has_next %}
-              <li class="page-item">
-                <a class="page-link" href="?{{ query_qs }}{% if kind_filter %}kind={{ kind_filter }}&amp;{% endif %}page={{ page_obj.next_page_number }}">Next</a>
-              </li>
-            {% endif %}
-          </ul>
-        </nav>
-      </section>
-    {% endif %}
+          {% endfor %}
+          {% if page_obj.has_next %}
+            <a class="cl-pg" href="?{{ qs_keep_all }}page={{ page_obj.next_page_number }}">Next</a>
+          {% endif %}
+        </span>
+      {% endif %}
+    </div>
   </div>
 
   {% if show_sensitive %}
@@ -770,23 +380,6 @@
           });
       });
     });
-  </script>
-{% endif %}
-
-{% if customer_summary.customer_count %}
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script>
-    (function () {
-      if (!window.Chart) return;
-      const el = document.getElementById('activityChart');
-      if (!el) return;
-      const d = JSON.parse(document.getElementById('activityData').textContent);
-      new Chart(el, {
-        type: 'doughnut',
-        data: { labels: d.map(x => x.label), datasets: [{ data: d.map(x => x.value), backgroundColor: ['#2563eb', '#f59e0b', '#94a3b8'], borderWidth: 0 }] },
-        options: { responsive: true, maintainAspectRatio: false, cutout: '62%', plugins: { legend: { display: false } } }
-      });
-    }());
   </script>
 {% endif %}
 {% endblock %}

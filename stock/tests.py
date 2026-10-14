@@ -8595,7 +8595,7 @@ class CustomerKindTests(TestCase):
     def test_the_search_text_survives_the_kind_tabs(self):
         self._customer("900000050", "Revenda One", kind=Customer.REVENDA)
         response = self.client.get(reverse("customer_search"), {"q": "Revenda One"})
-        self.assertEqual(response.context["query_qs"], "q=Revenda+One&")
+        self.assertIn("q=Revenda+One&", response.context["qs_without_kind"])
 
     # -- creating one ------------------------------------------------------
     def test_quick_add_can_create_a_revenda(self):
@@ -8944,3 +8944,162 @@ class PedidoAutocompleteTests(TestCase):
         self.assertEqual(results[0]['phone'], '920303435')
         self.assertEqual(results[0]['address'], 'Rua A 1')
         self.assertEqual(results[0]['kind'], 'retail')
+
+
+class CustomerListFilterTests(TestCase):
+    """The customer list: filters, sorting, and counts that add up.
+
+    The page used to be a grid of cards with a doughnut chart over it; it is a
+    table now, so the things worth protecting are what narrows it and what
+    orders it.
+    """
+
+    def setUp(self):
+        self.manager = get_user_model().objects.create_superuser(
+            "clmgr", password="pw123456")
+        self.client.login(username="clmgr", password="pw123456")
+        self.now = timezone.now()
+
+        self.active = Customer.objects.create(nif="880000001", name="Aurora Ativa")
+        self._order(self.active, days_ago=3)
+        self.quiet = Customer.objects.create(nif="880000002", name="Bruno Calado")
+        self._order(self.quiet, days_ago=200)
+        self.fresh = Customer.objects.create(nif="880000003", name="Carla Nova")
+        self.owing = Customer.objects.create(nif="880000004", name="Dora Devedora")
+        self._order(self.owing, days_ago=10)
+        self._order(self.owing, days_ago=5)
+        ARInvoice.objects.create(customer=self.owing,
+                                 total_amount=Decimal("80.00"),
+                                 amount_paid=Decimal("0.00"))
+
+    def _order(self, customer, *, days_ago):
+        order = SaleOrder.objects.create(customer=customer)
+        # created_at is auto_now_add, so it can only be moved afterwards.
+        SaleOrder.objects.filter(pk=order.pk).update(
+            created_at=self.now - timedelta(days=days_ago))
+        return order
+
+    def _names(self, **params):
+        response = self.client.get(reverse("customer_search"), params)
+        return [c.name for c in response.context["customers"]]
+
+    # -- the status filter -------------------------------------------------
+    def test_active_means_bought_in_the_last_sixty_days(self):
+        names = self._names(status="active")
+        self.assertIn("Aurora Ativa", names)
+        self.assertIn("Dora Devedora", names)
+        self.assertNotIn("Bruno Calado", names)
+        self.assertNotIn("Carla Nova", names)
+
+    def test_quiet_means_has_bought_but_not_lately(self):
+        self.assertEqual(self._names(status="quiet"), ["Bruno Calado"])
+
+    def test_no_orders_means_never_bought(self):
+        self.assertEqual(self._names(status="new"), ["Carla Nova"])
+
+    def test_open_balance_finds_only_who_owes(self):
+        self.assertEqual(self._names(status="debt"), ["Dora Devedora"])
+
+    def test_a_nonsense_status_shows_everybody_rather_than_nobody(self):
+        response = self.client.get(reverse("customer_search"), {"status": "../x"})
+        self.assertEqual(response.context["status_filter"], "")
+        self.assertEqual(len(response.context["customers"]), 4)
+
+    # -- counts that stay navigable ---------------------------------------
+    def test_the_status_counts_ignore_the_status_being_viewed(self):
+        """Counted after the filter, every other status would read 0 and the
+        row of chips would become a dead end."""
+        counts = self.client.get(reverse("customer_search"),
+                                 {"status": "new"}).context["status_counts"]
+        self.assertEqual(counts["all_count"], 4)
+        self.assertEqual(counts["active_count"], 2)
+        self.assertEqual(counts["quiet_count"], 1)
+        self.assertEqual(counts["new_count"], 1)
+        self.assertEqual(counts["debt_count"], 1)
+
+    def test_the_type_counts_do_respect_the_status_filter(self):
+        """The two filters cross: with a status chosen, the type counts have to
+        describe that subset or the numbers will not add up to the rows."""
+        Customer.objects.create(nif="880000005", name="Erva Revenda",
+                                kind=Customer.REVENDA)
+        counts = self.client.get(reverse("customer_search"),
+                                 {"status": "new"}).context["kind_counts"]
+        self.assertEqual(counts["all_count"], 2)
+        self.assertEqual(counts["revenda_count"], 1)
+        self.assertEqual(counts["retail_count"], 1)
+
+    # -- sorting -----------------------------------------------------------
+    def test_sorting_by_name_runs_a_to_z(self):
+        self.assertEqual(self._names(sort="name", dir="asc"),
+                         ["Aurora Ativa", "Bruno Calado", "Carla Nova",
+                          "Dora Devedora"])
+
+    def test_sorting_by_orders_puts_the_busiest_first(self):
+        self.assertEqual(self._names(sort="orders", dir="desc")[0],
+                         "Dora Devedora")
+
+    def test_the_direction_can_be_reversed(self):
+        self.assertEqual(self._names(sort="name", dir="desc")[0], "Dora Devedora")
+
+    def test_a_customer_who_never_bought_sorts_last_by_last_order(self):
+        """Nulls first would put everybody who has never ordered at the top of
+        the default view.
+
+        Note what this does and does not prove: removing ``nulls_last=True``
+        from the view leaves it passing, because SQLite already sorts NULLs
+        last on a descending order. It pins the behaviour the page needs, and
+        catches a flipped direction or a reordered key - the explicit
+        nulls_last is there for a backend that does not agree.
+        """
+        self.assertEqual(self._names(sort="last", dir="desc")[-1], "Carla Nova")
+
+    def test_a_nonsense_sort_falls_back_instead_of_exploding(self):
+        response = self.client.get(reverse("customer_search"),
+                                   {"sort": "password", "dir": "sideways"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["sort_key"], "last")
+        self.assertEqual(response.context["sort_dir"], "desc")
+
+    def test_a_header_click_offers_the_opposite_direction(self):
+        response = self.client.get(reverse("customer_search"),
+                                   {"sort": "orders", "dir": "desc"})
+        self.assertEqual(response.context["sort_next"]["orders"], "asc")
+        # and an unsorted column offers its own sensible default
+        self.assertEqual(response.context["sort_next"]["name"], "asc")
+
+    # -- links keep the state ---------------------------------------------
+    def test_paging_keeps_every_filter(self):
+        response = self.client.get(reverse("customer_search"), {
+            "q": "a", "kind": "retail", "status": "active", "sort": "orders",
+            "dir": "asc"})
+        keep = response.context["qs_keep_all"]
+        for fragment in ("q=a", "kind=retail", "status=active", "sort=orders",
+                         "dir=asc"):
+            self.assertIn(fragment, keep)
+
+    def test_a_filter_link_drops_only_its_own_parameter(self):
+        response = self.client.get(reverse("customer_search"),
+                                   {"kind": "retail", "status": "active"})
+        self.assertNotIn("kind=", response.context["qs_without_kind"])
+        self.assertIn("status=active", response.context["qs_without_kind"])
+        self.assertNotIn("status=", response.context["qs_without_status"])
+        self.assertIn("kind=retail", response.context["qs_without_status"])
+
+    # -- the page itself ---------------------------------------------------
+    def test_the_list_is_a_table_and_the_chart_is_gone(self):
+        """The doughnut drew three numbers that the strip above it already
+        stated, and pulled in Chart.js to do it."""
+        response = self.client.get(reverse("customer_search"))
+        self.assertContains(response, '<table class="cl"')
+        self.assertNotContains(response, 'activityChart')
+        self.assertNotContains(response, 'chart.js')
+
+    def test_the_empty_state_says_which_way_out(self):
+        response = self.client.get(reverse("customer_search"),
+                                   {"q": "zzzzznobody"})
+        self.assertContains(response, 'No customer matches these filters')
+
+    def test_a_customer_who_owes_is_marked_in_the_balance_column(self):
+        response = self.client.get(reverse("customer_search"), {"status": "debt"})
+        self.assertContains(response, 'cl-debt')
+        self.assertContains(response, '80.00')
