@@ -5107,6 +5107,28 @@ CUSTOMER_SORTS = {
 CUSTOMER_SENSITIVE_SORTS = {'spent', 'balance'}
 
 
+AVATAR_TINTS = 6
+
+
+def customer_initials(name):
+    """First and last initial - "Kapaika Perfumes" reads as KP.
+
+    One word gives its first two letters, because a single initial in a circle
+    is hard to tell apart in a list of forty.
+    """
+    parts = [part for part in (name or '').split() if part]
+    if not parts:
+        return '?'
+    if len(parts) == 1:
+        return parts[0][:2].upper()
+    return (parts[0][0] + parts[-1][0]).upper()
+
+
+def customer_avatar_tint(name):
+    """A colour index that never changes for a given name."""
+    return sum(ord(char) for char in (name or '')) % AVATAR_TINTS
+
+
 def _customer_status_q(status, cutoff):
     """The same three activity states the rows show, plus open balance."""
     if status == 'active':
@@ -5302,6 +5324,8 @@ def customer_search_view(request):
         else:
             customer.activity_label = 'Quiet'
             customer.activity_class = 'neutral'
+        customer.initials = customer_initials(customer.name)
+        customer.avatar_tint = customer_avatar_tint(customer.name)
         customers.append(customer)
 
     return render(request, 'stock/customer_search.html', {

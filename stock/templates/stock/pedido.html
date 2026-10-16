@@ -102,15 +102,15 @@
       <div class="pd-grid">
         <div class="pd-field">
           <label for="pd-cust-name">Nome</label>
-          <input type="text" id="pd-cust-name" name="customer_name" maxlength="100">
+          <input type="text" id="pd-cust-name" name="customer_name" maxlength="100" value="{{ prefill.name|default:'' }}">
         </div>
         <div class="pd-field">
           <label for="pd-cust-phone">Telefone</label>
-          <input type="text" id="pd-cust-phone" name="customer_phone" maxlength="40">
+          <input type="text" id="pd-cust-phone" name="customer_phone" maxlength="40" value="{{ prefill.phone|default:'' }}">
         </div>
         <div class="pd-field">
           <label for="pd-cust-address">Endereço</label>
-          <textarea id="pd-cust-address" name="customer_address" rows="2"></textarea>
+          <textarea id="pd-cust-address" name="customer_address" rows="2">{{ prefill.address|default:'' }}</textarea>
         </div>
       </div>
     </div>

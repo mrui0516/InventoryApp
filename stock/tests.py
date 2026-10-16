@@ -9103,3 +9103,202 @@ class CustomerListFilterTests(TestCase):
         response = self.client.get(reverse("customer_search"), {"status": "debt"})
         self.assertContains(response, 'cl-debt')
         self.assertContains(response, '80.00')
+
+
+class CustomerAvatarTests(TestCase):
+    """Customers have no photo, so a list of forty rows needs something else
+    to tell them apart at a glance."""
+
+    def test_two_words_give_the_first_and_last_initial(self):
+        from stock.views import customer_initials
+        self.assertEqual(customer_initials("Kapaika Perfumes"), "KP")
+        self.assertEqual(customer_initials("Ana Maria Silva"), "AS")
+
+    def test_one_word_gives_two_letters(self):
+        """A single letter in a circle is hard to tell from the next one."""
+        from stock.views import customer_initials
+        self.assertEqual(customer_initials("Ravi"), "RA")
+
+    def test_a_nameless_row_still_gets_something(self):
+        from stock.views import customer_initials
+        self.assertEqual(customer_initials(""), "?")
+        self.assertEqual(customer_initials(None), "?")
+
+    def test_the_tint_never_moves_for_the_same_name(self):
+        """A customer changing colour between pages would be worse than having
+        no colour at all."""
+        from stock.views import AVATAR_TINTS, customer_avatar_tint
+        first = customer_avatar_tint("Kapaika Perfumes")
+        self.assertEqual(first, customer_avatar_tint("Kapaika Perfumes"))
+        self.assertTrue(0 <= first < AVATAR_TINTS)
+
+    def test_the_row_carries_the_initials(self):
+        manager = get_user_model().objects.create_superuser("avmgr", password="pw123456")
+        self.client.login(username="avmgr", password="pw123456")
+        Customer.objects.create(nif="870000001", name="Kapaika Perfumes")
+        response = self.client.get(reverse("customer_search"))
+        self.assertContains(response, 'class="cl-av"')
+        self.assertContains(response, '>KP<')
+
+
+class CustomerPedidoSeamTests(TestCase):
+    """A Revenda row can start a quote. This is also the seam a Revenda-only
+    catalogue page would arrive through, so it is worth pinning."""
+
+    def setUp(self):
+        get_user_model().objects.create_superuser("seammgr", password="pw123456")
+        self.client.login(username="seammgr", password="pw123456")
+        self.reseller = Customer.objects.create(
+            nif="870000010", name="Kapaika", kind=Customer.REVENDA,
+            phone="920303435", address="Rua A 1")
+        self.retail = Customer.objects.create(nif="870000011", name="Ana Retalho")
+
+    def test_only_a_revenda_row_offers_pedido(self):
+        response = self.client.get(reverse("customer_search"))
+        body = response.content.decode()
+        self.assertIn(f'/pedido/?customer={self.reseller.id}', body)
+        self.assertNotIn(f'/pedido/?customer={self.retail.id}', body)
+
+    def test_the_quote_screen_prefills_from_the_customer(self):
+        response = self.client.get(reverse("pedido"),
+                                   {"customer": self.reseller.id})
+        self.assertContains(response, 'value="Kapaika"')
+        self.assertContains(response, 'value="920303435"')
+        self.assertContains(response, 'Rua A 1')
+
+    def test_a_bad_customer_id_opens_an_empty_form(self):
+        response = self.client.get(reverse("pedido"), {"customer": "../etc"})
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.context["prefill"])
+
+
+class CleanRevendaNamesCommandTests(TestCase):
+    """The word used to live in the name; now it is a field, so it comes out."""
+
+    def _run(self, *args):
+        from django.core.management import call_command
+        out = StringIO()
+        call_command('clean_revenda_names', *args, stdout=out, stderr=out)
+        return out.getvalue()
+
+    def test_the_word_is_stripped_and_the_rest_kept(self):
+        customer = Customer.objects.create(nif="871000001", name="Kapaika Revenda",
+                                           kind=Customer.REVENDA)
+        self._run('--apply')
+        customer.refresh_from_db()
+        self.assertEqual(customer.name, "Kapaika")
+
+    def test_a_dry_run_changes_nothing(self):
+        customer = Customer.objects.create(nif="871000002", name="Kapaika Revenda")
+        output = self._run()
+        customer.refresh_from_db()
+        self.assertEqual(customer.name, "Kapaika Revenda")
+        self.assertIn('Dry run', output)
+
+    def test_a_name_that_is_only_the_word_is_left_alone(self):
+        """Stripping it would leave the row nameless, and that name goes on
+        paperwork."""
+        customer = Customer.objects.create(nif="871000003", name="Revenda")
+        output = self._run('--apply')
+        customer.refresh_from_db()
+        self.assertEqual(customer.name, "Revenda")
+        self.assertIn('the word is the whole name', output)
+
+    def test_a_single_letter_left_over_is_not_a_name(self):
+        """"X Revenda" stripped down to "X" is not a name you put on a quote,
+        so the row keeps what it had. This is what MIN_NAME is for - the
+        empty-string case is already caught by the caller."""
+        customer = Customer.objects.create(nif="871000008", name="X Revenda")
+        self._run('--apply')
+        customer.refresh_from_db()
+        self.assertEqual(customer.name, "X Revenda")
+
+    def test_the_longer_spellings_are_handled(self):
+        customer = Customer.objects.create(nif="871000004",
+                                           name="Jose Revendedor - Lisboa")
+        self._run('--apply')
+        customer.refresh_from_db()
+        self.assertEqual(customer.name, "Jose - Lisboa")
+
+    def test_a_dangling_separator_is_tidied_up(self):
+        customer = Customer.objects.create(nif="871000005", name="Kapaika - Revenda")
+        self._run('--apply')
+        customer.refresh_from_db()
+        self.assertEqual(customer.name, "Kapaika")
+
+    def test_it_reports_a_name_whose_field_disagrees(self):
+        Customer.objects.create(nif="871000006", name="Oscar Revenda",
+                                kind=Customer.RETAIL)
+        output = self._run()
+        self.assertIn('kind is Retail', output)
+        self.assertIn('--set-kind', output)
+
+    def test_set_kind_marks_the_ones_the_name_says_are_resellers(self):
+        customer = Customer.objects.create(nif="871000007", name="Nina Revenda",
+                                           kind=Customer.RETAIL)
+        self._run('--apply', '--set-kind')
+        customer.refresh_from_db()
+        self.assertEqual(customer.kind, Customer.REVENDA)
+        self.assertEqual(customer.name, "Nina")
+
+
+class PurgeCustomersWithoutOrdersCommandTests(TestCase):
+    """Rows typed at the till that never became a sale. Deleting is fine;
+    deleting one that carries history is not."""
+
+    def setUp(self):
+        self.category = Category.objects.create(name="Perfumes")
+        self.product = Product.objects.create(
+            name="P", brand="B", barcode="8720000000001",
+            category=self.category, default_price=Decimal("10"))
+        self.empty = Customer.objects.create(nif="872000001", name="Nunca Comprou")
+        self.buyer = Customer.objects.create(nif="872000002", name="Comprou")
+        SaleOrder.objects.create(customer=self.buyer)
+        self.owing = Customer.objects.create(nif="872000003", name="Deve Dinheiro")
+        ARInvoice.objects.create(customer=self.owing,
+                                 total_amount=Decimal("20.00"),
+                                 amount_paid=Decimal("0.00"))
+
+    def _run(self, *args):
+        from django.core.management import call_command
+        out = StringIO()
+        call_command('purge_customers_without_orders', *args, stdout=out, stderr=out)
+        return out.getvalue()
+
+    def test_a_dry_run_deletes_nothing_and_lists_what_it_would(self):
+        output = self._run()
+        self.assertEqual(Customer.objects.count(), 3)
+        self.assertIn('Nunca Comprou', output)
+        self.assertIn('Dry run', output)
+
+    def test_apply_removes_only_the_one_with_no_history(self):
+        self._run('--apply')
+        self.assertFalse(Customer.objects.filter(nif="872000001").exists())
+        self.assertTrue(Customer.objects.filter(nif="872000002").exists())
+
+    def test_a_customer_with_an_ar_invoice_is_kept_not_crashed_on(self):
+        """ARInvoice.customer is PROTECT, so a careless delete would raise
+        mid-run and leave the job half done."""
+        output = self._run('--apply')
+        self.assertTrue(Customer.objects.filter(nif="872000003").exists())
+        self.assertIn('AR invoice', output)
+
+    def test_a_sale_line_alone_is_enough_to_keep_a_customer(self):
+        """Sale.customer is SET_NULL, so deleting would not raise - it would
+        quietly blank the customer on a real sale."""
+        lines_only = Customer.objects.create(nif="872000004", name="So Linhas")
+        order = SaleOrder.objects.create(customer=self.buyer)
+        Sale.objects.create(order=order, product=self.product,
+                            customer=lines_only, quantity=1,
+                            unit_price=Decimal("10"), payment_method='cash')
+        self._run('--apply')
+        self.assertTrue(Customer.objects.filter(nif="872000004").exists())
+
+    def test_exclude_nif_spares_a_placeholder(self):
+        self._run('--apply', '--exclude-nif', '872000001')
+        self.assertTrue(Customer.objects.filter(nif="872000001").exists())
+
+    def test_a_placeholder_looking_name_is_flagged_but_not_spared_on_a_guess(self):
+        Customer.objects.create(nif="872000005", name="Tmp Customer")
+        output = self._run()
+        self.assertIn('looks like a placeholder', output)

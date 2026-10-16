@@ -25,7 +25,7 @@ from django.http import HttpResponse
 from django.shortcuts import render
 from django.utils import timezone
 
-from .models import PrintProfile, Product
+from .models import Customer, PrintProfile, Product
 from .permissions import manager_required
 from .services import pedido as pedido_math
 from .services import pedido_pdf
@@ -158,9 +158,16 @@ def _read_customer(request):
 @manager_required
 def pedido_view(request):
     if request.method != 'POST':
+        # ?customer=<id> lets the customer list start a quote for a row, which
+        # is also the seam a Revenda-only catalogue page would arrive through.
+        prefill = None
+        raw_id = (request.GET.get('customer') or '').strip()
+        if raw_id.isdigit():
+            prefill = Customer.objects.filter(id=int(raw_id)).first()
         return render(request, 'stock/pedido.html', {
             'default_valid_days': DEFAULT_VALID_DAYS,
             'errors': [],
+            'prefill': prefill,
         })
 
     lines, errors = _read_lines(request)
@@ -170,6 +177,7 @@ def pedido_view(request):
         return render(request, 'stock/pedido.html', {
             'default_valid_days': DEFAULT_VALID_DAYS,
             'errors': errors,
+            'prefill': None,
         }, status=400)
 
     discount_kind = (request.POST.get('discount_kind') or '').strip()

@@ -4,98 +4,164 @@
 {% block content %}
 <div class="container my-3 cl-page">
 <style>
-  .cl-page{ --border:rgba(0,0,0,.09); --muted:#64748b; --ink:#0f172a;
-            --accent:#1d4ed8; --danger:#b91c1c; --ok:#166534; --warn:#92400e; }
+  /* Colours come from app.css, not from this page: the previous pass invented
+     its own greys and the secondary text ended up too pale to read. */
+  .cl-page{
+    --ink:var(--app-text);
+    --muted:var(--app-muted);
+    --line:var(--app-border);
+    --line-strong:var(--app-border-strong);
+    --surface:var(--app-surface);
+    --surface-2:var(--app-surface-2);
+    --accent:var(--app-accent);
+    --accent-ink:var(--app-accent-ink);
+    --danger:var(--app-danger);
+    --good:var(--app-good);
+    --warn:var(--app-warn);
+  }
+  /* Three sizes only, and secondary text keeps real contrast. */
+  .cl-page{ --t-body:.925rem; --t-sub:.8rem; --t-cap:.7rem; }
 
-  .cl-top{ display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; margin-bottom:.7rem; }
-  .cl-top h1{ margin:0; font-size:1.3rem; font-weight:900; letter-spacing:-.01em; color:var(--ink); }
+  .cl-top{ display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; margin-bottom:.65rem; }
+  .cl-top h1{ margin:0; font-size:1.25rem; font-weight:800; letter-spacing:-.01em; color:var(--ink); }
   .cl-top .spacer{ flex:1 1 auto; }
 
-  /* One strip, not four cards: these are a footnote to the list, not the page */
-  .cl-stats{ display:flex; gap:1.3rem; flex-wrap:wrap; align-items:baseline;
-             border:1px solid var(--border); border-radius:.7rem; background:#fff;
-             padding:.5rem .8rem; margin-bottom:.7rem; }
-  .cl-stat{ display:flex; align-items:baseline; gap:.4rem; font-size:.84rem; color:var(--muted); }
-  .cl-stat b{ font-size:1.02rem; color:var(--ink); font-variant-numeric:tabular-nums; }
+  .cl-stats{ display:flex; gap:1.15rem; flex-wrap:wrap; align-items:baseline;
+             border:1px solid var(--line); border-radius:var(--app-radius);
+             background:var(--surface); padding:.5rem .8rem; margin-bottom:.65rem; }
+  .cl-stat{ display:flex; align-items:baseline; gap:.35rem; font-size:var(--t-sub);
+            color:var(--muted); font-weight:600; }
+  .cl-stat b{ font-size:1rem; color:var(--ink); font-weight:800;
+              font-variant-numeric:tabular-nums; }
   .cl-stat.debt b{ color:var(--danger); }
 
-  .cl-filters{ border:1px solid var(--border); border-radius:.7rem; background:#fff;
-               padding:.7rem .8rem; margin-bottom:.7rem; display:grid; gap:.6rem; }
-  .cl-searchrow{ display:flex; gap:.5rem; }
-  .cl-searchrow input{ flex:1 1 auto; min-width:0; border:1px solid var(--border);
-                       border-radius:.55rem; padding:.5rem .7rem; font-size:.95rem; }
+  .cl-filters{ border:1px solid var(--line); border-radius:var(--app-radius);
+               background:var(--surface); padding:.65rem .8rem; margin-bottom:.65rem;
+               display:grid; gap:.55rem; }
+  /* The search field was the whole width; it needs about 20 characters, not a
+     whole row, so the chips can share the line on a wide screen. */
+  .cl-searchrow{ display:flex; gap:.4rem; align-items:center; }
+  .cl-searchrow input{ flex:0 1 22rem; min-width:0; border:1px solid var(--line-strong);
+                       border-radius:var(--app-radius-sm); padding:.42rem .65rem;
+                       font-size:var(--t-body); color:var(--ink); }
   .cl-searchrow input:focus{ outline:none; border-color:#93c5fd;
-                             box-shadow:0 0 0 .2rem rgba(59,130,246,.14); }
-  .cl-chiprow{ display:flex; gap:1.1rem; flex-wrap:wrap; }
-  .cl-chipset{ display:flex; gap:.3rem; flex-wrap:wrap; align-items:center; }
-  .cl-chipset .cap{ font-size:.7rem; font-weight:900; text-transform:uppercase;
-                    letter-spacing:.06em; color:var(--muted); margin-right:.15rem; }
-  .cl-chip{ display:inline-flex; align-items:center; gap:.3rem; padding:.3rem .65rem;
-            border-radius:999px; border:1px solid var(--border); background:#fff;
-            color:#475569; font-size:.82rem; font-weight:800; text-decoration:none;
-            white-space:nowrap; }
-  .cl-chip:hover{ border-color:#93c5fd; color:var(--accent); }
+                             box-shadow:0 0 0 .18rem rgba(37,99,235,.16); }
+  .cl-chiprow{ display:flex; gap:.9rem; flex-wrap:wrap; }
+  .cl-chipset{ display:flex; gap:.25rem; flex-wrap:wrap; align-items:center; }
+  .cl-chipset .cap{ font-size:var(--t-cap); font-weight:800; text-transform:uppercase;
+                    letter-spacing:.06em; color:var(--muted); margin-right:.1rem; }
+  .cl-chip{ display:inline-flex; align-items:center; gap:.28rem; padding:.26rem .6rem;
+            border-radius:999px; border:1px solid var(--line-strong);
+            background:var(--surface); color:var(--app-primary);
+            font-size:var(--t-sub); font-weight:700; text-decoration:none; white-space:nowrap; }
+  .cl-chip:hover{ border-color:var(--accent); color:var(--accent-ink); }
   .cl-chip.on{ background:var(--accent); border-color:var(--accent); color:#fff; }
-  .cl-chip .n{ font-variant-numeric:tabular-nums; opacity:.72; font-weight:900; }
+  .cl-chip .n{ font-variant-numeric:tabular-nums; font-weight:800; opacity:.85; }
 
-  .cl-tablewrap{ border:1px solid var(--border); border-radius:.7rem; background:#fff;
-                 overflow:hidden; }
+  .cl-tablewrap{ border:1px solid var(--line); border-radius:var(--app-radius);
+                 background:var(--surface); overflow:hidden; box-shadow:var(--app-shadow); }
   .cl-scroll{ overflow-x:auto; }
   table.cl{ width:100%; border-collapse:collapse; }
-  table.cl th{ font-size:.7rem; text-transform:uppercase; letter-spacing:.05em;
-               color:var(--muted); font-weight:900; text-align:left; white-space:nowrap;
-               padding:.5rem .6rem; border-bottom:1px solid var(--border); background:#f8fafc; }
+  table.cl th{ font-size:var(--t-cap); text-transform:uppercase; letter-spacing:.05em;
+               color:var(--muted); font-weight:800; text-align:left; white-space:nowrap;
+               padding:.5rem .6rem; border-bottom:1px solid var(--line-strong);
+               background:var(--surface-2); }
   table.cl th a{ color:inherit; text-decoration:none; }
-  table.cl th a:hover{ color:var(--accent); }
-  table.cl th.on a{ color:var(--accent); }
+  table.cl th a:hover{ color:var(--accent-ink); }
+  table.cl th.on a{ color:var(--accent-ink); }
   table.cl th.num, table.cl td.num{ text-align:right; }
-  table.cl td{ padding:.45rem .6rem; border-bottom:1px solid #f1f5f9;
-               font-size:.9rem; vertical-align:middle; }
-  table.cl tbody tr:hover{ background:#f8fbff; }
+  table.cl td{ padding:.42rem .6rem; border-bottom:1px solid var(--line);
+               font-size:var(--t-body); color:var(--ink); vertical-align:middle; }
+  table.cl tbody tr:hover{ background:var(--app-accent-soft); }
   table.cl tbody tr:last-child td{ border-bottom:0; }
-  .cl-name{ font-weight:800; color:var(--ink); text-decoration:none; }
-  .cl-name:hover{ color:var(--accent); text-decoration:underline; }
-  .cl-sub{ font-size:.74rem; color:var(--muted); font-variant-numeric:tabular-nums; }
+
+  /* Avatar: initials, because customers have no photo and a list of forty
+     identical rows is hard to scan. Tint is derived from the name, so the same
+     customer always wears the same colour. */
+  .cl-who{ display:flex; align-items:center; gap:.55rem; min-width:0; }
+  .cl-av{ flex:0 0 auto; width:34px; height:34px; border-radius:50%;
+          display:grid; place-items:center; font-size:.76rem; font-weight:800;
+          letter-spacing:.02em; border:1px solid rgba(0,0,0,.06); }
+  .cl-av[data-t="0"]{ background:#e0e7ff; color:#3730a3; }
+  .cl-av[data-t="1"]{ background:#dcfce7; color:#14532d; }
+  .cl-av[data-t="2"]{ background:#fef3c7; color:#78350f; }
+  .cl-av[data-t="3"]{ background:#ede9fe; color:#4c1d95; }
+  .cl-av[data-t="4"]{ background:#cffafe; color:#164e63; }
+  .cl-av[data-t="5"]{ background:#ffe4e6; color:#881337; }
+  .cl-whotext{ min-width:0; }
+  .cl-name{ font-weight:700; color:var(--ink); text-decoration:none;
+            font-size:var(--t-body); }
+  .cl-name:hover{ color:var(--accent-ink); text-decoration:underline; }
+  .cl-sub{ font-size:var(--t-sub); color:var(--muted); font-weight:600;
+           font-variant-numeric:tabular-nums; }
   .cl-num{ font-variant-numeric:tabular-nums; }
-  .cl-debt{ color:var(--danger); font-weight:900; }
-  .cl-tag{ display:inline-block; padding:.12rem .45rem; border-radius:.35rem;
-           font-size:.7rem; font-weight:900; background:#ede9fe; color:#5b21b6;
-           border:1px solid #c4b5fd; }
-  .cl-state{ font-size:.73rem; font-weight:800; }
-  .cl-state.success{ color:var(--ok); }
+  .cl-money{ font-variant-numeric:tabular-nums; font-weight:700; }
+  .cl-debt{ color:var(--danger); font-weight:800; }
+  .cl-zero{ color:var(--muted); font-weight:600; }
+  .cl-tag{ display:inline-block; margin-left:.3rem; padding:.08rem .4rem;
+           border-radius:var(--app-radius-xs); font-size:var(--t-cap); font-weight:800;
+           background:#ede9fe; color:#4c1d95; border:1px solid #c4b5fd;
+           vertical-align:.08em; }
+  .cl-state{ font-size:var(--t-sub); font-weight:700; }
+  .cl-state.success{ color:var(--good); }
   .cl-state.warning{ color:var(--warn); }
   .cl-state.neutral{ color:var(--muted); }
-  .cl-act{ display:inline-block; font-size:.78rem; font-weight:800; color:var(--accent);
-           text-decoration:none; white-space:nowrap; }
-  .cl-act + .cl-act{ margin-left:.55rem; }
+  .cl-act{ display:inline-block; font-size:var(--t-sub); font-weight:700;
+           color:var(--accent-ink); text-decoration:none; white-space:nowrap; }
+  .cl-act + .cl-act{ margin-left:.5rem; }
 
-  .cl-empty{ padding:1.6rem .9rem; text-align:center; color:var(--muted); font-size:.92rem; }
-  .cl-foot{ display:flex; align-items:center; gap:.7rem; flex-wrap:wrap;
-            padding:.55rem .8rem; border-top:1px solid var(--border); background:#fcfdff; }
-  .cl-foot .count{ font-size:.82rem; color:var(--muted); }
-  .cl-foot .pages{ margin-left:auto; display:flex; gap:.25rem; flex-wrap:wrap; }
-  .cl-pg{ padding:.26rem .58rem; border-radius:.4rem; border:1px solid var(--border);
-          background:#fff; color:#475569; font-size:.8rem; font-weight:800;
+  /* Phone-only furniture. Declared off here rather than switched off inside a
+     min-width query: these are table cells, and a <td> with no rule of its own
+     would show as a column on a wide screen. */
+  .cl-glance{ display:none; }
+  .cl-more{ display:none; }
+  .cl-expand{ display:none; }
+
+  .cl-empty{ padding:1.5rem .9rem; text-align:center; color:var(--muted);
+             font-size:var(--t-body); }
+  .cl-foot{ display:flex; align-items:center; gap:.6rem; flex-wrap:wrap;
+            padding:.5rem .8rem; border-top:1px solid var(--line); background:var(--surface-2); }
+  .cl-foot .count{ font-size:var(--t-sub); color:var(--muted); font-weight:600; }
+  .cl-foot .pages{ margin-left:auto; display:flex; gap:.22rem; flex-wrap:wrap; }
+  .cl-pg{ padding:.24rem .55rem; border-radius:var(--app-radius-xs);
+          border:1px solid var(--line-strong); background:var(--surface);
+          color:var(--app-primary); font-size:var(--t-sub); font-weight:700;
           text-decoration:none; }
-  .cl-pg:hover{ border-color:#93c5fd; color:var(--accent); }
+  .cl-pg:hover{ border-color:var(--accent); color:var(--accent-ink); }
   .cl-pg.on{ background:var(--accent); border-color:var(--accent); color:#fff; }
 
-  /* Phone: the table becomes one block per customer, labels inline. */
+  /* ---- phone ----------------------------------------------------------
+     Not a shrunken table: each customer is one line you can tap open. The
+     line carries what you scan for (who, how many, when); the money and the
+     actions are a tap away, so forty customers still fit on a screen. */
   @media (max-width: 860px){
     table.cl thead{ display:none; }
     table.cl, table.cl tbody, table.cl tr, table.cl td{ display:block; width:100%; }
     .cl-scroll{ overflow-x:visible; }
-    table.cl tr{ padding:.55rem .7rem; border-bottom:1px solid #eef2f7; }
-    table.cl td{ border:0; padding:.1rem 0; font-size:.88rem; }
-    table.cl td.num{ text-align:left; }
-    table.cl td[data-l]{ display:flex; gap:.4rem; align-items:baseline; }
-    table.cl td[data-l]::before{ content:attr(data-l); flex:0 0 5.6rem;
-                                 font-size:.7rem; font-weight:900; color:var(--muted);
-                                 text-transform:uppercase; letter-spacing:.04em; }
-    table.cl td.cl-cell-name{ margin-bottom:.2rem; }
-    table.cl td.cl-cell-actions{ margin-top:.3rem; }
-    .cl-stats{ gap:.8rem; }
-    .cl-sortbar{ display:flex; }
+    table.cl tr{ padding:.5rem .7rem; border-bottom:1px solid var(--line); }
+    table.cl tr:last-child{ border-bottom:0; }
+    table.cl td{ border:0; padding:0; }
+
+    .cl-cell-who{ display:flex; align-items:center; gap:.55rem; }
+    .cl-expand{ display:grid; place-items:center; flex:0 0 auto; margin-left:auto;
+                width:30px; height:30px; border-radius:50%; border:1px solid var(--line-strong);
+                background:var(--surface); color:var(--muted); font-size:.85rem;
+                line-height:1; cursor:pointer; }
+    .cl-expand[aria-expanded="true"]{ transform:rotate(180deg); color:var(--accent-ink);
+                                      border-color:var(--accent); }
+    /* The at-a-glance line stays visible; everything else folds away. */
+    .cl-glance{ display:flex; gap:.5rem; flex-wrap:wrap; align-items:baseline;
+                margin:.25rem 0 0 calc(34px + .55rem); }
+    .cl-more{ margin:.4rem 0 .1rem calc(34px + .55rem); }
+    tr.is-open .cl-more{ display:grid; gap:.18rem; }
+    .cl-more .row{ display:flex; gap:.45rem; align-items:baseline; }
+    .cl-more .row .k{ flex:0 0 5.2rem; font-size:var(--t-cap); font-weight:800;
+                      color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+    .cl-hide-sm{ display:none !important; }
+    .cl-sortbar{ display:flex !important; }
+    .cl-searchrow input{ flex:1 1 auto; }
+    .cl-stats{ gap:.75rem; padding:.45rem .65rem; }
+    .cl-chiprow{ gap:.5rem; }
   }
   .cl-sortbar{ display:none; }
 </style>
@@ -151,7 +217,7 @@
         {% endif %}
       </div>
 
-      {# Headers do the sorting on a wide screen; this row replaces them on a phone. #}
+      {# Headers sort on a wide screen; this row replaces them on a phone. #}
       <div class="cl-chipset cl-sortbar">
         <span class="cap">Sort</span>
         <a class="cl-chip{% if sort_key == 'last' %} on{% endif %}" href="?{{ qs_without_sort }}sort=last&amp;dir={{ sort_next.last }}">Last order {{ sort_arrow.last }}</a>
@@ -198,42 +264,85 @@
         <tbody>
           {% for customer in customers %}
             <tr>
-              <td class="cl-cell-name">
-                <a class="cl-name" href="{% url 'customer_detail' customer.id %}">{{ customer.name }}</a>
-                {% if customer.is_revenda %} <span class="cl-tag">Revenda</span>{% endif %}
-                {% if show_sensitive and customer.nif %}<div class="cl-sub">NIF {{ customer.nif }}</div>{% endif %}
+              <td class="cl-cell-who">
+                <div class="cl-who">
+                  <span class="cl-av" data-t="{{ customer.avatar_tint }}" aria-hidden="true">{{ customer.initials }}</span>
+                  <span class="cl-whotext">
+                    <a class="cl-name" href="{% url 'customer_detail' customer.id %}">{{ customer.name }}</a>
+                    {% if customer.is_revenda %}<span class="cl-tag">Revenda</span>{% endif %}
+                    {% if show_sensitive and customer.nif %}<div class="cl-sub">NIF {{ customer.nif }}</div>{% endif %}
+                  </span>
+                </div>
+                <button type="button" class="cl-expand" aria-expanded="false" aria-label="More about {{ customer.name }}">&#9662;</button>
               </td>
-              <td data-l="Contact">
+
+              {# Phone only: the line you scan without opening anything. #}
+              <td class="cl-glance">
+                <span class="cl-sub">{{ customer.total_orders }} order{{ customer.total_orders|pluralize }}</span>
+                {% if customer.last_order_at %}
+                  <span class="cl-sub">{{ customer.last_order_at|date:"Y-m-d" }}</span>
+                {% endif %}
+                <span class="cl-state {{ customer.activity_class }}">{{ customer.activity_label }}</span>
+                {% if show_sensitive and customer.balance_due > 0 %}
+                  <span class="cl-debt cl-sub">EUR {{ customer.balance_due|floatformat:2 }}</span>
+                {% endif %}
+              </td>
+
+              <td class="cl-hide-sm">
                 {% if customer.phone %}<span class="cl-num">{{ customer.phone }}</span>{% endif %}
                 {% if customer.phone and customer.email %}<span class="cl-sub"> · </span>{% endif %}
                 {% if customer.email %}<span class="cl-sub">{{ customer.email }}</span>{% endif %}
-                {% if not customer.phone and not customer.email %}<span class="cl-sub">-</span>{% endif %}
+                {% if not customer.phone and not customer.email %}<span class="cl-sub">&mdash;</span>{% endif %}
               </td>
-              <td class="num cl-num" data-l="Orders">{{ customer.total_orders }}</td>
-              <td data-l="Last order">
+              <td class="num cl-num cl-hide-sm">{{ customer.total_orders }}</td>
+              <td class="cl-hide-sm">
                 {% if customer.last_order_at %}
                   <span class="cl-num">{{ customer.last_order_at|date:"Y-m-d" }}</span>
                 {% else %}
-                  <span class="cl-sub">-</span>
+                  <span class="cl-sub">&mdash;</span>
                 {% endif %}
                 <span class="cl-state {{ customer.activity_class }}">{{ customer.activity_label }}</span>
               </td>
               {% if show_sales_sensitive %}
-                <td class="num cl-num" data-l="Spent">{{ customer.total_spent|floatformat:2 }}</td>
+                <td class="num cl-money cl-hide-sm{% if not customer.total_spent %} cl-zero{% endif %}">{{ customer.total_spent|floatformat:2 }}</td>
               {% endif %}
               {% if show_sensitive %}
-                <td class="num cl-num{% if customer.balance_due > 0 %} cl-debt{% endif %}" data-l="Balance">{{ customer.balance_due|floatformat:2 }}</td>
+                <td class="num cl-money cl-hide-sm{% if customer.balance_due > 0 %} cl-debt{% else %} cl-zero{% endif %}">{{ customer.balance_due|floatformat:2 }}</td>
               {% endif %}
-              <td class="cl-cell-actions">
+              <td class="cl-hide-sm">
                 <a class="cl-act" href="{% url 'customer_detail' customer.id %}">Profile</a>
                 {% if show_sensitive %}
-                  <a class="cl-act" href="{% url 'ar_new' %}?customer={{ customer.id }}">New IOU</a>
+                  {% if customer.is_revenda %}<a class="cl-act" href="{% url 'pedido' %}?customer={{ customer.id }}">Pedido</a>{% endif %}
+                  <a class="cl-act" href="{% url 'ar_new' %}?customer={{ customer.id }}">IOU</a>
                 {% endif %}
+              </td>
+
+              {# Phone only: what the chevron opens. #}
+              <td class="cl-more">
+                <div class="row"><span class="k">Contact</span><span>
+                  {% if customer.phone %}{{ customer.phone }}{% endif %}
+                  {% if customer.phone and customer.email %} · {% endif %}
+                  {% if customer.email %}{{ customer.email }}{% endif %}
+                  {% if not customer.phone and not customer.email %}&mdash;{% endif %}
+                </span></div>
+                {% if show_sales_sensitive %}
+                  <div class="row"><span class="k">Spent</span><span class="cl-money">EUR {{ customer.total_spent|floatformat:2 }}</span></div>
+                {% endif %}
+                {% if show_sensitive %}
+                  <div class="row"><span class="k">Balance</span><span class="cl-money{% if customer.balance_due > 0 %} cl-debt{% endif %}">EUR {{ customer.balance_due|floatformat:2 }}</span></div>
+                {% endif %}
+                <div class="row"><span class="k">Open</span><span>
+                  <a class="cl-act" href="{% url 'customer_detail' customer.id %}">Profile</a>
+                  {% if show_sensitive %}
+                    {% if customer.is_revenda %}<a class="cl-act" href="{% url 'pedido' %}?customer={{ customer.id }}">Pedido</a>{% endif %}
+                    <a class="cl-act" href="{% url 'ar_new' %}?customer={{ customer.id }}">IOU</a>
+                  {% endif %}
+                </span></div>
               </td>
             </tr>
           {% empty %}
             <tr>
-              <td class="cl-empty" colspan="7">
+              <td class="cl-empty" colspan="9">
                 {% if query or kind_filter or status_filter %}
                   No customer matches these filters.
                 {% else %}
@@ -320,6 +429,23 @@
     </div>
   {% endif %}
 </div>
+
+<script>
+  (function () {
+    // One listener for the table: a chevron opens the row it sits in. The row
+    // carries the state, so the same markup serves both breakpoints and the
+    // wide screen never needs the script at all.
+    const table = document.querySelector('table.cl');
+    if (!table) return;
+    table.addEventListener('click', function (event) {
+      const button = event.target.closest('.cl-expand');
+      if (!button) return;
+      const row = button.closest('tr');
+      const open = row.classList.toggle('is-open');
+      button.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+  }());
+</script>
 
 {% if show_sensitive %}
   <script>
