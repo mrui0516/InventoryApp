@@ -20,7 +20,7 @@
     --warn:var(--app-warn);
   }
   /* Three sizes only, and secondary text keeps real contrast. */
-  .cl-page{ --t-body:.925rem; --t-sub:.8rem; --t-cap:.7rem; }
+  .cl-page{ --t-body:.95rem; --t-sub:.86rem; --t-cap:.74rem; }
 
   .cl-top{ display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; margin-bottom:.65rem; }
   .cl-top h1{ margin:0; font-size:1.25rem; font-weight:800; letter-spacing:-.01em; color:var(--ink); }
@@ -114,8 +114,9 @@
      min-width query: these are table cells, and a <td> with no rule of its own
      would show as a column on a wide screen. */
   .cl-glance{ display:none; }
-  .cl-more{ display:none; }
-  .cl-expand{ display:none; }
+  .cl-m-fig{ display:none; }
+  /* rows open the detail layer; links inside a row still go where they say */
+  table.cl tbody tr[data-layer]{ cursor:pointer; }
 
   .cl-empty{ padding:1.5rem .9rem; text-align:center; color:var(--muted);
              font-size:var(--t-body); }
@@ -142,26 +143,35 @@
     table.cl tr:last-child{ border-bottom:0; }
     table.cl td{ border:0; padding:0; }
 
-    .cl-cell-who{ display:flex; align-items:center; gap:.55rem; }
-    .cl-expand{ display:grid; place-items:center; flex:0 0 auto; margin-left:auto;
-                width:30px; height:30px; border-radius:50%; border:1px solid var(--line-strong);
-                background:var(--surface); color:var(--muted); font-size:.85rem;
-                line-height:1; cursor:pointer; }
-    .cl-expand[aria-expanded="true"]{ transform:rotate(180deg); color:var(--accent-ink);
-                                      border-color:var(--accent); }
-    /* The at-a-glance line stays visible; everything else folds away. */
-    .cl-glance{ display:flex; gap:.5rem; flex-wrap:wrap; align-items:baseline;
-                margin:.25rem 0 0 calc(34px + .55rem); }
-    .cl-more{ margin:.4rem 0 .1rem calc(34px + .55rem); }
-    tr.is-open .cl-more{ display:grid; gap:.18rem; }
-    .cl-more .row{ display:flex; gap:.45rem; align-items:baseline; }
-    .cl-more .row .k{ flex:0 0 5.2rem; font-size:var(--t-cap); font-weight:800;
-                      color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+    table.cl td.cl-cell-who{ display:flex; align-items:center; gap:.55rem; }
+    .cl-whotext .cl-sub{ display:none; }   /* NIF lives in the detail layer */
+    /* Line one: who, and the number that matters - what they owe if they owe,
+       otherwise what they have spent. Line two: how to reach them and when. */
+    .cl-m-fig{ display:block; margin-left:auto; text-align:right; white-space:nowrap;
+               font-weight:800; font-size:.98rem; font-variant-numeric:tabular-nums; color:var(--ink); }
+    .cl-m-fig.debt{ color:var(--danger); }
+    .cl-m-fig small{ display:block; font-size:.72rem; font-weight:800; color:var(--muted);
+                     text-transform:uppercase; letter-spacing:.04em; }
+    table.cl td.cl-glance{ display:flex; gap:.2rem .65rem; flex-wrap:wrap; align-items:baseline;
+                margin:.2rem 0 0 calc(34px + .55rem); font-size:var(--t-sub);
+                color:var(--app-primary); font-weight:600; }
+    table.cl tbody tr[data-layer]:active{ background:var(--app-accent-soft); }
     .cl-hide-sm{ display:none !important; }
     .cl-sortbar{ display:flex !important; }
     .cl-searchrow input{ flex:1 1 auto; }
     .cl-stats{ gap:.75rem; padding:.45rem .65rem; }
     .cl-chiprow{ gap:.5rem; }
+  }
+  /* Status and sort are folded on a phone; on a wide screen the fold is
+     always open and its label hidden, so nothing changes there. */
+  .cl-fold > summary{ display:none; cursor:pointer; font-size:.88rem; font-weight:700;
+                      color:var(--accent-ink); margin-bottom:.35rem; }
+  .cl-fold{ display:contents; }
+  @media (max-width: 860px){
+    /* after the base rule on purpose: same specificity, so order decides */
+    .cl-fold > summary{ display:list-item; }
+    .cl-fold{ display:block; width:100%; }
+    .cl-fold[open] .cl-chipset + .cl-chipset{ margin-top:.45rem; }
   }
   .cl-sortbar{ display:none; }
 </style>
@@ -206,6 +216,9 @@
         <a class="cl-chip{% if kind_filter == 'revenda' %} on{% endif %}" href="?{{ qs_without_kind }}kind=revenda">Revenda <span class="n">{{ kind_counts.revenda_count }}</span></a>
       </div>
 
+      {# Folded on a phone unless one of them is in use. #}
+      <details class="cl-fold" open data-active="{% if status_filter or sort_key != 'last' or sort_dir != 'desc' %}1{% endif %}">
+        <summary>More filters</summary>
       <div class="cl-chipset">
         <span class="cap">Status</span>
         <a class="cl-chip{% if not status_filter %} on{% endif %}" href="?{{ qs_without_status }}">All <span class="n">{{ status_counts.all_count }}</span></a>
@@ -230,6 +243,7 @@
         {% endif %}
         <a class="cl-chip{% if sort_key == 'name' %} on{% endif %}" href="?{{ qs_without_sort }}sort=name&amp;dir={{ sort_next.name }}">Name {{ sort_arrow.name }}</a>
       </div>
+      </details>
     </div>
   </div>
 
@@ -263,7 +277,7 @@
         </thead>
         <tbody>
           {% for customer in customers %}
-            <tr>
+            <tr data-layer="cl-{{ customer.id }}">
               <td class="cl-cell-who">
                 <div class="cl-who">
                   <span class="cl-av" data-t="{{ customer.avatar_tint }}" aria-hidden="true">{{ customer.initials }}</span>
@@ -273,19 +287,41 @@
                     {% if show_sensitive and customer.nif %}<div class="cl-sub">NIF {{ customer.nif }}</div>{% endif %}
                   </span>
                 </div>
-                <button type="button" class="cl-expand" aria-expanded="false" aria-label="More about {{ customer.name }}">&#9662;</button>
+                {% if show_sensitive and customer.balance_due > 0 %}
+                  <span class="cl-m-fig debt">EUR {{ customer.balance_due|floatformat:"2g" }}<small>owes</small></span>
+                {% elif show_sales_sensitive %}
+                  <span class="cl-m-fig">EUR {{ customer.total_spent|floatformat:"2g" }}<small>spent</small></span>
+                {% endif %}
+                <template id="cl-{{ customer.id }}">
+                  <div data-part="title">{{ customer.name }}{% if customer.is_revenda %} &middot; Revenda{% endif %}</div>
+                  <div data-part="body">
+                    <dl class="ol-totals">
+                      {% if customer.phone %}<div><dt>Phone</dt><dd><a href="tel:{{ customer.phone }}">{{ customer.phone }}</a></dd></div>{% endif %}
+                      {% if customer.email %}<div><dt>Email</dt><dd>{{ customer.email }}</dd></div>{% endif %}
+                      {% if customer.address %}<div><dt>Address</dt><dd>{{ customer.address|linebreaksbr }}</dd></div>{% endif %}
+                      {% if show_sensitive and customer.nif %}<div><dt>NIF</dt><dd>{{ customer.nif }}</dd></div>{% endif %}
+                      <div><dt>Orders</dt><dd>{{ customer.total_orders }}</dd></div>
+                      <div><dt>Last order</dt><dd>{% if customer.last_order_at %}{{ customer.last_order_at|date:"Y-m-d" }}{% else %}&mdash;{% endif %} &middot; {{ customer.activity_label }}</dd></div>
+                      {% if show_sales_sensitive %}<div class="grand"><dt>Spent</dt><dd>EUR {{ customer.total_spent|floatformat:"2g" }}</dd></div>{% endif %}
+                      {% if show_sensitive %}<div class="grand"><dt>Balance</dt><dd{% if customer.balance_due > 0 %} class="neg"{% endif %}>EUR {{ customer.balance_due|floatformat:"2g" }}</dd></div>{% endif %}
+                    </dl>
+                  </div>
+                  <div data-part="foot">
+                    <a class="btn btn-primary" href="{% url 'customer_detail' customer.id %}">Profile</a>
+                    {% if show_sensitive %}
+                      {% if customer.is_revenda %}<a class="btn btn-outline-primary" href="{% url 'pedido' %}?customer={{ customer.id }}">Pedido</a>{% endif %}
+                      <a class="btn btn-outline-secondary" href="{% url 'ar_new' %}?customer={{ customer.id }}">IOU</a>
+                    {% endif %}
+                  </div>
+                </template>
               </td>
 
               {# Phone only: the line you scan without opening anything. #}
               <td class="cl-glance">
-                <span class="cl-sub">{{ customer.total_orders }} order{{ customer.total_orders|pluralize }}</span>
-                {% if customer.last_order_at %}
-                  <span class="cl-sub">{{ customer.last_order_at|date:"Y-m-d" }}</span>
-                {% endif %}
+                {% if customer.phone %}<span>{{ customer.phone }}</span>{% endif %}
+                <span>{{ customer.total_orders }} order{{ customer.total_orders|pluralize }}</span>
+                {% if customer.last_order_at %}<span>{{ customer.last_order_at|date:"Y-m-d" }}</span>{% endif %}
                 <span class="cl-state {{ customer.activity_class }}">{{ customer.activity_label }}</span>
-                {% if show_sensitive and customer.balance_due > 0 %}
-                  <span class="cl-debt cl-sub">EUR {{ customer.balance_due|floatformat:2 }}</span>
-                {% endif %}
               </td>
 
               <td class="cl-hide-sm">
@@ -317,28 +353,6 @@
                 {% endif %}
               </td>
 
-              {# Phone only: what the chevron opens. #}
-              <td class="cl-more">
-                <div class="row"><span class="k">Contact</span><span>
-                  {% if customer.phone %}{{ customer.phone }}{% endif %}
-                  {% if customer.phone and customer.email %} · {% endif %}
-                  {% if customer.email %}{{ customer.email }}{% endif %}
-                  {% if not customer.phone and not customer.email %}&mdash;{% endif %}
-                </span></div>
-                {% if show_sales_sensitive %}
-                  <div class="row"><span class="k">Spent</span><span class="cl-money">EUR {{ customer.total_spent|floatformat:2 }}</span></div>
-                {% endif %}
-                {% if show_sensitive %}
-                  <div class="row"><span class="k">Balance</span><span class="cl-money{% if customer.balance_due > 0 %} cl-debt{% endif %}">EUR {{ customer.balance_due|floatformat:2 }}</span></div>
-                {% endif %}
-                <div class="row"><span class="k">Open</span><span>
-                  <a class="cl-act" href="{% url 'customer_detail' customer.id %}">Profile</a>
-                  {% if show_sensitive %}
-                    {% if customer.is_revenda %}<a class="cl-act" href="{% url 'pedido' %}?customer={{ customer.id }}">Pedido</a>{% endif %}
-                    <a class="cl-act" href="{% url 'ar_new' %}?customer={{ customer.id }}">IOU</a>
-                  {% endif %}
-                </span></div>
-              </td>
             </tr>
           {% empty %}
             <tr>
@@ -430,21 +444,54 @@
   {% endif %}
 </div>
 
+{# One detail layer for every row: full screen on a phone, a dialog elsewhere. #}
+<div class="modal fade" id="clLayer" tabindex="-1" aria-hidden="true" aria-labelledby="clLayerTitle">
+  <div class="modal-dialog modal-dialog-scrollable modal-fullscreen-sm-down">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="clLayerTitle"></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="clLayerBody"></div>
+      <div class="modal-footer" id="clLayerFoot"></div>
+    </div>
+  </div>
+</div>
+<style>
+  #clLayer .ol-totals{ margin:0; display:grid; gap:.35rem; }
+  #clLayer .ol-totals > div{ display:flex; justify-content:space-between; gap:1rem; font-size:.95rem; }
+  #clLayer .ol-totals dt{ font-weight:600; color:var(--app-muted); }
+  #clLayer .ol-totals dd{ margin:0; font-weight:700; text-align:right; color:var(--app-text); }
+  #clLayer .ol-totals .grand dd{ font-size:1.08rem; font-weight:900; }
+  #clLayer .ol-totals .neg{ color:var(--app-danger); }
+</style>
 <script>
-  (function () {
-    // One listener for the table: a chevron opens the row it sits in. The row
-    // carries the state, so the same markup serves both breakpoints and the
-    // wide screen never needs the script at all.
-    const table = document.querySelector('table.cl');
-    if (!table) return;
+  document.addEventListener('DOMContentLoaded', function () {
+    var fold = document.querySelector('.cl-fold');
+    if (fold && !fold.dataset.active && window.matchMedia('(max-width: 860px)').matches) {
+      fold.open = false;
+    }
+    // A tap on a row opens its detail; a tap on a link inside it is a link.
+    var layerEl = document.getElementById('clLayer');
+    var table = document.querySelector('table.cl');
+    if (!layerEl || !table) return;
+    var layer = bootstrap.Modal.getOrCreateInstance(layerEl);
+    function part(fragment, name) {
+      var el = fragment.querySelector('[data-part="' + name + '"]');
+      return el ? el.innerHTML : '';
+    }
     table.addEventListener('click', function (event) {
-      const button = event.target.closest('.cl-expand');
-      if (!button) return;
-      const row = button.closest('tr');
-      const open = row.classList.toggle('is-open');
-      button.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (event.target.closest('a, button')) return;
+      var row = event.target.closest('tr[data-layer]');
+      if (!row) return;
+      var tpl = document.getElementById(row.dataset.layer);
+      if (!tpl) return;
+      document.getElementById('clLayerTitle').innerHTML = part(tpl.content, 'title');
+      document.getElementById('clLayerBody').innerHTML = part(tpl.content, 'body');
+      document.getElementById('clLayerFoot').innerHTML = part(tpl.content, 'foot');
+      layer.show();
     });
-  }());
+  });
 </script>
 
 {% if show_sensitive %}

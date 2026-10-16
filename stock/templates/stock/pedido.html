@@ -3,19 +3,19 @@
 
 {% block content %}
 <style>
-  .pd-wrap{ --border:rgba(0,0,0,.09); --muted:#64748b; --ink:#10213a;
-            --accent:#1d4ed8; --danger:#b91c1c; --danger-soft:#fef2f2; }
+  .pd-wrap{ --border:var(--app-border-strong); --muted:var(--app-muted); --ink:var(--app-text);
+            --label:var(--app-primary); --accent:var(--app-accent-ink); --danger:var(--app-danger);
+            --danger-soft:var(--app-danger-soft); color:var(--ink); }
   .pd-head{ display:flex; align-items:baseline; gap:.75rem; flex-wrap:wrap; margin-bottom:.85rem; }
   .pd-head h2{ margin:0; font-weight:900; letter-spacing:-.01em; color:var(--ink); }
   .pd-card{ border:1px solid var(--border); border-radius:.85rem; background:#fff;
             box-shadow:0 1px 6px rgba(0,0,0,.04); padding:.9rem 1rem; margin-bottom:.85rem; }
-  .pd-card h3{ font-size:.78rem; text-transform:uppercase; letter-spacing:.07em;
-               font-weight:900; color:var(--muted); margin:0 0 .65rem; }
+  .pd-card h3{ font-size:.95rem; font-weight:800; color:var(--ink); margin:0 0 .7rem; }
   .pd-grid{ display:grid; gap:.7rem; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr)); }
-  .pd-field label{ display:block; font-size:.78rem; font-weight:800; color:var(--muted); margin-bottom:.22rem; }
+  .pd-field label{ display:block; font-size:.86rem; font-weight:700; color:var(--label); margin-bottom:.25rem; }
   .pd-field input, .pd-field select, .pd-field textarea{
     width:100%; border:1px solid var(--border); border-radius:.55rem;
-    padding:.48rem .6rem; font-size:.95rem; background:#fff; }
+    padding:.48rem .6rem; font-size:.95rem; background:#fff; color:var(--ink); }
   .pd-field input:focus, .pd-field select:focus, .pd-field textarea:focus{
     outline:none; border-color:#93c5fd; box-shadow:0 0 0 .2rem rgba(59,130,246,.14); }
 
@@ -26,35 +26,37 @@
   .pd-sugg button{ display:block; width:100%; text-align:left; border:0; background:none;
                    padding:.5rem .65rem; font-size:.9rem; border-bottom:1px solid #f1f5f9; }
   .pd-sugg button:hover, .pd-sugg button:focus{ background:#eff6ff; }
-  .pd-sugg .s2{ display:block; font-size:.78rem; color:var(--muted); }
+  .pd-sugg .s2{ display:block; font-size:.84rem; color:var(--label); }
 
   .pd-table{ width:100%; border-collapse:collapse; }
-  .pd-table th{ font-size:.72rem; text-transform:uppercase; letter-spacing:.05em;
-                color:var(--muted); font-weight:900; text-align:left;
+  .pd-table th{ font-size:.76rem; text-transform:uppercase; letter-spacing:.05em;
+                color:var(--label); font-weight:800; text-align:left;
                 padding:.3rem .4rem; border-bottom:1px solid var(--border); white-space:nowrap; }
   .pd-table td{ padding:.35rem .4rem; border-bottom:1px solid #f1f5f9; vertical-align:middle; }
   .pd-table .num{ text-align:right; }
   .pd-table input{ width:100%; border:1px solid var(--border); border-radius:.45rem;
-                   padding:.34rem .45rem; font-size:.9rem; text-align:right; }
-  .pd-name{ font-weight:700; font-size:.9rem; }
-  .pd-ean{ font-size:.75rem; color:var(--muted); font-variant-numeric:tabular-nums; }
-  .pd-avail{ font-size:.78rem; color:var(--muted); white-space:nowrap; }
+                   padding:.34rem .45rem; font-size:.95rem; font-weight:700; color:var(--ink); text-align:right; }
+  .pd-name{ font-weight:800; font-size:.98rem; color:var(--ink); }
+  .pd-ean{ font-size:.82rem; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .pd-avail{ font-size:.86rem; font-weight:600; color:var(--label); white-space:nowrap; }
+  .pd-table .line{ font-weight:800; color:var(--ink); font-variant-numeric:tabular-nums; }
+  .pd-label{ display:block; font-size:.86rem; font-weight:700; color:var(--label); margin-bottom:.35rem; }
   .pd-row.needs-price{ background:var(--danger-soft); }
   .pd-row.needs-price input.price{ border-color:var(--danger); }
-  .pd-why{ display:none; font-size:.74rem; color:var(--danger); font-weight:700; }
+  .pd-why{ display:none; font-size:.84rem; color:var(--danger); font-weight:700; }
   .pd-row.needs-price .pd-why{ display:block; }
   .pd-x{ border:0; background:none; color:var(--danger); font-weight:900;
          font-size:1.05rem; line-height:1; padding:.2rem .4rem; cursor:pointer; }
-  .pd-empty{ color:var(--muted); font-size:.9rem; padding:.6rem .2rem; }
+  .pd-empty{ color:var(--label); font-size:.92rem; padding:.6rem .2rem; }
 
   .pd-foot{ display:grid; gap:.85rem; grid-template-columns:minmax(0,1fr) minmax(260px,330px); align-items:start; }
   .pd-totals{ width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
-  .pd-totals td{ padding:.26rem .2rem; font-size:.92rem; }
-  .pd-totals td.num{ text-align:right; font-weight:700; }
-  .pd-totals tr.grand td{ border-top:2px solid var(--ink); font-size:1.12rem;
-                          font-weight:900; color:var(--ink); padding-top:.45rem; }
+  .pd-totals td{ padding:.3rem .2rem; font-size:.98rem; color:var(--label); font-weight:600; }
+  .pd-totals td.num{ text-align:right; font-weight:800; color:var(--ink); }
+  .pd-totals tr.grand td{ border-top:2px solid var(--ink); font-size:1.35rem;
+                          font-weight:900; color:var(--ink); padding-top:.5rem; }
   .pd-extra-row{ display:grid; grid-template-columns:minmax(0,1fr) 110px 34px; gap:.4rem; margin-bottom:.4rem; }
-  .pd-extra-row input{ border:1px solid var(--border); border-radius:.45rem; padding:.38rem .5rem; font-size:.9rem; }
+  .pd-extra-row input{ border:1px solid var(--border); border-radius:.45rem; padding:.38rem .5rem; font-size:.95rem; color:var(--ink); }
   .pd-extra-row input.amt{ text-align:right; }
   .pd-add{ border:1px dashed var(--border); background:none; border-radius:.5rem;
            padding:.35rem .7rem; font-size:.82rem; font-weight:800; color:var(--accent); cursor:pointer; }
@@ -69,9 +71,10 @@
     .pd-table tr{ display:grid; grid-template-columns:1fr auto; gap:.2rem .5rem;
                   padding:.5rem 0; border-bottom:1px solid #f1f5f9; }
     .pd-table td{ border:0; padding:.1rem .2rem; }
+    .pd-table td:first-child{ grid-column:1 / -1; }
     .pd-table td.num{ text-align:left; }
-    .pd-table td[data-l]::before{ content:attr(data-l) " "; font-size:.72rem;
-                                  color:var(--muted); font-weight:800; }
+    .pd-table td[data-l]::before{ content:attr(data-l) " "; font-size:.78rem;
+                                  color:var(--label); font-weight:700; }
     .pd-table input{ text-align:left; max-width:150px; }
   }
 </style>
@@ -79,7 +82,6 @@
 <div class="pd-wrap">
   <div class="pd-head">
     <h2>Pedido</h2>
-    <span class="pd-avail">Preço unitário por omissão: preço grossista</span>
   </div>
 
   {% if errors %}
@@ -165,7 +167,7 @@
             </div>
           </div>
 
-          <label class="pd-avail" style="display:block; font-weight:800; margin-bottom:.35rem;">Custos adicionais</label>
+          <span class="pd-label">Custos adicionais</span>
           <div id="pd-extras"></div>
           <button type="button" class="pd-add" id="pd-add-extra">+ Adicionar custo</button>
 

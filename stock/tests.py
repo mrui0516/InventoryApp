@@ -962,18 +962,20 @@ class DashboardViewTests(TestCase):
         self.client.login(username="dashboard_user", password="pw123456")
 
         detail_response = self.client.get(reverse("sale_order_detail", args=[self.previous_order.id]))
+        # The A4 print is a PDF since 2026-10-16; the old link lands on it.
         print_response = self.client.get(
             reverse("sale_order_detail", args=[self.previous_order.id]),
-            {"print": "1", "layout": "a4"},
+            {"print": "1", "layout": "a4"}, follow=True,
         )
 
         self.assertEqual(detail_response.status_code, 200)
         self.assertEqual(print_response.status_code, 200)
+        self.assertEqual(print_response["Content-Type"], "application/pdf")
+        self.assertTrue(print_response.content.startswith(b"%PDF"))
         self.assertContains(detail_response, "Print A4")
         self.assertContains(detail_response, "Print POS (48mm)")
         self.assertContains(detail_response, "Grand Total")
-        self.assertContains(print_response, "Grand Total")
-        self.assertContains(print_response, "EUR 14.00")
+        self.assertContains(detail_response, "EUR 14.00")
 
     def test_dashboard_uses_order_datetime_for_today_bucket(self):
         drift_order = SaleOrder.objects.create(customer=self.customer)
@@ -9771,3 +9773,199 @@ class OrdersPageTests(TestCase):
         self._order([(self.a, "10", "cash")])
         for view in ("sales", "analysis"):
             self.assertNotContains(self._get(view=view), "Net Profit")
+
+
+class ReceiptPdfTests(TestCase):
+    """The A4 receipt is a PDF in the quote's look, in Portuguese."""
+
+    def setUp(self):
+        users = get_user_model()
+        self.admin = users.objects.create_superuser("rc_admin", password="pw123456")
+        self.employee = users.objects.create_user("rc_emp", password="pw123456")
+        self.store_a = Store.objects.create(name="Amadora RC", code="RCA")
+        self.store_b = Store.objects.create(name="Lisboa RC", code="RCB")
+        StoreProfile.objects.update_or_create(user=self.employee, defaults={'store': self.store_b})
+        cat = Category.objects.create(name="RC Cat")
+        self.product = Product.objects.create(name="Asad", brand="LATTAFA", barcode="9500000000001",
+                                              category=cat, default_price=Decimal("30"))
+        self.customer = Customer.objects.create(nif="245678913", name="Rita Almeida",
+                                                phone="912345678")
+        self.order = SaleOrder.objects.create(customer=self.customer, store=self.store_a)
+        Sale.objects.create(order=self.order, product=self.product, customer=self.customer,
+                            quantity=1, unit_price=Decimal("30"), payment_method="cash")
+
+    def test_print_a4_opens_a_pdf(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("sale_order_receipt_pdf", args=[self.order.id]))
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertTrue(response["Content-Disposition"].startswith("inline;"))
+        self.assertTrue(response.content.startswith(b"%PDF"))
+
+    def test_the_detail_page_print_button_points_at_the_pdf(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("sale_order_detail", args=[self.order.id]))
+        self.assertEqual(response.context["print_a4_url"],
+                         reverse("sale_order_receipt_pdf", args=[self.order.id]))
+
+    def test_an_old_a4_print_link_lands_on_the_pdf(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("sale_order_detail", args=[self.order.id]),
+                                   {"print": "1", "layout": "a4"})
+        self.assertRedirects(response, reverse("sale_order_receipt_pdf", args=[self.order.id]),
+                             fetch_redirect_response=False)
+
+    def test_the_till_slip_is_still_html(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("sale_order_detail", args=[self.order.id]),
+                                   {"print": "1", "layout": "pos"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"].split(";")[0], "text/html")
+
+    def test_an_employee_cannot_print_another_shops_receipt(self):
+        self.client.force_login(self.employee)
+        response = self.client.get(reverse("sale_order_receipt_pdf", args=[self.order.id]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_the_receipt_reads_the_order_payment_split(self):
+        """Like Today and Orders: card + cash on one line shows as both."""
+        from unittest import mock
+        from stock.models import SaleOrderPayment
+        SaleOrderPayment.objects.create(order=self.order, method="card", amount=Decimal("20"))
+        SaleOrderPayment.objects.create(order=self.order, method="cash", amount=Decimal("10"))
+        self.client.force_login(self.admin)
+        with mock.patch("stock.services.receipt_pdf.build_receipt_pdf",
+                        return_value=b"%PDF-x") as build:
+            self.client.get(reverse("sale_order_receipt_pdf", args=[self.order.id]))
+        payments = dict(build.call_args.kwargs["payments"])
+        self.assertEqual(payments, {"card": Decimal("20"), "cash": Decimal("10")})
+        self.assertEqual(build.call_args.kwargs["customer_nif"], "245678913")
+
+    def test_only_a_nif_that_checks_out_is_printed(self):
+        from stock.services.receipt_pdf import valid_pt_nif
+        self.assertTrue(valid_pt_nif("245678913"))
+        self.assertTrue(valid_pt_nif("517067226"))      # the shop's own
+        self.assertFalse(valid_pt_nif("000000001"))     # stand-ins typed at the till
+        self.assertFalse(valid_pt_nif("123123123"))
+        self.assertFalse(valid_pt_nif("12345"))
+        self.assertFalse(valid_pt_nif(""))
+
+
+class SalesReportPdfTests(TestCase):
+    """Orders > Export PDF prints what the page shows."""
+
+    def setUp(self):
+        self.admin = get_user_model().objects.create_superuser("sr_admin", password="pw123456")
+        self.client.force_login(self.admin)
+        self.store_a = Store.objects.create(name="Amadora SR", code="SRA")
+        self.store_b = Store.objects.create(name="Lisboa SR", code="SRB")
+        cat = Category.objects.create(name="SR Cat")
+        self.a = Product.objects.create(name="Alpha", brand="X", barcode="9600000000001",
+                                        category=cat, default_price=Decimal("10"))
+        self.b = Product.objects.create(name="Bravo", brand="X", barcode="9600000000002",
+                                        category=cat, default_price=Decimal("20"))
+
+    def _order(self, store, lines):
+        # The till stamps the store on the order and on every line; the store
+        # filter reads the line.
+        order = SaleOrder.objects.create(store=store)
+        for product, price, qty in lines:
+            Sale.objects.create(order=order, product=product, quantity=qty, store=store,
+                                unit_price=Decimal(price), payment_method="cash")
+        return order
+
+    def _export(self, **params):
+        from unittest import mock
+        with mock.patch("stock.services.sales_report_pdf.build_sales_report_pdf",
+                        return_value=b"%PDF-x") as build:
+            response = self.client.get(reverse("export_sales_purchases_pdf"), params)
+        return response, build.call_args.kwargs
+
+    def test_it_returns_a_pdf_download(self):
+        self._order(self.store_a, [(self.a, "10", 1)])
+        response = self.client.get(reverse("export_sales_purchases_pdf"))
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertIn("attachment;", response["Content-Disposition"])
+        self.assertTrue(response.content.startswith(b"%PDF"))
+
+    def test_the_report_follows_the_active_store(self):
+        """The old report ignored the store, so it never matched the page."""
+        self._order(self.store_a, [(self.a, "10", 1)])
+        self._order(self.store_b, [(self.b, "20", 1)])
+        session = self.client.session
+        session["active_store_id"] = self.store_a.id
+        session.save()
+        _, sent = self._export()
+        self.assertEqual(sent["summary"]["amount"], Decimal("10.00"))
+        self.assertEqual(sent["store_label"], "Amadora SR")
+
+    def test_per_order_means_per_order(self):
+        """The old "Avg Ticket" divided by items, not orders."""
+        self._order(self.store_a, [(self.a, "10", 3)])      # 30 over 3 items
+        self._order(self.store_a, [(self.b, "20", 1)])      # 20 over 1 item
+        _, sent = self._export()
+        self.assertEqual(sent["summary"]["avg"], Decimal("25.00"))
+
+    def test_the_report_keeps_the_search_and_whole_orders(self):
+        self._order(self.store_a, [(self.a, "10", 1), (self.b, "20", 1)])
+        self._order(self.store_a, [(self.b, "20", 1)])
+        _, sent = self._export(q="Alpha")
+        self.assertEqual(len(sent["orders"]), 1)
+        self.assertEqual(sent["summary"]["amount"], Decimal("30.00"))
+        self.assertIn("Alpha", sent["filter_label"])
+
+    def test_no_dates_means_the_last_seven_days_not_an_empty_file(self):
+        self._order(self.store_a, [(self.a, "10", 1)])
+        response, sent = self._export()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(sent["summary"]["orders"], 1)
+
+    def test_the_orders_page_export_link_carries_the_filters(self):
+        response = self.client.get(reverse("sales_records"), {"q": "Alpha", "payment": "card"})
+        self.assertIn("q=Alpha", response.context["export_url"])
+        self.assertIn("payment=card", response.context["export_url"])
+
+    def test_the_real_report_renders(self):
+        self._order(self.store_a, [(self.a, "10", 2)])
+        response = self.client.get(reverse("export_sales_purchases_pdf"))
+        self.assertGreater(len(response.content), 1500)
+
+
+class PagePolishTests(TestCase):
+    """Orders figures as tiles; customers on a phone as Orders does it;
+    Pedido without the explanatory line."""
+
+    def setUp(self):
+        self.admin = get_user_model().objects.create_superuser("pp_admin", password="pw123456")
+        self.client.force_login(self.admin)
+        cat = Category.objects.create(name="PP Cat")
+        self.a = Product.objects.create(name="Alpha", brand="X", barcode="9700000000001",
+                                        category=cat, default_price=Decimal("10"))
+
+    def test_the_orders_summary_is_tiles_with_a_payment_bar(self):
+        order = SaleOrder.objects.create()
+        Sale.objects.create(order=order, product=self.a, quantity=1,
+                            unit_price=Decimal("10"), payment_method="cash")
+        response = self.client.get(reverse("sales_records"))
+        self.assertContains(response, 'class="op-kpi hi"')
+        self.assertContains(response, 'class="op-pay"')
+        pay = response.context["summary"]["pay_display"]
+        self.assertEqual(pay[0]["share"], 100.0)
+        self.assertEqual(response.context["summary"]["margin"], 100)  # no cost recorded
+
+    def test_customer_rows_open_a_layer_instead_of_folding(self):
+        customer = Customer.objects.create(nif="970000001", name="Ana Linha")
+        html = self.client.get(reverse("customer_search")).content.decode()
+        self.assertIn(f'data-layer="cl-{customer.id}"', html)
+        self.assertIn(f'<template id="cl-{customer.id}">', html)
+        self.assertIn('id="clLayer"', html)
+        self.assertNotIn("cl-expand", html)
+
+    def test_status_and_sort_fold_on_a_phone_and_say_when_in_use(self):
+        html = self.client.get(reverse("customer_search")).content.decode()
+        self.assertIn('<details class="cl-fold" open data-active="">', html)
+        html = self.client.get(reverse("customer_search"), {"status": "new"}).content.decode()
+        self.assertIn('<details class="cl-fold" open data-active="1">', html)
+
+    def test_pedido_has_no_explanatory_line(self):
+        response = self.client.get(reverse("pedido"))
+        self.assertNotContains(response, "por omissão")

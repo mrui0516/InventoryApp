@@ -2684,13 +2684,58 @@ def check_barcode(request):
 # 销售汇总列表/详情
 # -----------------------------
 
-@login_required
-def sale_order_detail_view(request, order_id):
-    order_qs = SaleOrder.objects.select_related('customer')
+def _order_for_user(request, order_id):
+    """The order, if this user may see it: employees only their store's."""
+    order_qs = SaleOrder.objects.select_related('customer', 'store')
     if not has_manager_access(request.user):
         active_store, store_is_all = resolve_active_store(request)
         order_qs = scope_sales_by_store(order_qs, active_store, store_is_all)
-    order = get_object_or_404(order_qs, id=order_id)
+    return get_object_or_404(order_qs, id=order_id)
+
+
+@login_required
+def sale_order_receipt_pdf(request, order_id):
+    """The A4 receipt, as a PDF in the quote's look, opened in the browser to
+    print or share. Payments come from the order's own split, as on Today."""
+    from .services import receipt_pdf
+    order = _order_for_user(request, order_id)
+    items = list(order.items.select_related('product').order_by('id'))
+    for item in items:
+        item.line_total = (item.unit_price or Decimal('0.00')) * item.quantity
+    total = sum((item.line_total for item in items), Decimal('0.00'))
+    pay = order_tender_amounts(order, total, items)
+    payments = [(method, amount) for method, amount in
+                sorted(pay.items(), key=lambda kv: (-kv[1], kv[0] or '')) if method and amount]
+
+    customer = order.customer
+    profile = PrintProfile.get_for_store(order.store)
+    pdf = receipt_pdf.build_receipt_pdf(
+        profile=profile,
+        order_id=order.id,
+        created_label=timezone.localtime(order.created_at).strftime('%d/%m/%Y %H:%M'),
+        store_name=order.store.name if order.store_id else '',
+        customer_name=customer.name if customer else '',
+        customer_phone=(customer.phone or '') if customer else '',
+        customer_nif=(customer.nif or '') if customer else '',
+        lines=[{'title': build_product_label(item.product),
+                'barcode': item.product.barcode if item.product else '',
+                'quantity': item.quantity, 'unit_price': item.unit_price or Decimal('0.00'),
+                'line_total': item.line_total} for item in items],
+        total=total,
+        payments=payments,
+        footer_note=profile.footer_note,
+    )
+    response = HttpResponse(pdf, content_type='application/pdf')
+    response['Content-Disposition'] = f'inline; filename="recibo-{order.id}.pdf"'
+    return response
+
+
+@login_required
+def sale_order_detail_view(request, order_id):
+    order = _order_for_user(request, order_id)
+    # The A4 print is a PDF now; old "?print=1&layout=a4" links land on it.
+    if request.GET.get('print') == '1' and request.GET.get('layout') != 'pos':
+        return redirect('sale_order_receipt_pdf', order_id=order.id)
     items = list(
         order.items
         .select_related('product', 'product__brand_master', 'product__series_master')
@@ -2733,7 +2778,7 @@ def sale_order_detail_view(request, order_id):
         'show_sensitive': show_sensitive,
         'show_sales_sensitive': show_sales_sensitive,
         'show_order_financials': show_order_financials,
-        'print_a4_url': f"{reverse('sale_order_detail', args=[order.id])}?print=1&layout=a4",
+        'print_a4_url': reverse('sale_order_receipt_pdf', args=[order.id]),
         'print_pos_url': f"{reverse('sale_order_detail', args=[order.id])}?print=1&layout=pos",
         'edit_print_profile_url': f"{reverse('print_profile_edit')}?{urlencode({'next': back_url})}",
         'shop': {
@@ -3866,340 +3911,10 @@ def attendance_view(request):
 @login_required
 @manager_required
 def export_sales_purchases_pdf(request):
-    start_str = request.GET.get('start_date', '').strip()
-    end_str   = request.GET.get('end_date', '').strip()
-    start_date = end_date = None
-    try:
-        if start_str: start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
-    except: start_date = None
-    try:
-        if end_str: end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
-    except: end_date = None
-
-    if not start_date and not end_date:
-        buf = BytesIO(); buf.write(b'No date selected'); buf.seek(0)
-        return FileResponse(buf, as_attachment=True, filename='sales_report.pdf')
-
-    if start_date and not end_date: end_date = start_date
-    if end_date and not start_date: start_date = end_date
-    if start_date > end_date: start_date, end_date = end_date, start_date
-
-    # ====== 查询 ======
-    sales_qs = (
-        Sale.objects
-        .filter(date__date__gte=start_date, date__date__lte=end_date)
-        .select_related('order', 'product', 'customer')
-        .order_by('date', 'order_id', 'id')
-    )
-
-    # ====== 分组（日期 → 订单）======
-    day_map = defaultdict(lambda: {
-        'orders': defaultdict(lambda: {
-            'order': None,
-            'items': [],
-            'total_qty': 0,
-            'total_amount': Decimal('0.00'),
-            'pay_break': defaultdict(Decimal),
-        }),
-        'totals': {'qty': 0, 'amount': Decimal('0.00')},
-        'pay_break': defaultdict(Decimal),
-        'order_count': 0,
-    })
-
-    for s in sales_qs:
-        d = s.date.date()
-        o = s.order
-        oid = o.id if o else 0
-        pack = day_map[d]['orders'][oid]
-        if pack['order'] is None:
-            if o:
-                o.cust_name = o.customer.name if o.customer else '-'
-                o.created_hm = o.created_at.strftime('%H:%M') if o.created_at else s.date.strftime('%H:%M')
-            pack['order'] = o
-            day_map[d]['order_count'] += 1
-
-        pack['items'].append(s)
-        pack['total_qty'] += s.quantity
-        sub = (s.unit_price or Decimal('0')) * s.quantity
-        pack['total_amount'] += sub
-        pack['pay_break'][(s.payment_method or '').lower()] += sub
-
-        day_map[d]['totals']['qty']    += s.quantity
-        day_map[d]['totals']['amount'] += sub
-        day_map[d]['pay_break'][(s.payment_method or '').lower()] += sub
-
-    # ====== 样式 ======
-    styles  = getSampleStyleSheet()
-    title   = ParagraphStyle('title', parent=styles['Title'], spaceAfter=4)
-    h2      = ParagraphStyle('h2', parent=styles['Heading2'], spaceBefore=6, spaceAfter=6)
-    h3      = ParagraphStyle('h3', parent=styles['Heading3'], spaceBefore=6, spaceAfter=6)
-    p       = ParagraphStyle('p',  parent=styles['Normal'], fontSize=9, leading=11)
-    p_bold  = ParagraphStyle('p_bold', parent=p, fontName='Helvetica-Bold')
-    p_small = ParagraphStyle('p_small', parent=styles['Normal'], fontSize=8, leading=9.6)
-
-    # Summary 专用大字样式（非表格）
-    big_num = ParagraphStyle('big_num', parent=styles['Normal'], fontName='Helvetica-Bold',
-                             fontSize=18, leading=22, textColor=colors.HexColor('#0f172a'))
-    big_lab = ParagraphStyle('big_lab', parent=styles['Normal'], fontName='Helvetica',
-                             fontSize=10, leading=12, textColor=colors.HexColor('#64748b'))
-    line_val = ParagraphStyle('line_val', parent=styles['Normal'], fontName='Helvetica-Bold',
-                              fontSize=12, leading=15, textColor=colors.HexColor('#0f172a'))
-
-    def money(x: Decimal) -> str:
-        x = (x or Decimal('0')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-        return f"{x:.2f}"
-
-    # ====== 文档与页眉页脚 ======
-    buf = BytesIO()
-    PAGE = landscape(A4)
-    left, right, top, bottom = 22, 22, 50, 30
-    doc = SimpleDocTemplate(
-        buf, pagesize=PAGE, leftMargin=left, rightMargin=right,
-        topMargin=top, bottomMargin=bottom, title='Sales Report'
-    )
-    usable_w = PAGE[0] - left - right
-
-    THEAD_BG = colors.HexColor('#e2e8f0')
-    THEAD_TX = colors.HexColor('#0f172a')
-    GRID     = colors.HexColor('#cbd5e1')
-    ALT1     = colors.white
-    ALT2     = colors.HexColor('#f8fafc')
-
-    date_filter = f"{start_date} → {end_date}" if start_date != end_date else f"{start_date}"
-    gen_time = datetime.now().strftime('%Y-%m-%d %H:%M')
-
-    def header_footer(c, d):
-        c.saveState()
-        c.setFont("Helvetica-Bold", 9)
-        c.setFillColorRGB(0.06, 0.09, 0.16)
-        c.drawString(d.leftMargin, d.height + d.topMargin - 18, "Sales Report")
-        c.setFont("Helvetica", 8)
-        c.drawRightString(d.pagesize[0]-d.rightMargin, d.height + d.topMargin - 18,
-                          f"Range: {date_filter}   |   Generated: {gen_time}")
-        c.setFont("Helvetica", 8)
-        c.setFillColorRGB(0.34, 0.41, 0.5)
-        c.drawRightString(d.pagesize[0]-d.rightMargin, d.bottomMargin - 12, f"Page {d.page}")
-        c.restoreState()
-
-    # ====== 组件 ======
-    def order_items_table(items):
-        colw = [
-            0.56*usable_w,  # Product
-            0.08*usable_w,  # Qty
-            0.12*usable_w,  # Unit
-            0.14*usable_w,  # Subtotal
-            0.10*usable_w,  # Payment
-        ]
-        rows = [[
-            Paragraph("Product", p_bold),
-            Paragraph("Qty",  p_bold),
-            Paragraph("Unit (€)", p_bold),
-            Paragraph("Subtotal (€)", p_bold),
-            Paragraph("Payment", p_bold),
-        ]]
-        for s in items:
-            prod = s.product
-            brand = getattr(prod, 'brand', '') or ''
-            model = getattr(prod, 'model', '') or ''
-            name  = getattr(prod, 'name', '') or ''
-            line  = " - ".join([x for x in [brand, model, name] if x]) or '—'
-            rows.append([
-                Paragraph(build_product_label(prod) or line, p_small),
-                Paragraph(str(s.quantity), p_small),
-                Paragraph(money(s.unit_price or Decimal('0')), p_small),
-                Paragraph(money((s.unit_price or Decimal('0')) * s.quantity), p_small),
-                Paragraph((s.payment_method or '').capitalize() or '—', p_small),
-            ])
-
-        t = Table(rows, colWidths=colw, repeatRows=1, hAlign='LEFT')
-        t.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), THEAD_BG),
-            ('TEXTCOLOR', (0,0), (-1,0), THEAD_TX),
-            ('LINEABOVE', (0,0), (-1,0), 0.6, GRID),
-            ('LINEBELOW', (0,0), (-1,0), 0.6, GRID),
-            ('GRID', (0,0), (-1,-1), 0.25, GRID),
-            ('FONTSIZE', (0,0), (-1,0), 9),
-            ('FONTSIZE', (0,1), (-1,-1), 8),
-            ('LEADING', (0,1), (-1,-1), 10),
-            ('ALIGN', (1,1), (3,-1), 'RIGHT'),
-            ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ('ROWBACKGROUNDS', (0,1), (-1,-1), [ALT1, ALT2]),
-            ('LEFTPADDING', (0,0), (-1,-1), 5),
-            ('RIGHTPADDING', (0,0), (-1,-1), 5),
-            ('TOPPADDING', (0,0), (-1,-1), 3),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 3),
-        ]))
-        return t
-
-    def day_summary_box(day_dict):
-        orders = day_dict['order_count']
-        qty    = day_dict['totals']['qty']
-        amt    = day_dict['totals']['amount']
-        avg    = (amt/qty) if qty else Decimal('0')
-
-        pay = day_dict['pay_break']
-        cash   = pay.get('cash',   Decimal('0'))
-        card   = pay.get('card',   Decimal('0'))
-        mbway  = pay.get('mbway',  Decimal('0'))
-        others = sum(v for k, v in pay.items() if k not in {'cash', 'card', 'mbway'})
-
-        # 统一 8 列，整页宽度分配；数值单元用更大字号
-        colw = [0.10*usable_w, 0.15*usable_w, 0.10*usable_w, 0.15*usable_w,
-                0.14*usable_w, 0.10*usable_w, 0.16*usable_w, 0.10*usable_w]
-
-        data = [
-            # ── 第1行：核心指标（标签/值交替）
-            [Paragraph("Total (€)", p_bold),  Paragraph(f"€ {money(amt)}", ParagraphStyle('big', parent=p_bold, fontSize=12, leading=14)),
-            Paragraph("Orders", p_bold),     Paragraph(str(orders),       ParagraphStyle('big', parent=p_bold, fontSize=12, leading=14)),
-            Paragraph("Items",  p_bold),     Paragraph(str(qty),          ParagraphStyle('big', parent=p_bold, fontSize=12, leading=14)),
-            Paragraph("Avg Ticket (€)", p_bold), Paragraph(f"€ {money(avg)}", ParagraphStyle('big', parent=p_bold, fontSize=12, leading=14))],
-            # ── 第2行：支付方式拆分
-            [Paragraph("CASH (€)", p_small),  Paragraph(money(cash),  p_small),
-            Paragraph("Card (€)", p_small),  Paragraph(money(card),  p_small),
-            Paragraph("MBWay (€)", p_small), Paragraph(money(mbway), p_small),
-            Paragraph("Other (€)", p_small), Paragraph(money(others), p_small)],
-        ]
-
-        t = Table(data, colWidths=colw, hAlign='LEFT')
-        t.setStyle(TableStyle([
-            # 表头行（第1行）背景更亮、边框更粗，突出 Total 区
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f1f5f9')),
-            ('LINEABOVE',  (0,0), (-1,0), 0.8, GRID),
-            ('LINEBELOW',  (0,0), (-1,0), 0.8, GRID),
-            # 整表边框与网格
-            ('BOX',        (0,0), (-1,-1), 0.6, GRID),
-            ('INNERGRID',  (0,0), (-1,-1), 0.25, GRID),
-            # 标签单元（偶数列 0,2,4,6）底色微弱区分
-            ('BACKGROUND', (0,0), (0,-1), colors.HexColor('#eef2ff')),
-            ('BACKGROUND', (2,0), (2,-1), colors.HexColor('#eef2ff')),
-            ('BACKGROUND', (4,0), (4,-1), colors.HexColor('#eef2ff')),
-            ('BACKGROUND', (6,0), (6,-1), colors.HexColor('#eef2ff')),
-            # 值单元（第1行）字号更大、颜色更深
-            ('FONTSIZE',   (1,0), (1,0), 12),
-            ('FONTSIZE',   (3,0), (3,0), 12),
-            ('FONTSIZE',   (5,0), (5,0), 12),
-            ('FONTSIZE',   (7,0), (7,0), 12),
-            ('TEXTCOLOR',  (1,0), (7,0), colors.HexColor('#0f172a')),
-            ('FONTNAME',   (1,0), (7,0), 'Helvetica-Bold'),
-            # 内边距
-            ('LEFTPADDING',  (0,0), (-1,-1), 6),
-            ('RIGHTPADDING', (0,0), (-1,-1), 6),
-            ('TOPPADDING',   (0,0), (-1,-1), 4),
-            ('BOTTOMPADDING',(0,0), (-1,-1), 4),
-            # 对齐：金额/数量值右对齐更易比较
-            ('ALIGN', (1,0), (1,-1), 'RIGHT'),
-            ('ALIGN', (3,0), (3,-1), 'RIGHT'),
-            ('ALIGN', (5,0), (5,-1), 'RIGHT'),
-            ('ALIGN', (7,0), (7,-1), 'RIGHT'),
-            # 垂直对齐
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ]))
-
-        return [t]
-
-    def order_header_row(o, row):
-        head = Table([[
-            Paragraph(f"Order # {o.id if o else '-'}", p_bold),
-            Paragraph(f"Time: {getattr(o, 'created_hm', '--:--')}", p),
-            Paragraph(f"Customer: {getattr(o, 'cust_name', '-')}", p),
-            Paragraph(f"Total: € {money(row['total_amount'])}", p_bold),
-            Paragraph(" | ".join(f"{k.capitalize()} € {money(v)}" for k,v in row['pay_break'].items()) or "-", p),
-        ]], colWidths=[0.17*usable_w, 0.13*usable_w, 0.34*usable_w, 0.16*usable_w, 0.20*usable_w])
-        head.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#edf2f7')),
-            ('BOX', (0,0), (-1,-1), 0.5, GRID),
-            ('INNERGRID', (0,0), (-1,-1), 0.25, GRID),
-            ('FONTNAME', (0,0), (0,0), 'Helvetica-Bold'),
-            ('FONTNAME', (3,0), (3,0), 'Helvetica-Bold'),
-            ('LEFTPADDING', (0,0), (-1,-1), 6),
-            ('RIGHTPADDING', (0,0), (-1,-1), 6),
-            ('TOPPADDING', (0,0), (-1,-1), 4),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-        ]))
-        return head
-
-    # ====== 生成内容 ======
-    elements = [
-        Paragraph("📋 Sales Report", title),
-        Paragraph(f"🗓 Date Range: {date_filter}", h3),
-        Spacer(1, 8),
-    ]
-
-    grand_orders = 0
-    grand_qty    = 0
-    grand_amt    = Decimal('0')
-    pay_all      = defaultdict(Decimal)
-
-    first_page = True
-    for d in sorted(day_map.keys(), reverse=True):
-        if not first_page:
-            elements.append(PageBreak())
-        first_page = False
-
-        # 防止页眉重叠
-        elements.append(Spacer(1, 6))
-        elements.append(Paragraph(f"📅 {d}", h2))
-
-        day = day_map[d]
-        grand_orders += day['order_count']
-        grand_qty    += day['totals']['qty']
-        grand_amt    += day['totals']['amount']
-        for k,v in day['pay_break'].items():
-            pay_all[k] += v
-
-        # 日期摘要
-        elements += day_summary_box(day)
-        elements.append(Spacer(1, 6))
-
-        # 订单（id 倒序）
-        for oid, row in sorted(day['orders'].items(), key=lambda kv: kv[0], reverse=True):
-            o = row['order']
-            head = order_header_row(o, row)
-            items_tbl = order_items_table(row['items'])
-            elements.append(KeepTogether([head, Spacer(1, 3), items_tbl, Spacer(1, 8)]))
-
-    # ====== 最后一页：总体 Summary（非表格，突出显示） ======
-    elements.append(PageBreak())
-    elements.append(Paragraph("Overall Summary", h2))
-    elements.append(HRFlowable(width="100%", thickness=0.6, color=colors.HexColor('#cbd5e1')))
-    elements.append(Spacer(1, 8))
-
-    avg_ticket = (grand_amt / grand_qty) if grand_qty else Decimal('0')
-    cash  = pay_all.get('cash',  Decimal('0'))
-    card  = pay_all.get('card',  Decimal('0'))
-    mbway = pay_all.get('mbway', Decimal('0'))
-    others = [(k, v) for k, v in pay_all.items() if k not in {'cash','card','mbway'}]
-
-    # 关键指标（大号）
-    elements += [
-        Paragraph("Total Amount (€)", big_lab),
-        Paragraph(f"€ {money(grand_amt)}", big_num),
-        Spacer(1, 6),
-        Paragraph("Orders", big_lab),
-        Paragraph(f"{grand_orders}", big_num),
-        Spacer(1, 6),
-        Paragraph("Items", big_lab),
-        Paragraph(f"{grand_qty}", big_num),
-        Spacer(1, 10),
-        Paragraph("Average Ticket (€)", big_lab),
-        Paragraph(f"€ {money(avg_ticket)}", line_val),
-        Spacer(1, 14),
-        HRFlowable(width="100%", thickness=0.6, color=colors.HexColor('#e2e8f0')),
-        Spacer(1, 10),
-        Paragraph("Payments Breakdown", big_lab),
-        Paragraph(f"CASH: € {money(cash)}", line_val),
-        Paragraph(f"Card: € {money(card)}", line_val),
-        Paragraph(f"MBWay: € {money(mbway)}", line_val),
-    ]
-    if others:
-        other_line = " · ".join(f"{k.capitalize()}: € {money(v)}" for k,v in sorted(others))
-        elements.append(Paragraph(other_line, line_val))
-
-    # 导出
-    doc.build(elements, onFirstPage=header_footer, onLaterPages=header_footer)
-    buf.seek(0)
-    fname = f"Sales_{start_date}_to_{end_date}.pdf" if start_date != end_date else f"Sales_{start_date}.pdf"
-    return FileResponse(buf, as_attachment=True, filename=fname)
+    """Orders > Export PDF. Built from the Orders page's own rows
+    (orders_views.export_report) so the paper matches the screen."""
+    from .orders_views import export_report
+    return export_report(request)
 
 
 @login_required

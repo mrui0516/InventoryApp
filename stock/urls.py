@@ -89,6 +89,7 @@ urlpatterns = [
     path('sale-orders/manage/<int:order_id>/edit/', views.sale_order_correction_edit_view, name='sale_order_correction_edit'),
     path('print-profile/', views.print_profile_edit_view, name='print_profile_edit'),
     path('sale-orders/<int:order_id>/', views.sale_order_detail_view, name='sale_order_detail'),
+    path('sale-orders/<int:order_id>/receipt.pdf', views.sale_order_receipt_pdf, name='sale_order_receipt_pdf'),
 
     path('ar/new/', views.ar_new_view, name='ar_new'),
     path('ar/', views.ar_list_view, name='ar_list'),

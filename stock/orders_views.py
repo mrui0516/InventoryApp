@@ -280,13 +280,19 @@ def summarize(orders):
     for row in orders:
         for method, value in row['pay'].items():
             pay[method] += value
+    profit = sum((row['profit'] for row in orders), ZERO)
+    pay_display = _pay_display(pay)
+    for p in pay_display:
+        # Whole-number share for the payment bar; widths only, not a figure.
+        p['share'] = round(float(p['amount']) / float(amount) * 100, 1) if amount else 0
     return {
         'amount': amount,
         'orders': count,
         'qty': sum(row['qty'] for row in orders),
         'avg': (amount / count) if count else ZERO,
-        'profit': sum((row['profit'] for row in orders), ZERO),
-        'pay_display': _pay_display(pay),
+        'profit': profit,
+        'margin': round(float(profit) / float(amount) * 100) if amount else 0,
+        'pay_display': pay_display,
         'pay': dict(pay),
     }
 
@@ -548,8 +554,10 @@ def orders_page(request):
         'payment_label': PAYMENT_LABELS.get(params['payment'], ''),
         'clear_q_url': page_url(params, q=None),
         'clear_payment_url': page_url(params, payment=None),
-        'export_url': (f"{reverse('export_sales_purchases_pdf')}?"
-                       f"{urlencode({'start_date': start.isoformat(), 'end_date': end.isoformat()})}"),
+        # The PDF prints what is on screen: same range, search and payment.
+        'export_url': (f"{reverse('export_sales_purchases_pdf')}?" + urlencode(
+            [(k, v) for k, v in (('start_date', start.isoformat()), ('end_date', end.isoformat()),
+                                 ('q', params['q']), ('payment', params['payment'])) if v])),
     }
 
     if view in ('sales', 'analysis'):
@@ -635,3 +643,59 @@ def orders_page(request):
         })
 
     return render(request, 'stock/sales_records.html', context)
+
+
+def export_report(request):
+    """Orders > Export PDF: the sales report for exactly what the page shows."""
+    from django.http import HttpResponse
+    from .models import PrintProfile
+    from .services import sales_report_pdf
+
+    today = timezone.localdate()
+    params = resolve_params(request.GET, today)
+    if params['layout'] == 'calendar':
+        params['layout'] = 'list'
+    start, end = params['start'], params['end']
+    show_profit = bool(getattr(request.user, 'is_superuser', False))
+    active_store, store_is_all = resolve_active_store(request)
+
+    orders = load_orders(start, end, active_store=active_store, store_is_all=store_is_all,
+                         show_profit=show_profit)
+    orders = filter_payment(search_orders(orders, params['q']), params['payment'])
+    summary = summarize(orders)
+
+    days = {}
+    for row in orders:
+        day = days.setdefault(row['day'], {'day': row['day'], 'orders': 0, 'qty': 0,
+                                           'amount': ZERO, 'pay': defaultdict(Decimal)})
+        day['orders'] += 1
+        day['qty'] += row['qty']
+        day['amount'] += row['amount']
+        for method, value in row['pay'].items():
+            day['pay'][method] += value
+
+    filters = []
+    if params['q']:
+        filters.append(f'search "{params["q"]}"')
+    if params['payment']:
+        filters.append(f"paid by {PAYMENT_LABELS.get(params['payment'], params['payment'])}")
+    store = None if (store_is_all or active_store is None) else active_store
+    range_label = (start.strftime('%d/%m/%Y') if start == end else
+                   f"{start.strftime('%d/%m/%Y')} - {end.strftime('%d/%m/%Y')}")
+
+    pdf = sales_report_pdf.build_sales_report_pdf(
+        profile=PrintProfile.get_for_store(store),
+        range_label=range_label,
+        store_label=store.name if store else 'All stores',
+        generated_label=timezone.localtime().strftime('%d/%m/%Y %H:%M'),
+        filter_label=('Filtered: ' + ', '.join(filters)) if filters else '',
+        summary=summary,
+        days=sorted(days.values(), key=lambda d: d['day'], reverse=True),
+        orders=orders,
+        show_profit=show_profit,
+    )
+    name = (f"Sales_{start.isoformat()}.pdf" if start == end
+            else f"Sales_{start.isoformat()}_to_{end.isoformat()}.pdf")
+    response = HttpResponse(pdf, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{name}"'
+    return response

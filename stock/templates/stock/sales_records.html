@@ -28,11 +28,11 @@
   .op-qrow input[type=date]{ flex:0 1 9.5rem; }
   .op-qrow2{ display:flex; gap:.8rem; flex-wrap:wrap; align-items:center; }
   .op-seg{ display:inline-flex; border:1px solid var(--line2); border-radius:var(--app-radius-sm); overflow:hidden; }
-  .op-seg a{ padding:.26rem .7rem; font-size:.82rem; font-weight:700; color:var(--app-primary);
+  .op-seg a{ padding:.3rem .75rem; font-size:.88rem; font-weight:700; color:var(--app-primary);
              text-decoration:none; border-left:1px solid var(--line2); }
   .op-seg a:first-child{ border-left:0; }
   .op-seg a.on{ background:var(--acc); color:#fff; }
-  .op-seg-label{ font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em;
+  .op-seg-label{ font-size:.74rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em;
                  color:var(--muted); margin-right:.3rem; }
   .op-filters > summary{ cursor:pointer; font-size:.84rem; font-weight:700; color:var(--acc-ink); }
   .op-filters[open] > summary{ margin-bottom:.45rem; }
@@ -46,12 +46,34 @@
             background:var(--app-accent-soft); border:1px solid var(--app-accent-line); color:var(--acc-ink);
             font-size:.8rem; font-weight:700; text-decoration:none; }
 
-  .op-sum{ display:flex; gap:1.1rem; flex-wrap:wrap; align-items:baseline; padding:.45rem .1rem .55rem;
-           font-size:.84rem; color:var(--muted); font-weight:600; }
-  .op-sum b{ color:var(--ink); font-size:1rem; font-weight:800; font-variant-numeric:tabular-nums; }
-  .op-paysum > summary{ cursor:pointer; color:var(--acc-ink); font-weight:700; }
-  .op-paysum[open]{ flex-basis:100%; }
-  .op-paysum .pays{ display:flex; gap:1rem; flex-wrap:wrap; margin-top:.3rem; }
+  /* Figures as tiles: a small label over a large number, the headline one
+     filled. They used to be one line of plain text. */
+  .op-kpis{ display:flex; flex-wrap:wrap; gap:.5rem; margin:.1rem 0 .55rem; }
+  .op-kpi{ flex:1 1 8rem; border:1px solid var(--line); border-radius:var(--app-radius); background:var(--app-surface);
+           padding:.55rem .75rem; display:flex; flex-direction:column; gap:.1rem; min-width:0; }
+  .op-kpi.hi{ flex:1.6 1 12rem; }
+  .op-kpi .k{ font-size:.74rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
+              color:var(--muted); }
+  .op-kpi .v{ font-size:1.3rem; font-weight:800; color:var(--ink); font-variant-numeric:tabular-nums;
+              white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .op-kpi .s{ font-size:.82rem; font-weight:600; color:var(--muted); }
+  .op-kpi.hi{ background:#10213a; border-color:#10213a; }
+  .op-kpi.hi .k{ color:#9fb6dd; }
+  .op-kpi.hi .v{ color:#fff; font-size:1.55rem; }
+  .op-kpi.hi .s{ color:#c7d5ee; }
+  .op-kpi .s-m{ display:none; }
+  /* Payments: one bar, split by method, with the amounts beside it. */
+  .op-pay{ border:1px solid var(--line); border-radius:var(--app-radius); background:var(--app-surface);
+           padding:.55rem .75rem; margin-bottom:.6rem; }
+  .op-pay .bar{ display:flex; height:10px; border-radius:999px; overflow:hidden; background:var(--app-surface-2); }
+  .op-pay .seg{ display:block; height:100%; }
+  .op-pay .legend{ display:flex; gap:.4rem 1.2rem; flex-wrap:wrap; margin-top:.45rem; font-size:.9rem; }
+  .op-pay .legend span{ display:inline-flex; align-items:center; gap:.35rem; color:var(--app-primary); font-weight:600; }
+  .op-pay .legend b{ color:var(--ink); font-variant-numeric:tabular-nums; }
+  .op-pay .legend small{ color:var(--muted); font-weight:700; }
+  .op-pay .dot{ width:.65rem; height:.65rem; border-radius:3px; display:inline-block; }
+  .pay-cash{ background:#16a34a; } .pay-card{ background:#2563eb; } .pay-mbway{ background:#e11d48; }
+  .pay-other{ background:#94a3b8; }
   .op-note{ font-size:.82rem; color:var(--app-warn); background:var(--app-warn-soft); border:1px solid #f5d99b;
             border-radius:var(--app-radius-sm); padding:.35rem .6rem; margin-bottom:.5rem; }
   .op-note a{ font-weight:700; }
@@ -62,7 +84,7 @@
   .op-row{ display:flex; align-items:stretch; border-bottom:1px solid var(--line); }
   .op-row:last-child{ border-bottom:0; }
   .op-open{ flex:1 1 auto; min-width:0; display:grid; align-items:center; gap:.6rem; text-align:left;
-            border:0; background:none; padding:.45rem .7rem; font-size:.9rem; color:var(--ink); cursor:pointer;
+            border:0; background:none; padding:.5rem .75rem; font-size:.95rem; color:var(--ink); cursor:pointer;
             grid-template-columns:3.2rem 4.4rem minmax(0,1.6fr) 3.6rem 6.8rem minmax(0,1fr); }
   .with-store .op-open{ grid-template-columns:3.2rem 4.4rem minmax(0,1.4fr) minmax(0,.8fr) 3.6rem 6.8rem minmax(0,1fr); }
   .op-open:hover{ background:var(--app-accent-soft); }
@@ -72,24 +94,24 @@
   .c-time,.c-qty small{ color:var(--muted); }
   .c-id{ font-weight:800; color:var(--app-primary); }
   .c-cust{ font-weight:600; }
-  .c-hit{ display:block; font-size:.74rem; font-weight:700; color:var(--acc-ink); overflow:hidden; text-overflow:ellipsis; }
+  .c-hit{ display:block; font-size:.82rem; font-weight:700; color:var(--acc-ink); overflow:hidden; text-overflow:ellipsis; }
   .c-qty,.c-amt{ text-align:right; }
   .c-amt{ font-weight:800; }
-  .c-pay,.c-store{ color:var(--muted); font-size:.82rem; }
-  .op-print{ flex:0 0 4.2rem; display:grid; place-items:center; font-size:.8rem; font-weight:700;
+  .c-pay,.c-store{ color:var(--app-primary); font-size:.88rem; }
+  .op-print{ flex:0 0 4.4rem; display:grid; place-items:center; font-size:.86rem; font-weight:700;
              color:var(--acc-ink); text-decoration:none; border-left:1px solid var(--line); }
   .op-print:hover{ background:var(--app-accent-soft); }
   .op-headrow{ background:var(--app-surface-2); }
-  .op-headrow .op-open{ cursor:default; font-size:.68rem; font-weight:800; text-transform:uppercase;
+  .op-headrow .op-open{ cursor:default; font-size:.74rem; font-weight:800; text-transform:uppercase;
                         letter-spacing:.05em; color:var(--muted); }
   .op-headrow .op-open:hover{ background:none; }
   .op-day{ display:flex; justify-content:space-between; gap:.6rem; flex-wrap:wrap; padding:.38rem .7rem;
-           background:var(--app-surface-2); border-bottom:1px solid var(--line); font-size:.8rem; }
+           background:var(--app-surface-2); border-bottom:1px solid var(--line); font-size:.88rem; }
   .op-day .d{ font-weight:800; color:var(--ink); }
   .op-day .t{ color:var(--muted); font-weight:600; font-variant-numeric:tabular-nums; }
   .op-more{ padding:.6rem; text-align:center; border-top:1px solid var(--line); }
   .op-empty{ padding:1.4rem .9rem; text-align:center; color:var(--muted); }
-  .op-scope{ font-size:.8rem; color:var(--muted); margin:-.2rem 0 .5rem; }
+  .op-scope{ font-size:.86rem; color:var(--muted); margin:-.2rem 0 .5rem; }
 
   /* calendar: the day and one number; the day's orders are one tap away */
   .op-cal-nav{ display:flex; align-items:center; gap:.5rem; margin-bottom:.5rem; }
@@ -103,8 +125,8 @@
             gap:.15rem; text-decoration:none; color:var(--ink); }
   .op-cell.out{ opacity:.35; }
   .op-cell.today{ border-color:var(--acc); }
-  .op-cell .n{ font-size:.78rem; font-weight:800; color:var(--muted); }
-  .op-cell .v{ font-size:.82rem; font-weight:800; font-variant-numeric:tabular-nums; color:var(--acc-ink); }
+  .op-cell .n{ font-size:.84rem; font-weight:800; color:var(--muted); }
+  .op-cell .v{ font-size:.86rem; font-weight:800; font-variant-numeric:tabular-nums; color:var(--acc-ink); }
   a.op-cell:hover{ background:var(--app-accent-soft); }
 
   /* analysis */
@@ -112,7 +134,7 @@
   .op-card{ border:1px solid var(--line); border-radius:var(--app-radius); background:var(--app-surface);
             padding:.8rem .9rem; box-shadow:var(--app-shadow); margin-bottom:.7rem; }
   .op-card h3{ font-size:1rem; font-weight:800; margin:0 0 .15rem; color:var(--ink); }
-  .op-card .sub{ font-size:.8rem; color:var(--muted); margin-bottom:.5rem; }
+  .op-card .sub{ font-size:.86rem; color:var(--muted); margin-bottom:.5rem; }
   .op-chart{ position:relative; height:260px; }
   .op-chart.donut{ height:200px; }
   .op-legend{ display:flex; gap:.8rem; flex-wrap:wrap; font-size:.82rem; margin-top:.4rem; }
@@ -140,9 +162,21 @@
   .ol-totals .grand dd{ font-size:1.05rem; font-weight:900; }
   .ol-totals .neg{ color:var(--app-danger); }
   #opLayer .modal-footer:empty{ display:none; }
+  #opLayer .ord-item{ grid-template-columns:34px minmax(0,1fr); }
+  #opLayer .ord-fig{ grid-column:2; flex-wrap:wrap; gap:.3rem .7rem; }
+  #opLayer .ord-name{ font-size:.95rem; }
 
   @media (max-width: 760px){
     .op-grid2{ grid-template-columns:1fr; }
+    /* On a phone the figures must leave room for the orders: orders and
+       items fold into the headline tile, and the tiles are tighter. */
+    .op-kpis{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:.4rem; }
+    .op-kpi{ padding:.45rem .6rem; }
+    .op-kpi.hi{ grid-column:1 / -1; }
+    .op-kpi.m-hide{ display:none; }
+    .op-kpi .s-m{ display:block; }
+    .op-kpi .v{ font-size:1.1rem; }
+    .op-kpi.hi .v{ font-size:1.4rem; }
     .op-headrow{ display:none; }
     .op-print{ display:none; }
     .op-open, .with-store .op-open{
@@ -150,12 +184,12 @@
       grid-template-areas:"id time . amt" "cust cust qty pay";
       gap:.1rem .5rem; padding:.5rem .7rem; }
     .c-id{ grid-area:id; } .c-time{ grid-area:time; } .c-amt{ grid-area:amt; }
-    .c-cust{ grid-area:cust; } .c-qty{ grid-area:qty; font-size:.8rem; } .c-pay{ grid-area:pay; text-align:right; }
+    .c-cust{ grid-area:cust; } .c-qty{ grid-area:qty; font-size:.88rem; } .c-pay{ grid-area:pay; text-align:right; }
     .c-store{ display:none; }
     .op-search{ max-width:none; }
     .op-qrow input[type=date]{ flex:1 1 8rem; }
     .op-cell{ min-height:3rem; padding:.2rem; }
-    .op-cell .v{ font-size:.7rem; }
+    .op-cell .v{ font-size:.76rem; }
   }
 </style>
 
@@ -231,19 +265,21 @@
 
   {% if view == 'sales' %}
     {# ---- summary --------------------------------------------------------- #}
-    <div class="op-sum">
-      {% if show_order_financials %}<span><b>EUR {{ summary.amount|floatformat:2 }}</b> sales</span>{% endif %}
-      <span><b>{{ summary.orders }}</b> order{{ summary.orders|pluralize }}</span>
-      <span><b>{{ summary.qty }}</b> items</span>
-      {% if show_order_financials %}<span><b>EUR {{ summary.avg|floatformat:2 }}</b> per order</span>{% endif %}
-      {% if show_profit %}<span><b>EUR {{ summary.profit|floatformat:2 }}</b> Gross profit</span>{% endif %}
-      {% if show_order_financials and summary.pay_display %}
-        <details class="op-paysum">
-          <summary>By payment</summary>
-          <div class="pays">{% for p in summary.pay_display %}<span>{{ p.label }} <b>EUR {{ p.amount|floatformat:2 }}</b></span>{% endfor %}</div>
-        </details>
+    <div class="op-kpis">
+      {% if show_order_financials %}
+        <div class="op-kpi hi"><span class="k">Sales</span><span class="v">EUR {{ summary.amount|floatformat:"2g" }}</span><span class="s">{% if start_date == end_date %}{{ start_date }}{% else %}{{ start_date }} &rarr; {{ end_date }}{% endif %}</span><span class="s s-m">{{ summary.orders }} order{{ summary.orders|pluralize }} &middot; {{ summary.qty }} items</span></div>
       {% endif %}
+      <div class="op-kpi m-hide"><span class="k">Orders</span><span class="v">{{ summary.orders }}</span></div>
+      <div class="op-kpi m-hide"><span class="k">Items</span><span class="v">{{ summary.qty }}</span></div>
+      {% if show_order_financials %}<div class="op-kpi"><span class="k">Per order</span><span class="v">EUR {{ summary.avg|floatformat:"2g" }}</span></div>{% endif %}
+      {% if show_profit %}<div class="op-kpi"><span class="k">Gross profit</span><span class="v">EUR {{ summary.profit|floatformat:"2g" }}</span><span class="s">{{ summary.margin }}% of sales</span></div>{% endif %}
     </div>
+    {% if show_order_financials and summary.pay_display %}
+      <div class="op-pay" aria-label="Payments">
+        <div class="bar">{% for p in summary.pay_display %}<span class="seg pay-{% if p.code in 'cash,card,mbway' %}{{ p.code }}{% else %}other{% endif %}" style="width:{{ p.share }}%"></span>{% endfor %}</div>
+        <div class="legend">{% for p in summary.pay_display %}<span><i class="dot pay-{% if p.code in 'cash,card,mbway' %}{{ p.code }}{% else %}other{% endif %}"></i>{{ p.label }} <b>EUR {{ p.amount|floatformat:"2g" }}</b> <small>{{ p.share|floatformat:0 }}%</small></span>{% endfor %}</div>
+      </div>
+    {% endif %}
 
     {% if elsewhere %}
       <div class="op-note">Order #{{ elsewhere.id }} is on {{ elsewhere.day|date:"Y-m-d" }}, outside this range.
@@ -284,10 +320,10 @@
     {% endif %}
 
   {% elif view == 'purchases' %}
-    <div class="op-sum">
-      <span><b>EUR {{ total_purchase_amount|floatformat:2 }}</b> purchased</span>
-      <span><b>{{ total_purchase_orders }}</b> receipt{{ total_purchase_orders|pluralize }}</span>
-      <span><b>{{ total_purchase_qty }}</b> items</span>
+    <div class="op-kpis">
+      <div class="op-kpi hi"><span class="k">Purchased</span><span class="v">EUR {{ total_purchase_amount|floatformat:"2g" }}</span><span class="s">{% if start_date == end_date %}{{ start_date }}{% else %}{{ start_date }} &rarr; {{ end_date }}{% endif %}</span></div>
+      <div class="op-kpi"><span class="k">Receipts</span><span class="v">{{ total_purchase_orders }}</span></div>
+      <div class="op-kpi"><span class="k">Items</span><span class="v">{{ total_purchase_qty }}</span></div>
     </div>
     <div class="op-scope">Stock is shared between the shops, so purchases are not split by store.</div>
     <div class="op-list">
@@ -327,10 +363,10 @@
 
   {% else %}
     {# ---- analysis -------------------------------------------------------- #}
-    <div class="op-sum">
-      <span><b>EUR {{ total_sales_amount|floatformat:2 }}</b> sales</span>
-      {% if show_profit %}<span><b>EUR {{ total_sales_profit|floatformat:2 }}</b> Gross profit</span>{% endif %}
-      <span><b>EUR {{ total_purchase_amount|floatformat:2 }}</b> purchased (all stores)</span>
+    <div class="op-kpis">
+      <div class="op-kpi hi"><span class="k">Sales</span><span class="v">EUR {{ total_sales_amount|floatformat:"2g" }}</span><span class="s">{% if start_date == end_date %}{{ start_date }}{% else %}{{ start_date }} &rarr; {{ end_date }}{% endif %}</span></div>
+      {% if show_profit %}<div class="op-kpi"><span class="k">Gross profit</span><span class="v">EUR {{ total_sales_profit|floatformat:"2g" }}</span><span class="s">{{ summary.margin }}% of sales</span></div>{% endif %}
+      <div class="op-kpi"><span class="k">Purchased</span><span class="v">EUR {{ total_purchase_amount|floatformat:"2g" }}</span><span class="s">all stores</span></div>
     </div>
 
     {% if trend_data %}

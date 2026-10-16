@@ -70,7 +70,10 @@ InventoryApp/
 │   │   ├── summaries.py                # DailySalesSummary 重算逻辑
 │   │   ├── inventory.py                # build_inventory_snapshot（库存快照）
 │   │   ├── pedido.py                   # 报价单金额:折扣只打在货上,运费/额外费用在折扣后相加
-│   │   ├── pedido_pdf.py               # 报价单 PDF（reportlab，欧洲葡语，emoji 剔除）
+│   │   ├── doc_pdf.py                  # 对外文件的共用版式:页眉/客户区/深色表头表格/合计/指标卡(emoji 剔除)
+│   │   ├── pedido_pdf.py               # 报价单 PDF（欧洲葡语,用 doc_pdf）
+│   │   ├── receipt_pdf.py              # 订单 A4 收据 PDF（欧洲葡语,用 doc_pdf;NIF 校验位通过才印）
+│   │   ├── sales_report_pdf.py         # Orders > Export PDF 销售报表（英文,用 doc_pdf;与页面同一数据）
 │   │   ├── shopify_client.py / shopify_sync.py       # Shopify Admin API：按 barcode=SKU 挂图/建品
 │   │   ├── cloudinary_client.py / cloudinary_sync.py # 产品主图镜像到 Cloudinary（public_id=条码, asset_folder=product_images/<品牌>）
 │   │   └── cloudinary_urls.py                        # 读取 Cloudinary 命名约定（public_id=条码），构造公开交付 URL；纯字符串拼接，不发网络请求、不读凭据；供 Shopify CSV 导出使用
