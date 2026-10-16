@@ -57,9 +57,10 @@ InventoryApp/
 │   ├── permissions.py                 # 角色判定 + 装饰器
 │   ├── shelf_views.py                 # 货架图页面（与产品目录无共用，单独拆出）
 │   ├── pedido_views.py                # 报价单页面（表单 → PDF，不落库）
+│   ├── orders_views.py                # 经理 Orders 页:Sales | Purchases | Analysis(整单搜索、Tender 口径付款、分页)
 │   ├── signals.py                     # Sale 信号→每日汇总重算；ProductImage 信号→镜像图片到 Cloudinary/Shopify（门控）
 │   ├── apps.py                        # AppConfig，ready() 中注册 signals
-│   ├── tests.py                       # 659 个测试用例
+│   ├── tests.py                       # 748 个测试用例
 │   │
 │   ├── services/                      # 业务逻辑层（从 views 中抽出的可复用逻辑）
 │   │   ├── dashboard.py               # 月度快照 + MoM 同期对比 + 销售目标 + 多店铺对比

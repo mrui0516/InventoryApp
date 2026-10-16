@@ -1,0 +1,48 @@
+{# One page of order rows. Rendered inside the Orders page and, on its own, as  #}
+{# the answer to "Load more" - so it carries its own day headings and button.   #}
+{% for row in orders %}
+  {% if row.opens_day %}
+    <div class="op-day">
+      <span class="d">{{ row.day|date:"D j M Y" }}</span>
+      <span class="t">{{ row.day_totals.orders }} order{{ row.day_totals.orders|pluralize }} &middot; {{ row.day_totals.qty }} items{% if show_order_financials %} &middot; EUR {{ row.day_totals.amount|floatformat:2 }}{% endif %}</span>
+    </div>
+  {% endif %}
+  <div class="op-row{% if show_store_col %} with-store{% endif %}">
+    <button type="button" class="op-open" data-layer="ol-{{ row.key }}">
+      <span class="c-time">{{ row.created_at|date:"H:i" }}</span>
+      <span class="c-id">{% if row.order_id %}#{{ row.order_id }}{% else %}Legacy{% endif %}</span>
+      <span class="c-cust">{{ row.customer_name }}{% if row.matched_items %}<span class="c-hit">{% for item in row.matched_items|slice:":2" %}{{ item.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if row.matched_items|length > 2 %} +{{ row.matched_items|length|add:"-2" }}{% endif %}</span>{% endif %}</span>
+      {% if show_store_col %}<span class="c-store">{{ row.store_name|default:"-" }}</span>{% endif %}
+      <span class="c-qty">{{ row.qty }}<small> pcs</small></span>
+      {% if show_order_financials %}<span class="c-amt">EUR {{ row.amount|floatformat:2 }}</span>{% endif %}
+      <span class="c-pay">{{ row.pay_summary }}</span>
+    </button>
+    {% if row.detail_url %}<a class="op-print" href="{{ row.detail_url }}">Print</a>{% else %}<span class="op-print"></span>{% endif %}
+  </div>
+  <template id="ol-{{ row.key }}">
+    <div data-part="title">{% if row.order_id %}Order #{{ row.order_id }}{% else %}Legacy sale{% endif %} &middot; {{ row.created_at|date:"Y-m-d H:i" }}{% if row.store_name %} &middot; {{ row.store_name }}{% endif %}</div>
+    <div data-part="body">
+      <div class="ol-cust">{% if row.customer_url %}<a href="{{ row.customer_url }}">{{ row.customer_name }}</a>{% else %}{{ row.customer_name }}{% endif %}</div>
+      <div class="ord-items">
+        {% for item in row.items %}<div class="ol-item{% if item.is_match %} is-hit{% endif %}">{% include "stock/_daily_order_item.html" %}</div>{% endfor %}
+      </div>
+      <dl class="ol-totals">
+        <div><dt>Items</dt><dd>{{ row.qty }}</dd></div>
+        {% if show_order_financials %}
+          <div class="grand"><dt>Total</dt><dd>EUR {{ row.amount|floatformat:2 }}</dd></div>
+          {% for p in row.pay_display %}<div><dt>{{ p.label }}</dt><dd>EUR {{ p.amount|floatformat:2 }}</dd></div>{% endfor %}
+        {% endif %}
+        {% if show_profit %}<div><dt>Gross profit</dt><dd{% if row.profit < 0 %} class="neg"{% endif %}>EUR {{ row.profit|floatformat:2 }}</dd></div>{% endif %}
+      </dl>
+    </div>
+    <div data-part="foot">
+      {% if row.detail_url %}<a class="btn btn-primary" href="{{ row.detail_url }}">Print</a>{% endif %}
+      {% if can_correct and row.correct_url %}<a class="btn btn-outline-danger" href="{{ row.correct_url }}">Correct</a>{% endif %}
+    </div>
+  </template>
+{% endfor %}
+{% if next_page_url %}
+  <div class="op-more">
+    <button type="button" class="btn btn-outline-primary" data-more="{{ next_page_url }}">Load {{ next_batch }} more &middot; {{ remaining }} left</button>
+  </div>
+{% endif %}

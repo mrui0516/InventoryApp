@@ -180,7 +180,7 @@
             <h3>Sales trend</h3>
           </div>
           <div class="quick-tags">
-            <a class="btn btn-sm btn-outline-primary" href="{% url 'sales_records' %}">Full year view</a>
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'sales_records' %}?view=analysis">Full year view</a>
             <span class="note-pill">Debt added EUR {{ month_receivables_added|floatformat:2 }}</span>
             <span class="note-pill good">Collected EUR {{ month_receipts_collected|floatformat:2 }}</span>
           </div>

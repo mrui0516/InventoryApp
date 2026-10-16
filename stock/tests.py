@@ -512,26 +512,25 @@ class SalesRecordsViewTests(TestCase):
         )
 
     def test_sales_records_page_renders_sales_and_purchase_totals(self):
+        # Sales and purchases are two views of one page since the 2026-10
+        # redesign; each still reports its own totals.
         self.client.login(username="records_admin", password="pw123456")
-        today = timezone.localdate()
+        today = timezone.localdate().isoformat()
 
-        response = self.client.get(
-            reverse("sales_records"),
-            {"start_date": today.isoformat(), "end_date": today.isoformat()},
-        )
+        sales = self.client.get(reverse("sales_records"), {"start_date": today, "end_date": today})
+        self.assertEqual(sales.status_code, 200)
+        self.assertEqual(sales.context["total_sales_amount"], Decimal("30.00"))
+        self.assertEqual(sales.context["total_sales_orders"], 1)
+        self.assertContains(sales, reverse("customer_detail", args=[self.customer.id]))
+        self.assertTrue(sales.context["show_profit"])
+        self.assertContains(sales, "Gross profit")
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.context["total_sales_amount"], Decimal("30.00"))
-        self.assertEqual(response.context["total_sales_orders"], 1)
-        self.assertEqual(response.context["total_purchase_amount"], Decimal("22.00"))
-        self.assertEqual(response.context["total_purchase_orders"], 2)
-        self.assertContains(response, "Recent Searches")
-        self.assertContains(response, "Sales Orders")
-        self.assertContains(response, "No supplier linked")
-        self.assertContains(response, "Purchases")
-        self.assertContains(response, reverse("customer_detail", args=[self.customer.id]))
-        self.assertTrue(response.context["show_profit"])
-        self.assertContains(response, "Net Profit")
+        purchases = self.client.get(reverse("sales_records"),
+                                    {"view": "purchases", "start_date": today, "end_date": today})
+        self.assertEqual(purchases.context["total_purchase_amount"], Decimal("22.00"))
+        self.assertEqual(purchases.context["total_purchase_orders"], 2)
+        self.assertContains(purchases, "No supplier linked")
+        self.assertContains(purchases, "Direct")
 
     def test_sales_records_shows_profit_for_admin_only(self):
         self.client.login(username="records_admin", password="pw123456")
@@ -545,15 +544,19 @@ class SalesRecordsViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.context["show_profit"])
         self.assertEqual(response.context["total_sales_profit"], Decimal("30.00"))
-        self.assertContains(response, "Net Profit")
+        # Revenue minus FIFO cost: gross profit. It used to be labelled
+        # "Net Profit" here and "Gross Profit" in the year view - same number.
+        self.assertContains(response, "Gross profit")
+        self.assertNotContains(response, "Net Profit")
 
     def test_sales_records_builds_visualization_context(self):
+        # The charts live in the Analysis view, out of the way of the orders.
         self.client.login(username="records_admin", password="pw123456")
         today = timezone.localdate()
 
         response = self.client.get(
             reverse("sales_records"),
-            {"start_date": today.isoformat(), "end_date": today.isoformat()},
+            {"view": "analysis", "start_date": today.isoformat(), "end_date": today.isoformat()},
         )
 
         self.assertEqual(response.status_code, 200)
@@ -570,6 +573,12 @@ class SalesRecordsViewTests(TestCase):
         self.assertContains(response, 'id="trendChart"')
         self.assertContains(response, "Top Products")
         self.assertContains(response, "vs purchases")
+
+    def test_the_sales_view_carries_no_charts(self):
+        """Somebody looking for an order should not scroll past analysis."""
+        self.client.login(username="records_admin", password="pw123456")
+        response = self.client.get(reverse("sales_records"))
+        self.assertNotContains(response, "<canvas")
 
     def test_sales_records_hides_purchase_data_for_regular_user(self):
         # A non-manager now gets the lean employee Sales view: today's orders
@@ -617,13 +626,8 @@ class SalesRecordsViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        day_map = {
-            block["date"]: [row["order_id"] for row in block["orders"]]
-            for block in response.context["day_blocks"]
-        }
-        self.assertIn(drift_order.id, day_map[timezone.localdate(order_dt)])
-        self.assertNotIn(drift_order.id, day_map.get(timezone.localdate(), []))
-
+        days = {row["order_id"]: row["day"] for row in response.context["orders"]}
+        self.assertEqual(days[drift_order.id], timezone.localdate(order_dt))
 
 class CustomerDetailViewTests(TestCase):
     @classmethod
@@ -7626,29 +7630,42 @@ class SalesCalendarViewTests(TestCase):
             Sale.objects.create(order=order, product=self.product, customer=self.customer,
                                 quantity=1, unit_price=Decimal("35"), payment_method="cash")
 
-    def test_default_is_month_calendar_with_day_modal_and_store(self):
+    def test_default_is_the_last_seven_days_as_a_list(self):
+        """It used to open on a calendar, chosen by the absence of dates in the
+        URL; "This month" then landed on a different layout. List or calendar
+        is an explicit switch now, and the page opens on the last 7 days."""
         resp = self.client.get(reverse("sales_records"))
         self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.context["calendar_mode"])
+        today = timezone.localdate()
+        self.assertEqual(resp.context["end_date"], today.isoformat())
+        self.assertEqual(resp.context["start_date"], (today - timedelta(days=6)).isoformat())
+        # All stores: the store is a column, and the sale is listed
+        self.assertTrue(resp.context["show_store_col"])
+        self.assertContains(resp, "Amadora")
+        self.assertContains(resp, "Dona Ana")
+
+    def test_the_calendar_is_a_switch_and_a_day_opens_its_list(self):
+        resp = self.client.get(reverse("sales_records"), {"layout": "calendar"})
         self.assertTrue(resp.context["calendar_mode"])
-        self.assertIn("calendar_weeks", resp.context)
-        html = resp.content.decode("utf-8")
-        # calendar grid + product search present
-        self.assertIn('class="calendar"', html)
-        self.assertIn("Filter by product", html)
-        # today's sale -> a clickable day cell + a matching modal, with the store name inside
-        today_id = "cal-" + timezone.localdate().strftime("%Y%m%d")
-        self.assertIn('data-day-modal="%s"' % today_id, html)
-        self.assertIn('id="%s-modal"' % today_id, html)
-        self.assertIn("Amadora", html)
-        # the old long stacked list heading must NOT render in calendar mode
-        self.assertNotIn("orders in this range", html)
+        today = timezone.localdate()
+        cell = next(c for week in resp.context["calendar_weeks"] for c in week
+                    if c["in_month"] and c["day"] == today.day)
+        self.assertEqual(cell["orders"], 1)
+        self.assertIn(f"start_date={today.isoformat()}", cell["url"])
+        self.assertNotIn("layout=calendar", cell["url"])
+
+    def test_an_old_month_link_still_opens_the_calendar(self):
+        month = timezone.localdate().strftime("%Y-%m")
+        resp = self.client.get(reverse("sales_records"), {"month": month})
+        self.assertTrue(resp.context["calendar_mode"])
 
     def test_product_filter_narrows_the_page(self):
+        # product_q is the old name of the search box; links using it still search.
         resp = self.client.get(reverse("sales_records"), {"product_q": "zzz-nomatch"})
         self.assertEqual(resp.status_code, 200)
-        self.assertTrue(resp.context["calendar_mode"])
-        self.assertEqual(resp.context["day_blocks"], [])
-        self.assertIn("No sales this month", resp.content.decode("utf-8"))
+        self.assertEqual(resp.context["orders"], [])
+        self.assertIn("No orders from", resp.content.decode("utf-8"))
 
     def test_year_view_shows_trend(self):
         resp = self.client.get(reverse("sales_records"), {"view": "year"})
@@ -9591,3 +9608,166 @@ class RoundANavigationTests(TestCase):
             for word in re.findall(r'>[^<]*\b(AR|Receivables?)\b[^<]*<', text):
                 offenders.append(f'{path}: {word}')
         self.assertEqual(offenders, [])
+
+
+class OrdersPageTests(TestCase):
+    """The Orders page after the 2026-10 redesign: whole orders, one query bar,
+    payments as Today counts them, purchases and analysis as separate views."""
+
+    def setUp(self):
+        users = get_user_model()
+        self.admin = users.objects.create_superuser("op_admin", password="pw123456")
+        self.manager = users.objects.create_user("op_mgr", password="pw123456", is_staff=True)
+        self.client.force_login(self.admin)
+        cat = Category.objects.create(name="OP Cat")
+        self.a = Product.objects.create(name="Alpha", brand="LATTAFA", barcode="9400000000001",
+                                        category=cat, default_price=Decimal("10"))
+        self.b = Product.objects.create(name="Bravo", brand="KHAN", barcode="9400000000002",
+                                        category=cat, default_price=Decimal("20"))
+        self.customer = Customer.objects.create(nif="940000001", name="Rita Revenda",
+                                                phone="912345678")
+
+    def _order(self, lines, *, customer=None, days_ago=0, payments=None, store=None):
+        from stock.models import SaleOrderPayment
+        order = SaleOrder.objects.create(customer=customer, store=store)
+        if days_ago:
+            SaleOrder.objects.filter(pk=order.pk).update(
+                created_at=timezone.now() - timedelta(days=days_ago))
+        for product, price, method in lines:
+            Sale.objects.create(order=order, product=product, customer=customer, quantity=1,
+                                unit_price=Decimal(price), payment_method=method)
+        for method, amount in (payments or []):
+            SaleOrderPayment.objects.create(order=order, method=method, amount=Decimal(amount))
+        return order
+
+    def _get(self, **params):
+        return self.client.get(reverse("sales_records"), params)
+
+    # -- search returns whole orders ---------------------------------------
+    def test_a_product_search_keeps_the_whole_order_total(self):
+        """The bug: searching A in an order of A EUR 10 + B EUR 20 listed it
+        as EUR 10, while the printed order said EUR 30."""
+        order = self._order([(self.a, "10", "cash"), (self.b, "20", "cash")])
+        response = self._get(q="Alpha")
+        rows = response.context["orders"]
+        self.assertEqual([r["order_id"] for r in rows], [order.id])
+        self.assertEqual(rows[0]["amount"], Decimal("30.00"))
+        self.assertEqual(response.context["summary"]["amount"], Decimal("30.00"))
+        self.assertEqual([i.product_id for i in rows[0]["matched_items"]], [self.a.id])
+
+    def test_an_order_number_finds_its_order(self):
+        order = self._order([(self.a, "10", "cash")])
+        self._order([(self.b, "20", "cash")])
+        rows = self._get(q=f"#{order.id}").context["orders"]
+        self.assertIn(order.id, [r["order_id"] for r in rows])
+
+    def test_a_phone_number_finds_the_customer_orders(self):
+        order = self._order([(self.a, "10", "cash")], customer=self.customer)
+        self._order([(self.b, "20", "cash")])
+        rows = self._get(q="912345").context["orders"]
+        self.assertEqual([r["order_id"] for r in rows], [order.id])
+
+    def test_an_order_number_outside_the_range_says_where_it_is(self):
+        old = self._order([(self.a, "10", "cash")], days_ago=40)
+        response = self._get(q=str(old.id))
+        self.assertEqual(response.context["elsewhere"]["id"], old.id)
+        self.assertContains(response, reverse("sale_order_detail", args=[old.id]))
+
+    # -- payments ------------------------------------------------------------
+    def test_payments_are_counted_from_the_order_split_like_today(self):
+        """One line paid half card, half cash shows as both - the Today page
+        counts it that way, and the two pages have to reconcile."""
+        self._order([(self.a, "10", "cash")], payments=[("cash", "4"), ("card", "6")])
+        pay = self._get().context["summary"]["pay"]
+        self.assertEqual(pay["cash"], Decimal("4"))
+        self.assertEqual(pay["card"], Decimal("6"))
+
+    def test_the_payment_filter_keeps_orders_that_used_it(self):
+        card = self._order([(self.a, "10", "card")])
+        self._order([(self.b, "20", "cash")])
+        rows = self._get(payment="card").context["orders"]
+        self.assertEqual([r["order_id"] for r in rows], [card.id])
+
+    def test_an_unknown_payment_filter_is_ignored(self):
+        self._order([(self.a, "10", "cash")])
+        response = self._get(payment="bitcoin")
+        self.assertEqual(response.context["payment"], "")
+        self.assertEqual(len(response.context["orders"]), 1)
+
+    # -- range ---------------------------------------------------------------
+    def test_quick_ranges_point_at_today_seven_days_and_this_month(self):
+        urls = self._get().context["quick_urls"]
+        today = timezone.localdate()
+        self.assertIn(f"start_date={today.isoformat()}&end_date={today.isoformat()}", urls["today"])
+        self.assertIn(f"start_date={today.replace(day=1).isoformat()}", urls["month"])
+        self.assertEqual(self._get().context["quick_active"], "last7")
+
+    def test_a_reversed_range_is_put_the_right_way_round(self):
+        today = timezone.localdate()
+        response = self._get(start_date=today.isoformat(),
+                             end_date=(today - timedelta(days=3)).isoformat())
+        self.assertEqual(response.context["start_date"], (today - timedelta(days=3)).isoformat())
+
+    # -- paging --------------------------------------------------------------
+    def test_load_more_returns_the_next_rows_without_repeating_the_day(self):
+        from stock.orders_views import PAGE_SIZE
+        for _ in range(PAGE_SIZE + 5):
+            self._order([(self.a, "10", "cash")])
+        first = self._get()
+        self.assertEqual(len(first.context["orders"]), PAGE_SIZE)
+        self.assertEqual(first.context["remaining"], 5)
+        more = self.client.get(first.context["next_page_url"])
+        self.assertEqual(more.status_code, 200)
+        self.assertEqual(len(more.context["orders"]), 5)
+        self.assertFalse(more.context["orders"][0]["opens_day"])
+        self.assertNotContains(more, "<html")
+        self.assertNotContains(more, "data-more=")
+
+    def test_day_headings_carry_the_whole_day_even_across_pages(self):
+        from stock.orders_views import PAGE_SIZE
+        for _ in range(PAGE_SIZE + 5):
+            self._order([(self.a, "10", "cash")])
+        first_row = self._get().context["orders"][0]
+        self.assertEqual(first_row["day_totals"]["orders"], PAGE_SIZE + 5)
+
+    # -- the detail layer ----------------------------------------------------
+    def test_each_row_carries_its_detail_with_print_and_correct(self):
+        order = self._order([(self.a, "10", "cash")])
+        html = self._get().content.decode()
+        tpl = html[html.index(f'<template id="ol-{order.id}">'):]
+        tpl = tpl[:tpl.index("</template>")]
+        self.assertIn(reverse("sale_order_detail", args=[order.id]), tpl)
+        self.assertIn(reverse("sale_order_correction_edit", args=[order.id]), tpl)
+        self.assertIn('modal-fullscreen-sm-down', html)
+
+    def test_a_manager_who_is_not_admin_is_not_offered_correct(self):
+        order = self._order([(self.a, "10", "cash")])
+        self.client.force_login(self.manager)
+        html = self._get().content.decode()
+        self.assertNotIn(reverse("sale_order_correction_edit", args=[order.id]), html)
+
+    # -- purchases and analysis ----------------------------------------------
+    def test_purchases_say_they_are_shared_between_shops(self):
+        response = self._get(view="purchases")
+        self.assertContains(response, "not split by store")
+
+    def test_purchases_are_not_cut_down_by_the_active_store(self):
+        store = Store.objects.create(name="Lisboa OP", code="OPL")
+        session = self.client.session
+        session["active_store_id"] = store.id
+        session.save()
+        inbound = InboundOrder.objects.create(invoice_no="OP-1")
+        Purchase.objects.create(inbound_order=inbound, product=self.a, quantity=2,
+                                remaining=2, cost_price=Decimal("3"))
+        response = self._get(view="purchases")
+        self.assertEqual(response.context["total_purchase_amount"], Decimal("6.00"))
+
+    def test_the_old_year_link_lands_in_analysis(self):
+        response = self._get(view="year")
+        self.assertEqual(response.context["view"], "analysis")
+        self.assertTrue(response.context["show_trend"])
+
+    def test_no_net_profit_label_anywhere_on_the_page(self):
+        self._order([(self.a, "10", "cash")])
+        for view in ("sales", "analysis"):
+            self.assertNotContains(self._get(view=view), "Net Profit")

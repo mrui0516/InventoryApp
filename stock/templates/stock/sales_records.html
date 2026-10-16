@@ -1,1574 +1,527 @@
 {% extends 'stock/base.html' %}
-{% block title %}Sales & Purchase Records{% endblock %}
+{% block title %}Orders{% endblock %}
 
 {% block content %}
-<div class="container my-4 records-page">
-  <style>
-    /* Design tokens inherited from app.css (dense-flat system) */
+<style>
+  /* Orders: title, view switch, one query bar, one summary line, the records. */
+  .op-page{ --line:var(--app-border); --line2:var(--app-border-strong); --ink:var(--app-text);
+            --muted:var(--app-muted); --acc:var(--app-accent); --acc-ink:var(--app-accent-ink); }
 
-    .page-head{
-      display:flex;
-      justify-content:space-between;
-      align-items:flex-start;
-      gap:1rem;
-      margin-bottom:1rem;
-    }
-    .page-head h2{
-      margin:0;
-      font-size:1.9rem;
-      font-weight:900;
-      color:var(--text);
-      letter-spacing:-.02em;
-    }
-    .page-sub{
-      margin:.25rem 0 0;
-      color:var(--muted);
-      font-weight:600;
-    }
-    .page-actions{
-      display:flex;
-      gap:.65rem;
-      flex-wrap:wrap;
-    }
+  .op-head{ display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; margin-bottom:.6rem; }
+  .op-head h1{ margin:0; font-size:1.3rem; font-weight:800; color:var(--ink); }
+  .op-store{ font-size:.82rem; font-weight:700; color:var(--app-primary); background:var(--app-surface-2);
+             border:1px solid var(--line); border-radius:999px; padding:.15rem .6rem; }
+  .op-head .spacer{ flex:1 1 auto; }
 
-    .filter-card,
-    .summary-card,
-    .day-panel,
-    .empty-card{
-      background:var(--card);
-      border:1px solid var(--border);
-      border-radius:var(--radius);
-      box-shadow:var(--shadow);
-    }
+  .op-views{ display:flex; gap:0; border-bottom:2px solid var(--line); margin-bottom:.7rem; overflow-x:auto; }
+  .op-views a{ padding:.5rem 1rem; font-weight:700; font-size:.92rem; color:var(--muted);
+               text-decoration:none; border-bottom:2px solid transparent; margin-bottom:-2px; white-space:nowrap; }
+  .op-views a:hover{ color:var(--acc-ink); }
+  .op-views a.on{ color:var(--acc-ink); border-bottom-color:var(--acc); }
 
-    .filter-card{
-      padding:1rem;
-      margin-bottom:1rem;
-    }
-    .filter-grid{
-      display:grid;
-      grid-template-columns:repeat(2, minmax(0, 220px)) 1fr;
-      gap:1rem;
-      align-items:end;
-    }
-    .filter-card .form-label{
-      margin-bottom:.35rem;
-      color:var(--text);
-      font-weight:700;
-    }
-    .filter-card .form-control{
-      border-radius:12px;
-      border:1px solid var(--border);
-      padding:.7rem .85rem;
-    }
-    .filter-card .form-control:focus{
-      border-color:var(--accent);
-      box-shadow:0 0 0 .2rem rgba(37,99,235,.12);
-    }
-    .filter-actions{
-      display:flex;
-      justify-content:flex-end;
-      gap:.6rem;
-      flex-wrap:wrap;
-    }
-    .quick-ranges{
-      display:flex;
-      flex-wrap:wrap;
-      gap:.5rem;
-      margin-top:.9rem;
-      padding-top:.9rem;
-      border-top:1px dashed var(--border);
-    }
-    .quick-ranges .btn{
-      border-radius:999px;
-    }
+  .op-query{ border:1px solid var(--line); border-radius:var(--app-radius); background:var(--app-surface);
+             padding:.6rem .7rem; margin-bottom:.6rem; display:grid; gap:.5rem; }
+  .op-qrow{ display:flex; gap:.4rem; flex-wrap:wrap; align-items:center; }
+  .op-qrow input{ border:1px solid var(--line2); border-radius:var(--app-radius-sm); padding:.38rem .55rem;
+                  font-size:.9rem; color:var(--ink); min-width:0; }
+  .op-search{ flex:1 1 16rem; max-width:24rem; }
+  .op-qrow input[type=date]{ flex:0 1 9.5rem; }
+  .op-qrow2{ display:flex; gap:.8rem; flex-wrap:wrap; align-items:center; }
+  .op-seg{ display:inline-flex; border:1px solid var(--line2); border-radius:var(--app-radius-sm); overflow:hidden; }
+  .op-seg a{ padding:.26rem .7rem; font-size:.82rem; font-weight:700; color:var(--app-primary);
+             text-decoration:none; border-left:1px solid var(--line2); }
+  .op-seg a:first-child{ border-left:0; }
+  .op-seg a.on{ background:var(--acc); color:#fff; }
+  .op-seg-label{ font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em;
+                 color:var(--muted); margin-right:.3rem; }
+  .op-filters > summary{ cursor:pointer; font-size:.84rem; font-weight:700; color:var(--acc-ink); }
+  .op-filters[open] > summary{ margin-bottom:.45rem; }
+  .op-filters .row-in{ display:flex; gap:.8rem; flex-wrap:wrap; align-items:center; font-size:.85rem; }
+  .op-filters select{ border:1px solid var(--line2); border-radius:var(--app-radius-sm); padding:.3rem .5rem; }
+  .op-recent{ display:flex; gap:.3rem; flex-wrap:wrap; align-items:center; }
+  .op-recent button{ border:1px solid var(--line2); background:var(--app-surface); border-radius:999px;
+                     padding:.15rem .55rem; font-size:.78rem; font-weight:700; color:var(--app-primary); }
+  .op-active{ display:flex; gap:.35rem; flex-wrap:wrap; }
+  .op-chip{ display:inline-flex; align-items:center; gap:.3rem; padding:.18rem .6rem; border-radius:999px;
+            background:var(--app-accent-soft); border:1px solid var(--app-accent-line); color:var(--acc-ink);
+            font-size:.8rem; font-weight:700; text-decoration:none; }
 
-    .history-wrap{
-      margin-top:.9rem;
-      padding-top:.9rem;
-      border-top:1px dashed var(--border);
-    }
-    .history-head{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:.75rem;
-      margin-bottom:.6rem;
-    }
-    .history-title{
-      margin:0;
-      font-size:.95rem;
-      font-weight:800;
-      color:var(--text);
-    }
-    .history-list{
-      display:flex;
-      flex-wrap:wrap;
-      gap:.55rem;
-    }
-    .history-chip{
-      display:inline-flex;
-      flex-direction:column;
-      align-items:flex-start;
-      gap:.15rem;
-      min-width:170px;
-      padding:.6rem .9rem;
-      border-radius:16px;
-      border:1px solid #cbd5e1;
-      background:#fff;
-      color:var(--text);
-      font-weight:700;
-      font-size:.88rem;
-      text-align:left;
-    }
-    .history-chip:hover{
-      background:var(--accent-soft);
-      border-color:#bfdbfe;
-      color:#1d4ed8;
-    }
-    .history-chip.is-active{
-      background:#dbeafe;
-      border-color:#60a5fa;
-      box-shadow:0 8px 20px rgba(37,99,235,.14);
-    }
-    .history-chip-main{
-      font-size:.9rem;
-      font-weight:900;
-      color:var(--text);
-      line-height:1.2;
-    }
-    .history-chip-sub{
-      font-size:.76rem;
-      color:#475569;
-      font-weight:700;
-      line-height:1.2;
-    }
-    .history-empty{
-      color:var(--muted);
-      font-size:.92rem;
-    }
+  .op-sum{ display:flex; gap:1.1rem; flex-wrap:wrap; align-items:baseline; padding:.45rem .1rem .55rem;
+           font-size:.84rem; color:var(--muted); font-weight:600; }
+  .op-sum b{ color:var(--ink); font-size:1rem; font-weight:800; font-variant-numeric:tabular-nums; }
+  .op-paysum > summary{ cursor:pointer; color:var(--acc-ink); font-weight:700; }
+  .op-paysum[open]{ flex-basis:100%; }
+  .op-paysum .pays{ display:flex; gap:1rem; flex-wrap:wrap; margin-top:.3rem; }
+  .op-note{ font-size:.82rem; color:var(--app-warn); background:var(--app-warn-soft); border:1px solid #f5d99b;
+            border-radius:var(--app-radius-sm); padding:.35rem .6rem; margin-bottom:.5rem; }
+  .op-note a{ font-weight:700; }
 
-    .summary-grid{
-      display:grid;
-      grid-template-columns:repeat(4, minmax(0, 1fr));
-      gap:.5rem;
-      margin-bottom:.8rem;
-    }
-    .summary-card{
-      padding:.55rem .7rem;
-    }
-    .summary-label{
-      color:var(--muted);
-      font-weight:800;
-      font-size:.64rem;
-      letter-spacing:.05em;
-      text-transform:uppercase;
-    }
-    .summary-value{
-      margin-top:.15rem;
-      color:var(--text);
-      font-size:1.2rem;
-      font-weight:800;
-      line-height:1.1;
-      font-variant-numeric:tabular-nums;
-    }
-    .summary-sub{
-      margin-top:.1rem;
-      color:var(--muted);
-      font-size:.72rem;
-      font-weight:600;
-    }
-    .summary-card.payments{
-      grid-column:span 2;
-    }
-    .payment-grid{
-      display:flex;
-      flex-wrap:wrap;
-      gap:.55rem;
-      margin-top:.75rem;
-    }
-    .payment-total{
-      display:flex;
-      align-items:center;
-      gap:.45rem;
-      padding:.45rem .75rem;
-      border-radius:999px;
-      background:#f8fafc;
-      border:1px solid var(--border);
-      font-size:.88rem;
-      font-weight:700;
-      color:var(--text);
-    }
+  /* records ----------------------------------------------------------------- */
+  .op-list{ border:1px solid var(--line); border-radius:var(--app-radius); background:var(--app-surface);
+            overflow:hidden; box-shadow:var(--app-shadow); }
+  .op-row{ display:flex; align-items:stretch; border-bottom:1px solid var(--line); }
+  .op-row:last-child{ border-bottom:0; }
+  .op-open{ flex:1 1 auto; min-width:0; display:grid; align-items:center; gap:.6rem; text-align:left;
+            border:0; background:none; padding:.45rem .7rem; font-size:.9rem; color:var(--ink); cursor:pointer;
+            grid-template-columns:3.2rem 4.4rem minmax(0,1.6fr) 3.6rem 6.8rem minmax(0,1fr); }
+  .with-store .op-open{ grid-template-columns:3.2rem 4.4rem minmax(0,1.4fr) minmax(0,.8fr) 3.6rem 6.8rem minmax(0,1fr); }
+  .op-open:hover{ background:var(--app-accent-soft); }
+  .op-open:focus-visible{ outline:2px solid var(--acc); outline-offset:-2px; }
+  .op-open > span{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .c-time,.c-qty,.c-amt{ font-variant-numeric:tabular-nums; }
+  .c-time,.c-qty small{ color:var(--muted); }
+  .c-id{ font-weight:800; color:var(--app-primary); }
+  .c-cust{ font-weight:600; }
+  .c-hit{ display:block; font-size:.74rem; font-weight:700; color:var(--acc-ink); overflow:hidden; text-overflow:ellipsis; }
+  .c-qty,.c-amt{ text-align:right; }
+  .c-amt{ font-weight:800; }
+  .c-pay,.c-store{ color:var(--muted); font-size:.82rem; }
+  .op-print{ flex:0 0 4.2rem; display:grid; place-items:center; font-size:.8rem; font-weight:700;
+             color:var(--acc-ink); text-decoration:none; border-left:1px solid var(--line); }
+  .op-print:hover{ background:var(--app-accent-soft); }
+  .op-headrow{ background:var(--app-surface-2); }
+  .op-headrow .op-open{ cursor:default; font-size:.68rem; font-weight:800; text-transform:uppercase;
+                        letter-spacing:.05em; color:var(--muted); }
+  .op-headrow .op-open:hover{ background:none; }
+  .op-day{ display:flex; justify-content:space-between; gap:.6rem; flex-wrap:wrap; padding:.38rem .7rem;
+           background:var(--app-surface-2); border-bottom:1px solid var(--line); font-size:.8rem; }
+  .op-day .d{ font-weight:800; color:var(--ink); }
+  .op-day .t{ color:var(--muted); font-weight:600; font-variant-numeric:tabular-nums; }
+  .op-more{ padding:.6rem; text-align:center; border-top:1px solid var(--line); }
+  .op-empty{ padding:1.4rem .9rem; text-align:center; color:var(--muted); }
+  .op-scope{ font-size:.8rem; color:var(--muted); margin:-.2rem 0 .5rem; }
 
-    .section-title{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:.75rem;
-      margin:1.4rem 0 .8rem;
-    }
-    .section-title h3{
-      margin:0;
-      color:var(--text);
-      font-size:1.2rem;
-      font-weight:900;
-    }
-    .section-title .muted-note{
-      color:var(--muted);
-      font-weight:700;
-      font-size:.92rem;
-    }
+  /* calendar: the day and one number; the day's orders are one tap away */
+  .op-cal-nav{ display:flex; align-items:center; gap:.5rem; margin-bottom:.5rem; }
+  .op-cal-nav a{ text-decoration:none; font-weight:800; padding:.2rem .55rem; border:1px solid var(--line2);
+                 border-radius:var(--app-radius-sm); color:var(--app-primary); }
+  .op-cal-nav .m{ font-weight:800; min-width:9rem; text-align:center; }
+  .op-cal{ display:grid; grid-template-columns:repeat(7, minmax(0,1fr)); gap:.3rem; }
+  .op-cal .wd{ font-size:.7rem; font-weight:800; color:var(--muted); text-align:center; text-transform:uppercase; }
+  .op-cell{ min-height:3.6rem; border:1px solid var(--line); border-radius:var(--app-radius-sm);
+            background:var(--app-surface); padding:.3rem .35rem; display:flex; flex-direction:column;
+            gap:.15rem; text-decoration:none; color:var(--ink); }
+  .op-cell.out{ opacity:.35; }
+  .op-cell.today{ border-color:var(--acc); }
+  .op-cell .n{ font-size:.78rem; font-weight:800; color:var(--muted); }
+  .op-cell .v{ font-size:.82rem; font-weight:800; font-variant-numeric:tabular-nums; color:var(--acc-ink); }
+  a.op-cell:hover{ background:var(--app-accent-soft); }
 
-    .day-panel{
-      overflow:hidden;
-      margin-bottom:1rem;
-    }
-    .day-toggle{
-      width:100%;
-      border:0;
-      background:linear-gradient(180deg,#f8fbff,#ffffff);
-      padding:1rem 1.1rem;
-      text-align:left;
-      display:flex;
-      justify-content:space-between;
-      gap:1rem;
-      align-items:center;
-      border-bottom:1px solid rgba(148,163,184,.18);
-    }
-    .day-toggle:hover{
-      background:linear-gradient(180deg,#eff6ff,#ffffff);
-    }
-    .day-main{
-      min-width:0;
-    }
-    .day-toggle-meta{
-      display:flex;
-      align-items:center;
-      gap:1rem;
-    }
-    .day-date{
-      font-size:1.05rem;
-      font-weight:900;
-      color:var(--text);
-    }
-    .day-meta{
-      margin-top:.25rem;
-      color:var(--muted);
-      font-weight:700;
-      font-size:.9rem;
-    }
-    .day-side{
-      text-align:right;
-    }
-    .day-amount{
-      color:var(--success);
-      font-size:1.1rem;
-      font-weight:900;
-    }
-    .day-payments{
-      display:flex;
-      flex-wrap:wrap;
-      justify-content:flex-end;
-      gap:.4rem;
-      margin-top:.45rem;
-    }
-    .day-pill,
-    .pay-pill{
-      display:inline-flex;
-      align-items:center;
-      gap:.35rem;
-      padding:.24rem .6rem;
-      border-radius:999px;
-      font-size:.78rem;
-      font-weight:800;
-      background:#eff6ff;
-      color:#1d4ed8;
-      border:1px solid #bfdbfe;
-    }
-    .pay-pill.purchase{
-      background:var(--warning-soft);
-      color:var(--warning);
-      border-color:#fed7aa;
-    }
+  /* analysis */
+  .op-grid2{ display:grid; gap:.7rem; grid-template-columns:minmax(0,1.6fr) minmax(0,1fr); margin-bottom:.7rem; }
+  .op-card{ border:1px solid var(--line); border-radius:var(--app-radius); background:var(--app-surface);
+            padding:.8rem .9rem; box-shadow:var(--app-shadow); margin-bottom:.7rem; }
+  .op-card h3{ font-size:1rem; font-weight:800; margin:0 0 .15rem; color:var(--ink); }
+  .op-card .sub{ font-size:.8rem; color:var(--muted); margin-bottom:.5rem; }
+  .op-chart{ position:relative; height:260px; }
+  .op-chart.donut{ height:200px; }
+  .op-legend{ display:flex; gap:.8rem; flex-wrap:wrap; font-size:.82rem; margin-top:.4rem; }
+  .op-top{ display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.2rem .8rem; align-items:center;
+           padding:.35rem 0; border-bottom:1px solid var(--line); }
+  .op-top:last-child{ border-bottom:0; }
+  .op-top a{ font-weight:700; color:var(--ink); text-decoration:none; }
+  .op-top .bar{ grid-column:1 / -1; height:4px; background:var(--app-surface-2); border-radius:4px; overflow:hidden; }
+  .op-top .bar span{ display:block; height:100%; background:var(--acc); }
+  .op-top .m{ text-align:right; font-weight:800; font-variant-numeric:tabular-nums; }
+  .op-top .m small{ display:block; font-weight:600; color:var(--muted); }
+  .op-table{ width:100%; border-collapse:collapse; font-size:.88rem; }
+  .op-table th{ font-size:.68rem; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+                text-align:left; padding:.35rem .4rem; border-bottom:1px solid var(--line2); }
+  .op-table td{ padding:.35rem .4rem; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; }
+  .op-table .r{ text-align:right; }
 
-    .orders-wrap{
-      padding:0 1rem 1rem;
-    }
-    .order-entry{
-      margin-top:.9rem;
-      border:1px solid var(--border);
-      border-radius:16px;
-      background:#fff;
-      overflow:hidden;
-    }
-    .order-entry[open]{
-      border-color:#bfdbfe;
-      box-shadow:0 16px 32px rgba(37,99,235,.08);
-    }
-    .order-entry:first-child{
-      margin-top:1rem;
-    }
-    .order-entry summary{
-      list-style:none;
-      cursor:pointer;
-    }
-    .order-entry summary::-webkit-details-marker{
-      display:none;
-    }
-    .order-top{ display:flex; align-items:baseline; gap:.5rem; flex-wrap:wrap; }
-    .order-customer-main{ font-weight:700; }
-    .order-summary{
-      display:grid;
-      grid-template-columns:minmax(0, 1fr) auto;
-      gap:1rem;
-      align-items:center;
-      padding:1rem 1rem .9rem;
-      background:linear-gradient(180deg,#ffffff,#fbfdff);
-    }
-    .order-summary:hover{
-      background:linear-gradient(180deg,#ffffff,#f8fbff);
-    }
-    .order-summary-main{
-      display:flex;
-      gap:1rem;
-      align-items:center;
-      min-width:0;
-    }
-    .order-summary-text{
-      min-width:0;
-      flex:1;
-    }
-    .order-summary-end{
-      display:flex;
-      align-items:center;
-      gap:1rem;
-    }
-    .order-top{
-      display:flex;
-      flex-wrap:wrap;
-      gap:.45rem .65rem;
-      align-items:center;
-      margin-bottom:.45rem;
-    }
-    .order-identity{
-      display:flex;
-      flex-direction:column;
-      gap:.2rem;
-      margin-bottom:.45rem;
-    }
-    .identity-label{
-      color:#1d4ed8;
-      font-size:.75rem;
-      font-weight:900;
-      letter-spacing:.05em;
-      text-transform:uppercase;
-    }
-    .identity-label.warning{
-      color:#b45309;
-    }
-    .order-badge{
-      display:inline-flex;
-      align-items:center;
-      padding:.24rem .65rem;
-      border-radius:999px;
-      background:var(--accent-soft);
-      color:#1d4ed8;
-      font-weight:900;
-      font-size:.8rem;
-    }
-    .order-customer,
-    .order-time{
-      color:var(--muted);
-      font-size:.88rem;
-      font-weight:700;
-    }
-    .order-customer-main{
-      color:#0f172a;
-      font-size:1.18rem;
-      font-weight:900;
-      line-height:1.15;
-      text-decoration:none;
-    }
-    .order-customer-main.missing{
-      color:#9a3412;
-    }
-    a.order-customer-main:hover{
-      color:#1d4ed8;
-    }
-    .order-meta{
-      display:flex;
-      flex-wrap:wrap;
-      gap:.45rem;
-      margin-top:.6rem;
-    }
-    .meta-chip{
-      display:inline-flex;
-      align-items:center;
-      padding:.26rem .6rem;
-      border-radius:999px;
-      background:#f8fafc;
-      color:#334155;
-      border:1px solid var(--border);
-      font-size:.8rem;
-      font-weight:800;
-    }
-    .order-side{
-      text-align:right;
-      min-width:220px;
-    }
-    .order-total{
-      color:var(--success);
-      font-size:1.3rem;
-      font-weight:900;
-      line-height:1.1;
-    }
-    .profit-note{
-      margin-top:.35rem;
-      color:#065f46;
-      font-size:.8rem;
-      font-weight:900;
-      line-height:1.2;
-    }
-    .profit-note.negative{
-      color:#b91c1c;
-    }
-    .order-payments{
-      display:flex;
-      justify-content:flex-end;
-      flex-wrap:wrap;
-      gap:.4rem;
-      margin-top:.55rem;
-    }
-    .expand-control{
-      display:flex;
-      align-items:center;
-      gap:.6rem;
-      color:#0f172a;
-      font-size:.82rem;
-      font-weight:900;
-      white-space:nowrap;
-    }
-    .expand-label{
-      color:#334155;
-      letter-spacing:.02em;
-      text-transform:uppercase;
-    }
-    .toggle-arrow,
-    .order-arrow{
-      width:12px;
-      height:12px;
-      border-right:3px solid #0f172a;
-      border-bottom:3px solid #0f172a;
-      transform:rotate(45deg);
-      transition:transform .2s ease, border-color .2s ease;
-      flex:0 0 auto;
-    }
-    .day-toggle[aria-expanded="true"] .toggle-arrow,
-    .order-entry[open] .order-arrow{
-      transform:rotate(225deg);
-      border-color:#1d4ed8;
-    }
-    .order-body{
-      padding:0 1rem 1rem;
-      border-top:1px solid var(--border);
-    }
-    .order-tools{
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      gap:.75rem;
-      padding:.8rem 0;
-    }
-    .order-tools .hint{
-      color:var(--muted);
-      font-size:.88rem;
-      font-weight:700;
-    }
-    .item-table{
-      margin:0;
-    }
-    .item-table thead th{
-      background:#f8fafc;
-      color:#475569;
-      font-size:.78rem;
-      text-transform:uppercase;
-      letter-spacing:.04em;
-      border-bottom:1px solid var(--border);
-    }
-    .item-table td{
-      vertical-align:middle;
-      border-color:#eef2f7;
-    }
-    .item-name{
-      font-weight:800;
-      color:var(--text);
-    }
-    .item-photo-cell{
-      width:108px;
-    }
-    .item-photo-btn{
-      width:74px;
-      display:flex;
-      flex-direction:column;
-      align-items:center;
-      gap:.3rem;
-      border:1px solid rgba(148,163,184,.28);
-      border-radius:14px;
-      background:#fff;
-      padding:.45rem;
-      transition:border-color .2s ease, box-shadow .2s ease, transform .2s ease;
-    }
-    .item-photo-btn:hover{
-      border-color:#60a5fa;
-      box-shadow:0 10px 18px rgba(37,99,235,.12);
-      transform:translateY(-1px);
-    }
-    .item-photo-btn img{
-      width:100%;
-      aspect-ratio:1;
-      object-fit:cover;
-      border-radius:10px;
-      display:block;
-      background:#f8fafc;
-    }
-    .zoom-label{
-      color:#1d4ed8;
-      font-size:.72rem;
-      font-weight:900;
-      letter-spacing:.03em;
-      text-transform:uppercase;
-      line-height:1;
-    }
-    .item-photo-placeholder{
-      width:74px;
-      aspect-ratio:1;
-      display:grid;
-      place-items:center;
-      border-radius:14px;
-      background:#f8fafc;
-      border:1px dashed rgba(148,163,184,.5);
-      color:#64748b;
-      font-size:.72rem;
-      font-weight:800;
-      text-align:center;
-      padding:.35rem;
-    }
-    .item-name a{
-      color:inherit;
-      text-decoration:none;
-    }
-    .item-name a:hover{
-      color:#1d4ed8;
-    }
-    .item-code{
-      color:var(--muted);
-      font-size:.82rem;
-      margin-top:.2rem;
-    }
-    .num{
-      font-variant-numeric:tabular-nums;
-      font-weight:800;
-    }
-    .image-modal{
-      position:fixed;
-      inset:0;
-      z-index:1080;
-      display:grid;
-      place-items:center;
-      padding:1rem;
-    }
-    .image-modal[hidden]{
-      display:none;
-    }
-    .image-modal-backdrop{
-      position:absolute;
-      inset:0;
-      background:rgba(15,23,42,.72);
-    }
-    .image-modal-dialog{
-      position:relative;
-      z-index:1;
-      width:min(92vw, 760px);
-      max-height:90vh;
-      background:#fff;
-      border-radius:22px;
-      overflow:hidden;
-      box-shadow:0 28px 60px rgba(15,23,42,.28);
-    }
-    .image-modal-head{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:1rem;
-      padding:1rem 1.1rem;
-      border-bottom:1px solid rgba(148,163,184,.22);
-    }
-    .image-modal-title{
-      color:#0f172a;
-      font-size:1rem;
-      font-weight:900;
-      line-height:1.25;
-    }
-    .image-modal-close{
-      width:40px;
-      height:40px;
-      border:0;
-      border-radius:999px;
-      background:#eff6ff;
-      color:#1d4ed8;
-      font-size:1.5rem;
-      line-height:1;
-      font-weight:900;
-    }
-    .image-modal-close:hover{
-      background:#dbeafe;
-    }
-    .image-modal-body{
-      padding:1rem;
-      background:#f8fafc;
-    }
-    .image-modal-body img{
-      width:100%;
-      max-height:70vh;
-      object-fit:contain;
-      display:block;
-      border-radius:16px;
-      background:#fff;
-    }
+  /* detail layer: full screen on a phone, a dialog elsewhere */
+  .ol-cust{ font-weight:700; margin-bottom:.4rem; }
+  .ol-item.is-hit{ background:var(--app-accent-soft); border-radius:var(--app-radius-sm); padding:.15rem .3rem; }
+  .ol-totals{ margin:.7rem 0 0; display:grid; gap:.2rem; }
+  .ol-totals > div{ display:flex; justify-content:space-between; font-variant-numeric:tabular-nums; font-size:.9rem; }
+  .ol-totals dt{ font-weight:600; color:var(--muted); }
+  .ol-totals dd{ margin:0; font-weight:700; }
+  .ol-totals .grand dd{ font-size:1.05rem; font-weight:900; }
+  .ol-totals .neg{ color:var(--app-danger); }
+  #opLayer .modal-footer:empty{ display:none; }
 
-    .empty-card{
-      padding:1.1rem 1.2rem;
-      color:var(--muted);
-      font-weight:700;
-      margin-top:1rem;
-    }
+  @media (max-width: 760px){
+    .op-grid2{ grid-template-columns:1fr; }
+    .op-headrow{ display:none; }
+    .op-print{ display:none; }
+    .op-open, .with-store .op-open{
+      grid-template-columns:auto auto minmax(0,1fr) auto;
+      grid-template-areas:"id time . amt" "cust cust qty pay";
+      gap:.1rem .5rem; padding:.5rem .7rem; }
+    .c-id{ grid-area:id; } .c-time{ grid-area:time; } .c-amt{ grid-area:amt; }
+    .c-cust{ grid-area:cust; } .c-qty{ grid-area:qty; font-size:.8rem; } .c-pay{ grid-area:pay; text-align:right; }
+    .c-store{ display:none; }
+    .op-search{ max-width:none; }
+    .op-qrow input[type=date]{ flex:1 1 8rem; }
+    .op-cell{ min-height:3rem; padding:.2rem; }
+    .op-cell .v{ font-size:.7rem; }
+  }
+</style>
 
-    .viz-grid{
-      display:grid;
-      grid-template-columns:1.7fr 1fr;
-      gap:1rem;
-      margin-bottom:1.2rem;
-    }
-    .viz-card,
-    .top-card{
-      background:var(--card);
-      border:1px solid var(--border);
-      border-radius:var(--radius);
-      box-shadow:var(--shadow);
-      padding:1rem 1.05rem;
-    }
-    .top-card{
-      margin-bottom:1.2rem;
-    }
-    .viz-card h3{
-      margin:0 0 .25rem;
-      font-size:1.05rem;
-      font-weight:900;
-      color:var(--text);
-    }
-    .viz-sub{
-      color:var(--muted);
-      font-size:.84rem;
-      font-weight:700;
-      margin-bottom:.6rem;
-    }
-    .chart-box{
-      position:relative;
-      height:260px;
-      overflow:hidden;
-    }
-    /* app.css pins #yearBarChart/#salesBarChart to a fixed px height with
-       !important; inside a 260px box the canvas stood proud of the card. Higher
-       specificity than a bare id, so the canvas fills its box instead. */
-    .chart-box > canvas,
-    .chart-box > canvas#yearBarChart,
-    .chart-box > canvas#trendChart,
-    .chart-box > canvas#payChart{
-      width:100% !important;
-      height:100% !important;
-      display:block;
-    }
-    .chart-box.donut{
-      height:215px;
-    }
-    .chart-legend{
-      display:flex;
-      flex-wrap:wrap;
-      gap:.4rem;
-      justify-content:center;
-      margin-top:.7rem;
-    }
-    .top-row{
-      display:grid;
-      grid-template-columns:minmax(0,1fr) auto;
-      gap:.85rem;
-      align-items:center;
-      padding:.55rem 0;
-      border-top:1px solid #eef2f7;
-    }
-    .top-row:first-of-type{
-      border-top:0;
-    }
-    .top-name{
-      color:var(--text);
-      font-weight:800;
-      text-decoration:none;
-    }
-    .top-name:hover{
-      color:#1d4ed8;
-    }
-    .top-bar{
-      height:7px;
-      border-radius:999px;
-      background:#eef2f7;
-      margin-top:.35rem;
-      overflow:hidden;
-    }
-    .top-bar span{
-      display:block;
-      height:100%;
-      background:linear-gradient(90deg,#2563eb,#60a5fa);
-    }
-    .top-metric{
-      text-align:right;
-      white-space:nowrap;
-      font-weight:900;
-      color:var(--text);
-    }
-    .top-metric .sub{
-      color:var(--muted);
-      font-size:.82rem;
-      font-weight:700;
-    }
-
-    @media (max-width: 991.98px){
-      .viz-grid{
-        grid-template-columns:1fr;
-      }
-      .filter-grid{
-        grid-template-columns:1fr 1fr;
-      }
-      .filter-actions{
-        grid-column:1 / -1;
-        justify-content:flex-start;
-      }
-      .summary-grid{
-        grid-template-columns:repeat(2, minmax(0, 1fr));
-      }
-      .summary-card.payments{
-        grid-column:1 / -1;
-      }
-      .day-toggle,
-      .order-summary{
-        grid-template-columns:1fr;
-      }
-      .day-toggle-meta,
-      .order-summary-end,
-      .order-summary-main{
-        width:100%;
-      }
-      .day-side,
-      .order-side{
-        text-align:left;
-        min-width:0;
-      }
-      .day-payments,
-      .order-payments{
-        justify-content:flex-start;
-      }
-      .page-head{
-        flex-direction:column;
-      }
-    }
-
-    @media (max-width: 575.98px){
-      .filter-grid{
-        grid-template-columns:1fr;
-      }
-      .summary-grid{
-        grid-template-columns:repeat(2, minmax(0, 1fr));
-      }
-      .history-head,
-      .order-tools{
-        flex-direction:column;
-        align-items:flex-start;
-      }
-      .history-chip{
-        width:100%;
-        min-width:0;
-      }
-      .day-toggle-meta,
-      .order-summary-main,
-      .order-summary-end{
-        flex-direction:column;
-        align-items:flex-start;
-      }
-    }
-
-    /* --- Month calendar --- */
-    .cal-toolbar{display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;justify-content:space-between;margin:.25rem 0 1rem;}
-    .cal-nav{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;}
-    .cal-nav .cal-month{font-weight:900;font-size:1.15rem;color:var(--text);min-width:10rem;text-align:center;}
-    .cal-nav a,.cal-link{display:inline-flex;align-items:center;justify-content:center;height:2.25rem;padding:0 .8rem;border:1px solid var(--border,#d9dee6);border-radius:.6rem;background:#fff;color:var(--text);text-decoration:none;font-weight:700;}
-    .cal-nav a:hover,.cal-link:hover{background:#f3f5f9;}
-    .cal-search{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;}
-    .cal-search input[type=search]{height:2.25rem;border:1px solid var(--border,#d9dee6);border-radius:.6rem;padding:0 .7rem;min-width:15rem;}
-    .cal-chip{display:inline-flex;align-items:center;gap:.45rem;background:#eef2ff;border:1px solid #c7d2fe;color:#3730a3;border-radius:2rem;padding:.15rem .7rem;font-weight:800;font-size:.85rem;}
-    .cal-chip a{color:#3730a3;text-decoration:none;font-weight:900;}
-    .calendar{width:100%;border-collapse:separate;border-spacing:6px;table-layout:fixed;}
-    .calendar th{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#6b7280);font-weight:800;padding:.2rem 0;text-align:center;}
-    .cal-cell{vertical-align:top;height:5.4rem;border:1px solid var(--border,#e5e7eb);border-radius:.6rem;background:#fff;padding:.35rem;}
-    .cal-cell.out{background:#fafbfc;}
-    .cal-cell.out .cal-daynum{color:#c3c9d2;}
-    .cal-cell.today{border-color:#2563eb;box-shadow:inset 0 0 0 1px #2563eb;}
-    .cal-daynum{font-weight:800;font-size:.85rem;color:var(--text);}
-    .cal-btn{display:flex;flex-direction:column;gap:.15rem;width:100%;height:100%;border:0;background:transparent;text-align:left;cursor:pointer;padding:0;}
-    .cal-btn:hover .cal-badge{background:#1d4ed8;}
-    .cal-amount{font-weight:900;font-size:.88rem;color:var(--text);margin-top:.3rem;}
-    .cal-badge{align-self:flex-start;margin-top:.25rem;background:#2563eb;color:#fff;font-size:.7rem;font-weight:800;border-radius:.4rem;padding:.05rem .4rem;}
-    .cal-empty{color:#cdd2da;font-size:.75rem;margin-top:.35rem;}
-    .day-modal[hidden]{display:none;}
-    .day-modal{position:fixed;inset:0;z-index:1080;display:flex;align-items:center;justify-content:center;padding:2vh 1rem;overflow:auto;}
-    .day-modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.55);}
-    .day-modal-dialog{position:relative;background:#fff;border-radius:1rem;max-width:940px;width:100%;max-height:94vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.25);}
-    .day-modal-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:1rem 1.25rem;border-bottom:1px solid var(--border,#e5e7eb);position:sticky;top:0;background:#fff;border-radius:1rem 1rem 0 0;}
-    .day-modal-title{font-weight:900;font-size:1.05rem;color:var(--text);}
-    .day-modal-close{border:0;background:transparent;font-size:1.7rem;line-height:1;cursor:pointer;color:#64748b;}
-    .day-modal-body{padding:1rem 1.25rem 1.25rem;overflow:auto;-webkit-overflow-scrolling:touch;}
-    @media (max-width:640px){.cal-cell{height:auto;min-height:3.6rem;}.calendar{border-spacing:3px;}.cal-search input[type=search]{min-width:11rem;}}
-  </style>
-
-  <div class="page-head">
-    <div>
-      <h2>Sales & Purchase Records</h2>
-      {% if date_filter and not calendar_mode %}<div class="page-sub">Showing records for {{ date_filter }}</div>{% endif %}
-    </div>
-    <div class="page-actions">
-      {% if show_sales_sensitive %}
-        {% if start_date or end_date %}
-          <a href="{% url 'export_sales_purchases_pdf' %}?start_date={{ start_date }}&end_date={{ end_date }}" class="btn btn-dark">Export PDF</a>
-        {% endif %}
-      {% endif %}
-    </div>
+<div class="op-page">
+  <div class="op-head">
+    <h1>Orders</h1>
+    <span class="op-store">{{ store_label }}</span>
+    <div class="spacer"></div>
+    {% if show_sales_sensitive and view != 'analysis' %}<a class="btn btn-sm btn-outline-secondary" href="{{ export_url }}">Export PDF</a>{% endif %}
   </div>
 
-  <form method="get" class="filter-card" id="records-filter-form">
-    <div class="filter-grid">
-      <div>
-        <label class="form-label" for="id_start_date">Start Date</label>
-        <input id="id_start_date" type="date" name="start_date" value="{{ start_date }}" class="form-control">
-      </div>
-      <div>
-        <label class="form-label" for="id_end_date">End Date</label>
-        <input id="id_end_date" type="date" name="end_date" value="{{ end_date }}" class="form-control">
-      </div>
-      <div class="filter-actions">
-        <button class="btn btn-primary" type="submit">Search</button>
-        <a class="btn btn-outline-secondary" href="{% url 'sales_records' %}">Reset</a>
-      </div>
-    </div>
+  <nav class="op-views" aria-label="Orders views">
+    <a class="{% if view == 'sales' %}on{% endif %}" href="{{ view_urls.sales }}">Sales</a>
+    {% if show_purchases %}
+      <a class="{% if view == 'purchases' %}on{% endif %}" href="{{ view_urls.purchases }}">Purchases</a>
+      <a class="{% if view == 'analysis' %}on{% endif %}" href="{{ view_urls.analysis }}">Analysis</a>
+    {% endif %}
+  </nav>
 
-    <div class="quick-ranges">
-      <button type="button" class="btn btn-sm btn-outline-primary" data-quick-range="today">Today</button>
-      <button type="button" class="btn btn-sm btn-outline-primary" data-quick-range="last7">Last 7 Days</button>
-      <button type="button" class="btn btn-sm btn-outline-primary" data-quick-range="thisMonth">This Month</button>
+  {# ---- one query bar ---------------------------------------------------- #}
+  <form method="get" class="op-query" id="op-query">
+    {% if view != 'sales' %}<input type="hidden" name="view" value="{{ view }}">{% endif %}
+    {% if calendar_mode %}<input type="hidden" name="layout" value="calendar"><input type="hidden" name="month" value="{{ start_date|slice:':7' }}">{% endif %}
+    {% if view == 'analysis' and params.year_raw %}<input type="hidden" name="year" value="{{ params.year_raw }}">{% endif %}
+    <div class="op-qrow">
+      {% if view != 'analysis' %}
+        <input type="search" name="q" value="{{ q }}" class="op-search"
+               placeholder="{% if view == 'purchases' %}Supplier, invoice or product{% else %}Order #, customer or product{% endif %}"
+               aria-label="Search">
+      {% endif %}
+      {% if not calendar_mode %}
+        <input type="date" name="start_date" value="{{ start_date }}" aria-label="From">
+        <input type="date" name="end_date" value="{{ end_date }}" aria-label="To">
+      {% endif %}
+      <button class="btn btn-primary btn-sm" type="submit">Apply</button>
     </div>
-
-    <div class="history-wrap">
-      <div class="history-head">
-        <p class="history-title">Recent Searches</p>
-        <button type="button" id="clear-search-history" class="btn btn-sm btn-outline-secondary">Clear History</button>
+    <div class="op-qrow2">
+      {% if not calendar_mode %}
+        <span><span class="op-seg-label">Range</span><span class="op-seg">
+          <a class="{% if quick_active == 'today' %}on{% endif %}" href="{{ quick_urls.today }}">Today</a>
+          <a class="{% if quick_active == 'last7' %}on{% endif %}" href="{{ quick_urls.last7 }}">7 days</a>
+          <a class="{% if quick_active == 'month' %}on{% endif %}" href="{{ quick_urls.month }}">This month</a>
+        </span></span>
+      {% endif %}
+      {% if view == 'sales' %}
+        <span><span class="op-seg-label">Show as</span><span class="op-seg">
+          <a class="{% if not calendar_mode %}on{% endif %}" href="{{ layout_urls.list }}">List</a>
+          <a class="{% if calendar_mode %}on{% endif %}" href="{{ layout_urls.calendar }}">Calendar</a>
+        </span></span>
+      {% endif %}
+    </div>
+    {% if view == 'sales' %}
+      <details class="op-filters"{% if payment %} open{% endif %}>
+        <summary>More filters</summary>
+        <div class="row-in">
+          <label>Payment
+            <select name="payment">
+              <option value="">Any</option>
+              {% for code, label in payment_options %}<option value="{{ code }}"{% if payment == code %} selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+          </label>
+          {% if not calendar_mode %}<span class="op-recent" id="op-recent" hidden><span class="op-seg-label">Recent</span></span>{% endif %}
+        </div>
+      </details>
+    {% endif %}
+    {% if q or payment %}
+      <div class="op-active">
+        {% if q %}<a class="op-chip" href="{{ clear_q_url }}" title="Clear search">&ldquo;{{ q }}&rdquo; &times;</a>{% endif %}
+        {% if payment %}<a class="op-chip" href="{{ clear_payment_url }}" title="Clear payment filter">{{ payment_label }} &times;</a>{% endif %}
       </div>
-      <div id="search-history-list" class="history-list"></div>
-      <div id="search-history-empty" class="history-empty">Your recent date ranges will appear here.</div>
-    </div>
+    {% endif %}
   </form>
 
-  {% if calendar_mode %}
-    <div class="cal-toolbar">
-      <div class="cal-nav">
-        <a href="{{ prev_month_url }}" aria-label="Previous month">&#10094;</a>
-        <span class="cal-month">{{ calendar_month_label }}</span>
-        <a href="{{ next_month_url }}" aria-label="Next month">&#10095;</a>
-        <a class="cal-link" href="{{ this_month_url }}">This month</a>
-        <a class="cal-link" href="{{ year_view_url }}">Year view</a>
-      </div>
-      <form method="get" class="cal-search">
-        <input type="hidden" name="month" value="{{ calendar_month_value }}">
-        <input type="search" name="product_q" value="{{ product_q }}" placeholder="Filter by product / barcode">
-        <button class="btn btn-primary btn-sm" type="submit">Filter</button>
-        {% if product_q %}<span class="cal-chip">{{ product_q }} <a href="{{ clear_product_url }}" title="Clear filter">&times;</a></span>{% endif %}
-      </form>
+  {% if view == 'sales' %}
+    {# ---- summary --------------------------------------------------------- #}
+    <div class="op-sum">
+      {% if show_order_financials %}<span><b>EUR {{ summary.amount|floatformat:2 }}</b> sales</span>{% endif %}
+      <span><b>{{ summary.orders }}</b> order{{ summary.orders|pluralize }}</span>
+      <span><b>{{ summary.qty }}</b> items</span>
+      {% if show_order_financials %}<span><b>EUR {{ summary.avg|floatformat:2 }}</b> per order</span>{% endif %}
+      {% if show_profit %}<span><b>EUR {{ summary.profit|floatformat:2 }}</b> Gross profit</span>{% endif %}
+      {% if show_order_financials and summary.pay_display %}
+        <details class="op-paysum">
+          <summary>By payment</summary>
+          <div class="pays">{% for p in summary.pay_display %}<span>{{ p.label }} <b>EUR {{ p.amount|floatformat:2 }}</b></span>{% endfor %}</div>
+        </details>
+      {% endif %}
     </div>
-  {% endif %}
 
-  {% if show_trend %}
-    <div class="section-title">
-      <h3>Sales Trend &middot; {{ year }}</h3>
-      <div class="d-flex gap-2 flex-wrap">
+    {% if elsewhere %}
+      <div class="op-note">Order #{{ elsewhere.id }} is on {{ elsewhere.day|date:"Y-m-d" }}, outside this range.
+        <a href="{% url 'sale_order_detail' elsewhere.id %}">Open it</a></div>
+    {% endif %}
+
+    {% if calendar_mode %}
+      <div class="op-cal-nav">
+        <a href="{{ prev_month_url }}" aria-label="Previous month">&#10094;</a>
+        <span class="m">{{ calendar_month_label }}</span>
+        <a href="{{ next_month_url }}" aria-label="Next month">&#10095;</a>
+      </div>
+      <div class="op-cal">
+        {% for wd in calendar_weekdays %}<div class="wd">{{ wd }}</div>{% endfor %}
+        {% for week in calendar_weeks %}{% for cell in week %}
+          {% if cell.orders and cell.in_month %}
+            <a class="op-cell{% if cell.is_today %} today{% endif %}" href="{{ cell.url }}">
+              <span class="n">{{ cell.day }}</span>
+              <span class="v">{% if show_order_financials %}{{ cell.amount|floatformat:0 }}&euro;{% else %}{{ cell.orders }}{% endif %}</span>
+            </a>
+          {% else %}
+            <div class="op-cell{% if not cell.in_month %} out{% endif %}{% if cell.is_today %} today{% endif %}"><span class="n">{{ cell.day }}</span></div>
+          {% endif %}
+        {% endfor %}{% endfor %}
+      </div>
+    {% else %}
+      <div class="op-list" id="op-list">
+        {% if orders %}
+          <div class="op-row op-headrow{% if show_store_col %} with-store{% endif %}" aria-hidden="true">
+            <div class="op-open"><span>Time</span><span>Order</span><span>Customer</span>{% if show_store_col %}<span>Store</span>{% endif %}<span class="c-qty">Items</span>{% if show_order_financials %}<span class="c-amt">Amount</span>{% endif %}<span>Payment</span></div>
+            <span class="op-print"></span>
+          </div>
+          {% include 'stock/_orders_rows.html' %}
+        {% else %}
+          <div class="op-empty">No orders from {{ start_date }} to {{ end_date }}{% if q %} matching &ldquo;{{ q }}&rdquo;{% endif %}.</div>
+        {% endif %}
+      </div>
+    {% endif %}
+
+  {% elif view == 'purchases' %}
+    <div class="op-sum">
+      <span><b>EUR {{ total_purchase_amount|floatformat:2 }}</b> purchased</span>
+      <span><b>{{ total_purchase_orders }}</b> receipt{{ total_purchase_orders|pluralize }}</span>
+      <span><b>{{ total_purchase_qty }}</b> items</span>
+    </div>
+    <div class="op-scope">Stock is shared between the shops, so purchases are not split by store.</div>
+    <div class="op-list">
+      {% for group in purchases %}
+        {% if group.opens_day %}
+          <div class="op-day"><span class="d">{{ group.day|date:"D j M Y" }}</span></div>
+        {% endif %}
+        <div class="op-row">
+          <button type="button" class="op-open" data-layer="pl-{{ group.key }}">
+            <span class="c-time">{{ group.created_at|date:"H:i" }}</span>
+            <span class="c-id">{{ group.short_ref }}</span>
+            <span class="c-cust">{{ group.supplier_name }}{% if group.matched_items %}<span class="c-hit">{% for item in group.matched_items|slice:":2" %}{{ item.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>{% endif %}</span>
+            <span class="c-qty">{{ group.qty }}<small> pcs</small></span>
+            <span class="c-amt">EUR {{ group.cost|floatformat:2 }}</span>
+            <span class="c-pay">{{ group.invoice_no }}</span>
+          </button>
+          {% if group.edit_url %}<a class="op-print" href="{{ group.edit_url }}">Adjust</a>{% else %}<span class="op-print"></span>{% endif %}
+        </div>
+        <template id="pl-{{ group.key }}">
+          <div data-part="title">{{ group.ref }} &middot; {{ group.created_at|date:"Y-m-d H:i" }}</div>
+          <div data-part="body">
+            <div class="ol-cust">{{ group.supplier_name }}{% if group.invoice_no %} &middot; {{ group.invoice_no }}{% endif %}</div>
+            <div class="ord-items">
+              {% for item in group.items %}<div class="ol-item{% if item.is_match %} is-hit{% endif %}">{% include "stock/_purchase_order_item.html" %}</div>{% endfor %}
+            </div>
+            <dl class="ol-totals">
+              <div><dt>Items</dt><dd>{{ group.qty }}</dd></div>
+              <div class="grand"><dt>Cost</dt><dd>EUR {{ group.cost|floatformat:2 }}</dd></div>
+            </dl>
+          </div>
+          <div data-part="foot">{% if group.edit_url %}<a class="btn btn-primary" href="{{ group.edit_url }}">Adjust record</a>{% endif %}</div>
+        </template>
+      {% empty %}
+        <div class="op-empty">No purchases from {{ start_date }} to {{ end_date }}{% if q %} matching &ldquo;{{ q }}&rdquo;{% endif %}.</div>
+      {% endfor %}
+    </div>
+
+  {% else %}
+    {# ---- analysis -------------------------------------------------------- #}
+    <div class="op-sum">
+      <span><b>EUR {{ total_sales_amount|floatformat:2 }}</b> sales</span>
+      {% if show_profit %}<span><b>EUR {{ total_sales_profit|floatformat:2 }}</b> Gross profit</span>{% endif %}
+      <span><b>EUR {{ total_purchase_amount|floatformat:2 }}</b> purchased (all stores)</span>
+    </div>
+
+    {% if trend_data %}
+      {{ trend_data|json_script:"trendData" }}
+      {% if payment_chart %}{{ payment_chart|json_script:"payMixData" }}{% endif %}
+      <div class="op-grid2">
+        <section class="op-card" style="margin:0;">
+          <h3>Sales by day</h3>
+          <div class="sub">Sales vs purchases{% if show_profit %} and gross profit{% endif %}, per active day. Profit is revenue minus the FIFO cost of the goods sold.</div>
+          <div class="op-chart"><canvas id="trendChart"></canvas></div>
+        </section>
+        {% if payment_chart %}
+          <section class="op-card" style="margin:0;">
+            <h3>Payments</h3>
+            <div class="sub">Counted from each order's payment split</div>
+            <div class="op-chart donut"><canvas id="payChart"></canvas></div>
+            <div class="op-legend">{% for p in payment_chart %}<span>{{ p.label }} <b>EUR {{ p.amount|floatformat:2 }}</b></span>{% endfor %}</div>
+          </section>
+        {% endif %}
+      </div>
+    {% else %}
+      <div class="op-card"><div class="op-empty" style="padding:.6rem;">No sales or purchases from {{ start_date }} to {{ end_date }}.</div></div>
+    {% endif %}
+
+    {% if top_products %}
+      <section class="op-card">
+        <h3>Top Products</h3>
+        <div class="sub">{{ start_date }} to {{ end_date }}</div>
+        {% for tp in top_products %}
+          <div class="op-top">
+            <div>{% if tp.product %}<a href="{% url 'product_detail' tp.product.id %}">{{ tp.name }}</a>{% else %}{{ tp.name }}{% endif %}</div>
+            <div class="m">EUR {{ tp.revenue|floatformat:2 }}<small>{{ tp.qty }} units{% if show_profit %} &middot; EUR {{ tp.profit|floatformat:2 }} profit{% endif %}</small></div>
+            <div class="bar"><span style="width:{{ tp.bar }}%"></span></div>
+          </div>
+        {% endfor %}
+      </section>
+    {% endif %}
+
+    <section class="op-card">
+      <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+        <h3 class="me-auto">Sales by Month &middot; {{ year }}</h3>
         <a class="btn btn-sm btn-outline-secondary" href="{{ year_nav.prev }}">&laquo; {{ prev_year }}</a>
         {% if not is_current_year %}<a class="btn btn-sm btn-outline-secondary" href="{{ year_nav.current }}">This year</a>{% endif %}
         {% if year_nav.next %}<a class="btn btn-sm btn-outline-secondary" href="{{ year_nav.next }}">{{ next_year }} &raquo;</a>{% endif %}
       </div>
-    </div>
-
-    {% if show_order_financials %}
-      <div class="summary-grid">
-        <div class="summary-card">
-          <div class="summary-label">Year Sales</div>
-          <div class="summary-value">EUR {{ year_sales_amount|floatformat:2 }}</div>
-          <div class="summary-sub">{{ year_order_count }} orders &middot; {{ year_sales_qty }} items</div>
-        </div>
-        <div class="summary-card">
-          <div class="summary-label">Average Ticket</div>
-          <div class="summary-value">EUR {{ year_avg_ticket|floatformat:2 }}</div>
-        </div>
-        {% if show_profit %}
-          <div class="summary-card">
-            <div class="summary-label">Gross Profit</div>
-            <div class="summary-value">EUR {{ year_sales_profit|floatformat:2 }}</div>
-          </div>
-        {% endif %}
-        <div class="summary-card">
-          <div class="summary-label">Best Month</div>
-          <div class="summary-value">{% if best_month %}{{ best_month.label }}{% else %}&mdash;{% endif %}</div>
-          <div class="summary-sub">{% if best_month %}EUR {{ best_month.amount|floatformat:2 }}{% else %}No sales yet{% endif %}</div>
-        </div>
-      </div>
-
+      <div class="sub">EUR {{ year_sales_amount|floatformat:2 }} &middot; {{ year_order_count }} orders{% if show_profit %} &middot; Gross profit EUR {{ year_sales_profit|floatformat:2 }}{% endif %}{% if best_month %} &middot; best: {{ best_month.label }}{% endif %}. A bar or a row opens that month's calendar.</div>
       {{ year_chart|json_script:"yearChartData" }}
-      <section class="viz-card" style="margin-bottom:1.2rem;">
-        <h3 style="margin:0 0 .5rem;font-size:1.05rem;font-weight:900;color:var(--text);">Sales by Month</h3>
-        <div class="viz-sub">Click a bar or a month row to open that month's detailed records</div>
-        <div class="chart-box"><canvas id="yearBarChart"></canvas></div>
-      </section>
-
-      <section class="top-card">
-        <h3 style="margin:0 0 .6rem;font-size:1.05rem;font-weight:900;color:var(--text);">Monthly Breakdown</h3>
-        <div class="table-responsive">
-          <table class="table item-table mb-0 compact-rows">
-            <thead>
+      <div class="op-chart"><canvas id="yearBarChart"></canvas></div>
+      <div class="table-responsive mt-2">
+        <table class="op-table">
+          <thead><tr><th>Month</th><th class="r">Sales</th><th class="r">Orders</th><th class="r">Items</th>{% if show_profit %}<th class="r">Gross profit</th>{% endif %}<th class="r">Avg</th></tr></thead>
+          <tbody>
+            {% for row in monthly_rows %}
               <tr>
-                <th>Month</th>
-                <th class="text-end">Sales</th>
-                <th class="text-center">Orders</th>
-                <th class="text-center">Items</th>
-                {% if show_profit %}<th class="text-end">Profit</th>{% endif %}
-                <th class="text-end">Avg</th>
-                <th></th>
+                <td>{% if row.order_count %}<a href="{{ row.detail_url }}">{{ row.label }}</a>{% else %}{{ row.label }}{% endif %}</td>
+                <td class="r">EUR {{ row.amount|floatformat:2 }}</td>
+                <td class="r">{{ row.order_count }}</td>
+                <td class="r">{{ row.qty }}</td>
+                {% if show_profit %}<td class="r">EUR {{ row.profit|floatformat:2 }}</td>{% endif %}
+                <td class="r">EUR {{ row.avg_ticket|floatformat:2 }}</td>
               </tr>
-            </thead>
-            <tbody>
-              {% for row in monthly_rows %}
-                <tr>
-                  <td class="fw-bold">{{ row.label }}</td>
-                  <td class="text-end fw-bold" data-label="">EUR {{ row.amount|floatformat:2 }}</td>
-                  <td class="text-center" data-label="Orders">{{ row.order_count }}</td>
-                  <td class="text-center" data-label="Items">{{ row.qty }}</td>
-                  {% if show_profit %}<td class="text-end" data-label="Profit">EUR {{ row.profit|floatformat:2 }}</td>{% endif %}
-                  <td class="text-end" data-label="Avg">EUR {{ row.avg_ticket|floatformat:2 }}</td>
-                  <td class="text-end">{% if row.order_count %}<a class="btn btn-sm btn-outline-secondary" href="{{ row.detail_url }}">Open</a>{% endif %}</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {% if payment_breakdown %}
-        <section class="top-card">
-          <h3 style="margin:0 0 .6rem;font-size:1.05rem;font-weight:900;color:var(--text);">Payment Mix &middot; {{ year }}</h3>
-          <div class="chart-legend" style="justify-content:flex-start;">
-            {% for row in payment_breakdown %}<span class="pay-pill">{{ row.label }} EUR {{ row.amount|floatformat:2 }} ({{ row.share_pct|floatformat:1 }}%)</span>{% endfor %}
-          </div>
-        </section>
-      {% endif %}
-    {% endif %}
-  {% endif %}
-
-  {% if day_blocks or purchase_day_blocks %}
-    <div class="summary-grid">
-      {% if show_order_financials %}
-        <div class="summary-card">
-          <div class="summary-label">Sales Amount</div>
-          <div class="summary-value">EUR {{ total_sales_amount|floatformat:2 }}</div>
-          <div class="summary-sub">{{ total_sales_orders }} orders</div>
-        </div>
-      {% else %}
-        <div class="summary-card">
-          <div class="summary-label">Orders Found</div>
-          <div class="summary-value">{{ total_sales_orders }}</div>
-        </div>
-      {% endif %}
-      <div class="summary-card">
-        <div class="summary-label">Items Sold</div>
-        <div class="summary-value">{{ total_sales_qty }}</div>
-      </div>
-      <div class="summary-card">
-        <div class="summary-label">{% if show_order_financials %}Average Per Order{% else %}Days Covered{% endif %}</div>
-        <div class="summary-value">{% if show_order_financials %}EUR {{ avg_order_amount|floatformat:2 }}{% else %}{{ day_blocks|length }}{% endif %}</div>
-        <div class="summary-sub">{% if show_order_financials %}Based on {{ total_sales_orders }} orders{% else %}Active dates in this range{% endif %}</div>
-      </div>
-      {% if show_profit %}
-        <div class="summary-card">
-          <div class="summary-label">Net Profit</div>
-          <div class="summary-value">EUR {{ total_sales_profit|floatformat:2 }}</div>
-        </div>
-      {% endif %}
-      {% if show_purchases %}
-        <div class="summary-card">
-          <div class="summary-label">Purchase Cost</div>
-          <div class="summary-value">EUR {{ total_purchase_amount|floatformat:2 }}</div>
-          <div class="summary-sub">{{ total_purchase_orders }} purchase groups</div>
-        </div>
-      {% endif %}
-    </div>
-  {% endif %}
-
-  {% if calendar_mode %}
-    <section class="viz-card" style="padding:1rem;margin-bottom:1rem;">
-      <table class="calendar">
-        <thead>
-          <tr>{% for wd in calendar_weekdays %}<th>{{ wd }}</th>{% endfor %}</tr>
-        </thead>
-        <tbody>
-          {% for week in calendar_weeks %}
-            <tr>
-              {% for cell in week %}
-                <td class="cal-cell{% if not cell.in_month %} out{% endif %}{% if cell.is_today %} today{% endif %}">
-                  {% if cell.has_sales and cell.in_month %}
-                    <button type="button" class="cal-btn js-open-day" data-day-modal="{{ cell.cal_id }}">
-                      <span class="cal-daynum">{{ cell.day }}</span>
-                      {% if show_order_financials %}<span class="cal-amount">EUR {{ cell.amount|floatformat:2 }}</span>{% endif %}
-                      <span class="cal-badge">{{ cell.order_count }} order{{ cell.order_count|pluralize }}</span>
-                    </button>
-                  {% else %}
-                    <span class="cal-daynum">{{ cell.day }}</span>
-                    {% if cell.in_month %}<div class="cal-empty">&mdash;</div>{% endif %}
-                  {% endif %}
-                </td>
-              {% endfor %}
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% if not day_blocks %}<div class="cal-empty" style="text-align:center;margin-top:.5rem;">No sales this month{% if product_q %} for &ldquo;{{ product_q }}&rdquo;{% endif %}.</div>{% endif %}
-    </section>
-  {% endif %}
-
-  {% if show_order_financials and trend_data %}
-    {{ trend_data|json_script:"trendData" }}
-    {% if payment_chart %}{{ payment_chart|json_script:"payMixData" }}{% endif %}
-    <div class="viz-grid">
-      <section class="viz-card">
-        <h3>Daily Money Flow</h3>
-        <div class="viz-sub">Sales{% if show_purchases %} vs purchases{% endif %}{% if show_profit %} and profit{% endif %} per active day</div>
-        <div class="chart-box"><canvas id="trendChart"></canvas></div>
-      </section>
-      {% if payment_chart %}
-        <section class="viz-card">
-          <h3>Payment Mix</h3>
-          <div class="viz-sub">Share of sales by method</div>
-          <div class="chart-box donut"><canvas id="payChart"></canvas></div>
-          <div class="chart-legend">
-            {% for p in payment_chart %}<span class="pay-pill">{{ p.label }} EUR {{ p.amount|floatformat:2 }}</span>{% endfor %}
-          </div>
-        </section>
-      {% endif %}
-    </div>
-  {% endif %}
-
-  {% if top_products %}
-    <section class="top-card">
-      <h3 class="mb-2" style="font-size:1.05rem;font-weight:900;color:var(--text);">Top Products</h3>
-      {% for tp in top_products %}
-        <div class="top-row">
-          <div>
-            {% if tp.product %}
-              <a class="top-name" href="{% url 'product_detail' tp.product.id %}">{{ tp.name }}</a>
-            {% else %}
-              <span class="top-name">{{ tp.name }}</span>
-            {% endif %}
-            <div class="top-bar"><span style="width:{{ tp.bar }}%"></span></div>
-          </div>
-          <div class="top-metric">
-            {% if show_order_financials %}EUR {{ tp.revenue|floatformat:2 }}<div class="sub">{{ tp.qty }} units{% if show_profit %} · EUR {{ tp.profit|floatformat:2 }} profit{% endif %}</div>{% else %}{{ tp.qty }} units{% endif %}
-          </div>
-        </div>
-      {% endfor %}
-    </section>
-  {% endif %}
-
-  {% if not calendar_mode %}
-  {% if day_blocks %}
-    <div class="section-title">
-      <h3>Sales Orders</h3>
-      <span class="muted-note">{{ total_sales_orders }} orders in this range</span>
-    </div>
-
-    {% for day in day_blocks %}
-      <section class="day-panel">
-        <button class="day-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#sales-day-{{ forloop.counter }}" aria-expanded="{% if forloop.first %}true{% else %}false{% endif %}">
-          <div class="day-main">
-            <div class="day-date">{{ day.date }}</div>
-            <div class="day-meta">
-              {% if show_order_financials %}
-                {{ day.order_count }} orders, {{ day.totals.qty }} items, average EUR {{ day.avg_order_amount|floatformat:2 }} per order
-              {% else %}
-                {{ day.order_count }} orders, {{ day.totals.qty }} items
-              {% endif %}
-            </div>
-          </div>
-          <div class="day-toggle-meta">
-            {% if show_order_financials %}
-              <div class="day-side">
-                <div class="day-amount">EUR {{ day.totals.amount|floatformat:2 }}</div>
-                {% if show_profit %}
-                  <div class="profit-note {% if day.totals.profit < 0 %}negative{% endif %}">Profit EUR {{ day.totals.profit|floatformat:2 }}</div>
-                {% endif %}
-                <div class="day-payments">
-                  {% for pay in day.pay_break_display %}
-                    <span class="day-pill">{{ pay.label }} EUR {{ pay.amount|floatformat:2 }}</span>
-                  {% empty %}
-                    <span class="day-pill">No payment split</span>
-                  {% endfor %}
-                </div>
-              </div>
-            {% endif %}
-            <span class="toggle-arrow" aria-hidden="true"></span>
-          </div>
-        </button>
-
-        <div id="sales-day-{{ forloop.counter }}" class="collapse {% if forloop.first %}show{% endif %}">
-          <div class="orders-wrap">
-            {% for row in day.orders %}
-              <details class="order-entry" id="{{ row.detail_id }}">
-                <summary class="order-summary">
-                  <div class="order-summary-main">
-                    <div class="order-summary-text">
-                      <div class="order-top">
-                        <span class="order-badge">{% if row.order_id %}#{{ row.order_id }}{% else %}Legacy{% endif %}</span>
-                        <span class="order-time">{{ row.created_at|date:"H:i" }}</span>
-                        {% if row.customer_detail_url %}
-                          <a href="{{ row.customer_detail_url }}" class="order-customer-main">{{ row.customer_name }}</a>
-                        {% else %}
-                          <span class="order-customer-main">{{ row.customer_name }}</span>
-                        {% endif %}
-                      </div>
-                    </div>
-                  </div>
-                  <div class="order-summary-end">
-                    {% if show_order_financials %}
-                      <div class="order-side">
-                        <div class="order-total">EUR {{ row.total_amount|floatformat:2 }}</div>
-                        {% if show_profit %}
-                          <div class="profit-note {% if row.total_profit < 0 %}negative{% endif %}">Profit EUR {{ row.total_profit|floatformat:2 }}</div>
-                        {% endif %}
-                      </div>
-                    {% endif %}
-                    <span class="order-arrow" aria-hidden="true"></span>
-                  </div>
-                </summary>
-
-                <div class="order-body">
-                  {% if row.detail_url %}
-                    <div class="order-tools" style="justify-content:flex-end;">
-                      <a href="{{ row.detail_url }}" class="btn btn-sm btn-outline-secondary">Print</a>
-                    </div>
-                  {% endif %}
-                  <div class="ord-items">
-                    {% for item in row.items_today|slice:":3" %}{% include "stock/_daily_order_item.html" %}{% endfor %}
-                    {% if row.items_today|length > 3 %}
-                      <details class="ord-more">
-                        <summary>{{ row.items_today|length|add:"-3" }} more</summary>
-                        {% for item in row.items_today|slice:"3:" %}{% include "stock/_daily_order_item.html" %}{% endfor %}
-                      </details>
-                    {% endif %}
-                  </div>
-                </div>
-              </details>
             {% endfor %}
-          </div>
-        </div>
-      </section>
-    {% endfor %}
-  {% elif start_date or end_date %}
-    <div class="empty-card">No sales records found in the selected range.</div>
-  {% endif %}
-  {% endif %}{# /not calendar_mode #}
-
-  {% if calendar_mode %}
-    {% for day in day_blocks %}
-      <div class="day-modal" id="{{ day.cal_id }}-modal" hidden>
-        <div class="day-modal-backdrop" data-day-close="true"></div>
-        <div class="day-modal-dialog" role="dialog" aria-modal="true" aria-label="Sales for {{ day.date }}">
-          <div class="day-modal-head">
-            <div class="day-modal-title">{{ day.date }} &middot; {{ day.order_count }} order{{ day.order_count|pluralize }}{% if show_order_financials %} &middot; EUR {{ day.totals.amount|floatformat:2 }}{% endif %}</div>
-            <button type="button" class="day-modal-close" data-day-close="true" aria-label="Close">&times;</button>
-          </div>
-          <div class="day-modal-body">
-            {% for row in day.orders %}
-              {% include 'stock/_sales_order_entry.html' with entry_open=forloop.first %}
-            {% endfor %}
-          </div>
-        </div>
+          </tbody>
+        </table>
       </div>
-    {% endfor %}
-  {% endif %}
-
-  {% if show_purchases %}
-    <div class="section-title">
-      <h3>Inbound Purchases</h3>
-      <span class="muted-note">{{ total_purchase_orders }} purchase groups in this range</span>
-    </div>
-
-    {% if purchase_day_blocks %}
-      {% for day in purchase_day_blocks %}
-        <section class="day-panel">
-          <button class="day-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#purchase-day-{{ forloop.counter }}" aria-expanded="false">
-            <div class="day-main">
-              <div class="day-date">{{ day.date }}</div>
-              <div class="day-meta">{{ day.purchase_count }} purchase groups, {{ day.totals.qty }} items</div>
-            </div>
-            <div class="day-toggle-meta">
-              <div class="day-side">
-                <div class="day-amount">€{{ day.totals.amount|floatformat:2 }}</div>
-              </div>
-              <span class="toggle-arrow" aria-hidden="true"></span>
-            </div>
-          </button>
-
-          <div id="purchase-day-{{ forloop.counter }}" class="collapse">
-            <div class="orders-wrap">
-              {% for row in day.purchases %}
-                <details class="order-entry" id="{{ row.detail_id }}">
-                  <summary class="order-summary">
-                    <div class="order-summary-main">
-                      <div class="order-summary-text">
-                        <div class="order-identity">
-                          <span class="identity-label {% if not row.has_supplier %}warning{% endif %}">{{ row.identity_label }}</span>
-                          <span class="order-customer-main {% if not row.has_supplier %}missing{% endif %}">{{ row.supplier_name }}</span>
-                        </div>
-                        <div class="order-top">
-                          <span class="order-badge">{{ row.header_badge }}</span>
-                          <span class="order-time">{{ row.created_at|date:"Y-m-d H:i" }}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div class="order-summary-end">
-                      <div class="order-side">
-                        <div class="order-total">€{{ row.total_cost|floatformat:2 }}</div>
-                      </div>
-                      <div class="expand-control">
-                        <span class="expand-label">Details</span>
-                        <span class="order-arrow" aria-hidden="true"></span>
-                      </div>
-                    </div>
-                  </summary>
-
-                  <div class="order-body">
-                    {% if row.edit_url %}
-                      <div class="order-tools" style="justify-content:flex-end;">
-                        <a href="{{ row.edit_url }}" class="btn btn-sm btn-outline-primary">Adjust record</a>
-                      </div>
-                    {% endif %}
-                    <div class="ord-items">
-                      {% for item in row.items|slice:":3" %}{% include "stock/_purchase_order_item.html" %}{% endfor %}
-                      {% if row.items|length > 3 %}
-                        <details class="ord-more">
-                          <summary>{{ row.items|length|add:"-3" }} more</summary>
-                          {% for item in row.items|slice:"3:" %}{% include "stock/_purchase_order_item.html" %}{% endfor %}
-                        </details>
-                      {% endif %}
-                    </div>
-                  </div>
-                </details>
-              {% endfor %}
-            </div>
-          </div>
-        </section>
-      {% endfor %}
-    {% elif start_date or end_date %}
-      <div class="empty-card">No purchase records found in the selected range.</div>
-    {% endif %}
+    </section>
   {% endif %}
 </div>
 
-<div id="records-image-modal" class="image-modal" hidden>
-  <div class="image-modal-backdrop" data-image-close="true"></div>
-  <div class="image-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="records-image-modal-title">
-    <div class="image-modal-head">
-      <div id="records-image-modal-title" class="image-modal-title">Product Preview</div>
-      <button type="button" id="records-image-modal-close" class="image-modal-close" aria-label="Close preview">&times;</button>
-    </div>
-    <div class="image-modal-body">
-      <img id="records-image-modal-image" src="" alt="">
+{# One detail layer for every row: full screen on a phone, a dialog elsewhere.  #}
+{# The page underneath never moves, so closing it leaves you where you were.     #}
+<div class="modal fade" id="opLayer" tabindex="-1" aria-hidden="true" aria-labelledby="opLayerTitle">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg modal-fullscreen-sm-down">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="opLayerTitle"></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="opLayerBody"></div>
+      <div class="modal-footer" id="opLayerFoot"></div>
     </div>
   </div>
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-  const form = document.getElementById('records-filter-form');
-  const startInput = document.getElementById('id_start_date');
-  const endInput = document.getElementById('id_end_date');
-  const historyList = document.getElementById('search-history-list');
-  const historyEmpty = document.getElementById('search-history-empty');
-  const clearHistoryBtn = document.getElementById('clear-search-history');
-  const imageModal = document.getElementById('records-image-modal');
-  const imageModalImage = document.getElementById('records-image-modal-image');
-  const imageModalTitle = document.getElementById('records-image-modal-title');
-  const imageModalClose = document.getElementById('records-image-modal-close');
-  const storageKey = 'sales-records-history-v2';
+document.addEventListener('DOMContentLoaded', function () {
+  var layerEl = document.getElementById('opLayer');
+  var layer = bootstrap.Modal.getOrCreateInstance(layerEl);
 
-  function loadHistory() {
-    try {
-      const raw = localStorage.getItem(storageKey);
-      const items = raw ? JSON.parse(raw) : [];
-      return Array.isArray(items) ? items : [];
-    } catch (error) {
-      return [];
+  function part(fragment, name) {
+    var el = fragment.querySelector('[data-part="' + name + '"]');
+    return el ? el.innerHTML : '';
+  }
+
+  // Rows and "Load more" are delegated: rows added later work the same way.
+  document.addEventListener('click', function (event) {
+    var open = event.target.closest('[data-layer]');
+    if (open) {
+      var tpl = document.getElementById(open.dataset.layer);
+      if (!tpl) return;
+      var content = tpl.content;
+      document.getElementById('opLayerTitle').innerHTML = part(content, 'title');
+      document.getElementById('opLayerBody').innerHTML = part(content, 'body');
+      document.getElementById('opLayerFoot').innerHTML = part(content, 'foot').trim();
+      layer.show();
+      return;
     }
-  }
-
-  function saveHistory(items) {
-    localStorage.setItem(storageKey, JSON.stringify(items.slice(0, 8)));
-  }
-
-  function rangeLabel(item) {
-    return item.start === item.end ? item.start : `${item.start} to ${item.end}`;
-  }
-
-  function currentRange() {
-    return {
-      start: startInput.value,
-      end: endInput.value || startInput.value,
-    };
-  }
-
-  function isCurrentRange(item) {
-    const active = currentRange();
-    return item.start === active.start && item.end === active.end;
-  }
-
-  function historyMetaLabel(item) {
-    if (isCurrentRange(item)) return 'Current range';
-    if (!item.savedAt) return 'Tap to reuse';
-
-    const savedAt = new Date(item.savedAt);
-    if (Number.isNaN(savedAt.getTime())) return 'Tap to reuse';
-
-    return `Saved ${savedAt.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${savedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-  }
-
-  function renderHistory() {
-    const items = loadHistory();
-    historyList.innerHTML = '';
-    historyEmpty.style.display = items.length ? 'none' : 'block';
-
-    items.forEach((item) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'history-chip';
-      if (isCurrentRange(item)) {
-        button.classList.add('is-active');
-      }
-
-      const main = document.createElement('span');
-      main.className = 'history-chip-main';
-      main.textContent = rangeLabel(item);
-
-      const sub = document.createElement('span');
-      sub.className = 'history-chip-sub';
-      sub.textContent = historyMetaLabel(item);
-
-      button.append(main, sub);
-      button.addEventListener('click', () => {
-        startInput.value = item.start;
-        endInput.value = item.end;
-        form.submit();
-      });
-      historyList.appendChild(button);
-    });
-  }
-
-  function rememberCurrentRange() {
-    const start = startInput.value;
-    const end = endInput.value || start;
-    if (!start || !end) return;
-
-    const nextItem = {
-      start,
-      end,
-      savedAt: new Date().toISOString(),
-    };
-    const items = loadHistory().filter((item) => !(item.start === nextItem.start && item.end === nextItem.end));
-    items.unshift(nextItem);
-    saveHistory(items);
-  }
-
-  function openImageModal(imageUrl, imageLabel) {
-    if (!imageUrl || !imageModal) return;
-    imageModalImage.src = imageUrl;
-    imageModalImage.alt = imageLabel || 'Product preview';
-    imageModalTitle.textContent = imageLabel || 'Product Preview';
-    imageModal.hidden = false;
-    document.body.style.overflow = 'hidden';
-  }
-
-  function closeImageModal() {
-    if (!imageModal) return;
-    imageModal.hidden = true;
-    imageModalImage.src = '';
-    imageModalImage.alt = '';
-    document.body.style.overflow = '';
-  }
-
-  if (startInput.value || endInput.value) {
-    rememberCurrentRange();
-  }
-  renderHistory();
-
-  form.addEventListener('submit', () => {
-    rememberCurrentRange();
-  });
-
-  clearHistoryBtn.addEventListener('click', () => {
-    localStorage.removeItem(storageKey);
-    renderHistory();
-  });
-
-  document.querySelectorAll('.js-open-image-modal').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      openImageModal(button.dataset.imageUrl, button.dataset.imageLabel);
-    });
-  });
-
-  imageModalClose?.addEventListener('click', closeImageModal);
-  imageModal?.addEventListener('click', (event) => {
-    if (event.target.dataset.imageClose === 'true') {
-      closeImageModal();
+    var more = event.target.closest('[data-more]');
+    if (more) {
+      more.disabled = true;
+      var label = more.textContent;
+      more.textContent = 'Loading...';
+      fetch(more.dataset.more, { headers: { 'X-Requested-With': 'fetch' } })
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+        .then(function (html) { more.closest('.op-more').outerHTML = html; })
+        .catch(function () { more.disabled = false; more.textContent = label + ' - failed, tap to retry'; });
     }
   });
 
-  // --- Sales-day calendar modals ---
-  const closeDayModal = (modal) => {
-    if (!modal) return;
-    modal.hidden = true;
-    if (!document.querySelector('.day-modal:not([hidden])')) {
-      document.body.style.overflow = '';
-    }
-  };
-  document.querySelectorAll('.js-open-day').forEach((button) => {
-    button.addEventListener('click', () => {
-      const modal = document.getElementById(button.dataset.dayModal + '-modal');
-      if (modal) {
-        modal.hidden = false;
-        document.body.style.overflow = 'hidden';
-      }
+  layerEl.addEventListener('hidden.bs.modal', function () {
+    document.getElementById('opLayerBody').innerHTML = '';
+  });
+
+  // Recent ranges: kept per browser, folded under More filters.
+  var form = document.getElementById('op-query');
+  var recentBox = document.getElementById('op-recent');
+  var startInput = form.querySelector('input[name="start_date"]');
+  var endInput = form.querySelector('input[name="end_date"]');
+  var key = 'orders-recent-ranges-v1';
+  function load() { try { return JSON.parse(localStorage.getItem(key)) || []; } catch (e) { return []; } }
+  function save(items) { try { localStorage.setItem(key, JSON.stringify(items.slice(0, 6))); } catch (e) {} }
+  if (recentBox && startInput && endInput) {
+    var items = load();
+    items.forEach(function (item) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = item.s === item.e ? item.s : item.s + ' → ' + item.e;
+      b.addEventListener('click', function () { startInput.value = item.s; endInput.value = item.e; form.submit(); });
+      recentBox.appendChild(b);
     });
-  });
-  document.querySelectorAll('.day-modal [data-day-close]').forEach((el) => {
-    el.addEventListener('click', () => closeDayModal(el.closest('.day-modal')));
-  });
-
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') {
-      const openDay = document.querySelector('.day-modal:not([hidden])');
-      if (openDay) { closeDayModal(openDay); return; }
-      if (imageModal && !imageModal.hidden) {
-        closeImageModal();
-      }
-    }
-  });
-
-  function formatDate(date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    recentBox.hidden = !items.length;
+    form.addEventListener('submit', function () {
+      var s = startInput.value, e = endInput.value || startInput.value;
+      if (!s) return;
+      save([{ s: s, e: e }].concat(load().filter(function (i) { return !(i.s === s && i.e === e); })));
+    });
   }
-
-  document.querySelectorAll('[data-quick-range]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const today = new Date();
-      const quickRange = button.getAttribute('data-quick-range');
-      let start = new Date(today);
-      let end = new Date(today);
-
-      if (quickRange === 'last7') {
-        start.setDate(today.getDate() - 6);
-      } else if (quickRange === 'thisMonth') {
-        start = new Date(today.getFullYear(), today.getMonth(), 1);
-      }
-
-      startInput.value = formatDate(start);
-      endInput.value = formatDate(end);
-      form.submit();
-    });
-  });
 });
 </script>
 
-{% if show_order_financials and trend_data %}
+{% if view == 'analysis' %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
   (function () {
     if (!window.Chart) return;
-    const showPurch = {{ show_purchases|yesno:"true,false" }};
-    const showProfit = {{ show_profit|yesno:"true,false" }};
+    var showProfit = {{ show_profit|yesno:"true,false" }};
+    var money = function (v) { return '€' + Number(v).toFixed(2); };
 
-    const trendEl = document.getElementById('trendChart');
+    var trendEl = document.getElementById('trendChart');
     if (trendEl) {
-      const d = JSON.parse(document.getElementById('trendData').textContent);
-      const datasets = [{ label: 'Sales', data: d.map(x => x.sales), backgroundColor: '#2563eb', borderRadius: 5, maxBarThickness: 38 }];
-      if (showPurch) datasets.push({ label: 'Purchases', data: d.map(x => x.purchases), backgroundColor: '#f59e0b', borderRadius: 5, maxBarThickness: 38 });
-      if (showProfit) datasets.push({ type: 'line', label: 'Profit', data: d.map(x => x.profit), borderColor: '#10b981', backgroundColor: '#10b981', borderWidth: 2, tension: 0.3, pointRadius: 2 });
-      new Chart(trendEl, {
-        type: 'bar',
-        data: { labels: d.map(x => x.label), datasets },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { display: datasets.length > 1, position: 'bottom' }, tooltip: { callbacks: { label: c => `${c.dataset.label}: €${Number(c.raw).toFixed(2)}` } } },
-          scales: { y: { beginAtZero: true, ticks: { callback: v => '€' + v } } },
-        },
-      });
+      var d = JSON.parse(document.getElementById('trendData').textContent);
+      var sets = [
+        { label: 'Sales', data: d.map(function (x) { return x.sales; }), backgroundColor: '#2563eb', borderRadius: 5, maxBarThickness: 38 },
+        { label: 'Purchases', data: d.map(function (x) { return x.purchases; }), backgroundColor: '#f59e0b', borderRadius: 5, maxBarThickness: 38 }
+      ];
+      if (showProfit) sets.push({ type: 'line', label: 'Gross profit', data: d.map(function (x) { return x.profit; }), borderColor: '#10b981', backgroundColor: '#10b981', borderWidth: 2, tension: 0.3, pointRadius: 2 });
+      new Chart(trendEl, { type: 'bar', data: { labels: d.map(function (x) { return x.label; }), datasets: sets },
+        options: { responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: function (c) { return c.dataset.label + ': ' + money(c.raw); } } } },
+          scales: { y: { beginAtZero: true, ticks: { callback: function (v) { return '€' + v; } } } } } });
     }
 
-    const payEl = document.getElementById('payChart');
-    const payDataEl = document.getElementById('payMixData');
-    if (payEl && payDataEl) {
-      const d = JSON.parse(payDataEl.textContent);
-      new Chart(payEl, {
-        type: 'doughnut',
-        data: { labels: d.map(x => x.label), datasets: [{ data: d.map(x => x.amount), backgroundColor: window.CHART_PALETTE, borderWidth: 0 }] },
-        options: { responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.label}: €${Number(c.raw).toFixed(2)}` } } } },
-      });
+    var payEl = document.getElementById('payChart');
+    var payData = document.getElementById('payMixData');
+    if (payEl && payData) {
+      var p = JSON.parse(payData.textContent);
+      new Chart(payEl, { type: 'doughnut',
+        data: { labels: p.map(function (x) { return x.label; }), datasets: [{ data: p.map(function (x) { return x.amount; }), backgroundColor: window.CHART_PALETTE, borderWidth: 0 }] },
+        options: { responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: { display: false }, tooltip: { callbacks: { label: function (c) { return c.label + ': ' + money(c.raw); } } } } } });
     }
-  }());
-</script>
-{% endif %}
 
-{% if show_trend and show_order_financials %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-  (function () {
-    if (!window.Chart) return;
-    const el = document.getElementById('yearBarChart');
-    if (!el) return;
-    const d = JSON.parse(document.getElementById('yearChartData').textContent);
-    new Chart(el, {
-      type: 'bar',
-      data: { labels: d.map(x => x.label), datasets: [{ data: d.map(x => x.amount), backgroundColor: '#2563eb', borderRadius: 6, maxBarThickness: 44 }] },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => '€' + Number(c.raw).toFixed(2) } } },
-        scales: { y: { beginAtZero: true, ticks: { callback: v => '€' + v } } },
-        onClick: (e, els) => { if (els.length) { const u = d[els[0].index].url; if (u) window.location.href = u; } },
-      },
-    });
+    var yearEl = document.getElementById('yearBarChart');
+    if (yearEl) {
+      var y = JSON.parse(document.getElementById('yearChartData').textContent);
+      new Chart(yearEl, { type: 'bar',
+        data: { labels: y.map(function (x) { return x.label; }), datasets: [{ data: y.map(function (x) { return x.amount; }), backgroundColor: '#2563eb', borderRadius: 6, maxBarThickness: 44 }] },
+        options: { responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: function (c) { return money(c.raw); } } } },
+          scales: { y: { beginAtZero: true, ticks: { callback: function (v) { return '€' + v; } } } },
+          onClick: function (e, els) { if (els.length) { var u = y[els[0].index].url; if (u) window.location.href = u; } } } });
+    }
   }());
 </script>
 {% endif %}

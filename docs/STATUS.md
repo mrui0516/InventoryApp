@@ -11,7 +11,7 @@
 | 维度 | 状态 | 说明 |
 |---|---|---|
 | 功能完整度 | ✅ 已覆盖 PRD 全部 20 个模块 | 正在生产使用中（真实业务数据） |
-| 自动化测试 | ✅ 728/728 通过 | `python manage.py test stock` |
+| 自动化测试 | ✅ 748/748 通过 | `python manage.py test stock` |
 | 数据库迁移 | ✅ 无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
 | 版本控制 | ✅ 已推送 GitHub，与 origin/master 同步 | 见第 4 节 |
 | 本地虚拟环境 | ⚠ `.venv` 不完整/未使用 | 见第 3 节 |
@@ -99,6 +99,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-10-16: **Orders 页整体改版(O1 + O2)**,经理页移到 `stock/orders_views.py`(`views.py` 少了约 500 行)。按外部审计,逐条核实后实施。**页面只剩五层**:标题与店铺 → Sales | Purchases | Analysis → 一条查询栏 → 一条汇总 → 记录。**默认近 7 天列表**;列表 / 日历改为显式切换(以前由网址有没有日期决定),日历格只放日期和当天金额,点一天打开那天的列表。**修了一个数据错误**:商品搜索以前先筛销售行再拼订单,一单 A €10 + B €20 搜 A 时列表显示 €10、打印 €30;现在返回整单、标出命中商品。搜索也认订单号(范围外会提示在哪天)和客户电话。**付款统计改用 Today 的 `order_tender_amounts`**,一行刷卡+现金会拆开,两页对得上。电脑是紧凑表格,手机每单两行;**详情层**是一个共享对话框,手机上全屏、页面不跳转,关闭后停在原位;每页 40 单,"Load more" 追加且日期标题不重复(标题带当天完整合计)。**Purchases 单独成视图,并写明"库存各店共享,采购不分店铺"**;图表、付款占比、Top Products、年度对比全部移进 **Analysis**,Chart.js 只在那里加载。**利润统一叫 Gross profit**(销售额 − FIFO 成本;同一个数以前一处叫 Gross、一处叫 Net),"Daily Money Flow" 改名 "Sales by day"。旧链接(`start_date/end_date`、`month`、`view=year`、`product_q`)全部照常可用。六个守着旧页面结构的测试按新结构改写、保留原意,新增 `OrdersPageTests`;五个关键行为(整单金额、Tender 口径、默认布局、跨页标题、范围外订单号)**逐个单独放回旧实现,各自对应的测试都转红**。748 通过。**没在真机上看过**,本地库未迁移、也没有浏览器工具。
 - 2026-10-16: **Today 页删掉待办那一行**(老板要求)。线上显示 "2 inbound orders to receive · 0 open IOUs · 336 low-stock products"——低库存沿用 Dashboard 的"库存 < 5",把从未进过货、库存一直为 0 的商品全算进去,336 没有参考意义。`today_to_dos` 与对应样式、测试一并删除,三个快捷按钮保留。
 - 2026-10-16: **Business 合并入口撤回,改为 Today / Dashboard / Orders 三个独立页面;二维码进侧栏。** 老板看过页内标签条后决定不要合并。标签条 `_business_tabs.html` 和对应样式删除,侧栏顶部三个独立入口(员工:Today = 其 dashboard、Orders),Dashboard 恢复原名,底部第一个标签改叫 Today、只在 Today 页亮起。**二维码从 Tools 移到侧栏**底部 "Open on phone" 对话框,所有登录用户可用(员工原本在首页就有,不能拿走);图片由新端点 `/phone-qr.png` 在**打开对话框时**才请求,不在每页都跑二维码编码器。Tools 只剩数据库备份。**老板看到"标签条没有样式"的原因**:新组件的样式都在 `app.css`,线上是从 `staticfiles/` 读的,没跑 `collectstatic` 就全部缺失——不只标签条,Today 的按钮和待办、顶栏店铺、Settings 折叠都一样。**顺手修了一个测试隔离问题**:Dashboard 会把快照缓存 5 分钟,`DashboardViewTests` 不清缓存,别的测试先在空库上打开过 Dashboard 就会留下全零快照,结果随运行顺序通过或失败;两个类都在 `setUp` 里 `cache.clear()`,并按原本会失败的顺序验证。730 通过。
 - 2026-10-16: **A 轮:导航按任务重组,一天从 Today 开始。** 第二份外部审计逐条核实后实施(审计里"经理首页的 Today operations 排在分析后面"一条不准确——经理的 Dashboard 根本没有那块,问题实际是经理登录先进月度分析)。**侧栏**从 17 个按模块散排的入口改为按任务分组:Business(一个入口,内含 Today / Orders / Trends 标签)· Sell · Products · Customers · Purchasing · Settings(默认折叠);员工只看到前四组。**手机底部** Business · Sell · Products · Customers · More。**起点** `home_view`:经理进 Today,员工进自己的 dashboard;登录、品牌、根路径都走它。**Today 首屏**先放 Sell / Pedido / Inbound 三个操作,再放待办(待收货进货单、未结 IOU、低库存),低库存与 Trends 共用 `DASHBOARD_LOW_STOCK_BELOW` 一个阈值,只在"今天"显示。**Trends**(原 Dashboard)的排行和资金占用改为可折叠,手机默认收起;**备份和二维码搬到 Settings → Tools**。**订单详情页加"Correct this order"**(超管),不用再去 Order Control(已改名 Order audit)重新找这张单。**手机顶栏常驻当前店铺**;收银被 All stores 挡住时,提示框里直接给出店铺按钮(原文案让人去"top bar"找,手机顶栏上根本没有)。**首页不再吞消息**:员工被权限拦回首页时终于看得到原因——这条从初始提交就藏着,没有留下理由。**术语**:收银统一 Sell,欠款统一 IOU(只改界面文字)。所有 URL 和权限不变。一个旧测试在检查已被替换的分组名 Operations / Sales & Clients,按新分组名改断言、保留意图。728 通过;两个 bug 修复各自放回原样都会转红。
