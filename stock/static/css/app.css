@@ -632,10 +632,19 @@ body.anon .erp-content{
    gets consistent phone behaviour. */
 @media (max-width:576px){
   /* Roomier gutters + no accidental sideways scroll from wide children */
-  .erp-content{ padding:.9rem .8rem 2rem; overflow-x:hidden; }
+  /* Bottom keeps clearing the tab bar. This used to be the shorthand
+     "padding:.9rem .8rem 2rem", which silently reset the padding-bottom the
+     tab-bar block above reserves - so on every phone under 577px the last
+     56px of each page sat behind the bar. */
+  .erp-content{ padding:.9rem .8rem calc(2rem + var(--tabbar-h)); overflow-x:hidden; }
   .container,.container-fluid{ padding-left:.8rem; padding-right:.8rem; }
-  /* 16px inputs stop iOS Safari from zooming in on focus */
-  .form-control,.form-select,input,textarea,select{ font-size:16px; }
+  /* 16px inputs stop iOS Safari from zooming in on focus. !important on
+     purpose: without it any page rule like ".pd-field input{font-size:.95rem}"
+     is more specific and wins, and the page jumps when a field is tapped.
+     That happened on seven rules across four pages before this was made
+     unbeatable. Desktop sizes are untouched - this only applies on phones. */
+  .form-control,.form-select,textarea,select,
+  input:not([type=checkbox]):not([type=radio]):not([type=range]){ font-size:16px !important; }
   /* Comfortable tap targets (WCAG ~44px) */
   .btn{ min-height:44px; display:inline-flex; align-items:center; justify-content:center; }
   .btn-sm{ min-height:38px; }

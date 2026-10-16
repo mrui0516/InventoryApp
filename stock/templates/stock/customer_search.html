@@ -379,7 +379,7 @@
 
   {% if show_sensitive %}
     <div class="modal fade" id="addCustomerModal" tabindex="-1" aria-hidden="true">
-      <div class="modal-dialog">
+      <div class="modal-dialog modal-dialog-scrollable">
         <form id="addCustomerForm" class="modal-content">
           {% csrf_token %}
           <div class="modal-header">

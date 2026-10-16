@@ -9302,3 +9302,65 @@ class PurgeCustomersWithoutOrdersCommandTests(TestCase):
         Customer.objects.create(nif="872000005", name="Tmp Customer")
         output = self._run()
         self.assertIn('looks like a placeholder', output)
+
+
+class MobileLayoutHygieneTests(TestCase):
+    """Three phone problems found by an outside audit, each easy to bring back
+    with one innocent-looking style edit. These read the files themselves."""
+
+    CSS = 'stock/static/css/app.css'
+    TEMPLATES = 'stock/templates/stock'
+
+    def _phone_block(self):
+        """The body of the @media (max-width:576px) block that sets gutters."""
+        import io as _io
+        import re as _re
+        css = _io.open(self.CSS, encoding='utf-8').read()
+        # Comments out first: the explanation above the 16px rule quotes a bad
+        # rule as an example, and a regex cannot tell a quote from the real thing.
+        css = _re.sub(r'/\*.*?\*/', '', css, flags=_re.S)
+        for match in _re.finditer(r'@media \(max-width:576px\)\{', css):
+            depth, i = 1, match.end()
+            while depth and i < len(css):
+                depth += {'{': 1, '}': -1}.get(css[i], 0)
+                i += 1
+            body = css[match.end():i]
+            if '.erp-content' in body:
+                return body
+        self.fail('no phone block sets .erp-content')
+
+    def test_phone_gutters_still_clear_the_tab_bar(self):
+        """A padding shorthand here silently reset the bottom the tab bar
+        reserves, and the last 56px of every page sat behind the bar."""
+        import re as _re
+        rule = _re.search(r'\.erp-content\{([^}]*)\}', self._phone_block()).group(1)
+        self.assertIn('padding', rule)
+        self.assertIn('var(--tabbar-h)', rule)
+
+    def test_phone_inputs_are_16px_and_cannot_be_overridden(self):
+        """Below 16px iOS zooms the page on focus. Page rules kept beating the
+        plain version, so it has to carry !important."""
+        import re as _re
+        block = self._phone_block()
+        rule = _re.search(r'([^{}]*input[^{}]*)\{([^}]*font-size[^}]*)\}', block)
+        self.assertIsNotNone(rule, 'no phone input font-size rule')
+        self.assertIn('16px', rule.group(2))
+        self.assertIn('!important', rule.group(2))
+
+    def test_every_modal_with_a_body_scrolls(self):
+        """A long list or an open keyboard otherwise pushes the confirm button
+        off the screen. Image lightboxes have no body and are exempt."""
+        import glob
+        import io as _io
+        import os
+        import re as _re
+        offenders = []
+        for path in glob.glob(os.path.join(self.TEMPLATES, '*.html')):
+            text = _io.open(path, encoding='utf-8').read()
+            for match in _re.finditer(r'class="modal-dialog([^"]*)"', text):
+                if 'scrollable' in match.group(1):
+                    continue
+                if 'modal-body' in text[match.end():match.end() + 2500]:
+                    line = text.count('\n', 0, match.start()) + 1
+                    offenders.append(f'{os.path.basename(path)}:{line}')
+        self.assertEqual(offenders, [], 'modals that cannot scroll')
