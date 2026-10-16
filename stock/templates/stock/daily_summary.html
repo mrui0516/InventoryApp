@@ -52,7 +52,29 @@
   }
 </style>
 
+{% include 'stock/_business_tabs.html' %}
+
 <div class="dash-page">
+  {# The first screen answers "what do I do now": the jobs, then what is waiting. #}
+  <div class="today-actions">
+    <a class="btn btn-primary" href="{% url 'outbound' %}">Sell</a>
+    <a class="btn btn-outline-primary" href="{% url 'pedido' %}">Pedido</a>
+    <a class="btn btn-outline-primary" href="{% url 'inbound' %}">Inbound</a>
+  </div>
+  {% if to_dos %}
+    <div class="today-todos">
+      <a class="todo{% if to_dos.pending_inbound_count %} has{% endif %}" href="{% url 'inbound' %}">
+        <b>{{ to_dos.pending_inbound_count }}</b> inbound order{{ to_dos.pending_inbound_count|pluralize }} to receive
+      </a>
+      <a class="todo{% if to_dos.open_iou_count %} has warn{% endif %}" href="{% url 'ar_list' %}">
+        <b>{{ to_dos.open_iou_count }}</b> open IOU{{ to_dos.open_iou_count|pluralize }}{% if to_dos.open_iou_count %} &middot; EUR {{ to_dos.open_iou_total|floatformat:2 }}{% endif %}
+      </a>
+      <a class="todo{% if to_dos.low_stock_count %} has{% endif %}" href="{% url 'dashboard' %}#low-stock">
+        <b>{{ to_dos.low_stock_count }}</b> low-stock product{{ to_dos.low_stock_count|pluralize }}
+      </a>
+    </div>
+  {% endif %}
+
   <div class="dash-head">
     <div>
       <span class="kicker">Daily Summary</span>

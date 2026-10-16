@@ -659,3 +659,55 @@ body.anon .erp-content{
   .metric-value,.stat-value{ font-size:1.3rem; }
   .pad{ padding:.72rem; }
 }
+
+/* ===== Round A: navigation by task ===================================== */
+
+/* Business tabs: Today / Orders / Trends are views of one place. */
+.biz-tabs{ display:flex; gap:.25rem; margin:0 0 .85rem; padding:.22rem;
+           background:var(--app-surface-2); border:1px solid var(--app-border);
+           border-radius:999px; width:max-content; max-width:100%; overflow-x:auto; }
+.biz-tab{ display:inline-flex; align-items:center; min-height:36px; padding:.3rem 1rem;
+          border-radius:999px; font-size:.88rem; font-weight:700; white-space:nowrap;
+          color:var(--app-primary); text-decoration:none; }
+.biz-tab:hover{ color:var(--app-accent-ink); background:var(--app-surface); }
+.biz-tab.on{ background:var(--app-accent); color:#fff; }
+
+/* Settings fold in the side menu: low-frequency, closed unless you are in it. */
+.erp-nav-fold > summary{ list-style:none; cursor:pointer; display:flex; align-items:center; }
+.erp-nav-fold > summary::-webkit-details-marker{ display:none; }
+.erp-nav-fold > summary::after{ content:"\25B8"; margin-left:auto; font-size:.8rem; transition:transform .15s; }
+.erp-nav-fold[open] > summary::after{ transform:rotate(90deg); }
+
+/* The store a sale lands in, on the phone top bar. */
+.erp-topbar-store{ margin-left:auto; min-width:0; }
+.erp-topbar-store select{ max-width:46vw; background:rgba(255,255,255,.1); color:#fff;
+                          border:1px solid rgba(255,255,255,.25); border-radius:var(--app-radius-sm);
+                          padding:.25rem .5rem; font-weight:700; }
+.erp-topbar-store select option{ color:#0f172a; }
+.erp-topbar-store.is-fixed{ color:#fff; font-weight:700; font-size:.88rem; white-space:nowrap;
+                            overflow:hidden; text-overflow:ellipsis; max-width:46vw;
+                            background:rgba(255,255,255,.1); border-radius:var(--app-radius-sm);
+                            padding:.25rem .55rem; }
+
+/* Trends: deep analysis folds away. */
+.dash-fold > summary{ list-style:none; cursor:pointer; }
+.dash-fold > summary::-webkit-details-marker{ display:none; }
+.dash-fold > summary .section-head h2::after{ content:" \25BE"; color:var(--app-muted); font-size:.8em; }
+.dash-fold:not([open]) > summary .section-head{ margin-bottom:0; }
+
+/* Today: the jobs, then what is waiting. */
+.today-actions{ display:flex; gap:.5rem; flex-wrap:wrap; margin:0 0 .7rem; }
+.today-todos{ display:grid; gap:.5rem; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));
+              margin:0 0 .9rem; }
+.todo{ display:block; padding:.6rem .8rem; border:1px solid var(--app-border); border-radius:var(--app-radius);
+       background:var(--app-surface); color:var(--app-muted); font-weight:600; font-size:.9rem;
+       text-decoration:none; }
+.todo b{ font-size:1.1rem; color:var(--app-text); font-variant-numeric:tabular-nums; margin-right:.2rem; }
+.todo.has{ border-color:var(--app-accent-line); color:var(--app-primary); }
+.todo.has.warn{ border-color:#fdba74; background:var(--app-warn-soft); }
+.todo:hover{ border-color:var(--app-accent); }
+@media (max-width:576px){
+  .today-actions .btn{ flex:1 1 0; }
+  .biz-tabs{ width:100%; }
+  .biz-tab{ flex:1 1 0; justify-content:center; }
+}

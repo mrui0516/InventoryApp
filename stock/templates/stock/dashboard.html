@@ -1,20 +1,17 @@
 {% extends 'stock/base.html' %}
-{% load math_extras %}
-{% block title %}Dashboard{% endblock %}
+{% load math_extras access_tags %}
+{% block title %}{% if user|is_manager_user %}Trends{% else %}Today{% endif %}{% endblock %}
 
 {% block content %}
+{% include 'stock/_business_tabs.html' %}
 
 <div class="dash-page">
   <div class="dash-head">
     <div>
-      <h1 class="dash-title">Dashboard</h1>
+      <h1 class="dash-title">{% if isManger %}Trends{% else %}Today{% endif %}</h1>
     </div>
     <div class="dash-actions">
       {% if isManger %}<a class="btn btn-outline-primary" href="{{ sales_records_month_url }}">Open month history</a>{% endif %}
-      {% if isManger %}<a class="btn btn-outline-secondary" href="{% url 'download_db_backup' %}">Download DB backup</a>{% endif %}
-      <button class="btn btn-outline-secondary icon-btn" data-bs-toggle="modal" data-bs-target="#mobileAccessModal" aria-label="Open on mobile — show QR" title="Open on mobile (QR)">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3"/><path d="M21 14v.01"/><path d="M14 21h.01"/><path d="M21 21v-3"/><path d="M17 21h.01"/></svg>
-      </button>
     </div>
   </div>
 
@@ -114,7 +111,7 @@
           <div class="metric-sub">{{ month_purchase_group_count }} purchase groups · {{ month_purchase_qty }} units · {{ month_purchase_to_sales_pct|floatformat:1 }}% of sales</div>
         </div>
         <div class="snapshot-card">
-          <div class="metric-label">Receivables Summary</div>
+          <div class="metric-label">IOU Summary</div>
           <div class="metric-value">EUR {{ open_receivable_balance|floatformat:2 }}</div>
           <div class="metric-sub">{{ open_invoice_count }} open · {{ overdue_invoice_count }} overdue · collected {{ receivable_collection_ratio_pct|floatformat:1 }}%</div>
         </div>
@@ -232,7 +229,7 @@
                   <div class="mini-head mt-2"><span class="muted">Overdue invoices</span><span class="item-value">{{ overdue_invoice_count }}</span></div>
                 </div>
                 <div class="mix-item">
-                  <div class="mini-head"><span class="muted">Receivables added</span><span class="item-value">EUR {{ month_receivables_added|floatformat:2 }}</span></div>
+                  <div class="mini-head"><span class="muted">IOUs added</span><span class="item-value">EUR {{ month_receivables_added|floatformat:2 }}</span></div>
                   <div class="mini-head mt-2"><span class="muted">Receipts collected</span><span class="item-value">EUR {{ month_receipts_collected|floatformat:2 }}</span></div>
                   <div class="mini-head mt-2"><span class="muted">Collection ratio</span><span class="item-value">{{ receivable_collection_ratio_pct|floatformat:1 }}%</span></div>
                 </div>
@@ -289,11 +286,12 @@
     </div>
 
     <div class="dash-card pad">
-      <div class="section-head">
+      <details class="dash-fold" data-fold open>
+      <summary><div class="section-head">
         <div>
           <h2>Where to focus next</h2>
         </div>
-      </div>
+      </div></summary>
       <div class="strategy-grid">
         <div class="dash-card pad h-100">
           <div class="section-top"><div><h3>Fastest sellers</h3></div></div>
@@ -372,14 +370,16 @@
             </div>
         </div>
       </div>
+          </details>
     </div>
 
     <div class="dash-card pad">
-      <div class="section-head">
+      <details class="dash-fold" data-fold open>
+      <summary><div class="section-head">
         <div>
           <h2>Capital lock and slow movers</h2>
         </div>
-      </div>
+      </div></summary>
       <div class="watch-grid">
         <div class="dash-card pad h-100">
           <div class="section-top"><div><h3>Most capital locked stock</h3></div></div>
@@ -452,6 +452,7 @@
         </div>
       </div>
 
+          </details>
     </div>
   {% endif %}
 
@@ -536,7 +537,7 @@
 </div>
 
 {% if isManger %}
-  <div class="dash-card pad mt-4">
+  <div class="dash-card pad mt-4" id="low-stock">
     <div class="section-head">
       <div>
         <h2>Low stock warning</h2>
@@ -696,20 +697,6 @@
   </div>
 {% endif %}
 
-<div class="modal fade" id="mobileAccessModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
-    <div class="modal-content" style="border-radius:var(--app-radius)">
-      <div class="modal-header"><h5 class="modal-title">Open on mobile</h5><button class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
-      <div class="modal-body text-center">
-        <p class="text-muted">Scan this QR code to open the system on your phone.</p>
-        <img class="qr-image" src="data:image/png;base64,{{ qr_code_base64 }}" alt="QR Code">
-        <div class="small text-break mt-3">{{ site_url }}</div>
-      </div>
-      <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Close</button></div>
-    </div>
-  </div>
-</div>
-
 <div class="modal fade" id="dashboardProductPreviewModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
     <div class="modal-content" style="border-radius:var(--app-radius)">
@@ -769,5 +756,11 @@
   }());
 </script>
 {% endif %}
+<script>
+  (function () {
+    if (!window.matchMedia('(max-width: 767.98px)').matches) return;
+    document.querySelectorAll('details[data-fold]').forEach(function (d) { d.open = false; });
+  }());
+</script>
 {% endblock %}
 

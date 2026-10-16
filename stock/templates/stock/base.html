@@ -32,11 +32,26 @@
     <header class="erp-topbar">
       <button class="erp-burger" type="button" aria-label="Toggle navigation"
               onclick="document.body.classList.toggle('erp-nav-open')">&#9776;</button>
-      <a class="erp-topbar-brand" href="{% url 'dashboard' %}">KHAN PERFUME</a>
+      <a class="erp-topbar-brand" href="{% url 'home' %}">KHAN PERFUME</a>
+      {# The store a sale lands in, in sight on every phone screen. It used to   #}
+      {# live only in the side menu, behind the burger.                          #}
+      {% if store_can_switch %}
+        <form method="post" action="{% url 'set_active_store' %}" class="erp-topbar-store">
+          {% csrf_token %}
+          <select name="store" onchange="this.form.submit()" aria-label="Active store">
+            <option value="all" {% if active_store_is_all %}selected{% endif %}>All stores</option>
+            {% for s in available_stores %}
+              <option value="{{ s.id }}" {% if active_store and active_store.id == s.id %}selected{% endif %}>{{ s.name }}</option>
+            {% endfor %}
+          </select>
+        </form>
+      {% elif active_store %}
+        <span class="erp-topbar-store is-fixed">{{ active_store.name }}</span>
+      {% endif %}
     </header>
 
     <aside class="erp-sidebar" id="erpSidebar">
-      <a class="erp-brand" href="{% url 'dashboard' %}">KHAN<span>PERFUME</span></a>
+      <a class="erp-brand" href="{% url 'home' %}">KHAN<span>PERFUME</span></a>
 
       {% if user.is_authenticated %}
         <div class="erp-store" style="padding:.25rem .9rem .75rem;">
@@ -57,43 +72,47 @@
         </div>
       {% endif %}
 
+      {# Grouped by what somebody came to do, not by how the code is split.     #}
+      {# Business is one entry: Today, Orders and Trends are tabs inside it.     #}
       <nav class="erp-nav">
-        <a class="erp-nav-link {% if current_url == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}">Dashboard</a>
-        {% if user|is_manager_user %}
-        <a class="erp-nav-link {% if current_url == 'daily_summary' %}active{% endif %}" href="{% url 'daily_summary' %}">Today</a>
-        {% endif %}
+        <a class="erp-nav-link {% if current_url in 'dashboard,daily_summary,sales_records' %}active{% endif %}" href="{% url 'home' %}">Business</a>
 
-        <div class="erp-nav-group">Operations</div>
-        {% if user|is_manager_user %}
-        <a class="erp-nav-link {% if current_url == 'inbound' %}active{% endif %}" href="{% url 'inbound' %}">Inbound</a>
-        {% endif %}
-        <a class="erp-nav-link {% if current_url == 'outbound' %}active{% endif %}" href="{% url 'outbound' %}">Outbound</a>
+        <div class="erp-nav-group">Sell</div>
+        <a class="erp-nav-link {% if current_url == 'outbound' %}active{% endif %}" href="{% url 'outbound' %}">Sell</a>
         {% if user|is_manager_user %}
         <a class="erp-nav-link {% if current_url == 'pedido' %}active{% endif %}" href="{% url 'pedido' %}">Pedido</a>
-        <a class="erp-nav-link {% if current_url == 'attendance' %}active{% endif %}" href="{% url 'attendance' %}">Attendance</a>
         {% endif %}
 
-        <div class="erp-nav-group">Catalog</div>
+        <div class="erp-nav-group">Products</div>
         <a class="erp-nav-link {% if current_url in 'product_list,product_detail,edit_product,add_product' %}active{% endif %}" href="{% url 'product_list' %}">Products</a>
         {% if user|is_manager_user %}
         <a class="erp-nav-link {% if current_url == 'catalog' %}active{% endif %}" href="{% url 'catalog' %}">Catalog View</a>
         <a class="erp-nav-link {% if current_url == 'shelf' or current_url == 'shelf_style' %}active{% endif %}" href="{% url 'shelf' %}">Shelf</a>
-        <a class="erp-nav-link {% if current_url in 'supplier_list,supplier_create,supplier_edit,supplier_detail' %}active{% endif %}" href="{% url 'supplier_list' %}">Suppliers</a>
         {% endif %}
 
-        <div class="erp-nav-group">Sales &amp; Clients</div>
-        <a class="erp-nav-link {% if current_url == 'sales_records' %}active{% endif %}" href="{% url 'sales_records' %}">Sales</a>
+        <div class="erp-nav-group">Customers</div>
         <a class="erp-nav-link {% if current_url in 'customer_search,customer_detail,edit_customer' %}active{% endif %}" href="{% url 'customer_search' %}">Customers</a>
         {% if user|is_manager_user %}
-        <a class="erp-nav-link {% if current_url in 'ar_list,ar_detail,ar_new,ar_add_payment,ar_add_items' %}active{% endif %}" href="{% url 'ar_list' %}">IOU / AR</a>
+        <a class="erp-nav-link {% if current_url in 'ar_list,ar_detail,ar_new,ar_add_payment,ar_add_items' %}active{% endif %}" href="{% url 'ar_list' %}">IOU</a>
         {% endif %}
 
-        {% if user.is_superuser %}
-          <div class="erp-nav-group">Admin</div>
-          <a class="erp-nav-link {% if current_url in 'store_list,store_create,store_edit' %}active{% endif %}" href="{% url 'store_list' %}">Stores</a>
+        {% if user|is_manager_user %}
+        <div class="erp-nav-group">Purchasing</div>
+        <a class="erp-nav-link {% if current_url == 'inbound' %}active{% endif %}" href="{% url 'inbound' %}">Inbound</a>
+        <a class="erp-nav-link {% if current_url in 'supplier_list,supplier_create,supplier_edit,supplier_detail' %}active{% endif %}" href="{% url 'supplier_list' %}">Suppliers</a>
+
+        {# Settings stay folded: weekly work at most, and it was half the menu. #}
+        <details class="erp-nav-fold" {% if current_url in 'attendance,tools,employee_list,employee_create,employee_edit,store_list,store_create,store_edit,print_profile_edit,sale_order_correction_center,sale_order_correction_create,sale_order_correction_edit' %}open{% endif %}>
+          <summary class="erp-nav-group">Settings</summary>
+          <a class="erp-nav-link {% if current_url == 'attendance' %}active{% endif %}" href="{% url 'attendance' %}">Attendance</a>
+          <a class="erp-nav-link {% if current_url == 'tools' %}active{% endif %}" href="{% url 'tools' %}">Tools</a>
+          {% if user.is_superuser %}
           <a class="erp-nav-link {% if current_url in 'employee_list,employee_create,employee_edit' %}active{% endif %}" href="{% url 'employee_list' %}">Team</a>
-          <a class="erp-nav-link {% if current_url in 'sale_order_correction_center,sale_order_correction_create,sale_order_correction_edit' %}active{% endif %}" href="{% url 'sale_order_correction_center' %}">Order Control</a>
+          <a class="erp-nav-link {% if current_url in 'store_list,store_create,store_edit' %}active{% endif %}" href="{% url 'store_list' %}">Stores</a>
           <a class="erp-nav-link {% if current_url == 'print_profile_edit' %}active{% endif %}" href="{% url 'print_profile_edit' %}">Print Header</a>
+          <a class="erp-nav-link {% if current_url in 'sale_order_correction_center,sale_order_correction_create,sale_order_correction_edit' %}active{% endif %}" href="{% url 'sale_order_correction_center' %}">Order audit</a>
+          {% endif %}
+        </details>
         {% endif %}
       </nav>
 
@@ -114,21 +133,18 @@
     {% endif %}
 
     <main class="erp-content">
+      {# Shown on every page, the home page included. It used to be hidden    #}
+      {# there - and a page an employee may not open sends them home with the  #}
+      {# reason as a message, so they bounced without ever seeing why.         #}
       {% if messages %}
-        {% if current_url == 'dashboard' %}
-          <div class="d-none" aria-hidden="true">
-            {% for message in messages %}{% endfor %}
-          </div>
-        {% else %}
-          <div class="mb-4" id="global-feedback">
-            {% for message in messages %}
-              <div class="alert {% if 'error' in message.tags %}alert-danger{% elif 'warning' in message.tags %}alert-warning{% elif 'success' in message.tags %}alert-success{% else %}alert-info{% endif %} alert-dismissible fade show shadow-sm" role="alert">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-              </div>
-            {% endfor %}
-          </div>
-        {% endif %}
+        <div class="mb-4" id="global-feedback">
+          {% for message in messages %}
+            <div class="alert {% if 'error' in message.tags %}alert-danger{% elif 'warning' in message.tags %}alert-warning{% elif 'success' in message.tags %}alert-success{% else %}alert-info{% endif %} alert-dismissible fade show shadow-sm" role="alert">
+              {{ message }}
+              <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+          {% endfor %}
+        </div>
       {% endif %}
 
       {% block content %}{% endblock %}
@@ -142,9 +158,9 @@
 
     {% if user.is_authenticated %}
     <nav class="erp-tabbar" aria-label="Primary">
-      <a class="erp-tab {% if current_url == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
-        <span>Home</span>
+      <a class="erp-tab {% if current_url in 'dashboard,daily_summary,sales_records' %}active{% endif %}" href="{% url 'home' %}">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg>
+        <span>Business</span>
       </a>
       <a class="erp-tab {% if current_url == 'outbound' %}active{% endif %}" href="{% url 'outbound' %}">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h3l2.4 12.2a1.5 1.5 0 0 0 1.5 1.2h8.2a1.5 1.5 0 0 0 1.5-1.2L21 7H6"/></svg>
@@ -154,13 +170,13 @@
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12.5 12.5 20a2 2 0 0 1-2.8 0l-6-6A2 2 0 0 1 3 12.6V5a2 2 0 0 1 2-2h7.6a2 2 0 0 1 1.4.6l6 6a2 2 0 0 1 0 2.9Z"/><circle cx="8" cy="8" r="1.3"/></svg>
         <span>Products</span>
       </a>
-      <a class="erp-tab {% if current_url in 'sales_records,daily_summary' %}active{% endif %}" href="{% url 'sales_records' %}">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg>
-        <span>Sales</span>
+      <a class="erp-tab {% if current_url in 'customer_search,customer_detail,edit_customer' %}active{% endif %}" href="{% url 'customer_search' %}">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7"/><path d="M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/></svg>
+        <span>Customers</span>
       </a>
       <button type="button" class="erp-tab" aria-label="Open menu" onclick="document.body.classList.toggle('erp-nav-open')">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M3 12h18"/><path d="M3 18h18"/></svg>
-        <span>Menu</span>
+        <span>More</span>
       </button>
     </nav>
     {% endif %}

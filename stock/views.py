@@ -292,6 +292,43 @@ def sellable_stock(stock_val):
     return max(int(stock_val or 0) - SAMPLE_RESERVE, 0)
 
 
+# The Low stock warning on Trends and the low-stock to-do on Today count the
+# same thing. One number, so the to-do never disagrees with the list it opens.
+DASHBOARD_LOW_STOCK_BELOW = 5
+
+
+def today_to_dos(active_store, store_is_all):
+    """What is waiting on somebody, for the Today page.
+
+    Stock is shared between the shops, so low stock is counted once. IOUs are
+    per store, so they follow the store being viewed.
+    """
+    stock_left = (Purchase.objects.filter(product=OuterRef('pk')).values('product')
+                  .annotate(total=Sum('remaining')).values('total')[:1])
+    low_stock = (Product.objects
+                 .annotate(left=Coalesce(Subquery(stock_left, output_field=IntegerField()),
+                                         Value(0)))
+                 .filter(left__lt=DASHBOARD_LOW_STOCK_BELOW)
+                 .count())
+
+    money = DecimalField(max_digits=12, decimal_places=2)
+    ious = ARInvoice.objects.annotate(
+        left=ExpressionWrapper(F('total_amount') - F('amount_paid'), output_field=money)
+    ).filter(left__gt=0)
+    if not store_is_all and active_store is not None:
+        ious = ious.filter(store=active_store)
+    iou = ious.aggregate(count=Count('id'),
+                         total=Coalesce(Sum('left'), Value(Decimal('0.00'))))
+
+    pending_inbound = InboundOrder.objects.filter(status='pending_receipt').count()
+    return {
+        'low_stock_count': low_stock,
+        'open_iou_count': iou['count'],
+        'open_iou_total': iou['total'],
+        'pending_inbound_count': pending_inbound,
+    }
+
+
 def get_catalog_availability_parts(stock_val, on_order=False):
     sellable = sellable_stock(stock_val)
     if sellable >= LOW_STOCK_BELOW:
@@ -2039,6 +2076,42 @@ def product_sales_history_view(request):
 
 
 @login_required
+def home_view(request):
+    """Where the Business tab, the brand and the login all land.
+
+    A manager starts on Today - the day's numbers, orders, and what needs doing
+    - with the month's analysis one tab away under Trends. An employee's own
+    Today is the dashboard page, which only ever shows them the day's work.
+    """
+    if has_manager_access(request.user):
+        return redirect('daily_summary')
+    return redirect('dashboard')
+
+
+def _qr_png_base64(text):
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L,
+                       box_size=6, border=2)
+    qr.add_data(text)
+    qr.make(fit=True)
+    buffer = BytesIO()
+    qr.make_image(fill_color="black", back_color="white").save(buffer, format="PNG")
+    return base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+
+@login_required
+@manager_required
+def tools_view(request):
+    """Occasional jobs that used to sit in the dashboard header: the database
+    backup and the QR code that opens the system on a phone. Moved here so the
+    first screen of the day is about the day."""
+    site_url = request.build_absolute_uri('/')
+    return render(request, 'stock/tools.html', {
+        'site_url': site_url,
+        'qr_code_base64': _qr_png_base64(site_url),
+    })
+
+
+@login_required
 def download_db_backup(request):
     """Manager-only one-click download of a consistent SQLite snapshot.
 
@@ -2291,21 +2364,6 @@ def dashboard_view(request):
     store_scope = None if store_is_all else active_store
     store_cache_key = store_scope.id if store_scope else 'all'
 
-    site_url = request.build_absolute_uri('/')
-
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=6,
-        border=2,
-    )
-    qr.add_data(site_url)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
-    buffer = BytesIO()
-    img.save(buffer, format="PNG")
-    qr_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-
     today = timezone.localdate()
     selected_cat_ids = request.GET.getlist('cat')
     selected_cat_ids_int = [int(x) for x in selected_cat_ids if str(x).isdigit()]
@@ -2470,7 +2528,7 @@ def dashboard_view(request):
             .annotate(stock=Subquery(stock_subq, output_field=IntegerField()),
                       sold=Subquery(sold_subq, output_field=IntegerField()))
             .annotate(stock=Coalesce(F('stock'), 0), sold=Coalesce(F('sold'), 0))
-            .filter(stock__lt=5)
+            .filter(stock__lt=DASHBOARD_LOW_STOCK_BELOW)
             .only('id', 'brand', 'model', 'name', 'category')
             .prefetch_related('images')
         )
@@ -2561,8 +2619,6 @@ def dashboard_view(request):
         'low_stock_3_4_count': low_stock_3_4_count,
         'total_products': total_products,
         'total_stock': total_stock,
-        'site_url': site_url,
-        'qr_code_base64': qr_base64,
         'isManger': isManger,
         'dashboard_defaulted_to_perfume': dashboard_defaulted_to_perfume,
         'dashboard_default_category_name': perfume_category.name if perfume_category else '',
@@ -4397,6 +4453,8 @@ def daily_summary_view(request):
         'show_profit': show_profit,
         'show_order_financials': show_order_financials,
         'store_is_all': store_is_all,
+        # Only on today's page: a to-do list for a past date reads as history.
+        'to_dos': today_to_dos(active_store, store_is_all) if day == today else None,
     })
 
 

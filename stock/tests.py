@@ -1,5 +1,6 @@
 import csv
 import json
+import re
 import tempfile
 from io import BytesIO, StringIO
 from xml.etree import ElementTree
@@ -849,8 +850,11 @@ class DashboardViewTests(TestCase):
         self.assertContains(response, "Sales today")           # KPI strip
         self.assertContains(response, "EUR 30.00")             # order total is visible to employee
         self.assertContains(response, "Dashboard Customer")    # order card renders the customer
-        self.assertContains(response, "Operations")
-        self.assertContains(response, "Sales &amp; Clients")
+        # The employee still has a way to each of their jobs. The menu groups
+        # were renamed by task on 2026-10-16 (Operations / Sales & Clients ->
+        # Sell / Customers), and Orders now sits in the Business tabs.
+        self.assertContains(response, '<div class="erp-nav-group">Sell</div>')
+        self.assertContains(response, '<div class="erp-nav-group">Customers</div>')
         self.assertContains(response, reverse("sales_records"))
         self.assertContains(response, reverse("customer_search"))
 
@@ -9364,3 +9368,231 @@ class MobileLayoutHygieneTests(TestCase):
                     line = text.count('\n', 0, match.start()) + 1
                     offenders.append(f'{os.path.basename(path)}:{line}')
         self.assertEqual(offenders, [], 'modals that cannot scroll')
+
+
+class RoundANavigationTests(TestCase):
+    """Navigation organised around tasks: Business / Sell / Products /
+    Customers / Purchasing / Settings, with the day's work on the first screen.
+    URLs and permissions underneath are unchanged - these pin the entrances."""
+
+    @classmethod
+    def setUpTestData(cls):
+        users = get_user_model()
+        cls.admin = users.objects.create_superuser("ra_admin", password="pw123456")
+        cls.manager = users.objects.create_user("ra_mgr", password="pw123456", is_staff=True)
+        cls.employee = users.objects.create_user("ra_emp", password="pw123456")
+        cls.store_a = Store.objects.create(name="Amadora Two", code="RA1")
+        cls.store_b = Store.objects.create(name="Lisboa", code="RA2")
+        StoreProfile.objects.update_or_create(user=cls.employee, defaults={'store': cls.store_b})
+
+    def _as(self, user):
+        self.client.force_login(user)
+
+    # -- where the day starts ----------------------------------------------
+    def test_a_manager_starts_on_today(self):
+        self._as(self.manager)
+        response = self.client.get(reverse("home"))
+        self.assertRedirects(response, reverse("daily_summary"), fetch_redirect_response=False)
+
+    def test_an_employee_starts_on_their_own_today(self):
+        self._as(self.employee)
+        response = self.client.get(reverse("home"))
+        self.assertRedirects(response, reverse("dashboard"), fetch_redirect_response=False)
+
+    def test_logging_in_lands_on_home(self):
+        response = self.client.post(reverse("login"), {"username": "ra_mgr",
+                                                       "password": "pw123456"})
+        self.assertRedirects(response, reverse("home"), fetch_redirect_response=False)
+
+    def test_the_root_goes_home(self):
+        self._as(self.manager)
+        response = self.client.get("/")
+        self.assertRedirects(response, reverse("home"), fetch_redirect_response=False)
+
+    # -- the side menu -------------------------------------------------------
+    def _menu(self, user):
+        self._as(user)
+        html = self.client.get(reverse("customer_search")).content.decode()
+        nav = html[html.index('<nav class="erp-nav">'):html.index('</nav>', html.index('<nav class="erp-nav">'))]
+        return re.findall(r'class="erp-nav-link[^"]*"[^>]*>([^<]+)</a>', nav), nav
+
+    def test_the_admin_menu_is_grouped_by_task(self):
+        links, nav = self._menu(self.admin)
+        self.assertEqual(links, ["Business", "Sell", "Pedido", "Products", "Catalog View",
+                                 "Shelf", "Customers", "IOU", "Inbound", "Suppliers",
+                                 "Attendance", "Tools", "Team", "Stores", "Print Header",
+                                 "Order audit"])
+        for group in ("Sell", "Products", "Customers", "Purchasing", "Settings"):
+            self.assertIn(f">{group}<", nav)
+
+    def test_the_old_overlapping_entries_are_gone(self):
+        """Dashboard, Today and Sales were three ways into one place."""
+        links, _ = self._menu(self.admin)
+        for gone in ("Dashboard", "Today", "Sales", "Outbound", "IOU / AR", "Order Control"):
+            self.assertNotIn(gone, links)
+
+    def test_an_employee_sees_only_their_four_jobs(self):
+        links, nav = self._menu(self.employee)
+        self.assertEqual(links, ["Business", "Sell", "Products", "Customers"])
+        self.assertNotIn("Purchasing", nav)
+        self.assertNotIn("Settings", nav)
+
+    def test_settings_stay_folded_until_you_are_in_one(self):
+        _, nav = self._menu(self.admin)
+        self.assertIn('<details class="erp-nav-fold" >', nav.replace('  ', ' '))
+        self._as(self.admin)
+        html = self.client.get(reverse("tools")).content.decode()
+        self.assertRegex(html, r'<details class="erp-nav-fold"\s+open>')
+
+    # -- the bottom tabs -----------------------------------------------------
+    def test_the_phone_tabs_are_business_sell_products_customers_more(self):
+        self._as(self.employee)
+        html = self.client.get(reverse("dashboard")).content.decode()
+        bar = html[html.index('class="erp-tabbar"'):]
+        bar = bar[:bar.index('</nav>')]
+        self.assertEqual(re.findall(r'<span>([^<]+)</span>', bar),
+                         ["Business", "Sell", "Products", "Customers", "More"])
+
+    # -- Business tabs -------------------------------------------------------
+    def test_a_manager_gets_today_orders_and_trends_everywhere_in_business(self):
+        self._as(self.admin)
+        for name in ("daily_summary", "sales_records", "dashboard"):
+            html = self.client.get(reverse(name)).content.decode()
+            strip = html[html.index('class="biz-tabs"'):html.index('</nav>', html.index('class="biz-tabs"'))]
+            self.assertEqual(re.findall(r'>(Today|Orders|Trends)</a>', strip),
+                             ["Today", "Orders", "Trends"], name)
+
+    def test_an_employee_gets_today_and_orders_only(self):
+        self._as(self.employee)
+        for name in ("dashboard", "sales_records"):
+            html = self.client.get(reverse(name)).content.decode()
+            strip = html[html.index('class="biz-tabs"'):html.index('</nav>', html.index('class="biz-tabs"'))]
+            self.assertEqual(re.findall(r'>(Today|Orders|Trends)</a>', strip),
+                             ["Today", "Orders"], name)
+
+    # -- Trends and Tools ----------------------------------------------------
+    def test_backup_and_qr_moved_from_trends_to_tools(self):
+        self._as(self.admin)
+        trends = self.client.get(reverse("dashboard")).content.decode()
+        self.assertNotIn(reverse("download_db_backup"), trends)
+        self.assertNotIn("mobileAccessModal", trends)
+        tools = self.client.get(reverse("tools"))
+        self.assertContains(tools, reverse("download_db_backup"))
+        self.assertContains(tools, "data:image/png;base64,")
+
+    def test_tools_are_for_managers(self):
+        self._as(self.employee)
+        self.assertEqual(self.client.get(reverse("tools")).status_code, 302)
+
+    def test_the_deep_analysis_folds(self):
+        self._as(self.admin)
+        trends = self.client.get(reverse("dashboard")).content.decode()
+        self.assertEqual(trends.count('<details class="dash-fold" data-fold open>'), 2)
+
+    # -- Today ---------------------------------------------------------------
+    def test_today_lists_what_is_waiting(self):
+        from stock.views import DASHBOARD_LOW_STOCK_BELOW
+        category = Category.objects.create(name="RA Cat")
+        low = Product.objects.create(name="Pouco", brand="B", barcode="9300000000001",
+                                     category=category, default_price=Decimal("10"))
+        Purchase.objects.create(product=low, quantity=DASHBOARD_LOW_STOCK_BELOW - 1,
+                                remaining=DASHBOARD_LOW_STOCK_BELOW - 1,
+                                cost_price=Decimal("1"))
+        plenty = Product.objects.create(name="Muito", brand="B", barcode="9300000000002",
+                                        category=category, default_price=Decimal("10"))
+        Purchase.objects.create(product=plenty, quantity=50, remaining=50,
+                                cost_price=Decimal("1"))
+        customer = Customer.objects.create(nif="930000001", name="Deve")
+        ARInvoice.objects.create(customer=customer, total_amount=Decimal("40.00"),
+                                 amount_paid=Decimal("10.00"))
+        ARInvoice.objects.create(customer=customer, total_amount=Decimal("5.00"),
+                                 amount_paid=Decimal("5.00"))
+        InboundOrder.objects.create(status='pending_receipt')
+
+        self._as(self.admin)
+        todos = self.client.get(reverse("daily_summary")).context["to_dos"]
+        self.assertEqual(todos["low_stock_count"], 1)
+        self.assertEqual(todos["open_iou_count"], 1)
+        self.assertEqual(todos["open_iou_total"], Decimal("30.00"))
+        self.assertEqual(todos["pending_inbound_count"], 1)
+
+    def test_a_past_day_shows_no_to_do_list(self):
+        """Yesterday's page with today's to-dos would read as history."""
+        self._as(self.admin)
+        yesterday = (timezone.localdate() - timedelta(days=1)).isoformat()
+        response = self.client.get(reverse("daily_summary"), {"date": yesterday})
+        self.assertIsNone(response.context["to_dos"])
+
+    def test_the_low_stock_to_do_counts_what_trends_lists(self):
+        """Two thresholds would let the to-do disagree with the list it opens."""
+        import inspect
+        from stock import views
+        source = inspect.getsource(views.dashboard_view)
+        self.assertIn("stock__lt=DASHBOARD_LOW_STOCK_BELOW", source)
+
+    # -- messages ------------------------------------------------------------
+    def test_a_bounced_employee_is_told_why(self):
+        """The home page used to hide every message - including the one that
+        explains why a page just refused them."""
+        self._as(self.employee)
+        response = self.client.get(reverse("inbound"), follow=True)
+        self.assertContains(response, "Employee accounts can only access daily operations.")
+
+    # -- the store, always in sight -----------------------------------------
+    def test_the_phone_top_bar_carries_the_store_switcher(self):
+        self._as(self.admin)
+        html = self.client.get(reverse("customer_search")).content.decode()
+        top = html[html.index('<header class="erp-topbar">'):html.index('</header>')]
+        self.assertIn('class="erp-topbar-store"', top)
+        self.assertIn('name="store"', top)
+
+    def test_an_employee_sees_their_store_in_the_top_bar(self):
+        self._as(self.employee)
+        html = self.client.get(reverse("customer_search")).content.decode()
+        top = html[html.index('<header class="erp-topbar">'):html.index('</header>')]
+        self.assertIn("Lisboa", top)
+
+    def test_a_blocked_sale_offers_the_stores_right_there(self):
+        """It used to point at a "store switcher in the top bar" that, on a
+        phone, was not in the top bar."""
+        self._as(self.admin)
+        response = self.client.get(reverse("outbound"))
+        self.assertTrue(response.context["outbound_blocked"])
+        html = response.content.decode()
+        self.assertNotIn("top bar", html)
+        warning = html[html.index('Pick the store you are selling from'):]
+        warning = warning[:warning.index('</div>')]
+        self.assertIn(reverse("set_active_store"), warning)
+        self.assertIn(f'value="{self.store_a.id}"', warning)
+        self.assertIn(f'value="{self.store_b.id}"', warning)
+
+    # -- one path for an order ----------------------------------------------
+    def test_an_order_can_be_corrected_from_its_own_page(self):
+        order = SaleOrder.objects.create(store=self.store_a)
+        self._as(self.admin)
+        response = self.client.get(reverse("sale_order_detail", args=[order.id]))
+        self.assertContains(response, reverse("sale_order_correction_edit", args=[order.id]))
+
+    def test_only_an_admin_is_offered_the_correction(self):
+        order = SaleOrder.objects.create(store=self.store_a)
+        self._as(self.manager)
+        response = self.client.get(reverse("sale_order_detail", args=[order.id]))
+        self.assertNotContains(response, reverse("sale_order_correction_edit", args=[order.id]))
+
+    # -- one name per thing --------------------------------------------------
+    def test_the_till_is_called_sell(self):
+        self._as(self.employee)
+        response = self.client.get(reverse("outbound"))
+        self.assertContains(response, "<title>Sell")
+        self.assertNotContains(response, "Outbound &mdash;")
+
+    def test_iou_is_the_only_name_for_what_customers_owe(self):
+        import glob
+        import io as _io
+        offenders = []
+        for path in glob.glob('stock/templates/stock/*.html'):
+            text = _io.open(path, encoding='utf-8').read()
+            text = re.sub(r'\{%.*?%\}|\{\{.*?\}\}|\{#.*?#\}', '', text)
+            for word in re.findall(r'>[^<]*\b(AR|Receivables?)\b[^<]*<', text):
+                offenders.append(f'{path}: {word}')
+        self.assertEqual(offenders, [])

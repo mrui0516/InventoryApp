@@ -1,0 +1,28 @@
+{% extends 'stock/base.html' %}
+{% block title %}Tools{% endblock %}
+
+{% block content %}
+<style>
+  .tl-grid{ display:grid; gap:.8rem; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); max-width:860px; }
+  .tl-card{ border:1px solid var(--app-border); border-radius:var(--app-radius); background:var(--app-surface);
+            padding:1rem; box-shadow:var(--app-shadow); }
+  .tl-card h2{ font-size:1rem; font-weight:800; margin:0 0 .6rem; color:var(--app-text); }
+  .tl-qr{ display:block; width:180px; height:180px; image-rendering:pixelated; margin:.2rem 0 .5rem; }
+  .tl-url{ font-size:.85rem; color:var(--app-muted); word-break:break-all; }
+</style>
+
+<h1 class="h4 fw-bold mb-3">Tools</h1>
+
+<div class="tl-grid">
+  <section class="tl-card">
+    <h2>Database backup</h2>
+    <a class="btn btn-primary" href="{% url 'download_db_backup' %}">Download backup</a>
+  </section>
+
+  <section class="tl-card">
+    <h2>Open on a phone</h2>
+    <img class="tl-qr" src="data:image/png;base64,{{ qr_code_base64 }}" alt="QR code for {{ site_url }}" width="180" height="180">
+    <div class="tl-url">{{ site_url }}</div>
+  </section>
+</div>
+{% endblock %}

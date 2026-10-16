@@ -19,7 +19,8 @@ from django.urls import path, include
 from django.shortcuts import redirect
 
 urlpatterns = [
-    path('', lambda request: redirect('dashboard')),  # 👈 访问根路径重定向到 /dashboard/
+    # The root goes wherever this user's day starts (Today for a manager).
+    path('', lambda request: redirect('home')),
     path('admin/', admin.site.urls),
     path('', include('stock.urls')),
     

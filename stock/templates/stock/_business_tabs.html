@@ -1,0 +1,16 @@
+{% load access_tags %}
+{# Business is one place, not three menu entries: the same day's work seen as  #}
+{# the day, as a list of orders, or as a trend. Each tab is still its own page  #}
+{# with its own URL and permissions - this strip only joins them up.           #}
+{% with here=request.resolver_match.url_name %}
+<nav class="biz-tabs" aria-label="Business views">
+  {% if user|is_manager_user %}
+    <a class="biz-tab{% if here == 'daily_summary' %} on{% endif %}" href="{% url 'daily_summary' %}"{% if here == 'daily_summary' %} aria-current="page"{% endif %}>Today</a>
+    <a class="biz-tab{% if here == 'sales_records' %} on{% endif %}" href="{% url 'sales_records' %}"{% if here == 'sales_records' %} aria-current="page"{% endif %}>Orders</a>
+    <a class="biz-tab{% if here == 'dashboard' %} on{% endif %}" href="{% url 'dashboard' %}"{% if here == 'dashboard' %} aria-current="page"{% endif %}>Trends</a>
+  {% else %}
+    <a class="biz-tab{% if here == 'dashboard' %} on{% endif %}" href="{% url 'dashboard' %}"{% if here == 'dashboard' %} aria-current="page"{% endif %}>Today</a>
+    <a class="biz-tab{% if here == 'sales_records' %} on{% endif %}" href="{% url 'sales_records' %}"{% if here == 'sales_records' %} aria-current="page"{% endif %}>Orders</a>
+  {% endif %}
+</nav>
+{% endwith %}

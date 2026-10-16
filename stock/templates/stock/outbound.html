@@ -1,13 +1,27 @@
 ﻿{% extends 'stock/base.html' %}
 {% load static %}
-{% block title %}Outbound{% endblock %}
+{% block title %}Sell{% endblock %}
 
 {% block content %}
-<h1 class="pos-title mb-4">Outbound &mdash; Sell products</h1>
+<h1 class="pos-title mb-4">Sell</h1>
 
 {% if error %}<div class="alert alert-danger mt-3" role="alert">{{ error }}</div>{% endif %}
 {% if success %}<div class="alert alert-success mt-3" role="alert">{{ success }}</div>{% endif %}
-{% if outbound_blocked %}<div class="alert alert-warning mt-3" role="alert"><strong>Pick a store to sell.</strong> You are viewing <strong>All stores</strong>, which has no single target for the sale. Switch to the store you are selling from (store switcher in the top bar), then sell.</div>{% endif %}
+{% if outbound_blocked %}
+  {# The way out sits inside the warning. It used to send people to a "store #}
+  {# switcher in the top bar" that, on a phone, was not in the top bar.       #}
+  <div class="alert alert-warning mt-3" role="alert">
+    <strong>Pick the store you are selling from.</strong> All stores has no single till for the sale.
+    {% if store_can_switch and available_stores %}
+      <form method="post" action="{% url 'set_active_store' %}" class="d-flex flex-wrap gap-2 mt-2">
+        {% csrf_token %}
+        {% for s in available_stores %}
+          <button type="submit" name="store" value="{{ s.id }}" class="btn btn-sm btn-warning">{{ s.name }}</button>
+        {% endfor %}
+      </form>
+    {% endif %}
+  </div>
+{% endif %}
 
 <!-- 扫码 / 模糊搜索 -->
 <form id="scan-form" class="mb-3 position-relative">

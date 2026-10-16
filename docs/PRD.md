@@ -47,7 +47,7 @@
 #### 1.3.1 员工界面收窄（Employee interface restriction）
 员工登录后可见/可用的功能被收窄为一个精简子集，而非"完整页面隐藏字段"：
 
-- **可见页面（仅这 5 个）**：Dashboard、Outbound（POS）、Products、Sales、Customers。侧边栏隐藏 Today（daily_summary）、Inbound、Attendance、Catalog View、Suppliers、IOU/AR、Admin 分组；对应视图也用 `@manager_required` 在视图层拦截（员工直接访问 URL 会被 302 到 dashboard），不仅仅是导航隐藏。
+- **可见页面**:Business(员工的 Today = `dashboard`,加 Orders = `sales_records`)、Sell(POS)、Products、Customers(2026-10-16 起按任务分组,见 F2.1.3)。侧边栏隐藏 Today（daily_summary）、Inbound、Attendance、Catalog View、Suppliers、IOU/AR、Admin 分组；对应视图也用 `@manager_required` 在视图层拦截（员工直接访问 URL 会被 302 到 dashboard），不仅仅是导航隐藏。
 - **Products 对员工开放查看/新增/编辑/导出**：员工可搜索浏览列表、看详情、新增并**编辑**产品（改字段 + 加图），并下载**面向顾客的产品 Excel**（图片/产品/分类/零售价/批发价/库存，无成本）。**仍仅经理**：进货（Inbound）、删除产品/图片、Shopify 导出。成本、"Suppliers & cost" 比价、批次成本、销售历史/指标继续对员工隐藏，仅展示零售/批发价。无审批/待确认工作流。
 - **Sales（销售，员工视图）**：单日订单列表（默认今天，可切换日期），展示时间/客户/件数/支付方式/金额，无图表、无年度总览、无采购数据，按登录用户所在店铺范围。新增**按订单号搜索**：输入订单号直接跳到该订单详情（`sale_order_detail`，与经理共用同一详情/小票页，员工只能开本店订单）。每个订单行提供 **View**（弹窗内联显示该单商品明细/合计，不含利润成本）+ **Print**（链到订单详情）两个按钮，供快速对账。经理登录仍看到完整的 `/sales-records/` 页面（含图表、年度趋势、采购对比）。
 - **Customers（客户，员工视图）**：无查询词时不展示任何客户列表（避免整表暴露）；输入姓名/电话/邮箱/NIF 关键字后仅展示匹配客户的姓名/电话/邮箱（不含消费统计/分析）。保留"新增客户"（沿用既有 AJAX 新增接口，弹窗内完成，无需离开搜索页）。点击某客户进入的详情页仅展示**该客户的订单列表**（日期/订单号/件数/支付方式/金额，每行 **View 弹窗 + Print 按钮**）用于对账，不含消费分析图表、AR 余额、时间线。经理仍看到完整的客户详情页（图表/AR/时间线等）。员工的 Sales/Customers 页样式与经理页一致（共享设计骨架）。
@@ -60,12 +60,29 @@
 ### 模块 2.1 — 登录与导航
 
 - **F2.1.1** 用户必须登录才能访问除登录页外的所有页面（`@login_required`）。
-- **F2.1.2** 登录成功后默认跳转到 `/dashboard/`；未登录访问受保护页面跳转到 `/login/`。
-- **F2.1.3** 导航栏依据角色动态显示菜单项（如团队管理仅 Admin 可见，AR/供应商管理仅 Manager 及以上可见）。
+- **F2.1.2 起点(`home`)**：登录后、点品牌、点底部 Business、访问根路径 `/`,都进 `home_view`,由它按角色分流——**经理进 Today(`daily_summary`)**,先看当天的数字、订单和待办;**员工进 `dashboard`**(员工版本只显示当天工作)。`LOGIN_REDIRECT_URL = 'home'`。未登录访问受保护页面跳转到 `/login/`。
+- **F2.1.3 侧栏按任务分组(2026-10-16 改版)**：原来 17 个按模块散排的入口,Dashboard / Today / Sales 三个都是"看经营",Order Control 和订单详情是同一张单的两条路。现在按"来做什么事"分组:
+  | 组 | 入口 | 可见 |
+  |---|---|---|
+  | (首项) | **Business** — 一个入口,内有 Today / Orders / Trends 标签 | 全部 |
+  | Sell | Sell(收银)、Pedido | Sell 全部;Pedido 经理 |
+  | Products | Products、Catalog View、Shelf | Products 全部;其余经理 |
+  | Customers | Customers、IOU | Customers 全部;IOU 经理 |
+  | Purchasing | Inbound、Suppliers | 经理 |
+  | Settings(默认折叠,身处其中某页时展开) | Attendance、Tools(经理);Team、Stores、Print Header、Order audit(超管) | 见左 |
+
+  员工只看到 Business / Sell / Products / Customers。**所有 URL 和权限不变**,只是入口重组。
+- **F2.1.4 手机底部 5 个标签**:Business · Sell · Products · Customers · More(More 打开完整侧栏)。Sales 并入 Business,Customers 进入底部。
+- **F2.1.5 Business 标签条**(`_business_tabs.html`):Today / Orders / Trends 三个页面顶部共用同一排切换。经理:Today(`/today/`)· Orders(`/sales-records/`)· Trends(`/dashboard/`);员工:Today(`/dashboard/`)· Orders。三个仍是独立页面,各自的 URL、权限、逻辑不动。
+- **F2.1.6 当前店铺在手机顶栏常驻**:能切换店铺的人在顶栏直接看到下拉框;员工看到自己所属店铺名。以前店铺只在侧栏里,手机上要先点汉堡菜单。
+- **F2.1.7 提示消息每页都显示,包括首页**:以前首页把所有 Django 消息隐藏;而员工点进无权限页面会被弹回首页、原因作为消息带回,于是被拒却看不到原因。
+- **F2.1.8 一样东西一个名字**:收银统一叫 **Sell**(原 Outbound / Sell 混用);欠款统一叫 **IOU**(原 IOU / AR / Receivables 混用)。只改界面文字,URL 名、视图名、模型名不动。
 
 ---
 
-### 模块 2.2 — 经营仪表盘（Dashboard）
+### 模块 2.2 — 经营仪表盘（Dashboard → Business 下的 Trends）
+
+> 2026-10-16 起:经理视角下此页是 Business 里的 **Trends** 标签(标题改为 Trends),不再是登录起点。"Where to focus next"(各类排行)与 "Capital lock and slow movers"(资金占用、滞销)改为**可折叠**,手机默认收起、桌面默认展开(无 JS 时保持展开)。**数据库备份下载与手机二维码移到 Settings → Tools(`/tools/`,仅经理)**,首屏只留 "Open month history"。员工视角下此页仍是他们的 Today。
 
 入口：`/dashboard/`，核心实现 `services/dashboard.py::build_monthly_dashboard_snapshot`
 
@@ -410,7 +427,9 @@
 
 ### 模块 2.20 — 当日汇总（Daily Summary）
 
-入口：`/today/`（`daily_summary_view`，侧栏 Dashboard 下方 **Today**）。面向收银/交班的当日速览，**按活动店铺过滤**（All stores 显示合计）。
+入口：`/today/`（`daily_summary_view`，Business → **Today** 标签;**经理登录后的起点**）。面向收银/交班的当日速览，**按活动店铺过滤**（All stores 显示合计）。
+
+- **F2.20.0 首屏先回答"现在做什么"(2026-10-16)**:最上方是常用操作 **Sell / Pedido / Inbound**,其下是待处理三项,各自链到处理的地方——**待收货的进货单**(`InboundOrder.status='pending_receipt'`)、**未结 IOU**(笔数 + 金额,按当前店铺)、**低库存商品**(链到 Trends 的 Low stock 区块 `#low-stock`)。低库存与 Trends 共用同一个阈值 `DASHBOARD_LOW_STOCK_BELOW = 5`,所以待办数字和它打开的列表不会对不上。**只在"今天"显示**:看历史某天时附一份今天的待办,读起来像那天的情况。
 
 - **F2.20.1** 默认展示当天；`?date=YYYY-MM-DD` 可查看历史某天（不超过今天），提供前一天/今天/后一天导航。
 - **F2.20.2 KPI**：销售额、订单数、件数、客单价、净利润（仅超级管理员）、当日入库件数与单数（库存全店共享，标注 all stores）。

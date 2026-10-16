@@ -916,7 +916,7 @@
   {% if show_ar %}
     <div class="ar-card">
       <div class="ar-head">
-        <h4>IOU / AR Overview</h4>
+        <h4>IOU Overview</h4>
         <span class="section-note">Open balances only</span>
       </div>
       <div class="ar-grid">
@@ -944,14 +944,14 @@
         <span class="chip danger">Overdue: {{ ar_overdue.count }}</span>
         <span class="chip">
           Next Due:
-          {% if ar_next_due %} {{ ar_next_due.due_date|date:"Y-m-d" }} (AR #{{ ar_next_due.id }}){% else %} -{% endif %}
+          {% if ar_next_due %} {{ ar_next_due.due_date|date:"Y-m-d" }} (IOU #{{ ar_next_due.id }}){% else %} -{% endif %}
         </span>
       </div>
       <div class="table-responsive">
         <table class="table table-sm align-middle mb-0">
           <thead>
             <tr>
-              <th>AR #</th>
+              <th>IOU #</th>
               <th>Date</th>
               <th>Due</th>
               <th class="text-end">Total</th>
@@ -964,7 +964,7 @@
           <tbody>
             {% for inv in ar_open %}
               <tr>
-                <td data-label="AR #">#{{ inv.id }}</td>
+                <td data-label="IOU #">#{{ inv.id }}</td>
                 <td data-label="Date">{{ inv.date|date:"Y-m-d" }}</td>
                 <td data-label="Due">
                   {% if inv.due_date %}

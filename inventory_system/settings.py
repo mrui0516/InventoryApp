@@ -219,7 +219,8 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # 登录后跳转到 dashboard
-LOGIN_REDIRECT_URL = '/dashboard/'
+# A URL name, not a path: home decides by role where the day starts.
+LOGIN_REDIRECT_URL = 'home'
 # 未登录访问受保护页面时，跳转到 login
 LOGIN_URL = '/login/'
 
