@@ -685,17 +685,8 @@ body.anon .erp-content{
 .dash-fold > summary .section-head h2::after{ content:" \25BE"; color:var(--app-muted); font-size:.8em; }
 .dash-fold:not([open]) > summary .section-head{ margin-bottom:0; }
 
-/* Today: the jobs, then what is waiting. */
+/* Today: the day's jobs first. */
 .today-actions{ display:flex; gap:.5rem; flex-wrap:wrap; margin:0 0 .7rem; }
-.today-todos{ display:grid; gap:.5rem; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));
-              margin:0 0 .9rem; }
-.todo{ display:block; padding:.6rem .8rem; border:1px solid var(--app-border); border-radius:var(--app-radius);
-       background:var(--app-surface); color:var(--app-muted); font-weight:600; font-size:.9rem;
-       text-decoration:none; }
-.todo b{ font-size:1.1rem; color:var(--app-text); font-variant-numeric:tabular-nums; margin-right:.2rem; }
-.todo.has{ border-color:var(--app-accent-line); color:var(--app-primary); }
-.todo.has.warn{ border-color:#fdba74; background:var(--app-warn-soft); }
-.todo:hover{ border-color:var(--app-accent); }
 @media (max-width:576px){
   .today-actions .btn{ flex:1 1 0; }
 }

@@ -11,7 +11,7 @@
 | 维度 | 状态 | 说明 |
 |---|---|---|
 | 功能完整度 | ✅ 已覆盖 PRD 全部 20 个模块 | 正在生产使用中（真实业务数据） |
-| 自动化测试 | ✅ 730/730 通过 | `python manage.py test stock` |
+| 自动化测试 | ✅ 728/728 通过 | `python manage.py test stock` |
 | 数据库迁移 | ✅ 无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
 | 版本控制 | ✅ 已推送 GitHub，与 origin/master 同步 | 见第 4 节 |
 | 本地虚拟环境 | ⚠ `.venv` 不完整/未使用 | 见第 3 节 |
@@ -99,6 +99,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-10-16: **Today 页删掉待办那一行**(老板要求)。线上显示 "2 inbound orders to receive · 0 open IOUs · 336 low-stock products"——低库存沿用 Dashboard 的"库存 < 5",把从未进过货、库存一直为 0 的商品全算进去,336 没有参考意义。`today_to_dos` 与对应样式、测试一并删除,三个快捷按钮保留。
 - 2026-10-16: **Business 合并入口撤回,改为 Today / Dashboard / Orders 三个独立页面;二维码进侧栏。** 老板看过页内标签条后决定不要合并。标签条 `_business_tabs.html` 和对应样式删除,侧栏顶部三个独立入口(员工:Today = 其 dashboard、Orders),Dashboard 恢复原名,底部第一个标签改叫 Today、只在 Today 页亮起。**二维码从 Tools 移到侧栏**底部 "Open on phone" 对话框,所有登录用户可用(员工原本在首页就有,不能拿走);图片由新端点 `/phone-qr.png` 在**打开对话框时**才请求,不在每页都跑二维码编码器。Tools 只剩数据库备份。**老板看到"标签条没有样式"的原因**:新组件的样式都在 `app.css`,线上是从 `staticfiles/` 读的,没跑 `collectstatic` 就全部缺失——不只标签条,Today 的按钮和待办、顶栏店铺、Settings 折叠都一样。**顺手修了一个测试隔离问题**:Dashboard 会把快照缓存 5 分钟,`DashboardViewTests` 不清缓存,别的测试先在空库上打开过 Dashboard 就会留下全零快照,结果随运行顺序通过或失败;两个类都在 `setUp` 里 `cache.clear()`,并按原本会失败的顺序验证。730 通过。
 - 2026-10-16: **A 轮:导航按任务重组,一天从 Today 开始。** 第二份外部审计逐条核实后实施(审计里"经理首页的 Today operations 排在分析后面"一条不准确——经理的 Dashboard 根本没有那块,问题实际是经理登录先进月度分析)。**侧栏**从 17 个按模块散排的入口改为按任务分组:Business(一个入口,内含 Today / Orders / Trends 标签)· Sell · Products · Customers · Purchasing · Settings(默认折叠);员工只看到前四组。**手机底部** Business · Sell · Products · Customers · More。**起点** `home_view`:经理进 Today,员工进自己的 dashboard;登录、品牌、根路径都走它。**Today 首屏**先放 Sell / Pedido / Inbound 三个操作,再放待办(待收货进货单、未结 IOU、低库存),低库存与 Trends 共用 `DASHBOARD_LOW_STOCK_BELOW` 一个阈值,只在"今天"显示。**Trends**(原 Dashboard)的排行和资金占用改为可折叠,手机默认收起;**备份和二维码搬到 Settings → Tools**。**订单详情页加"Correct this order"**(超管),不用再去 Order Control(已改名 Order audit)重新找这张单。**手机顶栏常驻当前店铺**;收银被 All stores 挡住时,提示框里直接给出店铺按钮(原文案让人去"top bar"找,手机顶栏上根本没有)。**首页不再吞消息**:员工被权限拦回首页时终于看得到原因——这条从初始提交就藏着,没有留下理由。**术语**:收银统一 Sell,欠款统一 IOU(只改界面文字)。所有 URL 和权限不变。一个旧测试在检查已被替换的分组名 Operations / Sales & Clients,按新分组名改断言、保留意图。728 通过;两个 bug 修复各自放回原样都会转红。
 - 2026-10-16: **修三个手机 bug(外部审计指出,逐条核实属实)。** **①底部被导航栏遮住**:`app.css` 的 ≤576px 断点用简写 `padding:.9rem .8rem 2rem` 把上面为底部导航预留的 `padding-bottom` 重置了,几乎所有手机上每页最后 56px 都压在导航栏底下;改为 `calc(2rem + var(--tabbar-h))`。**②弹窗不能滚动**:25 个弹窗里只有 6 个带 `modal-dialog-scrollable`,长清单或键盘弹起时确认按钮会被挤出屏幕;其余 16 个有 `modal-body` 的全部补上(3 个没有 body 的是图片放大预览,不需要)。**③输入框 16px 被覆盖**:iOS 点击小于 16px 的输入框会放大整页,app.css 本来已设 16px,但 4 个页面里 7 条局部样式选择器更具体、把它盖了——其中 Pedido 和客户搜索框是我写的。不逐条改,改成在 app.css 手机断点里加 `!important`,以后任何页面都盖不掉;桌面字号不受影响。加了 `MobileLayoutHygieneTests` 直接扫 CSS 和全部模板,三个原始 bug 放回去三个测试全部转红。**更正**:审计说 PRD 与代码在"员工能否导出产品清单"上矛盾,我核实时看错了视图(`export_catalog_excel`),其实员工用的是 `export_product_list_excel`,一直开放且只是隐藏成本——文档和代码本来一致,PRD 不改。703 通过。

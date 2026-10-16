@@ -292,41 +292,9 @@ def sellable_stock(stock_val):
     return max(int(stock_val or 0) - SAMPLE_RESERVE, 0)
 
 
-# The Low stock warning on Trends and the low-stock to-do on Today count the
-# same thing. One number, so the to-do never disagrees with the list it opens.
+# Below this many units a product is listed under the dashboard's Low stock
+# warning (out-of-stock included).
 DASHBOARD_LOW_STOCK_BELOW = 5
-
-
-def today_to_dos(active_store, store_is_all):
-    """What is waiting on somebody, for the Today page.
-
-    Stock is shared between the shops, so low stock is counted once. IOUs are
-    per store, so they follow the store being viewed.
-    """
-    stock_left = (Purchase.objects.filter(product=OuterRef('pk')).values('product')
-                  .annotate(total=Sum('remaining')).values('total')[:1])
-    low_stock = (Product.objects
-                 .annotate(left=Coalesce(Subquery(stock_left, output_field=IntegerField()),
-                                         Value(0)))
-                 .filter(left__lt=DASHBOARD_LOW_STOCK_BELOW)
-                 .count())
-
-    money = DecimalField(max_digits=12, decimal_places=2)
-    ious = ARInvoice.objects.annotate(
-        left=ExpressionWrapper(F('total_amount') - F('amount_paid'), output_field=money)
-    ).filter(left__gt=0)
-    if not store_is_all and active_store is not None:
-        ious = ious.filter(store=active_store)
-    iou = ious.aggregate(count=Count('id'),
-                         total=Coalesce(Sum('left'), Value(Decimal('0.00'))))
-
-    pending_inbound = InboundOrder.objects.filter(status='pending_receipt').count()
-    return {
-        'low_stock_count': low_stock,
-        'open_iou_count': iou['count'],
-        'open_iou_total': iou['total'],
-        'pending_inbound_count': pending_inbound,
-    }
 
 
 def get_catalog_availability_parts(stock_val, on_order=False):
@@ -4460,8 +4428,6 @@ def daily_summary_view(request):
         'show_profit': show_profit,
         'show_order_financials': show_order_financials,
         'store_is_all': store_is_all,
-        # Only on today's page: a to-do list for a past date reads as history.
-        'to_dos': today_to_dos(active_store, store_is_all) if day == today else None,
     })
 
 

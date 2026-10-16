@@ -9515,45 +9515,15 @@ class RoundANavigationTests(TestCase):
         self.assertEqual(dashboard.count('<details class="dash-fold" data-fold open>'), 2)
 
     # -- Today ---------------------------------------------------------------
-    def test_today_lists_what_is_waiting(self):
-        from stock.views import DASHBOARD_LOW_STOCK_BELOW
-        category = Category.objects.create(name="RA Cat")
-        low = Product.objects.create(name="Pouco", brand="B", barcode="9300000000001",
-                                     category=category, default_price=Decimal("10"))
-        Purchase.objects.create(product=low, quantity=DASHBOARD_LOW_STOCK_BELOW - 1,
-                                remaining=DASHBOARD_LOW_STOCK_BELOW - 1,
-                                cost_price=Decimal("1"))
-        plenty = Product.objects.create(name="Muito", brand="B", barcode="9300000000002",
-                                        category=category, default_price=Decimal("10"))
-        Purchase.objects.create(product=plenty, quantity=50, remaining=50,
-                                cost_price=Decimal("1"))
-        customer = Customer.objects.create(nif="930000001", name="Deve")
-        ARInvoice.objects.create(customer=customer, total_amount=Decimal("40.00"),
-                                 amount_paid=Decimal("10.00"))
-        ARInvoice.objects.create(customer=customer, total_amount=Decimal("5.00"),
-                                 amount_paid=Decimal("5.00"))
-        InboundOrder.objects.create(status='pending_receipt')
-
+    def test_today_has_no_to_do_line(self):
+        """Removed at the owner's request on 2026-10-16. Its low-stock count
+        used the dashboard's stock < 5, which counts every product that was
+        never stocked, so it read 336 and meant nothing."""
         self._as(self.admin)
-        todos = self.client.get(reverse("daily_summary")).context["to_dos"]
-        self.assertEqual(todos["low_stock_count"], 1)
-        self.assertEqual(todos["open_iou_count"], 1)
-        self.assertEqual(todos["open_iou_total"], Decimal("30.00"))
-        self.assertEqual(todos["pending_inbound_count"], 1)
-
-    def test_a_past_day_shows_no_to_do_list(self):
-        """Yesterday's page with today's to-dos would read as history."""
-        self._as(self.admin)
-        yesterday = (timezone.localdate() - timedelta(days=1)).isoformat()
-        response = self.client.get(reverse("daily_summary"), {"date": yesterday})
-        self.assertIsNone(response.context["to_dos"])
-
-    def test_the_low_stock_to_do_counts_what_trends_lists(self):
-        """Two thresholds would let the to-do disagree with the list it opens."""
-        import inspect
-        from stock import views
-        source = inspect.getsource(views.dashboard_view)
-        self.assertIn("stock__lt=DASHBOARD_LOW_STOCK_BELOW", source)
+        response = self.client.get(reverse("daily_summary"))
+        self.assertNotIn("to_dos", response.context)
+        self.assertNotContains(response, "low-stock product")
+        self.assertContains(response, 'href="%s"' % reverse("outbound"))
 
     # -- messages ------------------------------------------------------------
     def test_a_bounced_employee_is_told_why(self):
