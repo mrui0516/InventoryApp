@@ -662,16 +662,6 @@ body.anon .erp-content{
 
 /* ===== Round A: navigation by task ===================================== */
 
-/* Business tabs: Today / Orders / Trends are views of one place. */
-.biz-tabs{ display:flex; gap:.25rem; margin:0 0 .85rem; padding:.22rem;
-           background:var(--app-surface-2); border:1px solid var(--app-border);
-           border-radius:999px; width:max-content; max-width:100%; overflow-x:auto; }
-.biz-tab{ display:inline-flex; align-items:center; min-height:36px; padding:.3rem 1rem;
-          border-radius:999px; font-size:.88rem; font-weight:700; white-space:nowrap;
-          color:var(--app-primary); text-decoration:none; }
-.biz-tab:hover{ color:var(--app-accent-ink); background:var(--app-surface); }
-.biz-tab.on{ background:var(--app-accent); color:#fff; }
-
 /* Settings fold in the side menu: low-frequency, closed unless you are in it. */
 .erp-nav-fold > summary{ list-style:none; cursor:pointer; display:flex; align-items:center; }
 .erp-nav-fold > summary::-webkit-details-marker{ display:none; }
@@ -708,6 +698,4 @@ body.anon .erp-content{
 .todo:hover{ border-color:var(--app-accent); }
 @media (max-width:576px){
   .today-actions .btn{ flex:1 1 0; }
-  .biz-tabs{ width:100%; }
-  .biz-tab{ flex:1 1 0; justify-content:center; }
 }

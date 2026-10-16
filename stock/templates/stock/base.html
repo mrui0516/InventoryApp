@@ -73,9 +73,15 @@
       {% endif %}
 
       {# Grouped by what somebody came to do, not by how the code is split.     #}
-      {# Business is one entry: Today, Orders and Trends are tabs inside it.     #}
+      {# An employee's Today is the dashboard page, which only shows them the day. #}
       <nav class="erp-nav">
-        <a class="erp-nav-link {% if current_url in 'dashboard,daily_summary,sales_records' %}active{% endif %}" href="{% url 'home' %}">Business</a>
+        {% if user|is_manager_user %}
+        <a class="erp-nav-link {% if current_url == 'daily_summary' %}active{% endif %}" href="{% url 'daily_summary' %}">Today</a>
+        <a class="erp-nav-link {% if current_url == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}">Dashboard</a>
+        {% else %}
+        <a class="erp-nav-link {% if current_url == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}">Today</a>
+        {% endif %}
+        <a class="erp-nav-link {% if current_url == 'sales_records' %}active{% endif %}" href="{% url 'sales_records' %}">Orders</a>
 
         <div class="erp-nav-group">Sell</div>
         <a class="erp-nav-link {% if current_url == 'outbound' %}active{% endif %}" href="{% url 'outbound' %}">Sell</a>
@@ -118,6 +124,8 @@
 
       <div class="erp-userbox">
         {% if user.is_authenticated %}
+          {# The QR is fetched only when the dialog opens, not on every page. #}
+          <button type="button" class="btn btn-sm btn-outline-light w-100" data-bs-toggle="modal" data-bs-target="#phoneQrModal">Open on phone</button>
           <span class="erp-user">Hi, {{ user.username }}</span>
           <form action="{% url 'logout' %}" method="post">
             {% csrf_token %}
@@ -158,9 +166,9 @@
 
     {% if user.is_authenticated %}
     <nav class="erp-tabbar" aria-label="Primary">
-      <a class="erp-tab {% if current_url in 'dashboard,daily_summary,sales_records' %}active{% endif %}" href="{% url 'home' %}">
+      <a class="erp-tab {% if current_url == 'daily_summary' %}active{% elif current_url == 'dashboard' and not user|is_manager_user %}active{% endif %}" href="{% url 'home' %}">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg>
-        <span>Business</span>
+        <span>Today</span>
       </a>
       <a class="erp-tab {% if current_url == 'outbound' %}active{% endif %}" href="{% url 'outbound' %}">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h3l2.4 12.2a1.5 1.5 0 0 0 1.5 1.2h8.2a1.5 1.5 0 0 0 1.5-1.2L21 7H6"/></svg>
@@ -183,6 +191,30 @@
 
   </div>
   {% endwith %}
+
+  {% if user.is_authenticated %}
+  <div class="modal fade" id="phoneQrModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-sm">
+      <div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">Open on phone</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+        <div class="modal-body text-center">
+          <img id="phoneQrImg" data-src="{% url 'phone_qr' %}" alt="QR code for this system" width="200" height="200" style="image-rendering:pixelated;">
+          <div class="small text-muted text-break mt-2">{{ request.scheme }}://{{ request.get_host }}/</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      var modal = document.getElementById('phoneQrModal');
+      if (!modal) return;
+      modal.addEventListener('show.bs.modal', function () {
+        var img = document.getElementById('phoneQrImg');
+        if (!img.getAttribute('src')) img.setAttribute('src', img.dataset.src);
+      });
+    });
+  </script>
+  {% endif %}
 
   <script src="{% static 'js/popper.min.js' %}"></script>
   <script src="{% static 'js/bootstrap.min.js' %}"></script>

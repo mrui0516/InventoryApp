@@ -61,19 +61,19 @@
 
 - **F2.1.1** 用户必须登录才能访问除登录页外的所有页面（`@login_required`）。
 - **F2.1.2 起点(`home`)**：登录后、点品牌、点底部 Business、访问根路径 `/`,都进 `home_view`,由它按角色分流——**经理进 Today(`daily_summary`)**,先看当天的数字、订单和待办;**员工进 `dashboard`**(员工版本只显示当天工作)。`LOGIN_REDIRECT_URL = 'home'`。未登录访问受保护页面跳转到 `/login/`。
-- **F2.1.3 侧栏按任务分组(2026-10-16 改版)**：原来 17 个按模块散排的入口,Dashboard / Today / Sales 三个都是"看经营",Order Control 和订单详情是同一张单的两条路。现在按"来做什么事"分组:
+- **F2.1.3 侧栏按任务分组(2026-10-16 改版)**：原来 17 个按模块散排的入口,改为按"来做什么事"分组:
   | 组 | 入口 | 可见 |
   |---|---|---|
-  | (首项) | **Business** — 一个入口,内有 Today / Orders / Trends 标签 | 全部 |
+  | (顶部) | **Today**、**Dashboard**、**Orders** —— 三个独立页面 | Today、Orders 全部(员工的 Today = `dashboard` 的员工版);Dashboard 经理 |
   | Sell | Sell(收银)、Pedido | Sell 全部;Pedido 经理 |
   | Products | Products、Catalog View、Shelf | Products 全部;其余经理 |
   | Customers | Customers、IOU | Customers 全部;IOU 经理 |
   | Purchasing | Inbound、Suppliers | 经理 |
   | Settings(默认折叠,身处其中某页时展开) | Attendance、Tools(经理);Team、Stores、Print Header、Order audit(超管) | 见左 |
 
-  员工只看到 Business / Sell / Products / Customers。**所有 URL 和权限不变**,只是入口重组。
-- **F2.1.4 手机底部 5 个标签**:Business · Sell · Products · Customers · More(More 打开完整侧栏)。Sales 并入 Business,Customers 进入底部。
-- **F2.1.5 Business 标签条**(`_business_tabs.html`):Today / Orders / Trends 三个页面顶部共用同一排切换。经理:Today(`/today/`)· Orders(`/sales-records/`)· Trends(`/dashboard/`);员工:Today(`/dashboard/`)· Orders。三个仍是独立页面,各自的 URL、权限、逻辑不动。
+  **所有 URL 和权限不变**。同一天曾试过把 Today / Orders / Dashboard 合成一个 "Business" 入口加页内标签条,老板看过后改回三个独立入口——三个平铺的菜单项更直接。
+- **F2.1.4 手机底部 5 个标签**:Today · Sell · Products · Customers · More(More 打开完整侧栏)。Today 标签只在 Today 页(员工:其 dashboard)亮起。
+- **F2.1.5 手机二维码在侧栏**:侧栏底部 "Open on phone" 按钮打开对话框显示二维码,所有登录用户可用。二维码由 `/phone-qr.png`(`phone_qr`)在**打开对话框时**才请求,不在每个页面都生成。数据库备份在 Settings → Tools。
 - **F2.1.6 当前店铺在手机顶栏常驻**:能切换店铺的人在顶栏直接看到下拉框;员工看到自己所属店铺名。以前店铺只在侧栏里,手机上要先点汉堡菜单。
 - **F2.1.7 提示消息每页都显示,包括首页**:以前首页把所有 Django 消息隐藏;而员工点进无权限页面会被弹回首页、原因作为消息带回,于是被拒却看不到原因。
 - **F2.1.8 一样东西一个名字**:收银统一叫 **Sell**(原 Outbound / Sell 混用);欠款统一叫 **IOU**(原 IOU / AR / Receivables 混用)。只改界面文字,URL 名、视图名、模型名不动。
@@ -82,7 +82,7 @@
 
 ### 模块 2.2 — 经营仪表盘（Dashboard → Business 下的 Trends）
 
-> 2026-10-16 起:经理视角下此页是 Business 里的 **Trends** 标签(标题改为 Trends),不再是登录起点。"Where to focus next"(各类排行)与 "Capital lock and slow movers"(资金占用、滞销)改为**可折叠**,手机默认收起、桌面默认展开(无 JS 时保持展开)。**数据库备份下载与手机二维码移到 Settings → Tools(`/tools/`,仅经理)**,首屏只留 "Open month history"。员工视角下此页仍是他们的 Today。
+> 2026-10-16 起:经理登录不再落在此页(改落 Today);此页保留名称 **Dashboard**,是侧栏的独立入口。"Where to focus next"(各类排行)与 "Capital lock and slow movers"(资金占用、滞销)改为**可折叠**,手机默认收起、桌面默认展开(无 JS 时保持展开)。**数据库备份下载移到 Settings → Tools(`/tools/`,仅经理),手机二维码移到侧栏**,首屏只留 "Open month history"。员工视角下此页仍是他们的 Today。
 
 入口：`/dashboard/`，核心实现 `services/dashboard.py::build_monthly_dashboard_snapshot`
 
@@ -427,9 +427,9 @@
 
 ### 模块 2.20 — 当日汇总（Daily Summary）
 
-入口：`/today/`（`daily_summary_view`，Business → **Today** 标签;**经理登录后的起点**）。面向收银/交班的当日速览，**按活动店铺过滤**（All stores 显示合计）。
+入口：`/today/`（`daily_summary_view`，侧栏顶部 **Today**;**经理登录后的起点**）。面向收银/交班的当日速览，**按活动店铺过滤**（All stores 显示合计）。
 
-- **F2.20.0 首屏先回答"现在做什么"(2026-10-16)**:最上方是常用操作 **Sell / Pedido / Inbound**,其下是待处理三项,各自链到处理的地方——**待收货的进货单**(`InboundOrder.status='pending_receipt'`)、**未结 IOU**(笔数 + 金额,按当前店铺)、**低库存商品**(链到 Trends 的 Low stock 区块 `#low-stock`)。低库存与 Trends 共用同一个阈值 `DASHBOARD_LOW_STOCK_BELOW = 5`,所以待办数字和它打开的列表不会对不上。**只在"今天"显示**:看历史某天时附一份今天的待办,读起来像那天的情况。
+- **F2.20.0 首屏先回答"现在做什么"(2026-10-16)**:最上方是常用操作 **Sell / Pedido / Inbound**,其下是待处理三项,各自链到处理的地方——**待收货的进货单**(`InboundOrder.status='pending_receipt'`)、**未结 IOU**(笔数 + 金额,按当前店铺)、**低库存商品**(链到 Dashboard 的 Low stock 区块 `#low-stock`)。低库存与 Dashboard 共用同一个阈值 `DASHBOARD_LOW_STOCK_BELOW = 5`,所以待办数字和它打开的列表不会对不上。**只在"今天"显示**:看历史某天时附一份今天的待办,读起来像那天的情况。
 
 - **F2.20.1** 默认展示当天；`?date=YYYY-MM-DD` 可查看历史某天（不超过今天），提供前一天/今天/后一天导航。
 - **F2.20.2 KPI**：销售额、订单数、件数、客单价、净利润（仅超级管理员）、当日入库件数与单数（库存全店共享，标注 all stores）。

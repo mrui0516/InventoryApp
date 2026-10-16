@@ -2101,14 +2101,21 @@ def _qr_png_base64(text):
 @login_required
 @manager_required
 def tools_view(request):
-    """Occasional jobs that used to sit in the dashboard header: the database
-    backup and the QR code that opens the system on a phone. Moved here so the
-    first screen of the day is about the day."""
-    site_url = request.build_absolute_uri('/')
-    return render(request, 'stock/tools.html', {
-        'site_url': site_url,
-        'qr_code_base64': _qr_png_base64(site_url),
-    })
+    """Occasional jobs that used to sit in the dashboard header."""
+    return render(request, 'stock/tools.html')
+
+
+@login_required
+def phone_qr(request):
+    """The QR that opens this system on a phone, as a PNG.
+
+    Served on its own rather than inlined into every page: the side-menu
+    dialog asks for it only when somebody opens it.
+    """
+    png = base64.b64decode(_qr_png_base64(request.build_absolute_uri('/')))
+    response = HttpResponse(png, content_type='image/png')
+    response['Cache-Control'] = 'private, max-age=3600'
+    return response
 
 
 @login_required

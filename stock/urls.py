@@ -14,6 +14,7 @@ urlpatterns = [
     path('dashboard/', views.dashboard_view, name='dashboard'),
     path('home/', views.home_view, name='home'),
     path('tools/', views.tools_view, name='tools'),
+    path('phone-qr.png', views.phone_qr, name='phone_qr'),
     path('sales-trend/', views.yearly_sales_view, name='sales_trend'),
     path('inbound/', views.inbound_view, name='inbound'),
     path('outbound/', views.outbound_view, name='outbound'),

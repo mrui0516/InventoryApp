@@ -747,6 +747,12 @@ class CustomerDetailViewTests(TestCase):
 
 
 class DashboardViewTests(TestCase):
+    def setUp(self):
+        # The dashboard caches its snapshots for five minutes. Without this, a
+        # test elsewhere that merely opens the dashboard on an empty database
+        # leaves zeros behind, and these read them - pass or fail by run order.
+        cache.clear()
+
     @classmethod
     def setUpTestData(cls):
         user_model = get_user_model()
@@ -9385,6 +9391,9 @@ class RoundANavigationTests(TestCase):
         cls.store_b = Store.objects.create(name="Lisboa", code="RA2")
         StoreProfile.objects.update_or_create(user=cls.employee, defaults={'store': cls.store_b})
 
+    def setUp(self):
+        cache.clear()   # several of these open the dashboard, which caches
+
     def _as(self, user):
         self.client.force_login(user)
 
@@ -9418,22 +9427,22 @@ class RoundANavigationTests(TestCase):
 
     def test_the_admin_menu_is_grouped_by_task(self):
         links, nav = self._menu(self.admin)
-        self.assertEqual(links, ["Business", "Sell", "Pedido", "Products", "Catalog View",
+        self.assertEqual(links, ["Today", "Dashboard", "Orders", "Sell", "Pedido",
+                                 "Products", "Catalog View",
                                  "Shelf", "Customers", "IOU", "Inbound", "Suppliers",
                                  "Attendance", "Tools", "Team", "Stores", "Print Header",
                                  "Order audit"])
         for group in ("Sell", "Products", "Customers", "Purchasing", "Settings"):
             self.assertIn(f">{group}<", nav)
 
-    def test_the_old_overlapping_entries_are_gone(self):
-        """Dashboard, Today and Sales were three ways into one place."""
+    def test_the_old_names_are_gone(self):
         links, _ = self._menu(self.admin)
-        for gone in ("Dashboard", "Today", "Sales", "Outbound", "IOU / AR", "Order Control"):
+        for gone in ("Business", "Sales", "Outbound", "IOU / AR", "Order Control"):
             self.assertNotIn(gone, links)
 
     def test_an_employee_sees_only_their_four_jobs(self):
         links, nav = self._menu(self.employee)
-        self.assertEqual(links, ["Business", "Sell", "Products", "Customers"])
+        self.assertEqual(links, ["Today", "Orders", "Sell", "Products", "Customers"])
         self.assertNotIn("Purchasing", nav)
         self.assertNotIn("Settings", nav)
 
@@ -9451,34 +9460,50 @@ class RoundANavigationTests(TestCase):
         bar = html[html.index('class="erp-tabbar"'):]
         bar = bar[:bar.index('</nav>')]
         self.assertEqual(re.findall(r'<span>([^<]+)</span>', bar),
-                         ["Business", "Sell", "Products", "Customers", "More"])
+                         ["Today", "Sell", "Products", "Customers", "More"])
 
-    # -- Business tabs -------------------------------------------------------
-    def test_a_manager_gets_today_orders_and_trends_everywhere_in_business(self):
+    # -- three separate pages ----------------------------------------------
+    def test_today_dashboard_and_orders_are_separate_pages(self):
+        """Tried as one Business hub with a tab strip on 2026-10-16 and taken
+        back the same day: three plain menu entries read more clearly."""
         self._as(self.admin)
         for name in ("daily_summary", "sales_records", "dashboard"):
             html = self.client.get(reverse(name)).content.decode()
-            strip = html[html.index('class="biz-tabs"'):html.index('</nav>', html.index('class="biz-tabs"'))]
-            self.assertEqual(re.findall(r'>(Today|Orders|Trends)</a>', strip),
-                             ["Today", "Orders", "Trends"], name)
+            self.assertNotIn("biz-tabs", html, name)
 
-    def test_an_employee_gets_today_and_orders_only(self):
-        self._as(self.employee)
-        for name in ("dashboard", "sales_records"):
-            html = self.client.get(reverse(name)).content.decode()
-            strip = html[html.index('class="biz-tabs"'):html.index('</nav>', html.index('class="biz-tabs"'))]
-            self.assertEqual(re.findall(r'>(Today|Orders|Trends)</a>', strip),
-                             ["Today", "Orders"], name)
+    def test_the_today_tab_lights_up_only_on_today(self):
+        self._as(self.admin)
+        html = self.client.get(reverse("dashboard")).content.decode()
+        bar = html[html.index('class="erp-tabbar"'):]
+        self.assertNotIn('class="erp-tab active" href="/home/"', bar)
+        html = self.client.get(reverse("daily_summary")).content.decode()
+        bar = html[html.index('class="erp-tabbar"'):]
+        self.assertIn('class="erp-tab active" href="/home/"', bar)
 
     # -- Trends and Tools ----------------------------------------------------
-    def test_backup_and_qr_moved_from_trends_to_tools(self):
+    def test_backup_moved_from_the_dashboard_to_tools(self):
         self._as(self.admin)
-        trends = self.client.get(reverse("dashboard")).content.decode()
-        self.assertNotIn(reverse("download_db_backup"), trends)
-        self.assertNotIn("mobileAccessModal", trends)
-        tools = self.client.get(reverse("tools"))
-        self.assertContains(tools, reverse("download_db_backup"))
-        self.assertContains(tools, "data:image/png;base64,")
+        dashboard = self.client.get(reverse("dashboard")).content.decode()
+        self.assertNotIn(reverse("download_db_backup"), dashboard)
+        self.assertNotIn("mobileAccessModal", dashboard)
+        self.assertContains(self.client.get(reverse("tools")), reverse("download_db_backup"))
+
+    def test_the_phone_qr_lives_in_the_side_menu_for_everyone(self):
+        """Employees had it on their dashboard before; they keep it."""
+        self._as(self.employee)
+        html = self.client.get(reverse("customer_search")).content.decode()
+        self.assertIn('data-bs-target="#phoneQrModal"', html)
+        response = self.client.get(reverse("phone_qr"))
+        self.assertEqual(response["Content-Type"], "image/png")
+        self.assertTrue(response.content.startswith(b"\x89PNG"))
+
+    def test_the_qr_is_not_generated_on_every_page(self):
+        """The dialog fetches it when opened; inlining it would run the QR
+        encoder on every request of every page."""
+        self._as(self.admin)
+        html = self.client.get(reverse("customer_search")).content.decode()
+        self.assertNotIn("data:image/png;base64,", html)
+        self.assertIn(f'data-src="{reverse("phone_qr")}"', html)
 
     def test_tools_are_for_managers(self):
         self._as(self.employee)
@@ -9486,8 +9511,8 @@ class RoundANavigationTests(TestCase):
 
     def test_the_deep_analysis_folds(self):
         self._as(self.admin)
-        trends = self.client.get(reverse("dashboard")).content.decode()
-        self.assertEqual(trends.count('<details class="dash-fold" data-fold open>'), 2)
+        dashboard = self.client.get(reverse("dashboard")).content.decode()
+        self.assertEqual(dashboard.count('<details class="dash-fold" data-fold open>'), 2)
 
     # -- Today ---------------------------------------------------------------
     def test_today_lists_what_is_waiting(self):

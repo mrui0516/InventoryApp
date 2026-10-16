@@ -1,14 +1,13 @@
 {% extends 'stock/base.html' %}
 {% load math_extras access_tags %}
-{% block title %}{% if user|is_manager_user %}Trends{% else %}Today{% endif %}{% endblock %}
+{% block title %}{% if user|is_manager_user %}Dashboard{% else %}Today{% endif %}{% endblock %}
 
 {% block content %}
-{% include 'stock/_business_tabs.html' %}
 
 <div class="dash-page">
   <div class="dash-head">
     <div>
-      <h1 class="dash-title">{% if isManger %}Trends{% else %}Today{% endif %}</h1>
+      <h1 class="dash-title">{% if isManger %}Dashboard{% else %}Today{% endif %}</h1>
     </div>
     <div class="dash-actions">
       {% if isManger %}<a class="btn btn-outline-primary" href="{{ sales_records_month_url }}">Open month history</a>{% endif %}
