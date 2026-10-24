@@ -119,6 +119,8 @@
 
 `--tabbar-h` 很重要：任何吸底元素都要写 `bottom:calc(var(--tabbar-h) + .5rem)`，否则手机上会被底部标签栏挡住。
 
+`position:sticky` 只在它的祖先都不裁剪溢出时才生效:祖先上的 `overflow:hidden`/`auto`(哪怕只是 `overflow-x:hidden`)会把该祖先变成一个"永远不滚动的滚动容器",吸底条就停在原地不动。手机端 `.erp-content` 为此用 `overflow-x:clip`(2026-10-24 前是 `hidden`,Add/Edit Product 和 Correct Order 的吸底保存条在手机上一直没吸住)。防止横向溢出时用 `clip`,不要用 `hidden`。
+
 旧页面里的 `--ds-*` / `--pl-*` / `--bg` 等都是指向同一套令牌的兼容别名，**新代码不要再用**。
 
 ---

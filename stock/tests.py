@@ -10017,3 +10017,62 @@ class CorrectionCenterLayoutTests(TestCase):
         html = self.client.get(reverse("sale_order_correction_center")).content.decode()
         body = html[html.index('<div class="cc-page">'):]
         self.assertNotIn('class="row', body)
+
+
+class CorrectOrderPhoneLayoutTests(TestCase):
+    """Correct Order on a phone (2026-10-24): two-row lines that open the edit
+    on a tap, a save bar with the total that stays on screen, Delete apart."""
+
+    CSS = 'stock/static/css/app.css'
+
+    def setUp(self):
+        self.admin = get_user_model().objects.create_superuser("cf_admin", password="pw123456")
+        self.client.force_login(self.admin)
+        cat = Category.objects.create(name="CF Cat")
+        product = Product.objects.create(name="Alpha", brand="X", barcode="9810000000001",
+                                         category=cat, default_price=Decimal("10"))
+        self.order = SaleOrder.objects.create()
+        Sale.objects.create(order=self.order, product=product, quantity=1,
+                            unit_price=Decimal("10"), payment_method="cash")
+
+    def _edit_html(self):
+        return self.client.get(reverse("sale_order_correction_edit", args=[self.order.id])).content.decode()
+
+    def test_a_line_has_its_phone_cells_and_opens_on_a_tap(self):
+        """Seven columns did not fit 390px: Edit and remove sat off-screen."""
+        html = self._edit_html()
+        for cls in ('class="c-prod"', 'class="text-end fw-semibold c-sub"',
+                    'class="cart-meta c-meta"', 'class="text-end c-act"'):
+            self.assertIn(cls, html)
+        self.assertIn("tr.addEventListener('click'", html)
+        # the remove button keeps its own job
+        self.assertIn("if (event.target.closest('button, a')) return;", html)
+
+    def test_the_save_bar_carries_the_total_and_not_the_delete(self):
+        html = self._edit_html()
+        start = html.index('<div class="cf-actions sticky-actions">')
+        bar = html[start:html.index('</div>', start)]
+        self.assertIn('id="bar-total"', bar)
+        self.assertIn('id="submitBtn"', bar)
+        self.assertNotIn('delete_order', bar)
+        danger = html[html.index('<div class="cf-danger">'):]
+        self.assertIn('name="delete_order"', danger[:danger.index('</div>')])
+
+    def test_a_new_order_has_nothing_to_delete(self):
+        html = self.client.get(reverse("sale_order_correction_create")).content.decode()
+        self.assertIn('id="bar-total"', html)
+        self.assertNotIn('<div class="cf-danger">', html)
+
+    def test_main_content_does_not_trap_sticky_bars(self):
+        """overflow-x:hidden on <main> made it a scroll container that never
+        scrolls, so every sticky save bar inside stayed where it was."""
+        with open(self.CSS, encoding='utf-8') as fh:
+            css = fh.read()
+        css = re.sub(r'/\*.*?\*/', '', css, flags=re.S)
+        rules = re.findall(r'\.erp-content\{([^}]*)\}', css)
+        last = None
+        for rule in rules:
+            found = re.findall(r'overflow-x\s*:\s*([a-z]+)', rule)
+            if found:
+                last = found[-1]
+        self.assertEqual(last, 'clip')

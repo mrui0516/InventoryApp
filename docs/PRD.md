@@ -289,6 +289,7 @@
   - 保存前对该订单当前状态做快照（`snapshot_sale_order`，含 `payments`），保存后对比生成 `before_data`/`after_data`。
   - **库存联动 / 完整回滚**：编辑保存时先"归还"旧行项目对应的 FIFO 批次库存（`_restore_current_stock`），删除全部旧 `Sale` 与旧 `SaleOrderPayment`，再按新行项目重新"消耗"库存（`_consume_current_stock`）并重建。**因此移除某个产品行会真正回滚：其库存归还、销售记录删除**（修复了旧 formset 隐藏 `DELETE` 字段失效、删除行不生效的缺陷）。
   - 操作记录写入 `SaleOrderChangeLog`（含操作人 `changed_by`、操作类型 create/update/delete、修改原因 `reason`、变更前后 JSON 快照、时间戳）。
+  - **手机版式**（≤760px，2026-10-24）：每个行项目两行——商品名（最多两行）+ 小计 / `数量 × 单价`、折扣、支付方式 + 删除 ×；**点整行打开编辑弹窗**（手机上不显示 Edit 按钮）。商品搜索结果标题最多两行，相近商品能分清。「总额 + Save + Cancel」固定在底部标签栏上方；**Delete entire order 单独放在最下方**、与 Save 分开。电脑端不变。
 - **F2.9.3** **删除订单修正**（`delete_sale_order_correction`）：删除订单前归还其全部行项目对应的库存批次，并记录一条 `action='delete'` 的变更日志。
 - **F2.9.4** 所有修正操作仅限超级管理员（Admin）执行（`@admin_required` 或等价校验）。
 - **F2.9.5 修正时改店铺**：管理员在订单修正表单可选择本单归属店铺（仅活跃店铺），用于修复下错店铺的订单；保存后订单与其全部明细行改到所选店铺，审计日志记录 旧→新 店铺。库存不受影响，不涉及应收(AR)。

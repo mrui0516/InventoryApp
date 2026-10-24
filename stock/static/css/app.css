@@ -635,8 +635,12 @@ body.anon .erp-content{
   /* Bottom keeps clearing the tab bar. This used to be the shorthand
      "padding:.9rem .8rem 2rem", which silently reset the padding-bottom the
      tab-bar block above reserves - so on every phone under 577px the last
-     56px of each page sat behind the bar. */
-  .erp-content{ padding:.9rem .8rem calc(2rem + var(--tabbar-h)); overflow-x:hidden; }
+     56px of each page sat behind the bar.
+     clip, not hidden: overflow-x:hidden made <main> a scroll container that
+     never scrolls, so every position:sticky save bar inside it (Add/Edit
+     Product, Correct Order) stayed put instead of riding above the tab bar.
+     hidden stays first as the fallback for browsers without clip. */
+  .erp-content{ padding:.9rem .8rem calc(2rem + var(--tabbar-h)); overflow-x:hidden; overflow-x:clip; }
   .container,.container-fluid{ padding-left:.8rem; padding-right:.8rem; }
   /* 16px inputs stop iOS Safari from zooming in on focus. !important on
      purpose: without it any page rule like ".pd-field input{font-size:.95rem}"

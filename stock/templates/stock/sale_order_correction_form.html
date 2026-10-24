@@ -70,6 +70,53 @@
   .price-opt:disabled{opacity:.45;cursor:not-allowed}
   .line-modal-preview{display:flex;justify-content:space-between;gap:1rem;padding:.75rem .9rem;border-radius:.8rem;background:#eef7f1;border:1px solid #cde7d6}
   .line-modal-preview strong{display:block;font-size:1.05rem;margin-top:.15rem}
+
+  /* The save row; on a phone it stays at the bottom of the screen. */
+  .cf-actions{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+  .cf-bar-total{display:none}
+  .cf-danger{margin-top:1.4rem;padding-top:.9rem;border-top:1px dashed var(--app-border-strong)}
+  .cart-meta{display:none}
+
+  /* ---- phone ----------------------------------------------------------
+     Seven columns cannot fit 390px: the discount, payment, subtotal and the
+     Edit / remove buttons were off the right edge behind a sideways scroll.
+     Each line becomes two rows - what it is and what it comes to, then how
+     many at what price and how it was paid - and tapping it opens the edit. */
+  @media (max-width: 760px){
+    .corr-title{font-size:1.4rem}
+    .table-responsive{overflow-x:visible}
+    .cart-table thead{display:none}
+    .cart-table,.cart-table tbody{display:block}
+    .cart-table tr{display:grid;grid-template-columns:minmax(0,1fr) auto;
+                   grid-template-areas:"prod sub" "meta act";gap:.3rem .6rem;
+                   padding:.6rem .15rem;border-bottom:1px solid var(--app-border);cursor:pointer}
+    .cart-table td{display:block;border:0;padding:0;white-space:normal}
+    .cart-table th:first-child,.cart-table td:first-child{min-width:0}
+    .cart-table td.c-prod{grid-area:prod;min-width:0}
+    .cart-table td.c-sub{grid-area:sub;text-align:right;font-weight:800;font-size:1rem;
+                         color:var(--app-text);white-space:nowrap}
+    .cart-table td.c-meta{grid-area:meta;display:flex;flex-wrap:wrap;align-items:center;
+                          gap:.25rem .5rem;padding-left:calc(40px + .6rem);font-size:.9rem;
+                          color:var(--app-primary);font-variant-numeric:tabular-nums}
+    .cart-table td.c-act{grid-area:act;align-self:center}
+    .cart-table td.c-qty,.cart-table td.c-unit,.cart-table td.c-disc,.cart-table td.c-pay{display:none}
+    .cart-table .js-edit{display:none}
+    .cart-table .js-del{min-width:40px;min-height:40px}
+    .cart-meta .disc{color:#b45309;font-weight:700}
+    .cart-product{grid-template-columns:40px minmax(0,1fr);gap:.6rem}
+    .cart-thumb,.cart-thumb-empty{width:40px;height:40px}
+    .cart-name{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+               font-weight:700;color:var(--app-text)}
+    /* near-identical products have to be told apart in the search list */
+    .picker-title{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+
+    .cf-actions{position:sticky;z-index:20;background:#fff;border:1px solid var(--app-border);
+                border-radius:var(--app-radius);box-shadow:var(--app-shadow-md);padding:.5rem .6rem;
+                flex-wrap:nowrap}
+    .cf-bar-total{display:block;margin-right:auto;font-weight:900;font-size:1.15rem;
+                  color:var(--app-text);font-variant-numeric:tabular-nums;white-space:nowrap}
+    .cf-actions .btn{white-space:nowrap}
+  }
 </style>
 
 <div class="corr-page">
@@ -174,14 +221,20 @@
           <div class="text-danger small mt-2 d-none" id="cart-warning"></div>
         </section>
 
-        <div class="d-flex gap-2 flex-wrap">
+        {# On a phone this row stays on screen with the total, so saving never #}
+        {# needs a scroll to the end of a long order.                            #}
+        <div class="cf-actions sticky-actions">
+          <span class="cf-bar-total" id="bar-total" aria-live="polite">EUR 0.00</span>
           <button type="submit" class="btn btn-primary" id="submitBtn">{% if is_create %}Create historical order{% else %}Save correction{% endif %}</button>
           <a href="{% url 'sale_order_correction_center' %}" class="btn btn-outline-secondary">Cancel</a>
-          {% if order %}
-            <button type="submit" name="delete_order" value="1" class="btn btn-outline-danger"
-                    onclick="return confirm('Delete this order and restore its quantity back to current stock?')">Delete entire order</button>
-          {% endif %}
         </div>
+        {% if order %}
+          {# Kept well away from Save: it removes the order and returns its stock. #}
+          <div class="cf-danger">
+            <button type="submit" name="delete_order" value="1" class="btn btn-sm btn-outline-danger"
+                    onclick="return confirm('Delete this order and restore its quantity back to current stock?')">Delete entire order</button>
+          </div>
+        {% endif %}
       </form>
     </div>
 
@@ -404,27 +457,39 @@ document.addEventListener('DOMContentLoaded', () => {
         : '<div class="cart-thumb-empty">No image</div>';
       const lineDisc = (Number(item.discount) || 0) * (Number(item.qty) || 0);
       tr.innerHTML = `
-        <td>
+        <td class="c-prod">
           <div class="cart-product">
             ${thumb}
-            <div>
-              <div class="fw-semibold">${escapeHtml(item.title)}</div>
+            <div style="min-width:0">
+              <div class="fw-semibold cart-name">${escapeHtml(item.title)}</div>
               <div class="small text-muted">${escapeHtml(item.barcode || '')}</div>
             </div>
           </div>
         </td>
-        <td class="text-center">${item.qty}</td>
-        <td class="text-end">${finalUnit.toFixed(2)}</td>
-        <td class="text-end">${lineDisc > 0 ? '&minus;' + lineDisc.toFixed(2) : '&mdash;'}</td>
-        <td class="text-center">${payCellHtml(item)}</td>
-        <td class="text-end fw-semibold">${lineSubtotal(item).toFixed(2)}</td>
-        <td class="text-end">
+        <td class="text-center c-qty">${item.qty}</td>
+        <td class="text-end c-unit">${finalUnit.toFixed(2)}</td>
+        <td class="text-end c-disc">${lineDisc > 0 ? '&minus;' + lineDisc.toFixed(2) : '&mdash;'}</td>
+        <td class="text-center c-pay">${payCellHtml(item)}</td>
+        <td class="text-end fw-semibold c-sub">${lineSubtotal(item).toFixed(2)}</td>
+        <td class="cart-meta c-meta">
+          <span>${item.qty} &times; ${finalUnit.toFixed(2)}</span>
+          ${lineDisc > 0 ? '<span class="disc">&minus;' + lineDisc.toFixed(2) + '</span>' : ''}
+          ${payCellHtml(item)}
+        </td>
+        <td class="text-end c-act">
           <div class="d-flex gap-1 justify-content-end">
             <button type="button" class="btn btn-sm btn-outline-secondary js-edit">Edit</button>
-            <button type="button" class="btn btn-sm btn-outline-danger js-del" title="Remove line">&times;</button>
+            <button type="button" class="btn btn-sm btn-outline-danger js-del" title="Remove line" aria-label="Remove ${escapeHtml(item.title)}">&times;</button>
           </div>
         </td>`;
       tr.querySelector('.js-edit').addEventListener('click', () => openLineModal(item, item));
+      // A tap anywhere on the line edits it (the only way on a phone, where
+      // the Edit button is hidden); the remove button and the photo keep
+      // their own jobs.
+      tr.addEventListener('click', (event) => {
+        if (event.target.closest('button, a')) return;
+        openLineModal(item, item);
+      });
       tr.querySelector('.js-del').addEventListener('click', () => { cart = cart.filter((x) => x.uid !== item.uid); renderCart(); });
       cartBody.appendChild(tr);
     });
@@ -438,6 +503,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const allPaid = cart.every(linePayComplete);
 
     orderTotalEl.textContent = formatMoney(total);
+    const barTotal = document.getElementById('bar-total');
+    if (barTotal) barTotal.textContent = formatMoney(total);
     const pills = METHODS.filter((m) => payments[m] > 0).map((m) => `<span class="pay-pill">${paymentLabel(m)} €${payments[m].toFixed(2)}</span>`);
     paySummary.innerHTML = pills.length ? pills.join('') : '<span class="mini">No payment yet</span>';
 
