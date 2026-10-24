@@ -1628,7 +1628,9 @@ class SaleOrderCorrectionTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Order Correction Center")
-        self.assertContains(response, "Add missing historical order")
+        # Shortened for the phone header on 2026-10-24.
+        self.assertContains(response, "Add missing order")
+        self.assertContains(response, reverse("sale_order_correction_create"))
 
     def test_admin_can_open_order_correction_form_pages(self):
         purchase = Purchase.objects.create(
@@ -2495,8 +2497,9 @@ class MultiStoreTests(TestCase):
         self.assertEqual(groups[0]["date"], today)
         # Both stores' orders land in today's group under All stores.
         self.assertEqual(groups[0]["count"], 2)
-        # Store column header + both store names render.
-        self.assertContains(response, "<th>Store</th>")
+        # Store column header + both store names render (rows are a compact
+        # list since 2026-10-24, so the header is a span, not a <th>).
+        self.assertContains(response, "<span>Store</span>")
         self.assertContains(response, self.store_a.name)
         self.assertContains(response, self.store_b.name)
 
@@ -9969,3 +9972,48 @@ class PagePolishTests(TestCase):
     def test_pedido_has_no_explanatory_line(self):
         response = self.client.get(reverse("pedido"))
         self.assertNotContains(response, "por omissão")
+
+
+class CorrectionCenterLayoutTests(TestCase):
+    """The correction center on the Orders pattern (2026-10-24)."""
+
+    def setUp(self):
+        self.admin = get_user_model().objects.create_superuser("cc_admin", password="pw123456")
+        self.client.force_login(self.admin)
+        cat = Category.objects.create(name="CC Cat")
+        self.product = Product.objects.create(name="Alpha", brand="X", barcode="9800000000001",
+                                              category=cat, default_price=Decimal("10"))
+
+    def _order(self, price="10"):
+        order = SaleOrder.objects.create()
+        Sale.objects.create(order=order, product=self.product, quantity=1,
+                            unit_price=Decimal(price), payment_method="cash")
+        return order
+
+    def test_the_whole_row_opens_the_correction_form(self):
+        """On a phone a tap on the order goes straight to correcting it."""
+        order = self._order()
+        html = self.client.get(reverse("sale_order_correction_center")).content.decode()
+        self.assertIn(f'class="cc-open" href="{reverse("sale_order_correction_edit", args=[order.id])}"', html)
+        self.assertIn(reverse("sale_order_detail", args=[order.id]), html)   # Print, desktop
+
+    def test_a_day_heading_counts_the_whole_day_across_pages(self):
+        """A day split over two pages used to show a partial total on each."""
+        for _ in range(27):
+            self._order("10")
+        response = self.client.get(reverse("sale_order_correction_center"))
+        group = response.context["order_date_groups"][0]
+        self.assertEqual(len(group["orders"]), 25)     # one page of rows
+        self.assertEqual(group["count"], 27)           # the whole day
+        self.assertEqual(group["amount"], Decimal("270.00"))
+
+    def test_the_log_is_a_fold(self):
+        html = self.client.get(reverse("sale_order_correction_center")).content.decode()
+        self.assertIn('<details class="cc-log" id="cc-log" open>', html)
+
+    def test_no_bootstrap_grid_row_left_to_overflow_a_phone(self):
+        """The old filter card used .row inside a padded card, whose negative
+        margins pushed the page wider than a phone."""
+        html = self.client.get(reverse("sale_order_correction_center")).content.decode()
+        body = html[html.index('<div class="cc-page">'):]
+        self.assertNotIn('class="row', body)

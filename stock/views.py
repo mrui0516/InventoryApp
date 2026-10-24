@@ -3047,6 +3047,24 @@ def sale_order_correction_center_view(request):
         current_group['count'] += 1
         current_group['amount'] += order.view_total_amount
 
+    # A day heading carries the whole day, not just the part on this page: a
+    # day split across two pages used to show two different partial totals.
+    page_days = [group['date'] for group in order_date_groups]
+    if page_days:
+        day_totals = {}
+        day_orders = (orders_qs.filter(created_at__date__in=page_days)
+                      .prefetch_related('items'))
+        for order in day_orders:
+            day = timezone.localtime(order.created_at).date()
+            bucket = day_totals.setdefault(day, {'count': 0, 'amount': Decimal('0.00')})
+            bucket['count'] += 1
+            bucket['amount'] += sum((item.quantity * item.unit_price
+                                     for item in order.items.all()), Decimal('0.00'))
+        for group in order_date_groups:
+            whole = day_totals.get(group['date'])
+            if whole:
+                group['count'], group['amount'] = whole['count'], whole['amount']
+
     recent_logs = (
         SaleOrderChangeLog.objects
         .select_related('changed_by', 'order')

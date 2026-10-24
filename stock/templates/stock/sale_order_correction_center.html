@@ -3,155 +3,196 @@
 
 {% block content %}
 <style>
-  .correction-page{display:grid;gap:1.2rem}
-  .correction-card{background:#fff;border:1px solid #d9e2ee;border-radius:1rem;box-shadow:0 14px 34px rgba(15,23,42,.06)}
-  .correction-pad{padding:1.1rem}
-  .eyebrow{display:inline-flex;align-items:center;padding:.3rem .7rem;border-radius:999px;background:#eaf2ff;color:#1747a6;font-size:.78rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase}
-  .page-head,.row-head{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap}
-  .page-sub{margin:.35rem 0 0;color:#526071;max-width:62rem}
-  .mini{color:#526071;font-size:.88rem}
-  .table-shell{overflow:auto;border:1px solid #d9e2ee;border-radius:1rem}
-  .table thead th{background:#eef4fb;color:#243549;font-size:.79rem;font-weight:900;letter-spacing:.05em;text-transform:uppercase;border-bottom:1px solid #d9e2ee}
-  .log-list{display:grid;gap:.8rem}
-  .log-item{padding:.9rem;border:1px solid #d9e2ee;border-radius:1rem;background:#f9fbff}
-  .pill{display:inline-flex;align-items:center;padding:.24rem .55rem;border-radius:999px;background:#edf4ff;border:1px solid #d3e0f2;color:#173761;font-weight:800;font-size:.82rem}
+  /* The Orders pattern: one query bar, one compact row per order, the date
+     as a heading. On a phone each order is two lines and the whole row opens
+     the correction form. */
+  .cc-page{ --line:var(--app-border); --line2:var(--app-border-strong); --ink:var(--app-text);
+            --muted:var(--app-muted); --acc:var(--app-accent); --acc-ink:var(--app-accent-ink); }
+
+  .cc-head{ display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; margin-bottom:.7rem; }
+  .cc-head .spacer{ flex:1 1 auto; }
+  .cc-tag{ font-size:.74rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
+           color:var(--acc-ink); background:var(--app-accent-soft); border:1px solid var(--app-accent-line);
+           border-radius:999px; padding:.15rem .55rem; }
+  .cc-store{ font-size:.82rem; font-weight:700; color:var(--app-primary); background:var(--app-surface-2);
+             border:1px solid var(--line); border-radius:999px; padding:.15rem .6rem; }
+
+  .cc-query{ border:1px solid var(--line); border-radius:var(--app-radius); background:var(--app-surface);
+             padding:.6rem .7rem; margin-bottom:.7rem; display:flex; gap:.4rem; flex-wrap:wrap; align-items:center; }
+  .cc-query input{ border:1px solid var(--line2); border-radius:var(--app-radius-sm); padding:.38rem .55rem;
+                   font-size:.9rem; color:var(--ink); min-width:0; }
+  .cc-query .q{ flex:1 1 16rem; max-width:26rem; }
+  .cc-query input[type=date]{ flex:0 1 9.5rem; }
+  .cc-query .reset{ font-size:.86rem; font-weight:700; color:var(--acc-ink); text-decoration:none; }
+
+  .cc-layout{ display:grid; gap:.8rem; grid-template-columns:minmax(0,1fr) 20rem; align-items:start; }
+
+  .cc-list{ border:1px solid var(--line); border-radius:var(--app-radius); background:var(--app-surface);
+            overflow:hidden; box-shadow:var(--app-shadow); }
+  .cc-listhead{ display:flex; justify-content:space-between; align-items:center; padding:.5rem .75rem;
+                border-bottom:1px solid var(--line); }
+  .cc-listhead h2{ margin:0; font-size:1rem; font-weight:800; color:var(--ink); }
+  .cc-count{ font-size:.86rem; font-weight:700; color:var(--muted); }
+  .cc-row{ display:flex; align-items:stretch; border-bottom:1px solid var(--line); }
+  .cc-row:last-child{ border-bottom:0; }
+  .cc-open{ flex:1 1 auto; min-width:0; display:grid; align-items:center; gap:.6rem;
+            padding:.5rem .75rem; color:var(--ink); text-decoration:none; font-size:.95rem;
+            grid-template-columns:3.2rem 4.4rem minmax(0,1.6fr) 3.4rem 6.8rem; }
+  .with-store .cc-open{ grid-template-columns:3.2rem 4.4rem minmax(0,1.4fr) minmax(0,.8fr) 3.4rem 6.8rem; }
+  .cc-open:hover{ background:var(--app-accent-soft); color:var(--ink); }
+  .cc-open > span{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cc-open .t,.cc-open .q,.cc-open .a{ font-variant-numeric:tabular-nums; }
+  .cc-open .t{ color:var(--muted); }
+  .cc-open .i{ font-weight:800; color:var(--app-primary); }
+  .cc-open .c{ font-weight:600; }
+  .cc-open .c small{ display:block; font-size:.82rem; font-weight:600; color:var(--muted);
+                     overflow:hidden; text-overflow:ellipsis; }
+  .cc-open .s{ color:var(--app-primary); font-size:.88rem; }
+  .cc-open .q,.cc-open .a{ text-align:right; }
+  .cc-open .q small{ color:var(--muted); }
+  .cc-open .a{ font-weight:800; }
+  .cc-print{ flex:0 0 4.4rem; display:grid; place-items:center; font-size:.86rem; font-weight:700;
+             color:var(--acc-ink); text-decoration:none; border-left:1px solid var(--line); }
+  .cc-print:hover{ background:var(--app-accent-soft); }
+  .cc-headrow{ background:var(--app-surface-2); }
+  .cc-headrow .cc-open{ font-size:.74rem; font-weight:800; text-transform:uppercase; letter-spacing:.05em;
+                        color:var(--muted); cursor:default; }
+  .cc-headrow .cc-open:hover{ background:none; }
+  .cc-day{ display:flex; justify-content:space-between; gap:.6rem; flex-wrap:wrap; padding:.38rem .75rem;
+           background:var(--app-surface-2); border-bottom:1px solid var(--line); font-size:.88rem; }
+  .cc-day .d{ font-weight:800; color:var(--ink); }
+  .cc-day .tot{ color:var(--muted); font-weight:600; font-variant-numeric:tabular-nums; }
+  .cc-empty{ padding:1.4rem .9rem; text-align:center; color:var(--muted); }
+  .cc-pager{ display:flex; justify-content:space-between; align-items:center; gap:.5rem; flex-wrap:wrap;
+             padding:.55rem .75rem; border-top:1px solid var(--line); background:var(--app-surface-2);
+             font-size:.86rem; color:var(--muted); }
+
+  /* correction log: a side column on a wide screen, a fold on a phone */
+  .cc-log{ border:1px solid var(--line); border-radius:var(--app-radius); background:var(--app-surface);
+           box-shadow:var(--app-shadow); }
+  .cc-log > summary{ list-style:none; cursor:default; padding:.5rem .75rem; border-bottom:1px solid var(--line);
+                     font-size:1rem; font-weight:800; color:var(--ink); }
+  .cc-log > summary::-webkit-details-marker{ display:none; }
+  .cc-log-item{ padding:.5rem .75rem; border-bottom:1px solid var(--line); font-size:.9rem; }
+  .cc-log-item:last-child{ border-bottom:0; }
+  .cc-log-top{ display:flex; justify-content:space-between; gap:.5rem; align-items:baseline; }
+  .cc-act{ font-size:.74rem; font-weight:800; text-transform:uppercase; letter-spacing:.04em;
+           padding:.08rem .45rem; border-radius:999px; background:var(--app-accent-soft); color:var(--acc-ink); }
+  .cc-act.delete{ background:var(--app-danger-soft); color:var(--app-danger); }
+  .cc-when{ font-size:.84rem; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .cc-log-item .who{ color:var(--app-primary); font-weight:600; }
+  .cc-log-item .why{ color:var(--ink); margin-top:.15rem; }
+  .cc-log-item a{ font-weight:700; color:var(--acc-ink); text-decoration:none; }
+
+  @media (max-width: 1100px){
+    .cc-layout{ grid-template-columns:1fr; }
+  }
+  @media (max-width: 760px){
+    .cc-headrow{ display:none; }
+    .cc-print{ display:none; }        /* the form page has its own Print */
+    .cc-query .q{ max-width:none; flex-basis:100%; }
+    .cc-query input[type=date]{ flex:1 1 8rem; }
+    .cc-open, .with-store .cc-open{
+      grid-template-columns:auto auto minmax(0,1fr) auto;
+      grid-template-areas:"i t . a" "c c q s";
+      gap:.1rem .5rem; padding:.55rem .75rem; }
+    .cc-open .i{ grid-area:i; } .cc-open .t{ grid-area:t; } .cc-open .a{ grid-area:a; }
+    .cc-open .c{ grid-area:c; } .cc-open .q{ grid-area:q; font-size:.88rem; }
+    .cc-open .s{ grid-area:s; text-align:right; }
+    .cc-log > summary{ cursor:pointer; }
+    .cc-log > summary::after{ content:" \25BE"; color:var(--muted); }
+    .cc-log[open] > summary::after{ content:" \25B4"; }
+  }
 </style>
 
-<div class="correction-page">
-  <div class="page-head">
-    <div>
-      <span class="eyebrow">Admin only</span>
-      <h1 class="page-title">Order Correction Center</h1>
-    </div>
-    <div class="d-flex gap-2 flex-wrap">
-      <a class="btn btn-primary" href="{% url 'sale_order_correction_create' %}">Add missing historical order</a>
-      <a class="btn btn-outline-secondary" href="{% url 'sales_records' %}">Back to history</a>
-    </div>
+<div class="cc-page">
+  <div class="cc-head">
+    <h1 class="page-title">Order Correction Center</h1>
+    <span class="cc-tag">Admin only</span>
+    <span class="cc-store">{% if active_store_is_all or not active_store %}All stores{% else %}{{ active_store.name }}{% endif %}</span>
+    <div class="spacer"></div>
+    <a class="btn btn-primary btn-sm" href="{% url 'sale_order_correction_create' %}">Add missing order</a>
   </div>
 
-  <form method="get" class="correction-card correction-pad">
-    <div class="row g-3 align-items-end">
-      <div class="col-lg-5">
-        <label class="form-label fw-bold">Search</label>
-        <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Order #, customer name, NIF, or note">
-      </div>
-      <div class="col-md-3 col-lg-2">
-        <label class="form-label fw-bold">From</label>
-        <input type="date" name="start_date" value="{{ start_date }}" class="form-control">
-      </div>
-      <div class="col-md-3 col-lg-2">
-        <label class="form-label fw-bold">To</label>
-        <input type="date" name="end_date" value="{{ end_date }}" class="form-control">
-      </div>
-      <div class="col-md-6 col-lg-3 d-flex gap-2">
-        <button type="submit" class="btn btn-primary">Apply</button>
-        <a href="{% url 'sale_order_correction_center' %}" class="btn btn-outline-dark">Reset</a>
-      </div>
-    </div>
+  <form method="get" class="cc-query" role="search">
+    <input type="search" name="q" value="{{ query }}" class="q" placeholder="Order #, customer, NIF or note" aria-label="Search">
+    <input type="date" name="start_date" value="{{ start_date }}" aria-label="From">
+    <input type="date" name="end_date" value="{{ end_date }}" aria-label="To">
+    <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+    {% if query or start_date or end_date %}<a class="reset" href="{% url 'sale_order_correction_center' %}">Clear</a>{% endif %}
   </form>
 
-  <div class="row g-4">
-    <div class="col-xl-8">
-      <div class="correction-card correction-pad">
-        <div class="row-head mb-3">
-          <div>
-            <h2 class="h4 mb-1">Historical orders</h2>
-          </div>
-          <span class="pill">{{ page_obj.paginator.count }} order{{ page_obj.paginator.count|pluralize }}</span>
-        </div>
-
-        <div class="table-shell">
-          <table class="table table-hover mb-0">
-            <thead>
-              <tr>
-                <th>Order</th>
-                <th>Customer</th>
-                {% if store_is_all %}<th>Store</th>{% endif %}
-                <th>Time</th>
-                <th class="text-center">Qty</th>
-                <th class="text-end">Amount</th>
-                <th class="text-end">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for group in order_date_groups %}
-                <tr class="table-light date-group-row">
-                  <th colspan="{% if store_is_all %}7{% else %}6{% endif %}" class="py-2">
-                    {{ group.date|date:"Y-m-d (D)" }}
-                    <span class="mini fw-normal ms-2">{{ group.count }} order{{ group.count|pluralize }} · EUR {{ group.amount|floatformat:2 }}</span>
-                  </th>
-                </tr>
-                {% for order in group.orders %}
-                  <tr>
-                    <td>
-                      <div class="fw-bold">#{{ order.id }}</div>
-                      {% if order.note %}<div class="mini">{{ order.note }}</div>{% endif %}
-                    </td>
-                    <td>{% if order.customer %}{{ order.customer.name }}{% else %}<span class="text-muted">Walk-in / no customer</span>{% endif %}</td>
-                    {% if store_is_all %}<td>{{ order.view_store }}</td>{% endif %}
-                    <td>{{ order.created_at|date:"H:i" }}</td>
-                    <td class="text-center">{{ order.view_total_qty }}</td>
-                    <td class="text-end fw-bold">EUR {{ order.view_total_amount|floatformat:2 }}</td>
-                    <td class="text-end">
-                      <div class="d-flex justify-content-end gap-2">
-                        <a class="btn btn-sm btn-outline-secondary" href="{% url 'sale_order_detail' order.id %}">Print</a>
-                        <a class="btn btn-sm btn-primary" href="{% url 'sale_order_correction_edit' order.id %}">Correct</a>
-                      </div>
-                    </td>
-                  </tr>
-                {% endfor %}
-              {% empty %}
-                <tr>
-                  <td colspan="{% if store_is_all %}7{% else %}6{% endif %}" class="text-center py-4 text-muted">No matching orders found.</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-
-        {% if page_obj.paginator.num_pages > 1 %}
-          <div class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
-            <div class="mini">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</div>
-            <div class="d-flex gap-2">
-              {% if page_obj.has_previous %}
-                <a class="btn btn-sm btn-outline-secondary" href="?q={{ query|urlencode }}&start_date={{ start_date|urlencode }}&end_date={{ end_date|urlencode }}&page={{ page_obj.previous_page_number }}">Previous</a>
-              {% endif %}
-              {% if page_obj.has_next %}
-                <a class="btn btn-sm btn-outline-secondary" href="?q={{ query|urlencode }}&start_date={{ start_date|urlencode }}&end_date={{ end_date|urlencode }}&page={{ page_obj.next_page_number }}">Next</a>
-              {% endif %}
-            </div>
-          </div>
-        {% endif %}
+  <div class="cc-layout">
+    <section class="cc-list">
+      <div class="cc-listhead">
+        <h2>Orders</h2>
+        <span class="cc-count">{{ page_obj.paginator.count }} order{{ page_obj.paginator.count|pluralize }}</span>
       </div>
-    </div>
-
-    <div class="col-xl-4">
-      <div class="correction-card correction-pad">
-        <div class="row-head mb-3">
-          <div>
-            <h2 class="h4 mb-1">Recent correction log</h2>
+      {% if order_date_groups %}
+        <div class="cc-row cc-headrow{% if store_is_all %} with-store{% endif %}" aria-hidden="true">
+          <div class="cc-open"><span>Time</span><span>Order</span><span>Customer</span>{% if store_is_all %}<span>Store</span>{% endif %}<span class="q">Items</span><span class="a">Amount</span></div>
+          <span class="cc-print"></span>
+        </div>
+      {% endif %}
+      {% for group in order_date_groups %}
+        <div class="cc-day">
+          <span class="d">{{ group.date|date:"D j M Y" }}</span>
+          <span class="tot">{{ group.count }} order{{ group.count|pluralize }} &middot; EUR {{ group.amount|floatformat:2 }}</span>
+        </div>
+        {% for order in group.orders %}
+          <div class="cc-row{% if store_is_all %} with-store{% endif %}">
+            <a class="cc-open" href="{% url 'sale_order_correction_edit' order.id %}" aria-label="Correct order #{{ order.id }}">
+              <span class="t">{{ order.created_at|date:"H:i" }}</span>
+              <span class="i">#{{ order.id }}</span>
+              <span class="c">{% if order.customer %}{{ order.customer.name }}{% else %}Walk-in{% endif %}{% if order.note %}<small>{{ order.note }}</small>{% endif %}</span>
+              {% if store_is_all %}<span class="s">{{ order.view_store }}</span>{% endif %}
+              <span class="q">{{ order.view_total_qty }}<small> pcs</small></span>
+              <span class="a">EUR {{ order.view_total_amount|floatformat:2 }}</span>
+            </a>
+            <a class="cc-print" href="{% url 'sale_order_detail' order.id %}">Print</a>
           </div>
+        {% endfor %}
+      {% empty %}
+        <div class="cc-empty">No matching orders.</div>
+      {% endfor %}
+      {% if page_obj.paginator.num_pages > 1 %}
+        <div class="cc-pager">
+          <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+          <span class="d-flex gap-2">
+            {% if page_obj.has_previous %}<a class="btn btn-sm btn-outline-secondary" href="?q={{ query|urlencode }}&amp;start_date={{ start_date|urlencode }}&amp;end_date={{ end_date|urlencode }}&amp;page={{ page_obj.previous_page_number }}">Previous</a>{% endif %}
+            {% if page_obj.has_next %}<a class="btn btn-sm btn-outline-secondary" href="?q={{ query|urlencode }}&amp;start_date={{ start_date|urlencode }}&amp;end_date={{ end_date|urlencode }}&amp;page={{ page_obj.next_page_number }}">Next</a>{% endif %}
+          </span>
         </div>
-        <div class="log-list">
-          {% for log in recent_logs %}
-            <div class="log-item">
-              <div class="d-flex justify-content-between gap-2">
-                <span class="pill">{{ log.action|title }}</span>
-                <span class="mini">{{ log.created_at|date:"Y-m-d H:i" }}</span>
-              </div>
-              <div class="mt-2 fw-bold">Order #{{ log.order_id_snapshot }}</div>
-              <div class="mini">By {% if log.changed_by %}{{ log.changed_by.username }}{% else %}Unknown{% endif %}</div>
-              {% if log.reason %}<div class="mt-2">{{ log.reason }}</div>{% endif %}
-              {% if log.order %}
-                <div class="mt-2"><a href="{% url 'sale_order_correction_edit' log.order.id %}">Open corrected order</a></div>
-              {% endif %}
-            </div>
-          {% empty %}
-            <div class="mini">No correction logs yet.</div>
-          {% endfor %}
+      {% endif %}
+    </section>
+
+    <details class="cc-log" id="cc-log" open>
+      <summary>Recent corrections</summary>
+      {% for log in recent_logs %}
+        <div class="cc-log-item">
+          <div class="cc-log-top">
+            <span><span class="cc-act{% if log.action == 'delete' %} delete{% endif %}">{{ log.action }}</span>
+              {% if log.order %}<a href="{% url 'sale_order_correction_edit' log.order.id %}">#{{ log.order_id_snapshot }}</a>{% else %}<b>#{{ log.order_id_snapshot }}</b>{% endif %}</span>
+            <span class="cc-when">{{ log.created_at|date:"Y-m-d H:i" }}</span>
+          </div>
+          <div class="who">{% if log.changed_by %}{{ log.changed_by.username }}{% else %}Unknown{% endif %}</div>
+          {% if log.reason %}<div class="why">{{ log.reason }}</div>{% endif %}
         </div>
-      </div>
-    </div>
+      {% empty %}
+        <div class="cc-log-item cc-when">No corrections yet.</div>
+      {% endfor %}
+    </details>
   </div>
 </div>
+
+<script>
+  // On a phone the log folds away below the orders; it stays open on a wide
+  // screen, where it sits beside them. No script means it stays open.
+  (function () {
+    var log = document.getElementById('cc-log');
+    if (!log) return;
+    if (window.matchMedia('(max-width: 760px)').matches) log.open = false;
+    else log.addEventListener('toggle', function () { if (!log.open) log.open = true; });
+  }());
+</script>
 {% endblock %}

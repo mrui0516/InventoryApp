@@ -100,7 +100,7 @@
 
 **字号下限**(老板反馈"有些字体过小"):行内正文约 .95rem,次要信息不低于 .85rem,大写标签不低于 .74rem;次要文字用 `--app-muted` / `--app-primary`,不要自造更浅的灰。
 
-已采用:Orders(`sales_records.html` + `_orders_rows.html`)、Customers 手机端(`customer_search.html`)。
+已采用:Orders(`sales_records.html` + `_orders_rows.html`)、Customers 手机端(`customer_search.html`)、Order Correction Center(`sale_order_correction_center.html`,整行直接进修正表单,不用详情层)。
 
 > **待办**:这套样式目前还内联在 `sales_records.html` / `customer_search.html` 里(`op-*` / `cl-*`),与本文"不写页面内联 style"的约定不符。下一个页面采用它时,把行、指标卡、付款色条、详情层的样式提到 `app.css` 作为共享类,再让三处一起引用。
 
