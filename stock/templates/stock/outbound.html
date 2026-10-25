@@ -23,6 +23,15 @@
   </div>
 {% endif %}
 
+{% if pedido_payload %}
+  {# Opened from a Pedido draft: say so, and keep the way back. #}
+  <div class="pedido-banner" role="status">
+    <span><strong>Pedido draft #{{ pedido_payload.draft_id }}</strong>{% if pedido_payload.customer_name %} · {{ pedido_payload.customer_name }}{% endif %}
+      — choose how it was paid, then confirm.</span>
+    <a href="{% url 'pedido' %}?draft={{ pedido_payload.draft_id }}">Back to draft</a>
+  </div>
+{% endif %}
+
 <!-- 扫码 / 模糊搜索 -->
 <form id="scan-form" class="mb-3 position-relative">
   <label for="barcode" class="form-label">Scan barcode or search product</label>
@@ -56,6 +65,8 @@
   {% csrf_token %}
   <input type="hidden" name="items_json" id="items_json">
   <input type="hidden" name="payments_json" id="payments_json">
+  <input type="hidden" name="charges_json" id="charges_json">
+  <input type="hidden" name="pedido_draft_id" id="pedido_draft_id" value="{{ pedido_payload.draft_id|default:'' }}">
 
   <div class="operation-layout">
     <div class="operation-main">
@@ -96,6 +107,26 @@
           </table>
         </div>
         <div class="cart-empty" id="cart-empty">Search a product above to start the sale.</div>
+
+        {# Shipping and fees: paid with the order, not products - they are #}
+        {# not counted as sales or profit, only as money taken.             #}
+        <div class="charges">
+          <div class="charges-head">
+            <span class="lm-label">Shipping &amp; fees</span>
+            <button type="button" class="btn btn-sm btn-outline-primary" id="add-charge-btn">+ Shipping / fee</button>
+          </div>
+          <ul class="charge-list" id="charge-list"></ul>
+        </div>
+
+        {# Lines that came in without a payment (a Pedido draft) are paid in one tap. #}
+        <div class="quick-pay d-none" id="quick-pay">
+          <span class="quick-pay-text" id="quick-pay-text">Not paid yet</span>
+          <div class="quick-pay-btns">
+            <button type="button" class="btn btn-sm btn-outline-primary" data-method="cash">Cash</button>
+            <button type="button" class="btn btn-sm btn-outline-primary" data-method="card">Card</button>
+            <button type="button" class="btn btn-sm btn-outline-primary" data-method="mbway">MBWay</button>
+          </div>
+        </div>
       </section>
 
     </div>
@@ -133,6 +164,10 @@
           <div><span class="review-label">Customer</span><span class="review-modal-value" id="review-customer">—</span></div>
           <div><span class="review-label">Items</span><span class="review-modal-value" id="review-qty">0 pcs</span></div>
           <div><span class="review-label">Discount</span><span class="review-modal-value" id="review-discount">EUR 0.00</span></div>
+        </div>
+        <div class="rv-split d-none" id="review-split">
+          <span>Goods <strong id="review-goods">EUR 0.00</strong></span>
+          <span>Shipping &amp; fees <strong id="review-charges">EUR 0.00</strong></span>
         </div>
 
         <div class="lm-row">
@@ -194,6 +229,8 @@
           <div class="price-toggle" id="line-modal-price-toggle">
             <button type="button" class="price-opt active" data-kind="retail">Retail <span id="line-modal-retail">€0.00</span></button>
             <button type="button" class="price-opt" data-kind="wholesale">Wholesale <span id="line-modal-wholesale">€0.00</span></button>
+            {# What this customer paid last time; only shown when there is one. #}
+            <button type="button" class="price-opt d-none" data-kind="last">Last <span id="line-modal-last">€0.00</span><small id="line-modal-last-date"></small></button>
           </div>
           <div class="lm-price">
             <label class="lm-sub-label" for="line-modal-base">Unit price</label>
@@ -241,6 +278,46 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
         <button type="button" class="btn btn-primary" id="line-modal-save">Add to cart</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Shipping / fee modal -->
+<div class="modal fade" id="chargeModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="chargeModalTitle">Shipping / fee</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body lm-body">
+        <div class="lm-row">
+          <label class="lm-label" for="charge-label">What for</label>
+          <div class="charge-chips">
+            <button type="button" class="qty-chip" data-label="Transporte">Transporte</button>
+            <button type="button" class="qty-chip" data-label="Embalagem">Embalagem</button>
+            <button type="button" class="qty-chip" data-label="Taxa">Taxa</button>
+          </div>
+          <input type="text" class="form-control" id="charge-label" maxlength="60" placeholder="e.g. Transporte">
+        </div>
+        <div class="lm-row">
+          <label class="lm-label" for="charge-amount">Amount</label>
+          <div class="input-group"><span class="input-group-text">€</span><input type="text" inputmode="decimal" class="form-control" id="charge-amount" placeholder="0.00"></div>
+        </div>
+        <div class="lm-row">
+          <span class="lm-label">Paid with</span>
+          <div class="pay-balls" id="charge-pay">
+            <button type="button" class="pay-ball" data-method="cash"><span class="pay-ball-dot" aria-hidden="true">€</span>Cash</button>
+            <button type="button" class="pay-ball" data-method="card"><span class="pay-ball-dot" aria-hidden="true">▭</span>Card</button>
+            <button type="button" class="pay-ball" data-method="mbway"><span class="pay-ball-dot" aria-hidden="true">↗</span>MBWay</button>
+          </div>
+        </div>
+        <div class="text-danger small d-none" id="charge-error"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="charge-save">Add</button>
       </div>
     </div>
   </div>
@@ -853,6 +930,41 @@
     padding:.75rem .9rem; border-radius:var(--app-radius-sm); background:var(--app-good-soft); border:1px solid #cde7d6;
   }
   .line-modal-preview strong{ display:block; font-size:1.05rem; margin-top:.15rem; font-variant-numeric:tabular-nums; }
+  .price-opt small{ display:block; font-size:.74rem; font-weight:600; color:var(--app-muted); }
+
+  /* ===== Pedido draft banner ===== */
+  .pedido-banner{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.4rem 1rem;
+                  margin-bottom:.9rem; padding:.65rem .9rem; border-radius:var(--app-radius-sm);
+                  background:var(--app-accent-soft); border:1px solid var(--app-accent-line); color:var(--app-text); }
+  .pedido-banner a{ font-weight:700; }
+
+  /* ===== Shipping & fees ===== */
+  .charges{ margin-top:.8rem; padding-top:.7rem; border-top:1px solid var(--app-border); }
+  .charges-head{ display:flex; align-items:center; justify-content:space-between; gap:.6rem; }
+  .charge-list{ list-style:none; margin:.4rem 0 0; padding:0; display:grid; gap:.35rem; }
+  .charge-row{ display:grid; grid-template-columns:minmax(0,1fr) auto auto auto; align-items:center; gap:.6rem;
+               padding:.45rem .6rem; border:1px solid var(--app-border); border-radius:var(--app-radius-sm); cursor:pointer; }
+  .charge-name{ font-weight:700; color:var(--app-text); overflow-wrap:anywhere; }
+  .charge-amt{ font-weight:800; color:var(--app-text); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .charge-row .js-cdel{ min-width:40px; min-height:40px; }
+  .charge-chips{ display:flex; flex-wrap:wrap; gap:.35rem; }
+  .charge-chips .qty-chip{ flex:0 0 auto; padding:0 .8rem; min-height:40px; font-size:.88rem; }
+
+  /* ===== Pay everything still unpaid ===== */
+  .quick-pay{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.5rem;
+              margin-top:.8rem; padding:.6rem .75rem; border-radius:var(--app-radius-sm);
+              background:var(--app-warn-soft); border:1px solid var(--app-border-strong); }
+  .quick-pay-text{ font-weight:700; color:var(--app-text); }
+  .quick-pay-btns{ display:flex; gap:.4rem; }
+  .quick-pay-btns .btn{ min-height:40px; min-width:4.6rem; font-weight:700; }
+  .rv-split{ display:flex; flex-wrap:wrap; gap:.3rem 1.2rem; font-size:.9rem; color:var(--app-muted); }
+  .rv-split strong{ color:var(--app-text); font-variant-numeric:tabular-nums; }
+  @media (max-width: 576px){
+    .charge-row{ grid-template-columns:minmax(0,1fr) auto auto; }
+    .charge-row .pay-pill{ grid-column:1 / 2; justify-self:start; }
+    .quick-pay-btns{ flex:1 1 100%; }
+    .quick-pay-btns .btn{ flex:1 1 0; }
+  }
 </style>
 
 
@@ -1098,6 +1210,15 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   function lineSubtotal(item) { return lineFinalUnit(item) * (Number(item.qty) || 0); }
   function cartTotal() { return cart.reduce((s, i) => s + lineSubtotal(i), 0); }
+  // Shipping and fees: money taken with the order, not products.
+  let charges = [];
+  let chargeSeq = 1;
+  function chargesTotal() { return charges.reduce((s, c) => s + (Number(c.amount) || 0), 0); }
+  function grandTotal() { return cartTotal() + chargesTotal(); }
+  // What the chosen customer last paid, by barcode (loaded when one is picked).
+  let lastPrices = {};
+  // Set when the cart was opened from a Pedido draft.
+  let revendaSale = false;
   function cartDiscount() { return cart.reduce((s, i) => s + (Number(i.discount) || 0) * (Number(i.qty) || 0), 0); }
   function cartQtyTotal() { return cart.reduce((s, i) => s + (Number(i.qty) || 0), 0); }
   function barcodeQtyTotal(barcode) {
@@ -1107,8 +1228,9 @@ document.addEventListener('DOMContentLoaded', () => {
   function lineValid(item) {
     if (!((Number(item.qty) || 0) >= 1)) return false;
     if (lineFinalUnit(item) <= 0) return false;
+    // A scanned product always has stock; a quoted one may not.
     const stock = Number(item.stock) || 0;
-    if (stock > 0 && barcodeQtyTotal(item.barcode) > stock) return false;
+    if (stock <= 0 || barcodeQtyTotal(item.barcode) > stock) return false;
     return true;
   }
 
@@ -1117,14 +1239,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const finalUnit = lineFinalUnit(item);
     const stock = Number(item.stock) || 0;
     const usedQty = barcodeQtyTotal(item.barcode);
-    if (stock > 0 && usedQty > stock) w.push({ text: 'Exceeds available stock', tone: 'danger' });
+    if (stock <= 0) w.push({ text: 'No stock', tone: 'danger' });
+    else if (usedQty > stock) w.push({ text: 'Exceeds available stock', tone: 'danger' });
     else if (stock > 0 && usedQty === stock) w.push({ text: 'Uses all remaining stock', tone: 'warn' });
     const lastCost = Number(item.lastCost);
     const wholesale = Number(item.wholesale);
     const retail = Number(item.retail);
     if (isFinite(lastCost) && finalUnit < lastCost) w.push({ text: 'Selling below cost', tone: 'danger' });
     else if (isFinite(wholesale) && wholesale > 0 && finalUnit < wholesale) w.push({ text: 'Below wholesale price', tone: 'warn' });
-    if (isFinite(retail) && retail > 0 && finalUnit / retail < 0.75) w.push({ text: 'More than 25% below retail', tone: 'warn' });
+    // A Pedido draft is a Revenda sale - always far below retail, so that
+    // warning would sit on every line and hide the ones that matter.
+    if (!revendaSale && isFinite(retail) && retail > 0 && finalUnit / retail < 0.75) w.push({ text: 'More than 25% below retail', tone: 'warn' });
     return w;
   }
 
@@ -1198,6 +1323,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const map = linePaymentMap(i);
       METHODS.forEach((m) => { if (map[m]) out[m] = (out[m] || 0) + map[m]; });
     });
+    charges.forEach((c) => {
+      if (METHODS.includes(c.payment)) out[c.payment] = (out[c.payment] || 0) + (Number(c.amount) || 0);
+    });
     return out;
   }
   function payCellHtml(item) {
@@ -1215,18 +1343,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ===== 重新计算 & 序列化 =====
   function recalc() {
-    const total = cartTotal();
+    const goods = cartTotal();
+    const extra = chargesTotal();
+    const total = goods + extra;
     const disc = cartDiscount();
     const qty = cartQtyTotal();
     const payments = linePayments();
-    const allPaid = cart.every(linePayComplete);
+    const unpaidLines = cart.filter(i => !linePayComplete(i)).length;
+    const unpaidCharges = charges.filter(c => !METHODS.includes(c.payment)).length;
+    const allPaid = unpaidLines === 0 && unpaidCharges === 0;
+    const unpaid = unpaidLines + unpaidCharges;
+    document.getElementById('quick-pay').classList.toggle('d-none', unpaid === 0);
+    document.getElementById('quick-pay-text').textContent =
+      `${unpaid} item${unpaid === 1 ? '' : 's'} not paid yet — pay all with`;
     const paymentsValid = total > 0 && allPaid;
 
     const warnings = [];
     cart.forEach(i => lineWarnings(i).forEach(w => warnings.push(`${i.title}: ${w.text}`)));
     if (customerSearch.value.trim() && !customerIdInput.value) warnings.push('Customer typed but not selected.');
     if (!cart.length) warnings.push('Cart is empty.');
-    if (cart.length && !allPaid) warnings.push('Each product needs a payment method.');
+    if (cart.length && !allPaid) warnings.push('Each product and fee needs a payment method.');
     const uniq = uniqueWarnings(warnings);
 
     summaryTotalAmount.textContent = formatMoney(total);
@@ -1241,9 +1377,12 @@ document.addEventListener('DOMContentLoaded', () => {
       discount: (Number(i.discount) || 0).toFixed(2), payment: linePrimaryMethod(i),
     })));
     paymentsJson.value = JSON.stringify(METHODS.filter(m => payments[m] > 0).map(m => ({ method: m, amount: payments[m].toFixed(2) })));
+    document.getElementById('charges_json').value = JSON.stringify(charges.map(c => ({
+      label: c.label, amount: (Number(c.amount) || 0).toFixed(2), payment: c.payment || '',
+    })));
 
     submitBtn.disabled = STORE_BLOCKED || !(cart.length > 0 && cart.every(lineValid) && paymentsValid);
-    return { total, disc, qty, paymentsHtml: paySummaryHtml(payments), warnings: uniq };
+    return { total, goods, extra, disc, qty, paymentsHtml: paySummaryHtml(payments), warnings: uniq };
   }
 
   function openCheckoutReview() {
@@ -1253,6 +1392,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('review-qty').textContent = `${s.qty} pcs`;
     document.getElementById('review-discount').textContent = formatMoney(s.disc);
     document.getElementById('review-total').textContent = formatMoney(s.total);
+    document.getElementById('review-split').classList.toggle('d-none', !(s.extra > 0));
+    document.getElementById('review-goods').textContent = formatMoney(s.goods);
+    document.getElementById('review-charges').textContent = formatMoney(s.extra);
     document.getElementById('review-payment').innerHTML = s.paymentsHtml;
     reviewWarningList.innerHTML = s.warnings.length
       ? s.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')
@@ -1267,6 +1409,13 @@ document.addEventListener('DOMContentLoaded', () => {
           <strong>${formatMoney(lineSubtotal(i))}</strong>
           <div class="review-line-meta">Unit ${formatMoney(lineFinalUnit(i))}</div>
         </div>
+      </div>`).join('') + charges.map(c => `
+      <div class="review-line-item">
+        <div>
+          <strong>${escapeHtml(c.label)}</strong>
+          <div class="review-line-meta">Shipping / fee · ${paymentLabel(c.payment)}</div>
+        </div>
+        <div class="text-end"><strong>${formatMoney(c.amount)}</strong></div>
       </div>`).join('');
     bootstrap.Modal.getOrCreateInstance(reviewModalEl).show();
   }
@@ -1276,9 +1425,21 @@ document.addEventListener('DOMContentLoaded', () => {
   const customerIdInput = document.getElementById('customer-id');
   const suggestionsBox = document.getElementById('customer-suggestions');
 
+  // Loaded once per customer. Only products added afterwards start at the last
+  // price; lines already in the cart keep theirs - nothing changes silently.
+  function loadLastPrices(customerId) {
+    lastPrices = {};
+    if (!customerId) return;
+    fetch(`/api/customer_last_prices/?customer=${encodeURIComponent(customerId)}`)
+      .then(r => r.json())
+      .then(d => { (d.results || []).forEach(p => { if (p.barcode) lastPrices[p.barcode] = p; }); })
+      .catch(() => { /* a convenience: selling still works without it */ });
+  }
+
   customerSearch.addEventListener('input', function () {
     const q = this.value.trim();
     customerIdInput.value = '';
+    lastPrices = {};
     recalc();
     if (q.length < 2) return suggestionsBox.classList.add('d-none');
     fetch(`/api/customers_autocomplete/?q=${encodeURIComponent(q)}`)
@@ -1294,6 +1455,7 @@ document.addEventListener('DOMContentLoaded', () => {
             customerSearch.value=btn.textContent;
             customerIdInput.value=c.id;
             suggestionsBox.classList.add('d-none');
+            loadLastPrices(c.id);
             recalc();
           };
           suggestionsBox.appendChild(btn);
@@ -1425,13 +1587,25 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('line-modal-wholesale').textContent = wholesale != null ? `€${wholesale.toFixed(2)}` : '€—';
     document.querySelector('#line-modal-price-toggle .price-opt[data-kind="retail"]').disabled = (retail == null);
     document.querySelector('#line-modal-price-toggle .price-opt[data-kind="wholesale"]').disabled = (wholesale == null);
-    const base = item ? item.base : (retail != null ? retail : (wholesale != null ? wholesale : ''));
+    const last = lastPrices[ctx.barcode] ? Number(lastPrices[ctx.barcode].price) : null;
+    const lastBtn = document.querySelector('#line-modal-price-toggle .price-opt[data-kind="last"]');
+    lastBtn.classList.toggle('d-none', last == null);
+    if (last != null) {
+      document.getElementById('line-modal-last').textContent = `€${last.toFixed(2)}`;
+      document.getElementById('line-modal-last-date').textContent = lastPrices[ctx.barcode].date || '';
+    }
+    // A new line starts at what this customer last paid, when they have bought it before.
+    const base = item ? item.base
+      : (last != null ? last : (retail != null ? retail : (wholesale != null ? wholesale : '')));
     document.getElementById('line-modal-base').value = (base !== '' && base != null) ? Number(base).toFixed(2) : '';
     document.getElementById('line-modal-discount').value = item ? (Number(item.discount) || 0).toFixed(2) : '0';
     setModalQty(item ? item.qty : 1);
-    const isWholesale = (item && wholesale != null && Math.abs(Number(item.base) - wholesale) < 0.001)
-      || (!item && retail == null && wholesale != null);
-    setPriceToggle(isWholesale ? 'wholesale' : 'retail');
+    const near = (a, b) => a != null && b != null && Math.abs(Number(a) - Number(b)) < 0.001;
+    let kind = 'retail';
+    if (item) kind = near(item.base, last) ? 'last' : (near(item.base, wholesale) ? 'wholesale' : 'retail');
+    else if (last != null) kind = 'last';
+    else if (retail == null && wholesale != null) kind = 'wholesale';
+    setPriceToggle(kind);
     modalSplit = !!(item && item.isSplit);
     modalPayMethod = (item && !item.isSplit && METHODS.includes(item.payment)) ? item.payment : lastMethod;
     lineModalSplitToggle.checked = modalSplit;
@@ -1507,7 +1681,9 @@ document.addEventListener('DOMContentLoaded', () => {
     b.addEventListener('click', () => {
       if (b.disabled) return;
       setPriceToggle(b.dataset.kind);
-      const v = b.dataset.kind === 'wholesale' ? Number(modalCtx.wholesale) : Number(modalCtx.retail);
+      const v = b.dataset.kind === 'wholesale' ? Number(modalCtx.wholesale)
+        : b.dataset.kind === 'last' ? Number((lastPrices[modalCtx.barcode] || {}).price)
+        : Number(modalCtx.retail);
       if (isFinite(v)) document.getElementById('line-modal-base').value = v.toFixed(2);
       updateLineModalPreview();
     });
@@ -1535,6 +1711,106 @@ document.addEventListener('DOMContentLoaded', () => {
   lineModalSplit.querySelectorAll('.line-pay-amount').forEach((inp) => {
     inp.addEventListener('input', () => { inp.value = inp.value.replace(/[^\d.,]/g, ''); updateLineModalPayUI(); });
   });
+
+  // ===== Shipping & fees =====
+  const chargeModalEl = document.getElementById('chargeModal');
+  const chargeList = document.getElementById('charge-list');
+  let editingCharge = null;
+  let chargePayMethod = 'cash';
+
+  function renderCharges() {
+    chargeList.innerHTML = '';
+    charges.forEach((c) => {
+      const li = document.createElement('li');
+      li.className = 'charge-row';
+      li.innerHTML = `
+        <span class="charge-name">${escapeHtml(c.label)}</span>
+        <span class="pay-pill">${paymentLabel(c.payment)}</span>
+        <span class="charge-amt">${formatMoney(c.amount)}</span>
+        <button type="button" class="btn btn-sm btn-outline-danger js-cdel" aria-label="Remove ${escapeHtml(c.label)}">&times;</button>`;
+      li.addEventListener('click', (e) => { if (!e.target.closest('button')) openChargeModal(c); });
+      li.querySelector('.js-cdel').addEventListener('click', () => {
+        charges = charges.filter(x => x.uid !== c.uid);
+        renderCharges();
+      });
+      chargeList.appendChild(li);
+    });
+    recalc();
+  }
+  function renderChargePay() {
+    document.querySelectorAll('#charge-pay .pay-ball').forEach((b) => b.classList.toggle('active', b.dataset.method === chargePayMethod));
+  }
+  function openChargeModal(charge) {
+    editingCharge = charge ? charge.uid : null;
+    document.getElementById('chargeModalTitle').textContent = charge ? 'Edit shipping / fee' : 'Shipping / fee';
+    document.getElementById('charge-save').textContent = charge ? 'Save changes' : 'Add';
+    document.getElementById('charge-label').value = charge ? charge.label : 'Transporte';
+    document.getElementById('charge-amount').value = charge ? Number(charge.amount).toFixed(2) : '';
+    chargePayMethod = (charge && METHODS.includes(charge.payment)) ? charge.payment : lastMethod;
+    renderChargePay();
+    document.getElementById('charge-error').classList.add('d-none');
+    bootstrap.Modal.getOrCreateInstance(chargeModalEl).show();
+  }
+  function saveCharge() {
+    const err = document.getElementById('charge-error');
+    const label = document.getElementById('charge-label').value.trim();
+    const amount = parseMoney(document.getElementById('charge-amount').value);
+    const fail = (msg) => { err.textContent = msg; err.classList.remove('d-none'); };
+    if (!label) return fail('Say what the charge is for.');
+    if (!isFinite(amount) || amount <= 0) return fail('Enter an amount above 0.');
+    const fields = { label, amount: Number(amount.toFixed(2)), payment: chargePayMethod };
+    if (editingCharge) Object.assign(charges.find(c => c.uid === editingCharge), fields);
+    else charges.push(Object.assign({ uid: chargeSeq++ }, fields));
+    lastMethod = chargePayMethod;
+    bootstrap.Modal.getOrCreateInstance(chargeModalEl).hide();
+    renderCharges();
+  }
+  document.getElementById('add-charge-btn').addEventListener('click', () => openChargeModal(null));
+  document.getElementById('charge-save').addEventListener('click', saveCharge);
+  document.querySelectorAll('#charge-pay .pay-ball').forEach((b) => {
+    b.addEventListener('click', () => { chargePayMethod = b.dataset.method; renderChargePay(); });
+  });
+  document.querySelectorAll('.charge-chips .qty-chip').forEach((b) => {
+    b.addEventListener('click', () => { document.getElementById('charge-label').value = b.dataset.label; });
+  });
+
+  // Everything without a payment yet, paid one way in one tap.
+  document.querySelectorAll('#quick-pay [data-method]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const m = b.dataset.method;
+      cart.forEach((i) => { if (!linePayComplete(i)) { i.payment = m; i.isSplit = false; i.paymentSplit = null; } });
+      charges.forEach((c) => { if (!METHODS.includes(c.payment)) c.payment = m; });
+      lastMethod = m;
+      renderCharges();
+      renderCart();
+    });
+  });
+
+  // ===== Opened from a Pedido draft =====
+  const pedidoEl = document.getElementById('pedido-payload');
+  const pedido = pedidoEl ? JSON.parse(pedidoEl.textContent || 'null') : null;
+  if (pedido) {
+    revendaSale = true;
+    (pedido.lines || []).forEach((l) => {
+      cart.push({
+        uid: uidSeq++, barcode: l.barcode, title: l.title, stock: l.stock,
+        retail: l.retail, wholesale: l.wholesale, lastCost: l.lastCost, image_url: l.image_url,
+        brand: l.brand, model: l.model, pname: l.pname, spec: l.spec,
+        qty: Number(l.qty) || 1, base: Number(l.base) || 0, discount: Number(l.discount) || 0,
+        payment: '', isSplit: false, paymentSplit: null,
+      });
+    });
+    (pedido.charges || []).forEach((c) => {
+      charges.push({ uid: chargeSeq++, label: c.label, amount: Number(c.amount) || 0, payment: '' });
+    });
+    if (pedido.customer) {
+      customerSearch.value = pedido.customer.label;
+      customerIdInput.value = pedido.customer.id;
+      loadLastPrices(pedido.customer.id);
+    }
+    renderCharges();
+    renderCart();
+  }
 
   // ===== 摄像头扫码 =====
   // The scanner library (~370KB) is only fetched the first time the camera is
@@ -1816,8 +2092,7 @@ document.addEventListener('DOMContentLoaded', () => {
   recalc();
 });
 </script>
-
-
+{% if pedido_payload %}{{ pedido_payload|json_script:"pedido-payload" }}{% endif %}
 
 {% endblock %}
 

@@ -110,3 +110,78 @@ class SaleOrderPayment(models.Model):
 
     def __str__(self):
         return f"{self.get_method_display()} EUR {self.amount:.2f} (order {self.order_id})"
+
+
+class SaleOrderCharge(models.Model):
+    """Shipping or a fee on an order - money taken that is not a product.
+
+    Kept apart from ``Sale`` on purpose: a charge has no product, no stock and
+    no cost, and sales, profit, targets and best-sellers are all sums over
+    ``Sale``. Leaving charges out of that table keeps every one of those
+    figures goods-only without a filter at each call site.
+
+    What a charge does change is the money taken: it is paid with the goods, so
+    the order's ``SaleOrderPayment`` rows add up to goods + charges, and the
+    cash/card/MB WAY collected that Today shows includes it.
+    """
+    order = models.ForeignKey(SaleOrder, on_delete=models.CASCADE, related_name='charges')
+    label = models.CharField(max_length=60)
+    amount = models.DecimalField(max_digits=10, decimal_places=2,
+                                 validators=[MinValueValidator(Decimal('0.01'))])
+    # The method it was paid with, so a reopened order (Correct Order) can
+    # rebuild its payment split without guessing.
+    payment_method = models.CharField(max_length=10, choices=Sale.PAYMENT_METHOD_CHOICES, default='cash')
+
+    class Meta:
+        ordering = ['id']
+
+    def __str__(self):
+        return f"{self.label} EUR {self.amount:.2f} (order {self.order_id})"
+
+
+class PedidoDraft(models.Model):
+    """A Pedido kept after its PDF, until it is sold or thrown away.
+
+    One store's draft: a quote is made from a shop's stock and sold from the
+    same till. The form is kept as the user filled it (lines, shipping, fees,
+    discount), so Edit reopens exactly what was printed.
+    """
+    OPEN = 'open'
+    SOLD = 'sold'
+    STATUS_CHOICES = [(OPEN, 'Open'), (SOLD, 'Sold')]
+
+    store = models.ForeignKey('Store', on_delete=models.CASCADE, related_name='pedido_drafts')
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+                                   null=True, blank=True, related_name='+')
+    customer = models.ForeignKey('Customer', on_delete=models.SET_NULL, null=True, blank=True,
+                                 related_name='pedido_drafts')
+    customer_name = models.CharField(max_length=100, blank=True, default='')
+    customer_phone = models.CharField(max_length=40, blank=True, default='')
+    customer_address = models.TextField(blank=True, default='')
+    # [{"product_id": 1, "quantity": 2, "unit_price": "12.50"}, ...]
+    lines = models.JSONField(default=list)
+    shipping = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    # [{"label": "Embalagem", "amount": "3.00"}, ...]
+    extras = models.JSONField(default=list)
+    discount_value = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    discount_kind = models.CharField(max_length=10, default='amount')
+    valid_days = models.PositiveIntegerField(default=7)
+    note = models.TextField(blank=True, default='')
+    # Totals as printed, so the list does not recompute every draft.
+    goods_total = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    total = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=OPEN, db_index=True)
+    sale_order = models.ForeignKey(SaleOrder, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name='pedido_drafts')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at', '-id']
+
+    def __str__(self):
+        return f"Pedido draft #{self.id} - {self.customer_name or 'cliente'}"
+
+    @property
+    def line_count(self):
+        return len(self.lines or [])

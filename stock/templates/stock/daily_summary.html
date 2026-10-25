@@ -28,6 +28,7 @@
   .ord-no{ font-weight:800; color:var(--app-text); }
   .ord-time,.ord-store{ margin-left:.45rem; color:var(--app-muted); font-size:.82rem; font-weight:600; }
   .ord-sum{ font-weight:800; font-size:1.05rem; color:var(--app-text); font-variant-numeric:tabular-nums; }
+  .ord-ship{ font-size:.85rem; font-weight:600; color:var(--app-primary); }
   .ord-meta{ display:flex; align-items:center; justify-content:space-between; gap:.6rem; flex-wrap:wrap; margin-top:.25rem; }
   .ord-cust{ color:var(--app-muted); font-size:.9rem; min-width:0; }
   .ord-cust a{ color:inherit; }
@@ -56,8 +57,10 @@
 <div class="dash-page">
   {# The first screen leads with the day's jobs. #}
   <div class="today-actions">
+    {% if not active_store_is_all %}
     <a class="btn btn-primary" href="{% url 'outbound' %}">Sell</a>
     <a class="btn btn-outline-primary" href="{% url 'pedido' %}">Pedido</a>
+    {% endif %}
     <a class="btn btn-outline-primary" href="{% url 'inbound' %}">Inbound</a>
   </div>
 
@@ -100,6 +103,13 @@
       <div class="snapshot-card">
         <span class="metric-label">Average Order</span>
         <div class="metric-value">EUR {{ avg_order|floatformat:2 }}</div>
+      </div>
+    {% endif %}
+    {% if show_order_financials and total_charges %}
+      <div class="snapshot-card">
+        <span class="metric-label">Shipping &amp; fees</span>
+        <div class="metric-value">EUR {{ total_charges|floatformat:2 }}</div>
+        <div class="metric-sub">in payments, not in sales</div>
       </div>
     {% endif %}
     {% if show_profit %}
@@ -147,7 +157,7 @@
                   <span class="ord-time">{{ order.summary_time }}</span>
                   {% if store_is_all %}<span class="ord-store">{{ order.summary_store }}</span>{% endif %}
                 </div>
-                {% if show_order_financials %}<div class="ord-sum">EUR {{ order.summary_total|floatformat:2 }}</div>{% endif %}
+                {% if show_order_financials %}<div class="ord-sum">EUR {{ order.summary_total|floatformat:2 }}{% if order.summary_charges %}<small class="ord-ship"> + EUR {{ order.summary_charges|floatformat:2 }} shipping/fees</small>{% endif %}</div>{% endif %}
               </div>
 
               <div class="ord-meta">

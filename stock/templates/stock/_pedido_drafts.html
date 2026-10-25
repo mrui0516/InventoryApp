@@ -1,0 +1,29 @@
+{% load math_extras %}
+{% if drafts %}
+<section class="pd-drafts" aria-label="Rascunhos">
+  <div class="pd-drafts-head">
+    <h3>Rascunhos</h3>
+    <span class="pd-drafts-count">{{ drafts|length }}</span>
+  </div>
+  <ul class="pd-draft-list">
+    {% for d in drafts %}
+    <li class="pd-draft{% if d.id == current_draft_id %} is-current{% endif %}">
+      <a class="pd-draft-main" href="{% url 'pedido' %}?draft={{ d.id }}">
+        <span class="pd-draft-who">{{ d.customer_name|default:"Sem cliente" }}</span>
+        <span class="pd-draft-meta">{% if d.customer_phone %}{{ d.customer_phone }} · {% endif %}{{ d.line_count }} produto{{ d.line_count|pluralize }} · {{ d.updated_at|date:"d/m H:i" }}</span>
+      </a>
+      <span class="pd-draft-total">{{ d.total|eur_pt }}</span>
+      <span class="pd-draft-acts">
+        <a class="pd-draft-btn" href="{% url 'pedido' %}?draft={{ d.id }}">Editar</a>
+        <a class="pd-draft-btn is-sell" href="{% url 'outbound' %}?pedido={{ d.id }}">Vender</a>
+        <form method="post" action="{% url 'pedido_draft_delete' d.id %}"
+              onsubmit="return confirm('Apagar este rascunho?');">
+          {% csrf_token %}
+          <button type="submit" class="pd-draft-btn is-del" aria-label="Apagar rascunho de {{ d.customer_name|default:'sem cliente' }}">Apagar</button>
+        </form>
+      </span>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}

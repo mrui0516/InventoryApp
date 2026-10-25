@@ -22,7 +22,7 @@ def _apply_store(queryset, store):
 
 
 def order_tender_amounts(order, subtotal, items):
-    """Per-payment-method amounts for one order, summing to ``subtotal``.
+    """Per-payment-method amounts for one order: the money taken for ``subtotal``.
 
     Reads the authoritative order-level ``SaleOrderPayment`` split so in-line
     split tenders (e.g. card + cash) show up in payment statistics — not just
@@ -30,13 +30,20 @@ def order_tender_amounts(order, subtotal, items):
     the order, the split is scaled to the filtered ``subtotal``. Falls back to
     each line's own method for legacy orders with no recorded tender.
 
-    ``order.payments`` should be prefetched by the caller to avoid an N+1.
+    Shipping and fees (``SaleOrderCharge``) are paid with the goods, so when
+    the whole order is in view the full payments come back - goods plus
+    charges - and the money collected matches the till. A category filter
+    scales them to the filtered goods only: a fee belongs to no category.
+
+    ``order.payments`` (and ``order.charges``) should be prefetched by the
+    caller to avoid an N+1.
     """
     result = defaultdict(Decimal)
     payments = list(order.payments.all())
     order_total = sum((payment.amount for payment in payments), Decimal('0.00'))
+    charges = sum((c.amount for c in order.charges.all()), Decimal('0.00')) if order.pk else Decimal('0.00')
     if payments and order_total > 0:
-        if abs(subtotal - order_total) <= Decimal('0.01'):
+        if abs(subtotal + charges - order_total) <= Decimal('0.01'):
             for payment in payments:
                 result[payment.method] += payment.amount
         else:

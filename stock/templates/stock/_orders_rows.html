@@ -29,7 +29,14 @@
       <dl class="ol-totals">
         <div><dt>Items</dt><dd>{{ row.qty }}</dd></div>
         {% if show_order_financials %}
-          <div class="grand"><dt>Total</dt><dd>EUR {{ row.amount|floatformat:2 }}</dd></div>
+          {% if row.charges %}
+            {# Shipping and fees are paid with the order but are not sales. #}
+            <div><dt>Goods</dt><dd>EUR {{ row.amount|floatformat:2 }}</dd></div>
+            {% for c in row.charges_list %}<div><dt>{{ c.label }}</dt><dd>EUR {{ c.amount|floatformat:2 }}</dd></div>{% endfor %}
+            <div class="grand"><dt>Total</dt><dd>EUR {{ row.order_total|floatformat:2 }}</dd></div>
+          {% else %}
+            <div class="grand"><dt>Total</dt><dd>EUR {{ row.amount|floatformat:2 }}</dd></div>
+          {% endif %}
           {% for p in row.pay_display %}<div><dt>{{ p.label }}</dt><dd>EUR {{ p.amount|floatformat:2 }}</dd></div>{% endfor %}
         {% endif %}
         {% if show_profit %}<div><dt>Gross profit</dt><dd{% if row.profit < 0 %} class="neg"{% endif %}>EUR {{ row.profit|floatformat:2 }}</dd></div>{% endif %}

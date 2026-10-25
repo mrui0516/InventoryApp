@@ -11,7 +11,7 @@
 | 维度 | 状态 | 说明 |
 |---|---|---|
 | 功能完整度 | ✅ 已覆盖 PRD 全部 20 个模块 | 正在生产使用中（真实业务数据） |
-| 自动化测试 | ✅ 774/774 通过 | `python manage.py test stock` |
+| 自动化测试 | ✅ 801/801 通过 | `python manage.py test stock` |
 | 数据库迁移 | ✅ 无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
 | 版本控制 | ✅ 已推送 GitHub，与 origin/master 同步 | 见第 4 节 |
 | 本地虚拟环境 | ⚠ `.venv` 不完整/未使用 | 见第 3 节 |
@@ -98,6 +98,8 @@
 ## 7. 变更记录
 
 一条一行，最新在前。细节查 `git log`。
+
+- 2026-10-25: **Pedido 草稿 + 运费/费用入单 + 客户上次售价 + All stores 隐藏 Sell/Pedido。** 老板定位:Sell 是零售、Pedido 专为 Revenda。(1) 每次生成 Pedido PDF 存为本店草稿(`PedidoDraft`,迁移 0060),页面顶部列出,可 Editar(原样还原,再出 PDF 更新同一份)/ Vender(打开 Sell 装好购物车)/ Apagar;卖出后标记已售,带状态条件的 UPDATE 防同一草稿卖两次。Pedido 客户搜索只列 Revenda。(2) 新增 `SaleOrderCharge`:Sell 可加运费/费用(从草稿转来的运费和额外费用自动带上,报价折扣按比例摊进单价),Correct Order 可编辑;**口径按老板选择:不算销售额和利润,但计入实收**——Orders/Today 多一张 Shipping & fees 卡,付款比例以实收为分母,详情页/小票/A4 收据/报表 PDF 列出 货 → 费用 → 合计。订单详情页的 Payment split 改读订单级付款(原来按行累加,拆分付款显示不准)。(3) 选定客户后,新加入的行默认用他上次实际成交的单价(直接从销售记录读,不另存),Sell 行弹窗多一个 Last 价格选项,Pedido 行下方提示并可一键套用。(4) All stores 时侧栏不显示 Sell/Pedido、手机底栏 Sell 换成 Orders、Today 首屏按钮隐藏。顺手修:`popper.min.js` 末尾自首次提交起多了一行「解释」,每个页面都报 JS 错误,已删。经理默认处于 All stores,所以旧的 Pedido 测试需先选店(按新规则改写);新增 27 个测试,801 通过;改回旧付款函数 2 个转红、改回旧侧栏 1 个转红。改了 CSS/JS 静态文件,部署需 collectstatic + migrate。
 
 - 2026-10-24: **Correct Order 手机端优化 + 修好全站手机吸底保存条。** 改前截图:行项目表 7 列,手机上只看得到商品/数量/单价,折扣、支付、小计和 Edit/× 都在屏幕右侧外面;搜索结果标题被截成一行,相近商品分不清;Delete entire order 紧挨着 Save。改后(≤760px):每行两行(商品名 + 小计 / `数量 × 单价`、折扣、支付 + ×),**点整行打开编辑**;搜索结果标题两行;「总额 + Save + Cancel」吸在底部标签栏上方;Delete 移到最下面单独一行。电脑端不变。排查吸底条不吸时发现根因在 app.css:手机端 `.erp-content{overflow-x:hidden}` 让 `<main>` 成了不会滚动的滚动容器,**所有页面的 sticky 保存条在手机上都没生效**(Add/Edit Product 也是),改为 `overflow-x:clip`(保留 hidden 作旧浏览器回退);实测 Correct Order 与 Edit Product 的保存条都停在标签栏上方。新增 4 个测试;旧模板放回 3 个转红,旧 app.css 放回 1 个转红。774 通过。改 CSS,部署需 collectstatic。
 

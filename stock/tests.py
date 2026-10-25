@@ -8805,6 +8805,9 @@ class PedidoViewTests(TestCase):
         self.manager = get_user_model().objects.create_superuser(
             "pedmgr", password="pw123456")
         self.client.login(username="pedmgr", password="pw123456")
+        # Since 2026-10-25 a quote is kept as a draft of one store, so under
+        # "All stores" - where a manager starts - nothing is printed.
+        _pick_store(self.client, Store.objects.create(name="Pedido Store", code="PED"))
         self.category = Category.objects.create(name="Perfumes")
         self.priced = Product.objects.create(
             name="Khamrah", brand="LATTAFA", barcode="9990000000001",
@@ -9441,14 +9444,18 @@ class RoundANavigationTests(TestCase):
         self.assertRedirects(response, reverse("home"), fetch_redirect_response=False)
 
     # -- the side menu -------------------------------------------------------
-    def _menu(self, user):
+    def _menu(self, user, store=None):
         self._as(user)
+        if store is not None:
+            _pick_store(self.client, store)
         html = self.client.get(reverse("customer_search")).content.decode()
         nav = html[html.index('<nav class="erp-nav">'):html.index('</nav>', html.index('<nav class="erp-nav">'))]
         return re.findall(r'class="erp-nav-link[^"]*"[^>]*>([^<]+)</a>', nav), nav
 
     def test_the_admin_menu_is_grouped_by_task(self):
-        links, nav = self._menu(self.admin)
+        # With one store picked: under "All stores" Sell and Pedido are left
+        # out since 2026-10-25 (AllStoresNavTests).
+        links, nav = self._menu(self.admin, store=self.store_a)
         self.assertEqual(links, ["Today", "Dashboard", "Orders", "Sell", "Pedido",
                                  "Products", "Catalog View",
                                  "Shelf", "Customers", "IOU", "Inbound", "Suppliers",
@@ -9542,6 +9549,7 @@ class RoundANavigationTests(TestCase):
         used the dashboard's stock < 5, which counts every product that was
         never stocked, so it read 336 and meant nothing."""
         self._as(self.admin)
+        _pick_store(self.client, self.store_a)   # Sell is only offered for one store
         response = self.client.get(reverse("daily_summary"))
         self.assertNotIn("to_dos", response.context)
         self.assertNotContains(response, "low-stock product")
@@ -10076,3 +10084,350 @@ class CorrectOrderPhoneLayoutTests(TestCase):
             if found:
                 last = found[-1]
         self.assertEqual(last, 'clip')
+
+
+def _pick_store(client, store):
+    """A manager starts on "All stores"; selling and quoting need one store."""
+    from .stores import ACTIVE_STORE_SESSION_KEY
+    session = client.session
+    session[ACTIVE_STORE_SESSION_KEY] = store.id
+    session.save()
+
+
+class PedidoDraftTests(TestCase):
+    """Every Pedido PDF keeps a draft of the active store (2026-10-25)."""
+
+    def setUp(self):
+        from .models import PedidoDraft
+        self.Draft = PedidoDraft
+        self.manager = get_user_model().objects.create_superuser("pdd_mgr", password="pw123456")
+        self.client.force_login(self.manager)
+        self.store = Store.objects.create(name="Draft Store", code="PDS")
+        self.other = Store.objects.create(name="Other Store", code="PDO")
+        _pick_store(self.client, self.store)
+        cat = Category.objects.create(name="PDD Cat")
+        self.product = Product.objects.create(name="Asad", brand="LATTAFA", barcode="9970000000001",
+                                              category=cat, default_price=Decimal("30"),
+                                              wholesale_price=Decimal("20"))
+        self.reseller = Customer.objects.create(nif="501000001", name="Loja Revenda",
+                                                kind=Customer.REVENDA, phone="910000001")
+
+    def _post(self, **extra):
+        data = {'product_id': [str(self.product.id)], 'quantity': ['3'], 'unit_price': ['20,00'],
+                'customer_name': 'Loja Revenda', 'customer_phone': '910000001',
+                'customer_id': str(self.reseller.id), 'shipping': '6,50',
+                'extra_label': ['Embalagem'], 'extra_amount': ['2,00'],
+                'discount_value': '5', 'discount_kind': 'amount', 'valid_days': '7'}
+        data.update(extra)
+        return self.client.post(reverse("pedido"), data)
+
+    def test_a_pdf_keeps_a_draft_of_this_store(self):
+        response = self._post()
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        draft = self.Draft.objects.get()
+        self.assertEqual(response['X-Pedido-Draft'], str(draft.id))
+        self.assertEqual(draft.store, self.store)
+        self.assertEqual(draft.customer, self.reseller)
+        self.assertEqual(draft.lines, [{'product_id': self.product.id, 'quantity': 3, 'unit_price': '20.00'}])
+        self.assertEqual(draft.goods_total, Decimal("60.00"))
+        # 60 - 5 + 6.50 + 2 = 63.50
+        self.assertEqual(draft.total, Decimal("63.50"))
+
+    def test_printing_again_updates_the_same_draft(self):
+        first = self._post()
+        draft_id = first['X-Pedido-Draft']
+        second = self._post(draft_id=draft_id, quantity=['4'])
+        self.assertEqual(second['X-Pedido-Draft'], draft_id)
+        self.assertEqual(self.Draft.objects.count(), 1)
+        self.assertEqual(self.Draft.objects.get().lines[0]['quantity'], 4)
+
+    def test_a_refused_form_keeps_no_draft(self):
+        self._post(unit_price=[''])
+        self.assertFalse(self.Draft.objects.exists())
+
+    def test_the_list_shows_this_stores_open_drafts_only(self):
+        mine = self.Draft.objects.create(store=self.store, customer_name="Mine Lda", total=Decimal("10"))
+        self.Draft.objects.create(store=self.other, customer_name="Theirs Lda", total=Decimal("10"))
+        self.Draft.objects.create(store=self.store, customer_name="Sold Lda", status='sold')
+        html = self.client.get(reverse("pedido")).content.decode()
+        self.assertIn("Mine Lda", html)
+        self.assertNotIn("Theirs Lda", html)
+        self.assertNotIn("Sold Lda", html)
+        self.assertIn(f'{reverse("outbound")}?pedido={mine.id}', html)
+        self.assertIn(reverse("pedido_draft_delete", args=[mine.id]), html)
+
+    def test_edit_reopens_the_draft_with_its_rows(self):
+        draft_id = self._post()['X-Pedido-Draft']
+        response = self.client.get(reverse("pedido") + f"?draft={draft_id}")
+        self.assertEqual(response.context['draft'].id, int(draft_id))
+        rows = response.context['draft_rows']
+        self.assertEqual([(r['id'], r['quantity'], r['unit_price']) for r in rows],
+                         [(self.product.id, 3, '20.00')])
+        self.assertContains(response, f'name="draft_id" id="pd-draft-id" value="{draft_id}"')
+
+    def test_another_stores_draft_cannot_be_opened_or_deleted(self):
+        theirs = self.Draft.objects.create(store=self.other, customer_name="Theirs Lda")
+        response = self.client.get(reverse("pedido") + f"?draft={theirs.id}")
+        self.assertIsNone(response.context['draft'])
+        response = self.client.post(reverse("pedido_draft_delete", args=[theirs.id]))
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(self.Draft.objects.filter(id=theirs.id).exists())
+
+    def test_delete_removes_the_draft(self):
+        draft = self.Draft.objects.create(store=self.store, customer_name="Gone Lda")
+        response = self.client.post(reverse("pedido_draft_delete", args=[draft.id]))
+        self.assertRedirects(response, reverse("pedido"), fetch_redirect_response=False)
+        self.assertFalse(self.Draft.objects.filter(id=draft.id).exists())
+
+    def test_under_all_stores_nothing_is_quoted(self):
+        from .stores import ACTIVE_STORE_SESSION_KEY, ALL_STORES
+        session = self.client.session
+        session[ACTIVE_STORE_SESSION_KEY] = ALL_STORES
+        session.save()
+        page = self.client.get(reverse("pedido"))
+        self.assertTrue(page.context['pedido_blocked'])
+        response = self._post()
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(self.Draft.objects.exists())
+
+    def test_the_customer_search_can_ask_for_resellers_only(self):
+        Customer.objects.create(nif="501000002", name="Loja Retalho", kind=Customer.RETAIL)
+        data = self.client.get(reverse("customers_autocomplete") + "?kind=revenda&q=Loja").json()
+        self.assertEqual([c['name'] for c in data['results']], ["Loja Revenda"])
+        data = self.client.get(reverse("customers_autocomplete") + "?q=Loja").json()
+        self.assertEqual(len(data['results']), 2)
+
+
+class SellFromPedidoTests(TestCase):
+    """A draft opens on Sell as a cart; selling it marks it sold (2026-10-25)."""
+
+    def setUp(self):
+        from .models import PedidoDraft
+        self.Draft = PedidoDraft
+        cache.clear()   # Sell ignores an identical sale posted within 8 seconds
+        self.manager = get_user_model().objects.create_superuser("sfp_mgr", password="pw123456")
+        self.client.force_login(self.manager)
+        self.store = Store.objects.create(name="Sell Store", code="SFS")
+        _pick_store(self.client, self.store)
+        cat = Category.objects.create(name="SFP Cat")
+        self.a = Product.objects.create(name="Alpha", brand="X", barcode="9960000000001",
+                                        category=cat, default_price=Decimal("30"),
+                                        wholesale_price=Decimal("20"))
+        self.b = Product.objects.create(name="Beta", brand="X", barcode="9960000000002",
+                                        category=cat, default_price=Decimal("15"),
+                                        wholesale_price=Decimal("10"))
+        for product in (self.a, self.b):
+            Purchase.objects.create(product=product, quantity=10, remaining=10, cost_price=Decimal("5"))
+        self.customer = Customer.objects.create(nif="502000001", name="Revenda Sul", kind=Customer.REVENDA)
+        # goods 2x20 + 1x10 = 50; discount 5; transport 6.50; fee 2
+        self.draft = self.Draft.objects.create(
+            store=self.store, customer=self.customer, customer_name="Revenda Sul",
+            lines=[{'product_id': self.a.id, 'quantity': 2, 'unit_price': '20.00'},
+                   {'product_id': self.b.id, 'quantity': 1, 'unit_price': '10.00'}],
+            shipping=Decimal("6.50"), extras=[{'label': 'Embalagem', 'amount': '2.00'}],
+            discount_value=Decimal("5"), discount_kind='amount',
+            goods_total=Decimal("50"), total=Decimal("53.50"))
+
+    def test_the_draft_opens_as_a_cart(self):
+        payload = self.client.get(reverse("outbound") + f"?pedido={self.draft.id}").context['pedido_payload']
+        self.assertEqual(payload['draft_id'], self.draft.id)
+        self.assertEqual(payload['customer']['id'], self.customer.id)
+        lines = {l['barcode']: l for l in payload['lines']}
+        self.assertEqual(lines[self.a.barcode]['qty'], 2)
+        self.assertEqual(lines[self.a.barcode]['base'], '20.00')
+        # the 5.00 discount spread: 2.00 per unit of Alpha (x2) + 1.00 on Beta
+        self.assertEqual(lines[self.a.barcode]['discount'], '2.00')
+        self.assertEqual(lines[self.b.barcode]['discount'], '1.00')
+        self.assertEqual(payload['charges'], [{'label': 'Transporte', 'amount': '6.50'},
+                                              {'label': 'Embalagem', 'amount': '2.00'}])
+
+    def _sell(self, **extra):
+        data = {
+            'items_json': json.dumps([
+                {'barcode': self.a.barcode, 'qty': 2, 'price': '18.00', 'payment': 'cash'},
+                {'barcode': self.b.barcode, 'qty': 1, 'price': '9.00', 'payment': 'cash'}]),
+            'payments_json': json.dumps([{'method': 'cash', 'amount': '45.00'},
+                                         {'method': 'card', 'amount': '8.50'}]),
+            'charges_json': json.dumps([{'label': 'Transporte', 'amount': '6.50', 'payment': 'card'},
+                                        {'label': 'Embalagem', 'amount': '2.00', 'payment': 'card'}]),
+            'customer_id': str(self.customer.id),
+            'pedido_draft_id': str(self.draft.id),
+        }
+        data.update(extra)
+        return self.client.post(reverse("outbound"), data)
+
+    def test_selling_records_charges_and_closes_the_draft(self):
+        response = self._sell()
+        self.assertContains(response, "Sale completed")
+        order = SaleOrder.objects.get()
+        self.assertEqual(order.total_amount, Decimal("45.00"))          # goods only
+        self.assertEqual(sorted((c.label, c.amount, c.payment_method) for c in order.charges.all()),
+                         [('Embalagem', Decimal("2.00"), 'card'), ('Transporte', Decimal("6.50"), 'card')])
+        self.assertEqual(sum(p.amount for p in order.payments.all()), Decimal("53.50"))
+        self.draft.refresh_from_db()
+        self.assertEqual(self.draft.status, 'sold')
+        self.assertEqual(self.draft.sale_order, order)
+
+    def test_payments_must_cover_the_charges_too(self):
+        response = self._sell(payments_json=json.dumps([{'method': 'cash', 'amount': '45.00'}]))
+        self.assertContains(response, "must add up to the total")
+        self.assertFalse(SaleOrder.objects.exists())
+        # the cart comes back for another try
+        self.assertEqual(response.context['pedido_payload']['draft_id'], self.draft.id)
+
+    def test_a_draft_sold_meanwhile_is_not_sold_again(self):
+        """Loaded while open, sold elsewhere before this sale is confirmed: the
+        status check in the update rolls this sale back."""
+        from unittest import mock as _mock
+        stale = self.Draft.objects.get(id=self.draft.id)
+        self.Draft.objects.filter(id=self.draft.id).update(status='sold')
+        with _mock.patch('stock.views._sell_draft', return_value=stale):
+            response = self._sell()
+        self.assertContains(response, "already sold")
+        self.assertFalse(SaleOrder.objects.exists())
+        self.assertEqual(Purchase.objects.get(product=self.a).remaining, 10)   # stock untouched
+
+    def test_a_charge_needs_a_payment_method(self):
+        response = self._sell(charges_json=json.dumps([{'label': 'Transporte', 'amount': '6.50'}]))
+        self.assertContains(response, "choose how it was paid")
+        self.assertFalse(SaleOrder.objects.exists())
+
+
+class OrderChargesInFiguresTests(TestCase):
+    """Shipping and fees: in the money taken, never in sales (2026-10-25)."""
+
+    def setUp(self):
+        from .models import SaleOrderCharge
+        self.admin = get_user_model().objects.create_superuser("och_admin", password="pw123456")
+        self.client.force_login(self.admin)
+        cat = Category.objects.create(name="OCH Cat")
+        self.product = Product.objects.create(name="Gamma", brand="X", barcode="9950000000001",
+                                              category=cat, default_price=Decimal("40"))
+        # one of ten already sold - the order below
+        Purchase.objects.create(product=self.product, quantity=10, remaining=9, cost_price=Decimal("10"))
+        self.order = SaleOrder.objects.create()
+        Sale.objects.create(order=self.order, product=self.product, quantity=1,
+                            unit_price=Decimal("40"), payment_method="cash")
+        SaleOrderPayment.objects.create(order=self.order, method="cash", amount=Decimal("40"))
+        SaleOrderPayment.objects.create(order=self.order, method="card", amount=Decimal("7"))
+        SaleOrderCharge.objects.create(order=self.order, label="Transporte", amount=Decimal("7"),
+                                       payment_method="card")
+
+    def test_payments_include_the_charge(self):
+        from .services.dashboard import order_tender_amounts
+        pay = order_tender_amounts(self.order, Decimal("40"), list(self.order.items.all()))
+        self.assertEqual(dict(pay), {'cash': Decimal("40"), 'card': Decimal("7")})
+
+    def test_orders_page_keeps_sales_goods_only(self):
+        response = self.client.get(reverse("sales_records"))
+        summary = response.context['summary']
+        self.assertEqual(summary['amount'], Decimal("40"))
+        self.assertEqual(summary['charges'], Decimal("7"))
+        self.assertEqual(sum(summary['pay'].values()), Decimal("47"))
+        self.assertAlmostEqual(sum(p['share'] for p in summary['pay_display']), 100, delta=0.2)
+        self.assertContains(response, "Shipping &amp; fees")
+
+    def test_the_detail_page_totals_goods_plus_charges(self):
+        response = self.client.get(reverse("sale_order_detail", args=[self.order.id]))
+        self.assertEqual(response.context['grand_total'], Decimal("47"))
+        self.assertEqual(response.context['pay_break'], {'cash': Decimal("40"), 'card': Decimal("7")})
+
+    def test_the_receipt_prints(self):
+        response = self.client.get(reverse("sale_order_receipt_pdf", args=[self.order.id]))
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+
+    def test_correction_reloads_lines_without_the_charge_money(self):
+        from .views import _build_correction_cart, _correction_charges
+        cart = _build_correction_cart(self.order)
+        self.assertEqual(cart[0]['payment'], 'cash')
+        self.assertFalse(cart[0].get('isSplit'))
+        self.assertEqual(_correction_charges(self.order),
+                         [{'label': 'Transporte', 'amount': '7.00', 'payment': 'card'}])
+
+    def test_a_correction_saves_its_charges(self):
+        response = self.client.post(reverse("sale_order_correction_edit", args=[self.order.id]), {
+            'customer': '', 'order_datetime': timezone.localtime(self.order.created_at).strftime('%Y-%m-%dT%H:%M'),
+            'note': '', 'reason': 'shipping was 9',
+            'items_json': json.dumps([{'product_id': self.product.id, 'qty': 1, 'price': '40.00', 'payment': 'cash'}]),
+            'payments_json': json.dumps([{'method': 'cash', 'amount': '40.00'}, {'method': 'card', 'amount': '9.00'}]),
+            'charges_json': json.dumps([{'label': 'Transporte', 'amount': '9.00', 'payment': 'card'}]),
+        })
+        self.assertEqual(response.status_code, 302, getattr(response, 'context', None) and
+                         [str(m) for m in response.context['messages']])
+        self.assertEqual([(c.label, c.amount) for c in self.order.charges.all()],
+                         [('Transporte', Decimal("9.00"))])
+
+
+class LastPriceTests(TestCase):
+    """What a customer last paid, read from their sales (2026-10-25)."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_superuser("lp_admin", password="pw123456")
+        self.client.force_login(self.user)
+        cat = Category.objects.create(name="LP Cat")
+        self.product = Product.objects.create(name="Delta", brand="X", barcode="9940000000001",
+                                              category=cat, default_price=Decimal("40"))
+        self.customer = Customer.objects.create(nif="503000001", name="Cliente LP")
+
+    def _sale(self, price, days_ago, customer=None):
+        order = SaleOrder.objects.create(customer=customer or self.customer)
+        SaleOrder.objects.filter(pk=order.pk).update(created_at=timezone.now() - timedelta(days=days_ago))
+        Sale.objects.create(order=order, product=self.product, customer=customer or self.customer,
+                            quantity=1, unit_price=Decimal(price), payment_method="cash")
+
+    def test_the_latest_sale_wins(self):
+        from .services.order_charges import last_prices
+        self._sale("35.00", 10)
+        self._sale("32.50", 2)
+        other = Customer.objects.create(nif="503000002", name="Outro")
+        self._sale("20.00", 1, customer=other)
+        self.assertEqual(last_prices(self.customer.id)[self.product.id]['price'], Decimal("32.50"))
+
+    def test_the_api_gives_barcode_and_price(self):
+        self._sale("33.00", 3)
+        data = self.client.get(reverse("customer_last_prices") + f"?customer={self.customer.id}").json()
+        self.assertEqual(data['results'][0]['barcode'], self.product.barcode)
+        self.assertEqual(data['results'][0]['price'], "33.00")
+
+    def test_no_customer_no_prices(self):
+        data = self.client.get(reverse("customer_last_prices")).json()
+        self.assertEqual(data, {'results': []})
+
+
+class DiscountSpreadTests(TestCase):
+    def test_spread_matches_the_discount_when_a_single_piece_can_take_the_cents(self):
+        from .services.pedido_drafts import spread_discount
+        lines = [{'quantity': 3, 'unit_price': Decimal("9.99")},
+                 {'quantity': 1, 'unit_price': Decimal("5.00")}]
+        per_unit = spread_discount(lines, Decimal("3.33"))
+        taken = sum(d * l['quantity'] for d, l in zip(per_unit, lines))
+        self.assertEqual(taken, Decimal("3.33"))
+
+    def test_no_discount_no_spread(self):
+        from .services.pedido_drafts import spread_discount
+        self.assertEqual(spread_discount([{'quantity': 2, 'unit_price': Decimal("5")}], 0), [Decimal("0.00")])
+
+
+class AllStoresNavTests(TestCase):
+    """Under "All stores" there is no till: Sell and Pedido leave the menu."""
+
+    def setUp(self):
+        self.manager = get_user_model().objects.create_superuser("nav_mgr", password="pw123456")
+        self.client.force_login(self.manager)
+        self.store = Store.objects.create(name="Nav Store", code="NAV")
+
+    def test_all_stores_hides_sell_and_pedido(self):
+        html = self.client.get(reverse("customer_search")).content.decode()
+        nav = html[html.index('<nav class="erp-nav">'):html.index('</nav>', html.index('<nav class="erp-nav">'))]
+        self.assertNotIn(reverse("outbound"), nav)
+        self.assertNotIn(reverse("pedido"), nav)
+        tabs = html[html.index('<nav class="erp-tabbar"'):]
+        self.assertIn(f'href="{reverse("sales_records")}"', tabs[:tabs.index('</nav>')])
+        self.assertNotIn(f'href="{reverse("outbound")}"', tabs[:tabs.index('</nav>')])
+
+    def test_one_store_shows_them(self):
+        _pick_store(self.client, self.store)
+        html = self.client.get(reverse("customer_search")).content.decode()
+        nav = html[html.index('<nav class="erp-nav">'):html.index('</nav>', html.index('<nav class="erp-nav">'))]
+        self.assertIn(reverse("outbound"), nav)
+        self.assertIn(reverse("pedido"), nav)

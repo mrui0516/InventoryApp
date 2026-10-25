@@ -45,7 +45,7 @@ InventoryApp/
 │   │   ├── catalog.py                # Category, Brand, ProductSeries, Product, ProductImage
 │   │   ├── partners.py               # Supplier, Customer
 │   │   ├── inventory.py              # InboundOrder, InboundPendingItem, Purchase, StockAdjustmentLog
-│   │   ├── sales.py                  # SaleOrder, Sale, SaleOrderChangeLog, SaleOrderPayment
+│   │   ├── sales.py                  # SaleOrder, Sale, SaleOrderChangeLog, SaleOrderPayment, SaleOrderCharge, PedidoDraft
 │   │   ├── finance.py                # ARInvoice, ARItem, ARPayment
 │   │   ├── reporting.py              # DailySalesSummary, SalesTarget
 │   │   └── hr.py                     # AttendanceRecord（原 attendance_models.py 迁入）
@@ -56,7 +56,7 @@ InventoryApp/
 │   ├── urls.py                        # 路由表（60 条 path）
 │   ├── permissions.py                 # 角色判定 + 装饰器
 │   ├── shelf_views.py                 # 货架图页面（与产品目录无共用，单独拆出）
-│   ├── pedido_views.py                # 报价单页面（表单 → PDF，不落库）
+│   ├── pedido_views.py                # 报价单页面（表单 → PDF + 本店草稿 PedidoDraft；草稿列表片段、删除）
 │   ├── orders_views.py                # 经理 Orders 页:Sales | Purchases | Analysis(整单搜索、Tender 口径付款、分页)
 │   ├── signals.py                     # Sale 信号→每日汇总重算；ProductImage 信号→镜像图片到 Cloudinary/Shopify（门控）
 │   ├── apps.py                        # AppConfig，ready() 中注册 signals
@@ -72,6 +72,8 @@ InventoryApp/
 │   │   ├── pedido.py                   # 报价单金额:折扣只打在货上,运费/额外费用在折扣后相加
 │   │   ├── doc_pdf.py                  # 对外文件的共用版式:页眉/客户区/深色表头表格/合计/指标卡(emoji 剔除)
 │   │   ├── pedido_pdf.py               # 报价单 PDF（欧洲葡语,用 doc_pdf）
+│   │   ├── pedido_drafts.py            # 草稿 → Sell 购物车:折扣按比例摊到单价、运费/费用转 charges
+│   │   ├── order_charges.py            # 运费/费用:charges_json 解析与保存;客户上次售价 last_prices()
 │   │   ├── receipt_pdf.py              # 订单 A4 收据 PDF（欧洲葡语,用 doc_pdf;NIF 校验位通过才印）
 │   │   ├── sales_report_pdf.py         # Orders > Export PDF 销售报表（英文,用 doc_pdf;与页面同一数据）
 │   │   ├── shopify_client.py / shopify_sync.py       # Shopify Admin API：按 barcode=SKU 挂图/建品
@@ -145,7 +147,9 @@ Supplier (M2M product_types→Category)
 Customer
   ├─< SaleOrder (FK customer, nullable)
   │       ├─< Sale (FK order)
-  │       ├─< SaleOrderPayment (FK order；订单级拆分支付 method+amount，related_name payments)
+  │       ├─< SaleOrderPayment (FK order；订单级拆分支付 method+amount，related_name payments；= 货 + 费用)
+  │       ├─< SaleOrderCharge (FK order；运费/费用 label+amount+payment_method，related_name charges；不进 Sale)
+  │       └─< PedidoDraft.sale_order (草稿卖出后指向订单)
   │       └─< SaleOrderChangeLog (FK order, nullable；order_id_snapshot 始终保留)
   └─< ARInvoice (FK customer, PROTECT)
           ├─< ARItem (FK invoice)
@@ -253,7 +257,8 @@ has_admin_access(user)          → is_superuser only
 ### 5.8 收银（Outbound POS）交互与支付模型
 - **前端购物车为客户端数据模型**（`outbound.html` 内 JS：`cart[]` 数组），扫码/搜索命中后弹出行项目弹窗设置数量/价格（零售/批发切换）/固定额折扣/**支付方式**（3 圆球单选，记忆上次为默认；或 **Split this line** 在行内按金额拆分多方式，校验之和=该行小计），加入即为**独立一行**（同款不合并），每行可重开弹窗编辑或删除。折扣**计入折后单价**，不单独持久化。
 - **支付按行选择（可行内拆分）、按方式汇总**：每行带自己的支付方式或拆分金额（`item.isSplit`/`item.paymentSplit`）；订单 Payments 明细 = 各行支付按方式聚合（前端 `linePaymentMap()`/`linePayments()`）。提交前要求每行支付完整（`linePayComplete()`）。
-- **提交契约**：`items_json=[{barcode,qty,price(折后),discount,payment}]`（`payment`=该行主方式 `linePrimaryMethod()`）+ `payments_json=[{method,amount}]`（全单按方式汇总）。`outbound_view` 于单一 `transaction.atomic` 内 FIFO 扣减（`consume_stock_fifo`）、创建 `Sale`（`payment_method`=该行主方式）与 `SaleOrderPayment`（按方式汇总）。**向后兼容**：`outbound_view` 同时接受订单级 `payments_json`（按其汇总并校验总额一致）；缺省时回退按行 `payment` 聚合。
+- **提交契约**：`items_json=[{barcode,qty,price(折后),discount,payment}]`（`payment`=该行主方式 `linePrimaryMethod()`）+ `payments_json=[{method,amount}]`（全单按方式汇总，**含运费/费用**）+ `charges_json=[{label,amount,payment}]`（运费/费用，`services/order_charges.parse_charges` 校验）+ 可选 `pedido_draft_id`（从 Pedido 草稿卖出；同一事务内以 `filter(status=open).update(status=sold)` 标记，影响 0 行即回滚）。校验 付款总额 = 货 + 费用。错误页经 `_sell_error()` 渲染，草稿购物车会被重新装回。
+- **统计口径**：`order_tender_amounts()`（services/dashboard.py）在整单可见时返回完整付款（货 + 费用），按品类过滤时按比例缩到过滤后的货值；调用方须 prefetch `payments` 与 `charges`。销售额/利润只来自 `Sale`，因此天然不含费用。`outbound_view` 于单一 `transaction.atomic` 内 FIFO 扣减（`consume_stock_fifo`）、创建 `Sale`（`payment_method`=该行主方式）与 `SaleOrderPayment`（按方式汇总）。**向后兼容**：`outbound_view` 同时接受订单级 `payments_json`（按其汇总并校验总额一致）；缺省时回退按行 `payment` 聚合。
 
 ### 5.9 多店铺（Multi-store）
 - **模型**：`Store`（core：`name`/`code`/`is_active`/`is_default`）+ `StoreProfile`（用户→home store 的 OneToOne）。`SaleOrder`/`Sale`/`ARInvoice` 新增可空 `store` FK（迁移 0028），迁移 0029 播种默认店铺（`code='MAIN'`）并回填全部历史销售/AR + 为所有已有用户建 `StoreProfile`。

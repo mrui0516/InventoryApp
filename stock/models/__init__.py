@@ -21,7 +21,8 @@ from .devices import (DeviceModel, DeviceAlias, CompatibilityGroup,
                       products_fitting)
 from .partners import Supplier, Customer
 from .inventory import InboundOrder, InboundPendingItem, Purchase, StockAdjustmentLog
-from .sales import SaleOrder, Sale, SaleOrderChangeLog, SaleOrderPayment
+from .sales import (SaleOrder, Sale, SaleOrderChangeLog, SaleOrderPayment,
+                    SaleOrderCharge, PedidoDraft)
 from .finance import ARInvoice, ARItem, ARPayment
 from .reporting import DailySalesSummary, SalesTarget
 from .hr import AttendanceRecord
@@ -49,6 +50,7 @@ __all__ = [
     'InboundOrder', 'InboundPendingItem', 'Purchase', 'StockAdjustmentLog',
     # sales
     'SaleOrder', 'Sale', 'SaleOrderChangeLog', 'SaleOrderPayment',
+    'SaleOrderCharge', 'PedidoDraft',
     # finance
     'ARInvoice', 'ARItem', 'ARPayment',
     # reporting

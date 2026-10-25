@@ -51,7 +51,9 @@ from .models import (
     Category, SaleOrder, InboundOrder, InboundPendingItem, ARInvoice, ARItem,
     Brand, SaleOrderChangeLog, AttendanceRecord, PrintProfile,
     StockAdjustmentLog, SaleOrderPayment, Store, StoreProfile, search_devices,
+    PedidoDraft,
 )
+from .services import order_charges
 from .permissions import (
     has_admin_access,
     has_manager_access,
@@ -842,6 +844,75 @@ def inbound_receive_view(request, order_id):
 # 前端通过 items_json 提交：[{barcode, qty, price, payment}, ...]
 # 可选 customer_id
 # -----------------------------
+def _sell_draft(request, raw_id):
+    """The open Pedido draft of this store that Sell was asked to open."""
+    raw_id = str(raw_id or '').strip()
+    if not raw_id.isdigit() or not has_manager_access(request.user):
+        return None
+    store, is_all = resolve_active_store(request)
+    if is_all or store is None:
+        return None
+    return (PedidoDraft.objects.select_related('customer')
+            .filter(id=int(raw_id), store=store, status=PedidoDraft.OPEN).first())
+
+
+def _sell_line_ctx(product):
+    """A product as the Sell cart knows it - the fields check_barcode returns."""
+    stock = product.purchase_set.filter(remaining__gt=0).aggregate(s=Sum('remaining'))['s'] or 0
+    last_purchase = product.purchase_set.order_by('-date').first()
+    image_url = ''
+    for image in product.images.all():
+        try:
+            image_url = image.image.url
+        except ValueError:
+            image_url = ''
+        break
+    return {
+        'barcode': product.barcode,
+        'title': product.display_name,
+        'brand': product.brand or '',
+        'model': product.model or '',
+        'pname': product.name,
+        'spec': ' '.join(filter(None, [product.spec, product.color])),
+        'stock': int(stock),
+        'retail': float(product.default_price) if product.default_price is not None else None,
+        'wholesale': float(product.wholesale_price) if product.wholesale_price is not None else None,
+        'lastCost': float(last_purchase.cost_price) if last_purchase else None,
+        'image_url': image_url,
+    }
+
+
+def _pedido_cart(draft):
+    """A Pedido draft as a Sell cart: lines at the quoted prices with the
+    quote's discount spread over them, and transport and fees as charges."""
+    if draft is None:
+        return None
+    from .services.pedido_drafts import sell_payload
+    ids = [line.get('product_id') for line in draft.lines or []]
+    products = {p.id: p for p in Product.objects.filter(id__in=ids).prefetch_related('images')}
+    payload = sell_payload(draft, products)
+    customer = draft.customer
+    return {
+        'draft_id': draft.id,
+        'customer': ({'id': customer.id, 'label': f'{customer.name} ({customer.nif})'}
+                     if customer else None),
+        'customer_name': draft.customer_name,
+        'lines': [dict(_sell_line_ctx(line['product']), qty=line['quantity'],
+                       base=f"{line['unit_price']:.2f}", discount=f"{line['discount']:.2f}")
+                  for line in payload['lines']],
+        'charges': [{'label': c['label'], 'amount': f"{c['amount']:.2f}"} for c in payload['charges']],
+    }
+
+
+def _sell_error(request, message):
+    """Sell's error page; a sale from a Pedido draft comes back with its cart."""
+    draft = _sell_draft(request, request.POST.get('pedido_draft_id'))
+    return render(request, 'stock/outbound.html', {
+        'error': message,
+        'pedido_payload': _pedido_cart(draft),
+    })
+
+
 @login_required
 def outbound_view(request):
     # A sale must land on one concrete store. Managers viewing the "All stores"
@@ -849,9 +920,11 @@ def outbound_view(request):
     # store (employees are always locked to their home store, never blocked).
     _store, store_is_all = resolve_active_store(request)
     if request.method != 'POST':
+        draft = None if store_is_all else _sell_draft(request, request.GET.get('pedido'))
         return render(request, 'stock/outbound.html', {
             'outbound_blocked': store_is_all,
             'active_store_name': _store.name if _store else '',
+            'pedido_payload': _pedido_cart(draft),
         })
 
     if store_is_all:
@@ -860,6 +933,7 @@ def outbound_view(request):
             'error': 'Select a specific store before selling — you are viewing "All stores". '
                      'Switch to the store you are selling from, then try again.',
         })
+    draft = _sell_draft(request, request.POST.get('pedido_draft_id'))
 
     items_json = request.POST.get('items_json', '[]')
     payments_json = request.POST.get('payments_json', '[]')
@@ -871,6 +945,7 @@ def outbound_view(request):
         request.path,
         items_json,
         payments_json,
+        request.POST.get('charges_json') or '',
         str(customer_id or ''),
     ])
     idem_key = 'idem:' + hashlib.sha256(idem_raw.encode('utf-8', 'ignore')).hexdigest()
@@ -889,7 +964,7 @@ def outbound_view(request):
         items = json.loads(items_json)
         assert isinstance(items, list) and len(items) > 0
     except Exception:
-        return render(request, 'stock/outbound.html', {'error': 'Cart is empty or invalid.'})
+        return _sell_error(request, 'Cart is empty or invalid.')
 
     valid_methods = {'cash', 'card', 'mbway'}
     method_priority = {'cash': 0, 'card': 1, 'mbway': 2}
@@ -917,7 +992,7 @@ def outbound_view(request):
             if line_payment in valid_methods:
                 line_payment_totals[line_payment] += line_total
     except ValueError as e:
-        return render(request, 'stock/outbound.html', {'error': str(e)})
+        return _sell_error(request, str(e))
 
     # 解析订单级支付拆分（新格式）；缺省时回退到按行支付聚合（旧格式）
     try:
@@ -932,7 +1007,7 @@ def outbound_view(request):
             try:
                 amount = Decimal(str(entry.get('amount', 0)))
             except Exception:
-                return render(request, 'stock/outbound.html', {'error': 'Payment amount must be a number.'})
+                return _sell_error(request, 'Payment amount must be a number.')
             if method not in valid_methods or amount <= 0:
                 continue
             payment_totals[method] += amount
@@ -940,13 +1015,19 @@ def outbound_view(request):
         payment_totals = line_payment_totals  # 旧格式回退
 
     if not payment_totals:
-        return render(request, 'stock/outbound.html', {'error': 'Please choose at least one payment method.'})
+        return _sell_error(request, 'Please choose at least one payment method.')
+
+    # Shipping and fees are paid with the goods but are not sales lines.
+    try:
+        charges = order_charges.parse_charges(request.POST.get('charges_json'))
+    except ValueError as e:
+        return _sell_error(request, str(e))
+    charge_sum = order_charges.charges_total(charges)
 
     paid_total = sum(payment_totals.values(), Decimal('0.00'))
-    if abs(paid_total - order_revenue) > Decimal('0.01'):
-        return render(request, 'stock/outbound.html', {
-            'error': f'Payments (€{paid_total:.2f}) must add up to the total (€{order_revenue:.2f}).'
-        })
+    due = order_revenue + charge_sum
+    if abs(paid_total - due) > Decimal('0.01'):
+        return _sell_error(request, f'Payments (€{paid_total:.2f}) must add up to the total (€{due:.2f}).')
 
     # 主支付方式：金额最大者（并列时按 cash→card→mbway）
     primary_method = min(
@@ -986,21 +1067,33 @@ def outbound_view(request):
             # 订单级支付拆分（权威记录）
             for method, amount in payment_totals.items():
                 SaleOrderPayment.objects.create(order=order, method=method, amount=amount)
+            order_charges.save_charges(order, charges)
+
+            # The quote is now a sale; it leaves the Pedido drafts list. The
+            # status is checked in the update itself, so the same draft sold
+            # twice at once rolls the second sale back instead of doubling it.
+            if draft is not None:
+                sold = PedidoDraft.objects.filter(id=draft.id, status=PedidoDraft.OPEN).update(
+                    status=PedidoDraft.SOLD, sale_order=order, updated_at=timezone.now())
+                if not sold:
+                    raise ValueError(f'Pedido draft #{draft.id} was already sold.')
 
     except ValidationError as e:
-        return render(request, 'stock/outbound.html', {'error': '; '.join(e.messages)})
+        return _sell_error(request, '; '.join(e.messages))
     except ValueError as e:
-        return render(request, 'stock/outbound.html', {'error': str(e)})
+        return _sell_error(request, str(e))
     except Exception as e:
-        return render(request, 'stock/outbound.html', {'error': 'Unexpected error: ' + str(e)})
+        return _sell_error(request, 'Unexpected error: ' + str(e))
 
     pay_summary = ', '.join(
         f'{label} €{payment_totals[code]:.2f}'
         for code, label in (('cash', 'Cash'), ('card', 'Card'), ('mbway', 'MBWay'))
         if payment_totals.get(code)
     )
+    charge_note = f' + €{charge_sum:.2f} shipping/fees' if charge_sum else ''
+    draft_note = f' Pedido draft #{draft.id} marked sold.' if draft is not None else ''
     return render(request, 'stock/outbound.html', {
-        'success': f'Sale completed. {order_qty} item(s), €{order_revenue:.2f} ({pay_summary}).'
+        'success': f'Sale completed. {order_qty} item(s), €{order_revenue:.2f}{charge_note} ({pay_summary}).{draft_note}'
     })
 
 
@@ -2437,7 +2530,7 @@ def dashboard_view(request):
             SaleOrder.objects
             .filter(created_at__date=today)
             .select_related('customer')
-            .prefetch_related('items__product', 'items__product__images', 'payments')
+            .prefetch_related('items__product', 'items__product__images', 'payments', 'charges')
             .order_by('-created_at')
             .distinct()
         )
@@ -2706,6 +2799,7 @@ def sale_order_receipt_pdf(request, order_id):
     pay = order_tender_amounts(order, total, items)
     payments = [(method, amount) for method, amount in
                 sorted(pay.items(), key=lambda kv: (-kv[1], kv[0] or '')) if method and amount]
+    charges = list(order.charges.all())
 
     customer = order.customer
     profile = PrintProfile.get_for_store(order.store)
@@ -2721,9 +2815,10 @@ def sale_order_receipt_pdf(request, order_id):
                 'barcode': item.product.barcode if item.product else '',
                 'quantity': item.quantity, 'unit_price': item.unit_price or Decimal('0.00'),
                 'line_total': item.line_total} for item in items],
-        total=total,
+        total=total + sum((c.amount for c in charges), Decimal('0.00')),
         payments=payments,
         footer_note=profile.footer_note,
+        charges=[(c.label, c.amount) for c in charges],
     )
     response = HttpResponse(pdf, content_type='application/pdf')
     response['Content-Disposition'] = f'inline; filename="recibo-{order.id}.pdf"'
@@ -2753,13 +2848,16 @@ def sale_order_detail_view(request, order_id):
     total_qty = sum(i.quantity for i in items)
     total_amount = sum((i.unit_price * i.quantity for i in items), Decimal('0.00'))
 
-    from collections import defaultdict
-    pay_break = defaultdict(Decimal)
     for i in items:
         i.display_name = build_product_label(i.product)
         i.line_total = (i.unit_price or Decimal('0.00')) * i.quantity
         i.image_url = get_product_image_url(i.product)
-        pay_break[i.payment_method] += i.unit_price * i.quantity
+    # The order's own payment split (as Today and the receipt read it), which
+    # covers shipping and fees too; it used to add up each line's method.
+    pay_break = {m: a for m, a in sorted(order_tender_amounts(order, total_amount, items).items(),
+                                         key=lambda kv: (-kv[1], kv[0] or '')) if m and a}
+    charges = list(order.charges.all())
+    charges_total = sum((c.amount for c in charges), Decimal('0.00'))
 
     shop_profile = PrintProfile.get_for_store(order.store)
     back_url = request.GET.get('next', '').strip() or reverse('sale_order_detail', args=[order.id])
@@ -2769,6 +2867,8 @@ def sale_order_detail_view(request, order_id):
         'items': items,
         'total_qty': total_qty,
         'total_amount': total_amount,
+        'charges': charges,
+        'grand_total': total_amount + charges_total,
         'pay_break': dict(pay_break),
         'can_admin_correct': has_admin_access(request.user),
         'can_print_receipt': can_print_receipt,
@@ -2857,6 +2957,13 @@ def _build_correction_cart(order):
     for payment in order.payments.all():
         if payment.method in valid_methods and payment.amount:
             pool[payment.method] += payment.amount
+    # Shipping and fees were paid from the same pool; take them out first so
+    # the lines get back only what was paid for goods.
+    for charge in order.charges.all():
+        if charge.payment_method in pool:
+            pool[charge.payment_method] = max(pool[charge.payment_method] - charge.amount, Decimal('0'))
+    if not any(pool.values()):
+        pool = defaultdict(Decimal)
     if not pool:
         # No order-level tender recorded: fall back to each line's own method.
         for item in lines:
@@ -2921,8 +3028,9 @@ def _enrich_correction_items(raw_items):
 def _parse_correction_cart(request):
     """Parse + validate items_json/payments_json from the correction POST.
 
-    Returns ``(line_items, payment_totals, order_revenue)`` mirroring the POS
-    outbound contract. Raises ``ValueError`` with a user-facing message.
+    Returns ``(line_items, payment_totals, order_revenue, charges)`` mirroring
+    the POS outbound contract; payments cover goods plus charges. Raises
+    ``ValueError`` with a user-facing message.
     """
     valid_methods = {'cash', 'card', 'mbway'}
     method_priority = {'cash': 0, 'card': 1, 'mbway': 2}
@@ -2978,9 +3086,11 @@ def _parse_correction_cart(request):
     if not payment_totals:
         raise ValueError('Choose a payment method for the order.')
 
+    charges = order_charges.parse_charges(request.POST.get('charges_json'))
+    due = order_revenue + order_charges.charges_total(charges)
     paid_total = sum(payment_totals.values(), Decimal('0.00'))
-    if abs(paid_total - order_revenue) > Decimal('0.01'):
-        raise ValueError(f'Payments (EUR {paid_total:.2f}) must add up to the order total (EUR {order_revenue:.2f}).')
+    if abs(paid_total - due) > Decimal('0.01'):
+        raise ValueError(f'Payments (EUR {paid_total:.2f}) must add up to the order total (EUR {due:.2f}).')
 
     primary_method = min(payment_totals.items(), key=lambda kv: (-kv[1], method_priority.get(kv[0], 9)))[0]
     line_items = [
@@ -2992,7 +3102,25 @@ def _parse_correction_cart(request):
         }
         for row in parsed
     ]
-    return line_items, dict(payment_totals), order_revenue
+    return line_items, dict(payment_totals), order_revenue, charges
+
+
+def _correction_charges(order, request=None):
+    """Charges the form starts with: the submitted ones after a refused save,
+    otherwise the order's own."""
+    if request is not None and request.method == 'POST':
+        try:
+            rows = json.loads(request.POST.get('charges_json') or '[]')
+            if isinstance(rows, list):
+                return [{'label': str(r.get('label') or ''), 'amount': str(r.get('amount') or ''),
+                         'payment': str(r.get('payment') or '')}
+                        for r in rows if isinstance(r, dict)]
+        except (TypeError, ValueError):
+            pass
+    if not order:
+        return []
+    return [{'label': c.label, 'amount': f'{c.amount:.2f}', 'payment': c.payment_method}
+            for c in order.charges.all()]
 
 
 @login_required
@@ -3116,7 +3244,7 @@ def _sale_order_correction_view(request, order=None):
 
             if form.is_valid():
                 try:
-                    line_items, payment_totals, _ = _parse_correction_cart(request)
+                    line_items, payment_totals, _, charges = _parse_correction_cart(request)
                     _active_stores = available_stores()
                     _raw_store = request.POST.get('store')
                     selected_store = next(
@@ -3136,6 +3264,7 @@ def _sale_order_correction_view(request, order=None):
                         reason=form.cleaned_data['reason'],
                         store=selected_store,
                         affects_stock=affects_stock,
+                        charges=charges,
                     )
                 except ValueError as exc:
                     messages.error(request, str(exc))
@@ -3172,6 +3301,7 @@ def _sale_order_correction_view(request, order=None):
         'is_create': order is None,
         'change_logs': change_logs,
         'initial_cart': initial_cart,
+        'initial_charges': _correction_charges(order, request),
         'store_options': stores_for_template,
         'selected_store_id': selected_store_id,
         'affects_stock_checked': affects_stock_checked,
@@ -4035,7 +4165,7 @@ def daily_summary_view(request):
         SaleOrder.objects
         .filter(created_at__date=day)
         .select_related('customer', 'store')
-        .prefetch_related('items__product', 'items__product__images', 'payments'),
+        .prefetch_related('items__product', 'items__product__images', 'payments', 'charges'),
         active_store, store_is_all,
     ).order_by('-created_at', '-id')  # most recent sale first
 
@@ -4052,6 +4182,8 @@ def daily_summary_view(request):
     pay_totals = defaultdict(Decimal)
     product_stats = {}
     orders = []
+    # Shipping and fees: in the money taken (the payment mix), not in sales.
+    total_charges = Decimal('0.00')
 
     for order in orders_qs:
         items = list(order.items.all())
@@ -4079,6 +4211,8 @@ def daily_summary_view(request):
         # Payment mix from the authoritative order-level tender (SaleOrderPayment)
         # so split payments (card + cash) are shown, not just the primary method.
         order_pay = order_tender_amounts(order, order_total, items)
+        order.summary_charges = sum((c.amount for c in order.charges.all()), Decimal('0.00'))
+        total_charges += order.summary_charges
 
         order.summary_total = order_total
         order.summary_qty = order_qty
@@ -4149,6 +4283,7 @@ def daily_summary_view(request):
         'orders': orders,
         'order_count': order_count,
         'total_amount': total_amount,
+        'total_charges': total_charges,
         'total_qty': total_qty,
         'total_profit': total_profit,
         'avg_order': avg_order,
@@ -4290,7 +4425,12 @@ def customers_autocomplete(request):
         customers = Customer.objects.filter(
             Q(name__icontains=query) | Q(nif__icontains=query)
             | Q(phone__icontains=query)
-        ).order_by('name')[:10]
+        )
+        # ?kind=revenda: Pedido quotes resellers only.
+        kind = (request.GET.get('kind') or '').strip().lower()
+        if kind in (Customer.RETAIL, Customer.REVENDA):
+            customers = customers.filter(kind=kind)
+        customers = customers.order_by('name')[:10]
 
         # Extra keys are additive - the till reads name and id and ignores the
         # rest; the quote screen shows the phone and address it will print.
@@ -4298,6 +4438,29 @@ def customers_autocomplete(request):
                     'phone': c.phone or '', 'address': c.address or '',
                     'kind': c.kind} for c in customers]
 
+    return JsonResponse({'results': results})
+
+
+@login_required
+def customer_last_prices(request):
+    """What a customer last paid for each product they have bought.
+
+    Sell and Pedido load this once a customer is picked, and a product added
+    after that starts at this price instead of retail or wholesale. Keyed by
+    product id, with the barcode alongside because Sell works by barcode.
+    """
+    from .services.order_charges import last_prices
+    raw = (request.GET.get('customer') or '').strip()
+    if not raw.isdigit():
+        return JsonResponse({'results': []})
+    found = last_prices(int(raw))
+    barcodes = dict(Product.all_objects.filter(id__in=found.keys())
+                    .values_list('id', 'barcode'))
+    results = [{'product_id': product_id,
+                'barcode': barcodes.get(product_id) or '',
+                'price': f"{info['price']:.2f}",
+                'date': timezone.localtime(info['date']).strftime('%d/%m/%Y') if info['date'] else ''}
+               for product_id, info in found.items()]
     return JsonResponse({'results': results})
 
 

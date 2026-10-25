@@ -19,6 +19,8 @@ urlpatterns = [
     path('inbound/', views.inbound_view, name='inbound'),
     path('outbound/', views.outbound_view, name='outbound'),
     path('pedido/', pedido_views.pedido_view, name='pedido'),
+    path('pedido/drafts/', pedido_views.pedido_drafts_partial, name='pedido_drafts_partial'),
+    path('pedido/drafts/<int:draft_id>/delete/', pedido_views.pedido_draft_delete, name='pedido_draft_delete'),
     path('products/', views.product_list_view, name='product_list'),
     path('products/export-excel/', views.export_product_list_excel, name='export_product_list_excel'),
     path('products/export-shopify-csv/', views.export_shopify_inventory_csv, name='export_shopify_inventory_csv'),
@@ -57,6 +59,7 @@ urlpatterns = [
 
     path('check_customer/', views.check_customer, name='check_customer'),
     path('api/customers_autocomplete/', views.customers_autocomplete, name='customers_autocomplete'),
+    path('api/customer_last_prices/', views.customer_last_prices, name='customer_last_prices'),
     path('add_customer_ajax/', views.add_customer, name='add_customer_ajax'),
     path('customers/', views.customer_search_view, name='customer_search'),
     path('customers/<int:customer_id>/', views.customer_detail_view, name='customer_detail'),

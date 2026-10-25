@@ -48,6 +48,8 @@ def build_sales_report_pdf(*, profile, range_label, store_label, generated_label
              ('Items', str(summary['qty'])), ('Per order', eur(summary['avg']))]
     if show_profit:
         tiles.append(('Gross profit', eur(summary['profit'])))
+    if summary.get('charges'):
+        tiles.append(('Shipping & fees', eur(summary['charges'])))
     story += [doc_pdf.kpi_tiles(style, tiles), Spacer(1, 6)]
 
     if not orders:
@@ -57,7 +59,8 @@ def build_sales_report_pdf(*, profile, range_label, store_label, generated_label
 
     # payments, as a share of the range
     pays = summary['pay_display']
-    total = summary['amount'] or Decimal('1')
+    # Shares of the money taken, which includes shipping and fees.
+    total = sum((p['amount'] for p in pays), ZERO) or Decimal('1')
     story.append(Paragraph('Payments', style['section']))
     story.append(doc_pdf.data_table(
         style, ['Method', 'Amount', 'Share'],
@@ -68,17 +71,23 @@ def build_sales_report_pdf(*, profile, range_label, store_label, generated_label
     # one line per day
     columns = _pay_columns(days)
     story.append(Paragraph('By day', style['section']))
-    headers = ['Date', 'Orders', 'Items', 'Sales'] + [PAYMENT_EN.get(m, m.title()) for m in columns]
+    # A shipping column only when the range has any: payments then add up to
+    # sales + shipping, and the column says why.
+    with_fees = bool(summary.get('charges'))
+    headers = (['Date', 'Orders', 'Items', 'Sales'] + (['Ship/fees'] if with_fees else [])
+               + [PAYMENT_EN.get(m, m.title()) for m in columns])
     rows = []
     for day in days:
         rows.append([day['day'].strftime('%a %d/%m/%Y'), str(day['orders']), str(day['qty']),
-                     eur(day['amount'])] + [eur(day['pay'].get(m, ZERO)) for m in columns])
+                     eur(day['amount'])] + ([eur(day.get('charges', ZERO))] if with_fees else [])
+                    + [eur(day['pay'].get(m, ZERO)) for m in columns])
     rows.append(['Total', str(summary['orders']), str(summary['qty']), eur(summary['amount'])]
+                + ([eur(summary['charges'])] if with_fees else [])
                 + [eur(summary['pay'].get(m, ZERO)) for m in columns])
-    fixed = 28 * mm + 14 * mm + 12 * mm + 24 * mm
-    pay_w = (doc_pdf.CONTENT_W - fixed) / max(len(columns), 1)
+    fixed_widths = [28 * mm, 14 * mm, 12 * mm, 24 * mm] + ([22 * mm] if with_fees else [])
+    pay_w = (doc_pdf.CONTENT_W - sum(fixed_widths)) / max(len(columns), 1)
     story.append(doc_pdf.data_table(
-        style, headers, rows, [28 * mm, 14 * mm, 12 * mm, 24 * mm] + [pay_w] * len(columns),
+        style, headers, rows, fixed_widths + [pay_w] * len(columns),
         right_cols=tuple(range(1, len(headers))), bold_last=True))
 
     # the orders: one row each, the goods in small type under the customer -
@@ -90,6 +99,8 @@ def build_sales_report_pdf(*, profile, range_label, store_label, generated_label
     rows = []
     for row in orders:
         goods = ', '.join(f"{item.quantity}x {item.display_name}" for item in row['items'])
+        if row.get('charges_list'):
+            goods += ' + ' + ', '.join(f"{c.label} {eur(c.amount)}" for c in row['charges_list'])
         rows.append([
             row['day'].strftime('%d/%m/%Y'),
             row['created_at'].strftime('%H:%M'),

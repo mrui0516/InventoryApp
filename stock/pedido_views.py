@@ -3,11 +3,18 @@
 Kept out of views.py, which is already thousands of lines, following the same
 split as shelf_views.
 
-Nothing is stored. A quote is a piece of paper the shop hands a reseller, and
-the decision was taken deliberately: no model, no number, no history. The cost
-is that a price quoted two weeks ago cannot be looked up here.
+Pedido is the Revenda side of the shop, as Sell is the retail side: the
+customer search lists resellers only and prices start at wholesale - or at
+what that customer last paid, when they have bought the product before.
 
-Two rules are worth knowing before changing this:
+Every PDF also keeps the quote as a :class:`PedidoDraft` of the active store
+(since 2026-10-25; before that nothing was stored). The store's open drafts
+sit at the top of the page, where each can be reopened, sold - the Sell page
+opens it as a cart - or deleted. Printing again from a reopened draft updates
+that draft instead of starting another. Drafts belong to one store, so under
+"All stores" the page asks for a store first, as Sell does.
+
+Rules worth knowing before changing this:
 
 * The unit price defaults to the **wholesale** price, and a product without one
   arrives with an empty price that the form refuses to submit. Falling back to
@@ -20,16 +27,19 @@ Two rules are worth knowing before changing this:
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.views.decorators.http import require_POST
 
-from .models import Customer, PrintProfile, Product
+from .models import Customer, PedidoDraft, PrintProfile, Product
 from .permissions import manager_required
 from .services import pedido as pedido_math
 from .services import pedido_pdf
 from .services import shopify_sync
+from .stores import resolve_active_store
 
 DEFAULT_VALID_DAYS = 7
 MAX_LINES = 200
@@ -154,31 +164,107 @@ def _read_customer(request):
             'address': (request.POST.get('customer_address') or '').strip()}
 
 
+def _open_drafts(store):
+    return (PedidoDraft.objects
+            .filter(store=store, status=PedidoDraft.OPEN)
+            .select_related('customer')[:40])
+
+
+def _form_rows(lines):
+    """The rows the form starts with when a draft is reopened: the shape the
+    product search returns, plus the quantity and price that were quoted."""
+    on_order_ids = _on_order_ids()
+    return [{'id': line['product'].id,
+             'display_name': line['product'].display_name,
+             'barcode': line['product'].barcode or '',
+             'availability': _availability_label(line['product'], on_order_ids),
+             'wholesale_price': (float(line['product'].wholesale_price)
+                                 if line['product'].wholesale_price is not None else None),
+             'quantity': line['quantity'],
+             'unit_price': str(line['unit_price'])}
+            for line in lines]
+
+
+def _page(request, store, *, errors=(), status=200, draft=None, prefill=None):
+    from .services.pedido_drafts import draft_lines_for_form
+    rows = []
+    if draft is not None:
+        ids = [line.get('product_id') for line in draft.lines or []]
+        products = {p.id: p for p in Product.objects.filter(id__in=ids)}
+        rows = _form_rows(draft_lines_for_form(draft, products))
+    return render(request, 'stock/pedido.html', {
+        'default_valid_days': DEFAULT_VALID_DAYS,
+        'errors': list(errors),
+        'prefill': prefill,
+        'draft': draft,
+        'draft_rows': rows,
+        'drafts': _open_drafts(store) if store else [],
+        'pedido_blocked': store is None,
+    }, status=status)
+
+
+def _store_or_none(request):
+    """The store a draft belongs to; ``None`` under "All stores"."""
+    store, is_all = resolve_active_store(request)
+    return None if (is_all or store is None) else store
+
+
+def _draft_for(store, raw_id):
+    raw_id = str(raw_id or '').strip()
+    if not raw_id.isdigit() or store is None:
+        return None
+    return PedidoDraft.objects.filter(id=int(raw_id), store=store,
+                                      status=PedidoDraft.OPEN).first()
+
+
+def _save_draft(request, *, store, draft, customer, lines, totals, discount_kind, valid_days):
+    """Keep what was just printed. ``draft`` is the one being edited, if any."""
+    picked = None
+    raw_customer = (request.POST.get('customer_id') or '').strip()
+    if raw_customer.isdigit():
+        picked = Customer.objects.filter(id=int(raw_customer)).first()
+    draft = draft or PedidoDraft(store=store, created_by=request.user)
+    draft.customer = picked
+    draft.customer_name = customer['name'][:100]
+    draft.customer_phone = customer['phone'][:40]
+    draft.customer_address = customer['address']
+    draft.lines = [{'product_id': line['product'].id, 'quantity': line['quantity'],
+                    'unit_price': str(line['unit_price'])} for line in lines]
+    draft.shipping = totals['shipping']
+    draft.extras = [{'label': e['label'], 'amount': str(e['amount'])} for e in totals['extras']]
+    draft.discount_value = pedido_math.money(_decimal(request.POST.get('discount_value')))
+    draft.discount_kind = discount_kind
+    draft.valid_days = valid_days
+    draft.note = (request.POST.get('note') or '').strip()
+    draft.goods_total = totals['subtotal']
+    draft.total = totals['total']
+    draft.save()
+    return draft
+
+
 @login_required
 @manager_required
 def pedido_view(request):
+    store = _store_or_none(request)
     if request.method != 'POST':
+        draft = _draft_for(store, request.GET.get('draft'))
         # ?customer=<id> lets the customer list start a quote for a row, which
         # is also the seam a Revenda-only catalogue page would arrive through.
         prefill = None
         raw_id = (request.GET.get('customer') or '').strip()
-        if raw_id.isdigit():
+        if draft is None and raw_id.isdigit():
             prefill = Customer.objects.filter(id=int(raw_id)).first()
-        return render(request, 'stock/pedido.html', {
-            'default_valid_days': DEFAULT_VALID_DAYS,
-            'errors': [],
-            'prefill': prefill,
-        })
+        return _page(request, store, draft=draft, prefill=prefill)
+
+    if store is None:
+        return _page(request, store, status=400, errors=[
+            'Escolha a loja antes de gerar o pedido - está a ver "All stores".'])
 
     lines, errors = _read_lines(request)
     if not lines and not errors:
         errors.append('Adicione pelo menos um produto.')
     if errors:
-        return render(request, 'stock/pedido.html', {
-            'default_valid_days': DEFAULT_VALID_DAYS,
-            'errors': errors,
-            'prefill': None,
-        }, status=400)
+        return _page(request, store, errors=errors, status=400)
 
     discount_kind = (request.POST.get('discount_kind') or '').strip()
     if discount_kind not in pedido_math.DISCOUNT_KINDS:
@@ -197,9 +283,7 @@ def pedido_view(request):
     valid_days = min(max(valid_days, 0), 365)
     valid_until = today + timedelta(days=valid_days) if valid_days else None
 
-    from .views import resolve_active_store
-    active_store, _store_is_all = resolve_active_store(request)
-    profile = PrintProfile.get_for_store(active_store)
+    profile = PrintProfile.get_for_store(store)
     customer = _read_customer(request)
 
     pdf_bytes = pedido_pdf.build_pedido_pdf(
@@ -215,9 +299,40 @@ def pedido_view(request):
         payment_info=getattr(profile, 'payment_info', '') or '',
     )
 
+    # Kept only once the PDF exists: a form the server refused is not a quote.
+    draft = _save_draft(request, store=store,
+                        draft=_draft_for(store, request.POST.get('draft_id')),
+                        customer=customer, lines=lines, totals=totals,
+                        discount_kind=discount_kind, valid_days=valid_days)
+
     stamp = timezone.localtime().strftime('%Y%m%d-%H%M')
     who = ''.join(ch for ch in customer['name'] if ch.isalnum())[:20]
     filename = f"pedido-{who or 'cliente'}-{stamp}.pdf"
     response = HttpResponse(pdf_bytes, content_type='application/pdf')
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    # The page reads this to keep editing the same draft and refresh the list.
+    response['X-Pedido-Draft'] = str(draft.id)
     return response
+
+
+@login_required
+@manager_required
+def pedido_drafts_partial(request):
+    """The drafts list alone, refreshed after a PDF without reloading the form."""
+    store = _store_or_none(request)
+    return render(request, 'stock/_pedido_drafts.html', {
+        'drafts': _open_drafts(store) if store else [],
+        'current_draft_id': _int(request.GET.get('current'), 0),
+    })
+
+
+@require_POST
+@login_required
+@manager_required
+def pedido_draft_delete(request, draft_id):
+    store = _store_or_none(request)
+    draft = get_object_or_404(PedidoDraft, id=draft_id, store=store, status=PedidoDraft.OPEN)
+    label = draft.customer_name or f'#{draft.id}'
+    draft.delete()
+    messages.success(request, f'Rascunho {label} apagado.')
+    return redirect('pedido')

@@ -168,7 +168,7 @@ def load_orders(start, end, *, active_store, store_is_all, show_profit):
         .filter(Q(order__created_at__date__gte=start, order__created_at__date__lte=end)
                 | Q(order__isnull=True, date__date__gte=start, date__date__lte=end))
         .select_related('order__customer', 'order__store', 'product', 'customer')
-        .prefetch_related('product__images', 'order__payments')
+        .prefetch_related('product__images', 'order__payments', 'order__charges')
         .order_by('-business_at', '-order_id', '-id'),
         active_store, store_is_all))
     profit_map = (sale_profit_map_for_sale_ids([line.id for line in lines])
@@ -223,6 +223,10 @@ def load_orders(start, end, *, active_store, store_is_all, show_profit):
             pay = defaultdict(Decimal)
             for item in row['items']:
                 pay[item.payment_method] += item.line_total
+        # Shipping and fees: in the money taken (pay), never in the sales amount.
+        row['charges_list'] = list(row['order'].charges.all()) if row['order'] is not None else []
+        row['charges'] = sum((c.amount for c in row['charges_list']), ZERO)
+        row['order_total'] = row['amount'] + row['charges']
         row['pay'] = {method: amount for method, amount in pay.items() if method}
         row['pay_display'] = _pay_display(row['pay'])
         row['pay_summary'] = ' + '.join(p['label'] for p in row['pay_display']) or '-'
@@ -282,10 +286,14 @@ def summarize(orders):
             pay[method] += value
     profit = sum((row['profit'] for row in orders), ZERO)
     pay_display = _pay_display(pay)
+    # The money taken includes shipping and fees, so shares are of that, not
+    # of the goods-only sales figure (they would add up past 100%).
+    taken = sum(pay.values(), ZERO)
     for p in pay_display:
         # Whole-number share for the payment bar; widths only, not a figure.
-        p['share'] = round(float(p['amount']) / float(amount) * 100, 1) if amount else 0
+        p['share'] = round(float(p['amount']) / float(taken) * 100, 1) if taken else 0
     return {
+        'charges': sum((row.get('charges', ZERO) for row in orders), ZERO),
         'amount': amount,
         'orders': count,
         'qty': sum(row['qty'] for row in orders),
@@ -667,7 +675,9 @@ def export_report(request):
     days = {}
     for row in orders:
         day = days.setdefault(row['day'], {'day': row['day'], 'orders': 0, 'qty': 0,
-                                           'amount': ZERO, 'pay': defaultdict(Decimal)})
+                                           'amount': ZERO, 'charges': ZERO,
+                                           'pay': defaultdict(Decimal)})
+        day['charges'] += row.get('charges', ZERO)
         day['orders'] += 1
         day['qty'] += row['qty']
         day['amount'] += row['amount']

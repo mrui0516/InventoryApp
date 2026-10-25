@@ -76,6 +76,15 @@
   .cf-bar-total{display:none}
   .cf-danger{margin-top:1.4rem;padding-top:.9rem;border-top:1px dashed var(--app-border-strong)}
   .cart-meta{display:none}
+  .cf-charges{margin-top:.9rem;padding-top:.75rem;border-top:1px solid var(--app-border)}
+  .cf-charges-head{display:flex;align-items:center;justify-content:space-between;gap:.6rem}
+  .cf-charges-title{font-weight:800;color:var(--app-text)}
+  .charge-row{display:grid;grid-template-columns:minmax(0,1fr) 120px 130px 40px;gap:.45rem;margin-top:.45rem;align-items:center}
+  .charge-row .js-cdel{min-height:38px}
+  @media (max-width: 760px){
+    .charge-row{grid-template-columns:minmax(0,1fr) 110px;}
+    .charge-row .c-method{grid-column:1 / 2}
+  }
 
   /* ---- phone ----------------------------------------------------------
      Seven columns cannot fit 390px: the discount, payment, subtotal and the
@@ -137,6 +146,7 @@
         {% csrf_token %}
         <input type="hidden" name="items_json" id="items_json">
         <input type="hidden" name="payments_json" id="payments_json">
+        <input type="hidden" name="charges_json" id="charges_json">
 
         {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
 
@@ -214,6 +224,15 @@
           </div>
           <div class="cart-empty" id="cart-empty">Search a product above to add the first line.</div>
 
+          {# Shipping and fees: paid with the order, not counted as sales. #}
+          <div class="cf-charges">
+            <div class="cf-charges-head">
+              <span class="cf-charges-title">Shipping &amp; fees</span>
+              <button type="button" class="btn btn-sm btn-outline-primary" id="add-charge">+ Shipping / fee</button>
+            </div>
+            <div id="charge-rows"></div>
+          </div>
+
           <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3">
             <div class="pay-summary" id="pay-summary"><span class="mini">No payment yet</span></div>
             <div class="order-total" id="order-total">EUR 0.00</div>
@@ -263,6 +282,7 @@
 </div>
 
 {{ initial_cart|json_script:"initialCart" }}
+{{ initial_charges|json_script:"initialCharges" }}
 
 <!-- Item modal -->
 <div class="modal fade" id="lineItemModal" tabindex="-1" aria-hidden="true">
@@ -432,9 +452,36 @@ document.addEventListener('DOMContentLoaded', () => {
     const keys = METHODS.filter((m) => map[m] > 0).sort((a, b) => map[b] - map[a]);
     return keys[0] || item.payment || 'cash';
   }
+  // ===== shipping & fees: inline rows, read straight from the inputs =====
+  const chargeRows = document.getElementById('charge-rows');
+  function readCharges() {
+    return [...chargeRows.querySelectorAll('.charge-row')].map((row) => ({
+      label: row.querySelector('.c-label').value.trim(),
+      amount: parseMoney(row.querySelector('.c-amount').value),
+      payment: row.querySelector('.c-method').value,
+    })).filter((c) => c.label || isFinite(c.amount));
+  }
+  const chargesTotal = () => readCharges().reduce((s, c) => s + (isFinite(c.amount) ? c.amount : 0), 0);
+  function addChargeRow(c) {
+    const row = document.createElement('div');
+    row.className = 'charge-row';
+    const opts = METHODS.map((m) => `<option value="${m}" ${c && c.payment === m ? 'selected' : ''}>${PAY_LABELS[m]}</option>`).join('');
+    row.innerHTML = `
+      <input type="text" class="form-control c-label" maxlength="60" placeholder="Transporte" aria-label="Shipping or fee" value="${escapeHtml(c ? c.label : 'Transporte')}">
+      <input type="text" inputmode="decimal" class="form-control c-amount text-end" placeholder="0.00" aria-label="Amount" value="${escapeHtml(c ? c.amount : '')}">
+      <select class="form-select c-method" aria-label="Paid with"><option value="">Paid with…</option>${opts}</select>
+      <button type="button" class="btn btn-sm btn-outline-danger js-cdel" aria-label="Remove">&times;</button>`;
+    row.querySelector('.js-cdel').addEventListener('click', () => { row.remove(); recalc(); });
+    row.querySelectorAll('input, select').forEach((el) => el.addEventListener('input', recalc));
+    row.querySelector('select').addEventListener('change', recalc);
+    chargeRows.appendChild(row);
+  }
+  document.getElementById('add-charge').addEventListener('click', () => { addChargeRow({ label: 'Transporte', amount: '', payment: lastMethod }); recalc(); });
+
   function linePayments() {
     const out = {};
     cart.forEach((i) => { const map = linePaymentMap(i); METHODS.forEach((m) => { if (map[m]) out[m] = (out[m] || 0) + map[m]; }); });
+    readCharges().forEach((c) => { if (METHODS.includes(c.payment) && isFinite(c.amount)) out[c.payment] = (out[c.payment] || 0) + c.amount; });
     return out;
   }
   function payCellHtml(item) {
@@ -498,9 +545,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function recalc() {
-    const total = cartTotal();
+    const total = cartTotal() + chargesTotal();
     const payments = linePayments();
-    const allPaid = cart.every(linePayComplete);
+    const charges = readCharges();
+    const chargesOk = charges.every((c) => c.label && isFinite(c.amount) && c.amount > 0 && METHODS.includes(c.payment));
+    const allPaid = cart.every(linePayComplete) && chargesOk;
 
     orderTotalEl.textContent = formatMoney(total);
     const barTotal = document.getElementById('bar-total');
@@ -510,6 +559,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let warn = '';
     if (!cart.length) warn = 'Add at least one product line.';
+    else if (!chargesOk) warn = 'Each shipping / fee needs a name, an amount and how it was paid.';
     else if (!allPaid) warn = 'Each line needs a complete payment.';
     cartWarning.textContent = warn;
     cartWarning.classList.toggle('d-none', !warn);
@@ -519,6 +569,9 @@ document.addEventListener('DOMContentLoaded', () => {
       discount: (Number(i.discount) || 0).toFixed(2), payment: linePrimaryMethod(i),
     })));
     paymentsJson.value = JSON.stringify(METHODS.filter((m) => payments[m] > 0).map((m) => ({ method: m, amount: payments[m].toFixed(2) })));
+    document.getElementById('charges_json').value = JSON.stringify(charges.map((c) => ({
+      label: c.label, amount: isFinite(c.amount) ? c.amount.toFixed(2) : '', payment: c.payment,
+    })));
 
     submitBtn.disabled = !(cart.length > 0 && allPaid);
   }
@@ -715,6 +768,9 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       lastMethod = payment;
     });
+    let charges = [];
+    try { charges = JSON.parse(document.getElementById('initialCharges').textContent) || []; } catch (e) { charges = []; }
+    charges.forEach(addChargeRow);
     renderCart();
   }());
 });

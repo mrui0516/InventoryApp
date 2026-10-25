@@ -83,10 +83,14 @@
         {% endif %}
         <a class="erp-nav-link {% if current_url == 'sales_records' %}active{% endif %}" href="{% url 'sales_records' %}">Orders</a>
 
+        {# A sale and a Pedido draft both belong to one store, so under "All  #}
+        {# stores" there is nothing to sell from: the group is left out.      #}
+        {% if not active_store_is_all %}
         <div class="erp-nav-group">Sell</div>
         <a class="erp-nav-link {% if current_url == 'outbound' %}active{% endif %}" href="{% url 'outbound' %}">Sell</a>
         {% if user|is_manager_user %}
         <a class="erp-nav-link {% if current_url == 'pedido' %}active{% endif %}" href="{% url 'pedido' %}">Pedido</a>
+        {% endif %}
         {% endif %}
 
         <div class="erp-nav-group">Products</div>
@@ -170,10 +174,18 @@
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg>
         <span>Today</span>
       </a>
+      {% if active_store_is_all %}
+      {# No till under "All stores": the slot shows the orders instead. #}
+      <a class="erp-tab {% if current_url == 'sales_records' %}active{% endif %}" href="{% url 'sales_records' %}">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h11"/><path d="M8 10h11"/><path d="M8 16h11"/><circle cx="4" cy="4" r="1"/><circle cx="4" cy="10" r="1"/><circle cx="4" cy="16" r="1"/><path d="M3 21h18"/></svg>
+        <span>Orders</span>
+      </a>
+      {% else %}
       <a class="erp-tab {% if current_url == 'outbound' %}active{% endif %}" href="{% url 'outbound' %}">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h3l2.4 12.2a1.5 1.5 0 0 0 1.5 1.2h8.2a1.5 1.5 0 0 0 1.5-1.2L21 7H6"/></svg>
         <span>Sell</span>
       </a>
+      {% endif %}
       <a class="erp-tab {% if current_url in 'product_list,product_detail,edit_product,add_product,catalog' %}active{% endif %}" href="{% url 'product_list' %}">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12.5 12.5 20a2 2 0 0 1-2.8 0l-6-6A2 2 0 0 1 3 12.6V5a2 2 0 0 1 2-2h7.6a2 2 0 0 1 1.4.6l6 6a2 2 0 0 1 0 2.9Z"/><circle cx="8" cy="8" r="1.3"/></svg>
         <span>Products</span>

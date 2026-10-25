@@ -52,3 +52,13 @@ def map_attr(values, attr: str):
         except Exception:
             continue
     return result
+
+
+@register.filter
+def eur_pt(value):
+    """``1234.5`` -> ``1.234,50 EUR``, as the Pedido page and its PDF write it."""
+    from ..services.doc_pdf import money
+    try:
+        return money(Decimal(str(value)))
+    except Exception:
+        return ''

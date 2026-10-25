@@ -2,6 +2,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from ..models import Sale, SaleOrder, SaleOrderChangeLog, SaleOrderPayment
+from .order_charges import save_charges
 from .stock_ops import consume_stock_fifo, restore_stock_fifo
 
 
@@ -45,6 +46,10 @@ def snapshot_sale_order(order):
         'payments': [
             {'method': payment.method, 'amount': str(payment.amount)}
             for payment in order.payments.all()
+        ],
+        'charges': [
+            {'label': charge.label, 'amount': str(charge.amount), 'method': charge.payment_method}
+            for charge in order.charges.all()
         ],
     }
 
@@ -92,7 +97,9 @@ def log_sale_order_change(*, order, order_id_snapshot, action, changed_by, reaso
 
 
 @transaction.atomic
-def save_sale_order_correction(*, order, customer, note, order_datetime, line_items, payment_totals, changed_by, reason, store=None, affects_stock=None):
+def save_sale_order_correction(*, order, customer, note, order_datetime, line_items, payment_totals, changed_by, reason, store=None, affects_stock=None, charges=None):
+    # ``charges``: the order's shipping and fees as parsed by
+    # order_charges.parse_charges. None leaves the existing ones untouched.
     if not line_items:
         raise ValidationError("Add at least one product line before saving the order.")
 
@@ -164,6 +171,8 @@ def save_sale_order_correction(*, order, customer, note, order_datetime, line_it
     for method, amount in (payment_totals or {}).items():
         if amount and amount > 0:
             SaleOrderPayment.objects.create(order=order, method=method, amount=amount)
+    if charges is not None:
+        save_charges(order, charges)
 
     after_data = snapshot_sale_order(order)
 

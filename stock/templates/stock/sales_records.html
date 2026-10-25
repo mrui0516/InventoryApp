@@ -273,6 +273,7 @@
       <div class="op-kpi m-hide"><span class="k">Items</span><span class="v">{{ summary.qty }}</span></div>
       {% if show_order_financials %}<div class="op-kpi"><span class="k">Per order</span><span class="v">EUR {{ summary.avg|floatformat:"2g" }}</span></div>{% endif %}
       {% if show_profit %}<div class="op-kpi"><span class="k">Gross profit</span><span class="v">EUR {{ summary.profit|floatformat:"2g" }}</span><span class="s">{{ summary.margin }}% of sales</span></div>{% endif %}
+      {% if show_order_financials and summary.charges %}<div class="op-kpi"><span class="k">Shipping &amp; fees</span><span class="v">EUR {{ summary.charges|floatformat:"2g" }}</span><span class="s">not in sales</span></div>{% endif %}
     </div>
     {% if show_order_financials and summary.pay_display %}
       <div class="op-pay" aria-label="Payments">

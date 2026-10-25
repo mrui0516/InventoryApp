@@ -242,7 +242,11 @@
             <div class="d-flex justify-content-between align-items-center mb-2"><span class="text-muted">Items</span><strong>{{ total_qty }}</strong></div>
             {% if show_order_financials %}
               <div class="d-flex justify-content-between align-items-center mb-2"><span class="text-muted">Payments</span><strong>{{ pay_break|length }}</strong></div>
-              <div class="d-flex justify-content-between align-items-center"><span class="text-muted">Grand Total</span><strong>EUR {{ total_amount|floatformat:2 }}</strong></div>
+              {% if charges %}
+                <div class="d-flex justify-content-between align-items-center mb-2"><span class="text-muted">Goods</span><strong>EUR {{ total_amount|floatformat:2 }}</strong></div>
+                {% for c in charges %}<div class="d-flex justify-content-between align-items-center mb-2"><span class="text-muted">{{ c.label }}</span><strong>EUR {{ c.amount|floatformat:2 }}</strong></div>{% endfor %}
+              {% endif %}
+              <div class="d-flex justify-content-between align-items-center"><span class="text-muted">Grand Total</span><strong>EUR {{ grand_total|floatformat:2 }}</strong></div>
             {% endif %}
           </div>
         </div>
@@ -347,6 +351,13 @@
           <div class="pos-row"><div>No items.</div></div>
         {% endfor %}
 
+        {% for c in charges %}
+          <div class="pos-grid">
+            <div class="pos-name">{{ c.label }}</div>
+            <div class="pos-amt">EUR {{ c.amount|floatformat:2 }}</div>
+          </div>
+        {% endfor %}
+
         <div class="pos-center pos-sep">------------------------------</div>
 
         {% if pay_break %}
@@ -366,7 +377,7 @@
 
         <div class="pos-total pos-grid">
           <div>Total</div>
-          <div class="pos-amt">EUR {{ total_amount|floatformat:2 }}</div>
+          <div class="pos-amt">EUR {{ grand_total|floatformat:2 }}</div>
         </div>
 
         {% if order.note %}

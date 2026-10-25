@@ -65,8 +65,46 @@
               border-radius:.7rem; padding:.7rem .9rem; margin-bottom:.85rem; font-size:.9rem; }
   .pd-errors ul{ margin:.3rem 0 0; padding-left:1.1rem; }
 
+  .pd-head .pd-new{ margin-left:auto; font-size:.9rem; font-weight:700; }
+  .pd-editing{ font-size:.92rem; font-weight:700; color:var(--accent); }
+  .pd-saved{ font-size:.9rem; font-weight:700; color:var(--app-good); }
+
+  /* drafts: one compact row each, the Orders-page density */
+  .pd-drafts{ border:1px solid var(--border); border-radius:.85rem; background:#fff;
+              box-shadow:0 1px 6px rgba(0,0,0,.04); margin-bottom:.85rem; overflow:hidden; }
+  .pd-drafts-head{ display:flex; align-items:center; gap:.5rem; padding:.6rem 1rem;
+                   border-bottom:1px solid var(--border); background:var(--app-surface-2); }
+  .pd-drafts-head h3{ margin:0; font-size:.95rem; font-weight:800; color:var(--ink); }
+  .pd-drafts-count{ font-size:.8rem; font-weight:800; color:var(--accent);
+                    background:var(--app-accent-soft); border-radius:999px; padding:.05rem .5rem; }
+  .pd-draft-list{ list-style:none; margin:0; padding:0; max-height:330px; overflow:auto; }
+  .pd-draft{ display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:center;
+             gap:.4rem 1rem; padding:.5rem 1rem; border-bottom:1px solid #f1f5f9; }
+  .pd-draft:last-child{ border-bottom:0; }
+  .pd-draft.is-current{ background:var(--app-accent-soft); }
+  .pd-draft-main{ display:flex; flex-direction:column; min-width:0; text-decoration:none; color:inherit; }
+  .pd-draft-who{ font-weight:800; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .pd-draft-meta{ font-size:.86rem; color:var(--label); }
+  .pd-draft-total{ font-weight:900; color:var(--ink); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .pd-draft-acts{ display:flex; gap:.35rem; align-items:center; }
+  .pd-draft-acts form{ margin:0; }
+  .pd-draft-btn{ display:inline-flex; align-items:center; min-height:34px; padding:.2rem .65rem;
+                 border:1px solid var(--border); border-radius:.5rem; background:#fff;
+                 font-size:.86rem; font-weight:800; color:var(--ink); text-decoration:none; cursor:pointer; }
+  .pd-draft-btn.is-sell{ background:var(--app-accent); border-color:var(--app-accent); color:#fff; }
+  .pd-draft-btn.is-del{ color:var(--danger); }
+
+  /* what this customer paid last time, under the price box */
+  .pd-last{ display:block; margin-top:.2rem; font-size:.82rem; font-weight:700; color:var(--accent); white-space:nowrap; }
+  .pd-last button{ border:0; background:none; padding:0 0 0 .3rem; font:inherit; color:var(--accent);
+                   text-decoration:underline; cursor:pointer; }
+
   @media (max-width: 820px){
     .pd-foot{ grid-template-columns:1fr; }
+    .pd-draft{ grid-template-columns:minmax(0,1fr) auto; padding:.55rem .8rem; }
+    .pd-draft-acts{ grid-column:1 / -1; }
+    .pd-draft-acts .pd-draft-btn, .pd-draft-acts form{ flex:1 1 0; }
+    .pd-draft-acts .pd-draft-btn{ justify-content:center; width:100%; }
     .pd-table thead{ display:none; }
     .pd-table tr{ display:grid; grid-template-columns:1fr auto; gap:.2rem .5rem;
                   padding:.5rem 0; border-bottom:1px solid #f1f5f9; }
@@ -82,7 +120,27 @@
 <div class="pd-wrap">
   <div class="pd-head">
     <h2>Pedido</h2>
+    {% if draft %}<span class="pd-editing" id="pd-editing">Rascunho #{{ draft.id }}</span>{% else %}<span class="pd-editing" id="pd-editing" hidden></span>{% endif %}
+    <span class="pd-saved" id="pd-saved" hidden>Rascunho guardado</span>
+    {% if not pedido_blocked %}<a class="pd-new" href="{% url 'pedido' %}">+ Novo pedido</a>{% endif %}
   </div>
+
+  {% if pedido_blocked %}
+    {# A draft belongs to one store, as a sale does. #}
+    <div class="alert alert-warning" role="alert">
+      <strong>Escolha a loja.</strong> Um pedido fica guardado na loja de onde é vendido.
+      {% if store_can_switch and available_stores %}
+        <form method="post" action="{% url 'set_active_store' %}" class="d-flex flex-wrap gap-2 mt-2">
+          {% csrf_token %}
+          {% for s in available_stores %}
+            <button type="submit" name="store" value="{{ s.id }}" class="btn btn-sm btn-warning">{{ s.name }}</button>
+          {% endfor %}
+        </form>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  <div id="pd-drafts">{% include 'stock/_pedido_drafts.html' with current_draft_id=draft.id %}</div>
 
   {% if errors %}
     <div class="pd-errors">
@@ -93,26 +151,28 @@
 
   <form method="post" action="{% url 'pedido' %}" id="pd-form">
     {% csrf_token %}
+    <input type="hidden" name="draft_id" id="pd-draft-id" value="{{ draft.id|default:'' }}">
+    <input type="hidden" name="customer_id" id="pd-cust-id" value="{% if draft.customer_id %}{{ draft.customer_id }}{% elif prefill %}{{ prefill.id }}{% endif %}">
 
     <div class="pd-card">
       <h3>Cliente</h3>
       <div class="pd-field pd-search" style="margin-bottom:.7rem;">
-        <label for="pd-cust-q">Procurar cliente (nome, telefone, NIF)</label>
+        <label for="pd-cust-q">Procurar cliente Revenda (nome, telefone, NIF)</label>
         <input type="text" id="pd-cust-q" autocomplete="off" placeholder="Escreva para procurar — ou preencha os campos abaixo">
         <div class="pd-sugg" id="pd-cust-sugg" hidden></div>
       </div>
       <div class="pd-grid">
         <div class="pd-field">
           <label for="pd-cust-name">Nome</label>
-          <input type="text" id="pd-cust-name" name="customer_name" maxlength="100" value="{{ prefill.name|default:'' }}">
+          <input type="text" id="pd-cust-name" name="customer_name" maxlength="100" value="{% if draft %}{{ draft.customer_name }}{% else %}{{ prefill.name|default:'' }}{% endif %}">
         </div>
         <div class="pd-field">
           <label for="pd-cust-phone">Telefone</label>
-          <input type="text" id="pd-cust-phone" name="customer_phone" maxlength="40" value="{{ prefill.phone|default:'' }}">
+          <input type="text" id="pd-cust-phone" name="customer_phone" maxlength="40" value="{% if draft %}{{ draft.customer_phone }}{% else %}{{ prefill.phone|default:'' }}{% endif %}">
         </div>
         <div class="pd-field">
           <label for="pd-cust-address">Endereço</label>
-          <textarea id="pd-cust-address" name="customer_address" rows="2">{{ prefill.address|default:'' }}</textarea>
+          <textarea id="pd-cust-address" name="customer_address" rows="2">{% if draft %}{{ draft.customer_address }}{% else %}{{ prefill.address|default:'' }}{% endif %}</textarea>
         </div>
       </div>
     </div>
@@ -148,22 +208,22 @@
           <div class="pd-grid" style="margin-bottom:.8rem;">
             <div class="pd-field">
               <label for="pd-shipping">Transporte (EUR)</label>
-              <input type="text" inputmode="decimal" id="pd-shipping" name="shipping" value="">
+              <input type="text" inputmode="decimal" id="pd-shipping" name="shipping" value="{% if draft.shipping %}{{ draft.shipping }}{% endif %}">
             </div>
             <div class="pd-field">
               <label for="pd-discount-value">Desconto</label>
-              <input type="text" inputmode="decimal" id="pd-discount-value" name="discount_value" value="">
+              <input type="text" inputmode="decimal" id="pd-discount-value" name="discount_value" value="{% if draft.discount_value %}{{ draft.discount_value }}{% endif %}">
             </div>
             <div class="pd-field">
               <label for="pd-discount-kind">Tipo de desconto</label>
               <select id="pd-discount-kind" name="discount_kind">
-                <option value="amount" selected>EUR</option>
-                <option value="percent">% sobre os produtos</option>
+                <option value="amount" {% if draft.discount_kind != 'percent' %}selected{% endif %}>EUR</option>
+                <option value="percent" {% if draft.discount_kind == 'percent' %}selected{% endif %}>% sobre os produtos</option>
               </select>
             </div>
             <div class="pd-field">
               <label for="pd-valid-days">Válido por (dias)</label>
-              <input type="number" id="pd-valid-days" name="valid_days" min="0" max="365" value="{{ default_valid_days }}">
+              <input type="number" id="pd-valid-days" name="valid_days" min="0" max="365" value="{% if draft %}{{ draft.valid_days }}{% else %}{{ default_valid_days }}{% endif %}">
             </div>
           </div>
 
@@ -173,7 +233,7 @@
 
           <div class="pd-field" style="margin-top:.8rem;">
             <label for="pd-note">Observações (impressas no PDF)</label>
-            <textarea id="pd-note" name="note" rows="2"></textarea>
+            <textarea id="pd-note" name="note" rows="2">{{ draft.note|default:'' }}</textarea>
           </div>
         </div>
 
@@ -186,7 +246,7 @@
             <tr class="grand"><td>TOTAL</td><td class="num" id="pd-t-total">0,00 EUR</td></tr>
           </table>
           <div class="pd-actions" style="margin-top:.8rem;">
-            <button type="submit" class="btn btn-primary" id="pd-submit" disabled>Descarregar PDF</button>
+            <button type="submit" class="btn btn-primary" id="pd-submit" disabled {% if pedido_blocked %}data-blocked="1"{% endif %}>Descarregar PDF</button>
             <span class="pd-why" id="pd-block" style="display:none;">Preencha os preços em falta.</span>
           </div>
           <div class="pd-errors" id="pd-live-errors" hidden style="margin:.7rem 0 0;"></div>
@@ -196,6 +256,8 @@
   </form>
 </div>
 
+{{ draft_rows|json_script:"pd-draft-rows" }}
+{{ draft.extras|default_if_none:''|json_script:"pd-draft-extras" }}
 <script>
 (function () {
   const rows = document.getElementById('pd-rows');
@@ -260,16 +322,59 @@
     });
   }
 
-  // Customer: picking only fills the three fields. What is on screen is what
-  // gets printed, so a corrected address is never thrown away server-side.
-  wireSearch('pd-cust-q', 'pd-cust-sugg', '/api/customers_autocomplete/?q=', function (c) {
-    const bits = [c.phone, c.kind === 'revenda' ? 'Revenda' : 'Retail'].filter(Boolean);
+  // ---- what the picked customer last paid -------------------------------
+  // Loaded once per customer. A product added afterwards starts at that price;
+  // rows already on the form only get a hint, never a silent change.
+  const custId = document.getElementById('pd-cust-id');
+  let lastPrices = {};
+  function loadLastPrices() {
+    lastPrices = {};
+    if (!custId.value) { refreshHints(); return; }
+    fetch('/api/customer_last_prices/?customer=' + encodeURIComponent(custId.value))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        (data.results || []).forEach(function (p) { lastPrices[p.product_id] = p; });
+        refreshHints();
+      })
+      .catch(function () { /* the hint is a convenience; quoting still works */ });
+  }
+  function refreshHints() {
+    rows.querySelectorAll('tr.pd-row').forEach(function (tr) {
+      const id = tr.querySelector('input[name="product_id"]').value;
+      const slot = tr.querySelector('.pd-last');
+      const last = lastPrices[id];
+      if (!last) { slot.hidden = true; slot.innerHTML = ''; return; }
+      const price = tr.querySelector('input.price');
+      const same = cents(price.value) === cents(last.price);
+      slot.innerHTML = 'Último ' + esc(fmt(cents(last.price))) + ' · ' + esc(last.date) +
+                       (same ? '' : '<button type="button">usar</button>');
+      slot.hidden = false;
+      const use = slot.querySelector('button');
+      if (use) use.addEventListener('click', function () {
+        price.value = String(last.price).replace('.', ',');
+        recalc();
+        refreshHints();
+      });
+    });
+  }
+
+  // Customer: picking fills the three fields and links the draft to the
+  // customer. What is on screen is what gets printed, so a corrected address
+  // is never thrown away server-side. Resellers only - Pedido is Revenda.
+  wireSearch('pd-cust-q', 'pd-cust-sugg', '/api/customers_autocomplete/?kind=revenda&q=', function (c) {
+    const bits = [c.phone, c.nif].filter(Boolean);
     return esc(c.name) + '<span class="s2">' + esc(bits.join(' · ')) + '</span>';
   }).addEventListener('pd:pick', function (e) {
     const c = e.detail;
     document.getElementById('pd-cust-name').value = c.name || '';
     document.getElementById('pd-cust-phone').value = c.phone || '';
     document.getElementById('pd-cust-address').value = c.address || '';
+    custId.value = c.id || '';
+    loadLastPrices();
+  });
+  // Clearing the name unlinks the customer; correcting a typo does not.
+  document.getElementById('pd-cust-name').addEventListener('input', function (e) {
+    if (!e.target.value.trim() && custId.value) { custId.value = ''; loadLastPrices(); }
   });
 
   // Products: scope=stock asks for the whole catalogue, sold out included -
@@ -282,8 +387,9 @@
   }).addEventListener('pd:pick', function (e) { addRow(e.detail); });
 
   // ---- product rows -----------------------------------------------------
-  function addRow(p) {
-    if (rows.querySelector('input[name="product_id"][value="' + p.id + '"]')) {
+  // ``quoted`` carries the quantity and price of a reopened draft's line.
+  function addRow(p, quoted) {
+    if (!quoted && rows.querySelector('input[name="product_id"][value="' + p.id + '"]')) {
       const existing = rows.querySelector('input[name="product_id"][value="' + p.id + '"]')
                            .closest('tr').querySelector('input.qty');
       existing.value = String(parseInt(existing.value || '0', 10) + 1);
@@ -292,16 +398,21 @@
     }
     const tr = document.createElement('tr');
     tr.className = 'pd-row';
-    const hasPrice = p.wholesale_price != null;
+    const last = lastPrices[p.id];
+    let startPrice = '';
+    if (quoted) startPrice = String(quoted.unit_price);
+    else if (last) startPrice = String(last.price);
+    else if (p.wholesale_price != null) startPrice = p.wholesale_price.toFixed(2);
     tr.innerHTML =
       '<td><div class="pd-name">' + esc(p.display_name) + '</div>' +
       '<div class="pd-ean">' + esc(p.barcode || '') + '</div>' +
       '<div class="pd-why">Sem preço grossista — escreva o preço.</div>' +
       '<input type="hidden" name="product_id" value="' + p.id + '"></td>' +
       '<td data-l="Disponibilidade"><span class="pd-avail">' + esc(p.availability || '') + '</span></td>' +
-      '<td class="num" data-l="Qtd."><input class="qty" name="quantity" type="number" min="1" step="1" value="1"></td>' +
+      '<td class="num" data-l="Qtd."><input class="qty" name="quantity" type="number" min="1" step="1" value="' +
+        (quoted ? quoted.quantity : 1) + '"></td>' +
       '<td class="num" data-l="Preço unit."><input class="price" name="unit_price" type="text" inputmode="decimal" value="' +
-        (hasPrice ? String(p.wholesale_price.toFixed(2)).replace('.', ',') : '') + '"></td>' +
+        startPrice.replace('.', ',') + '"><span class="pd-last" hidden></span></td>' +
       '<td class="num" data-l="Total"><span class="line">0,00 EUR</span></td>' +
       '<td><button type="button" class="pd-x" aria-label="Remover">&times;</button></td>';
     rows.appendChild(tr);
@@ -309,22 +420,28 @@
     tr.querySelectorAll('input.qty, input.price').forEach(function (el) {
       el.addEventListener('input', recalc);
     });
+    tr.querySelector('input.price').addEventListener('change', refreshHints);
     recalc();
+    refreshHints();
   }
 
   // ---- extra cost rows --------------------------------------------------
-  function addExtra() {
+  function addExtra(preset) {
     const div = document.createElement('div');
     div.className = 'pd-extra-row';
     div.innerHTML =
       '<input type="text" name="extra_label" maxlength="60" placeholder="Descrição (ex. embalagem)">' +
       '<input type="text" name="extra_amount" class="amt" inputmode="decimal" placeholder="0,00">' +
       '<button type="button" class="pd-x" aria-label="Remover">&times;</button>';
+    if (preset) {
+      div.querySelector('input[name="extra_label"]').value = preset.label || '';
+      div.querySelector('.amt').value = String(preset.amount || '').replace('.', ',');
+    }
     extras.appendChild(div);
     div.querySelector('.pd-x').addEventListener('click', function () { div.remove(); recalc(); });
     div.querySelector('.amt').addEventListener('input', recalc);
   }
-  document.getElementById('pd-add-extra').addEventListener('click', addExtra);
+  document.getElementById('pd-add-extra').addEventListener('click', function () { addExtra(); });
 
   // ---- totals: the same order of operations as services/pedido.py -------
   function recalc() {
@@ -370,7 +487,7 @@
     document.getElementById('pd-t-total').textContent = fmt(total);
 
     empty.hidden = lines > 0;
-    submit.disabled = lines === 0 || missing > 0;
+    submit.disabled = submit.dataset.blocked === '1' || lines === 0 || missing > 0;
     block.style.display = missing > 0 ? 'block' : 'none';
   }
 
@@ -400,6 +517,7 @@
         if (resp.ok && type.indexOf('application/pdf') !== -1) {
           const name = (resp.headers.get('Content-Disposition') || '')
             .replace(/.*filename="?([^"]+)"?.*/, '$1') || 'pedido.pdf';
+          draftSaved(resp.headers.get('X-Pedido-Draft'));
           return resp.blob().then(function (blob) { save(blob, name); });
         }
         return resp.text().then(function (html) { showErrors(html); });
@@ -413,6 +531,23 @@
         recalc();
       });
   });
+
+  // The PDF kept a draft: print again and the same draft is updated, and the
+  // list at the top shows it without reloading what is typed here.
+  function draftSaved(id) {
+    if (!id) return;
+    document.getElementById('pd-draft-id').value = id;
+    const tag = document.getElementById('pd-editing');
+    tag.textContent = 'Rascunho #' + id;
+    tag.hidden = false;
+    const saved = document.getElementById('pd-saved');
+    saved.hidden = false;
+    setTimeout(function () { saved.hidden = true; }, 3000);
+    fetch('{% url "pedido_drafts_partial" %}?current=' + encodeURIComponent(id))
+      .then(function (r) { return r.text(); })
+      .then(function (html) { document.getElementById('pd-drafts').innerHTML = html; })
+      .catch(function () { /* the list catches up on the next visit */ });
+  }
 
   function save(blob, name) {
     const url = URL.createObjectURL(blob);
@@ -439,8 +574,14 @@
     liveErrors.hidden = false;
   }
 
-  addExtra();
+  // A reopened draft: its rows and fees as they were printed.
+  const draftRows = JSON.parse(document.getElementById('pd-draft-rows').textContent || '[]');
+  draftRows.forEach(function (row) { addRow(row, row); });
+  const draftExtras = JSON.parse(document.getElementById('pd-draft-extras').textContent || '""') || [];
+  if (draftExtras.length) draftExtras.forEach(function (x) { addExtra(x); });
+  else addExtra();
   recalc();
+  loadLastPrices();
 })();
 </script>
 {% endblock %}

@@ -3,6 +3,7 @@
 Portuguese, because it is handed to the customer - like the quote and the
 customer price list. The 48 mm till slip is a different thing and stays HTML.
 """
+from decimal import Decimal
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, Spacer
 
@@ -30,9 +31,12 @@ def valid_pt_nif(nif):
 
 
 def build_receipt_pdf(*, profile, order_id, created_label, store_name, customer_name,
-                      customer_phone, customer_nif, lines, total, payments, footer_note=''):
+                      customer_phone, customer_nif, lines, total, payments, footer_note='',
+                      charges=()):
     """``lines``: dicts with title, barcode, quantity, unit_price, line_total.
-    ``payments``: (method code, amount) pairs from the order's payment split."""
+    ``payments``: (method code, amount) pairs from the order's payment split.
+    ``charges``: (label, amount) pairs - shipping and fees, under the goods.
+    ``total`` is what was paid: goods plus charges."""
     style = doc_pdf.styles()
     right = [f'N.º {order_id}', f'Data: {created_label}']
     if store_name:
@@ -55,6 +59,11 @@ def build_receipt_pdf(*, profile, order_id, created_label, store_name, customer_
     story.append(Spacer(1, 7))
 
     summary = [('Artigos', str(sum(int(line['quantity']) for line in lines)))]
+    if charges:
+        goods = sum((line['line_total'] for line in lines), Decimal('0.00'))
+        summary.append(('Produtos', money(goods)))
+        for label, amount in charges:
+            summary.append((label, money(amount)))
     for method, amount in payments:
         summary.append((f"Pago em {PT_PAYMENT.get(method, (method or 'outro').title())}"
                         if method != 'mbway' else 'Pago por MB WAY', money(amount)))
