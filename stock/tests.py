@@ -10604,3 +10604,14 @@ class ChannelSplitTests(TestCase):
         self.assertEqual(split['retail']['orders'], 2)
         self.assertEqual(split['retail']['customers'], 1)
         self.assertEqual(split['revenda']['share_pct'], Decimal("50"))
+
+class StaticVersionTests(TestCase):
+    """CSS/JS links carry the file's version, so a deploy is never hidden
+    behind a browser's cached copy (PythonAnywhere sends no Cache-Control)."""
+
+    def test_the_stylesheet_url_changes_with_the_file(self):
+        user = get_user_model().objects.create_superuser("sv_admin", password="pw123456")
+        self.client.force_login(user)
+        html = self.client.get(reverse("customer_search")).content.decode()
+        self.assertRegex(html, r'href="/static/css/app\.css\?v=\d+"')
+        self.assertRegex(html, r'src="/static/js/bootstrap\.min\.js\?v=\d+"')

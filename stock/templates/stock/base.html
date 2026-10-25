@@ -1,4 +1,4 @@
-{% load static access_tags %}
+{% load static static_version access_tags %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -8,8 +8,8 @@
   <meta name="format-detection" content="telephone=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
 
-  <link rel="stylesheet" href="{% static 'css/bootstrap.min.css' %}">
-  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  <link rel="stylesheet" href="{% static_v 'css/bootstrap.min.css' %}">
+  <link rel="stylesheet" href="{% static_v 'css/app.css' %}">
   <script>
     /* Single source for chart series colors — read from the --chart-* tokens. */
     window.CHART_PALETTE = (function () {
@@ -338,7 +338,7 @@
       document.addEventListener('hidden.bs.modal', function () { if (!typing()) body.classList.remove('tabbar-away'); });
     })();
   </script>
-  <script src="{% static 'js/popper.min.js' %}"></script>
-  <script src="{% static 'js/bootstrap.min.js' %}"></script>
+  <script src="{% static_v 'js/popper.min.js' %}"></script>
+  <script src="{% static_v 'js/bootstrap.min.js' %}"></script>
 </body>
 </html>
