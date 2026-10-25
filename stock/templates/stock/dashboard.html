@@ -146,6 +146,31 @@
       {% endif %}
     </div>
 
+    {% if isManger and channel_split and month_sales_amount %}
+    {# Retail and Revenda side by side: the same month's sales, split by the #}
+    {# customer's type. A sale with no customer (walk-in) counts as retail. #}
+    <div class="dash-card pad">
+      <div class="section-head">
+        <div><h2>Retail vs Revenda</h2></div>
+        <div class="quick-tags"><span class="note-pill">{{ month_label }}</span></div>
+      </div>
+      <div class="ch-bar" role="img" aria-label="{% for c in channel_split %}{{ c.label }} {{ c.share_pct|floatformat:0 }}%{% if not forloop.last %}, {% endif %}{% endfor %}">
+        {% for c in channel_split %}<span class="ch-seg {{ c.kind }}" style="width:{{ c.share_pct|stringformat:'.2f' }}%"></span>{% endfor %}
+      </div>
+      <div class="ch-grid">
+        {% for c in channel_split %}
+          <div class="ch-card {{ c.kind }}">
+            <div class="ch-head"><i class="ch-dot" aria-hidden="true"></i>{{ c.label }}<span class="ch-share">{{ c.share_pct|floatformat:0 }}%</span></div>
+            <div class="ch-v">EUR {{ c.amount|floatformat:"2g" }}</div>
+            <div class="ch-s">{{ c.orders }} order{{ c.orders|pluralize }} · {{ c.qty }} items · avg EUR {{ c.avg_ticket|floatformat:2 }}</div>
+            {% if show_profit %}<div class="ch-s">Profit EUR {{ c.profit|floatformat:"2g" }} · margin {{ c.margin_pct|floatformat:1 }}%</div>{% endif %}
+            <div class="ch-s">{{ c.customers }} named customer{{ c.customers|pluralize }}</div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
     {% if store_is_all and month_store_breakdown|length > 1 %}
     <div class="dash-card pad">
       <div class="section-head">
@@ -536,160 +561,40 @@
 </div>
 
 {% if isManger %}
+  {# A summary only: the whole list lives in the alerts panel (the bell),  #}
+  {# which every page can open. Each total opens the panel on its band.     #}
   <div class="dash-card pad mt-4" id="low-stock">
     <div class="section-head">
-      <div>
-        <h2>Low stock warning</h2>
-      </div>
-      <div class="quick-tags">
-        <span class="note-pill warn">{{ low_stock_count }} low-stock SKU{{ low_stock_count|pluralize }}</span>
-        <span class="note-pill bad">{{ out_of_stock_count }} out now</span>
-      </div>
+      <div><h2>Low stock</h2></div>
+      {% if low_stock_count %}
+        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="offcanvas"
+                data-bs-target="#alertsPanel" data-ls-band="out">View all {{ low_stock_count }}</button>
+      {% endif %}
     </div>
-
-    {% if low_brand_blocks %}
-      <div class="lowstock-shell">
-        <div class="lowstock-summary-grid">
-          <div class="lowstock-stat">
-            <span class="label">Out Now</span>
-            <div class="value">{{ out_of_stock_count }}</div>
-            <div class="sub">Need replenishment first</div>
-          </div>
-          <div class="lowstock-stat">
-            <span class="label">1-2 Left</span>
-            <div class="value">{{ low_stock_1_2_count }}</div>
-            <div class="sub">Highest near-term risk</div>
-          </div>
-          <div class="lowstock-stat">
-            <span class="label">3-4 Left</span>
-            <div class="value">{{ low_stock_3_4_count }}</div>
-            <div class="sub">Watch before next order</div>
-          </div>
-        </div>
-
-        <div>
-          <div class="section-top mb-2">
-            <div>
-              <h3>Most urgent SKUs</h3>
-
-            </div>
-          </div>
-          <div class="lowstock-focus-list">
-            {% for p in low_stock_focus_products %}
-              <div class="lowstock-focus-item">
-                <div class="inline-product">
-                  {% if p.image_url %}
-                    <button
-                      type="button"
-                      class="inline-product-thumb-wrap"
-                      data-product-preview-url="{{ p.image_url }}"
-                      data-product-preview-title="{{ p.display_name }}"
-                    >
-                      <img src="{{ p.image_url }}" alt="{{ p.display_name }}" class="inline-product-thumb" loading="lazy">
-                    </button>
-                  {% else %}
-                    <div class="inline-product-thumb-empty">No img</div>
-                  {% endif %}
-                  <div>
-                    <div class="item-head">
-                      <span class="item-name"><a class="text-decoration-none text-dark" href="{% url 'product_detail' p.id %}">{{ p.display_name }}</a></span>
-                      <span class="status-badge {% if p.stock > 0 %}status-warning{% else %}status-danger{% endif %}">{{ p.stock }}</span>
-                    </div>
-                    <div class="tiny mt-2">{{ p.brand|default:"Unknown brand" }} · sold {{ p.sold }} · {% if p.stock == 0 %}out of stock{% else %}{{ p.stock }} left{% endif %}</div>
-                  </div>
-                </div>
-              </div>
-            {% endfor %}
-          </div>
-        </div>
-
-        <div>
-          <div class="section-top mb-2">
-            <div>
-              <h3>Brands to review</h3>
-
-            </div>
-          </div>
-          <div class="lowstock-brand-scroll">
-            <div class="accordion lowstock" id="lowStockAccordion">
-              {% for block in low_stock_primary_blocks %}
-                <div class="accordion-item">
-                  <h2 class="accordion-header" id="lowStockHeading{{ forloop.counter }}">
-                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#lowStockCollapse{{ forloop.counter }}">
-                      <span class="lowstock-brand-head">
-                        <span>{{ block.brand }}</span>
-                        <span class="lowstock-brand-meta">
-                          {% if block.out_count %}<span class="note-pill bad">{{ block.out_count }} out</span>{% endif %}
-                          <span class="pill">{{ block.count }}</span>
-                        </span>
-                      </span>
-                    </button>
-                  </h2>
-                  <div id="lowStockCollapse{{ forloop.counter }}" class="accordion-collapse collapse" data-bs-parent="#lowStockAccordion">
-                    <div class="accordion-body">
-                      <div class="table-wrap">
-                        <table class="table mb-0">
-                          <thead><tr><th>Product</th><th class="text-center">Sold</th><th class="text-center">Stock</th></tr></thead>
-                          <tbody>
-                            {% for p in block.products %}
-                              <tr>
-                                <td><a class="text-decoration-none" href="{% url 'product_detail' p.id %}">{{ p.display_name }}</a></td>
-                                <td class="text-center">{{ p.sold }}</td>
-                                <td class="text-center">{% if p.stock > 0 %}<span class="status-badge status-warning">{{ p.stock }}</span>{% else %}<span class="status-badge status-danger">0</span>{% endif %}</td>
-                              </tr>
-                            {% endfor %}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              {% endfor %}
-            </div>
-          </div>
-
-          {% if low_stock_extra_blocks %}
-            <details class="lowstock-extra">
-              <summary>{{ low_stock_extra_brand_count }} more brand{{ low_stock_extra_brand_count|pluralize }} · {{ low_stock_extra_product_count }} more SKU{{ low_stock_extra_product_count|pluralize }}</summary>
-              <div class="accordion lowstock mt-3" id="lowStockAccordionExtra">
-                {% for block in low_stock_extra_blocks %}
-                  <div class="accordion-item">
-                    <h2 class="accordion-header" id="lowStockExtraHeading{{ forloop.counter }}">
-                      <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#lowStockExtraCollapse{{ forloop.counter }}">
-                        <span class="lowstock-brand-head">
-                          <span>{{ block.brand }}</span>
-                          <span class="lowstock-brand-meta">
-                            {% if block.out_count %}<span class="note-pill bad">{{ block.out_count }} out</span>{% endif %}
-                            <span class="pill">{{ block.count }}</span>
-                          </span>
-                        </span>
-                      </button>
-                    </h2>
-                    <div id="lowStockExtraCollapse{{ forloop.counter }}" class="accordion-collapse collapse" data-bs-parent="#lowStockAccordionExtra">
-                      <div class="accordion-body">
-                        <div class="table-wrap">
-                          <table class="table mb-0">
-                            <thead><tr><th>Product</th><th class="text-center">Sold</th><th class="text-center">Stock</th></tr></thead>
-                            <tbody>
-                              {% for p in block.products %}
-                                <tr>
-                                  <td><a class="text-decoration-none" href="{% url 'product_detail' p.id %}">{{ p.display_name }}</a></td>
-                                  <td class="text-center">{{ p.sold }}</td>
-                                  <td class="text-center">{% if p.stock > 0 %}<span class="status-badge status-warning">{{ p.stock }}</span>{% else %}<span class="status-badge status-danger">0</span>{% endif %}</td>
-                                </tr>
-                              {% endfor %}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                {% endfor %}
-              </div>
-            </details>
-          {% endif %}
-        </div>
+    {% if low_stock_count %}
+      <div class="ls-sum">
+        <button type="button" class="ls-sum-tile out" data-bs-toggle="offcanvas" data-bs-target="#alertsPanel" data-ls-band="out">
+          <span class="k">Out</span><span class="v">{{ out_of_stock_count }}</span></button>
+        <button type="button" class="ls-sum-tile low12" data-bs-toggle="offcanvas" data-bs-target="#alertsPanel" data-ls-band="low12">
+          <span class="k">1–2 left</span><span class="v">{{ low_stock_1_2_count }}</span></button>
+        <button type="button" class="ls-sum-tile low34" data-bs-toggle="offcanvas" data-bs-target="#alertsPanel" data-ls-band="low34">
+          <span class="k">3–4 left</span><span class="v">{{ low_stock_3_4_count }}</span></button>
       </div>
+      <div class="ls-sub">Most urgent</div>
+      <ul class="ls-list ls-inline">
+        {% for p in low_stock_focus_products %}
+          <li>
+            <a class="ls-row" href="{% url 'product_detail' p.id %}">
+              {% if p.image_url %}<img class="ls-img" src="{{ p.image_url }}" alt="" loading="lazy">{% else %}<span class="ls-img" aria-hidden="true"></span>{% endif %}
+              <span class="ls-main">
+                <span class="ls-name">{{ p.display_name }}</span>
+                <span class="ls-meta">{{ p.brand }} · sold {{ p.sold }}</span>
+              </span>
+              <span class="ls-stock {{ p.band }}">{% if p.stock == 0 %}Out{% else %}{{ p.stock }} left{% endif %}</span>
+            </a>
+          </li>
+        {% endfor %}
+      </ul>
     {% else %}
       <div class="tiny">No low-stock products right now.</div>
     {% endif %}

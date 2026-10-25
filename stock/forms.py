@@ -563,7 +563,7 @@ class EmployeeAccountForm(forms.ModelForm):
 
 class CustomerChoiceField(forms.ModelChoiceField):
     def label_from_instance(self, obj):
-        return f"{obj.name} ({obj.nif})"
+        return str(obj)
 
 
 class SaleOrderCorrectionForm(forms.ModelForm):
@@ -630,11 +630,31 @@ class SaleForm(forms.ModelForm):
 class CustomerForm(forms.ModelForm):
     class Meta:
         model = Customer
-        fields = ['nif', 'name', 'kind', 'phone', 'email', 'address', 'notes']
+        fields = ['name', 'phone', 'kind', 'nif', 'email', 'address', 'notes']
+        labels = {'phone': 'Phone (WhatsApp)', 'nif': 'NIF (optional)'}
         widgets = {
+            'phone': forms.TextInput(attrs={'inputmode': 'tel', 'autocomplete': 'tel'}),
             'address': forms.Textarea(attrs={'rows': 2}),
             'notes': forms.Textarea(attrs={'rows': 2}),
         }
+
+    def clean_nif(self):
+        # Blank is stored as NULL: two '' would collide on the unique index.
+        nif = (self.cleaned_data.get('nif') or '').strip()
+        if not nif:
+            return None
+        if not nif.isdigit() or len(nif) != 9:
+            raise forms.ValidationError('NIF must be exactly 9 digits.')
+        return nif
+
+    def clean_phone(self):
+        from .services.contacts import customer_with_phone
+        phone = (self.cleaned_data.get('phone') or '').strip()
+        if phone:
+            taken = customer_with_phone(phone, exclude_id=self.instance.pk)
+            if taken:
+                raise forms.ValidationError(f'This phone already belongs to {taken.name}.')
+        return phone or None
 
 
 class ARInvoiceForm(forms.ModelForm):

@@ -83,6 +83,7 @@ from .services.dashboard import (
     resolve_year,
 )
 from .services.inventory import build_inventory_snapshot
+from .services.low_stock import low_stock_data
 from .services.order_corrections import (
     delete_sale_order_correction,
     save_sale_order_correction,
@@ -294,9 +295,6 @@ def sellable_stock(stock_val):
     return max(int(stock_val or 0) - SAMPLE_RESERVE, 0)
 
 
-# Below this many units a product is listed under the dashboard's Low stock
-# warning (out-of-stock included).
-DASHBOARD_LOW_STOCK_BELOW = 5
 
 
 def get_catalog_availability_parts(stock_val, on_order=False):
@@ -894,7 +892,7 @@ def _pedido_cart(draft):
     customer = draft.customer
     return {
         'draft_id': draft.id,
-        'customer': ({'id': customer.id, 'label': f'{customer.name} ({customer.nif})'}
+        'customer': ({'id': customer.id, 'label': str(customer)}
                      if customer else None),
         'customer_name': draft.customer_name,
         'lines': [dict(_sell_line_ctx(line['product']), qty=line['quantity'],
@@ -2574,75 +2572,13 @@ def dashboard_view(request):
                 'share_pct': (amount / total_sales_today * Decimal('100')) if total_sales_today else Decimal('0.00'),
             })
 
-    # Low-stock section — cached (per store + category); the sold subquery over all
-    # products is the main per-load cost, so recompute at most every few minutes.
-    THUMB = 'c_fill,w_96,h_96,q_auto,f_auto'
-    low_cache_key = f"dash:low:{cache_scope}:store{store_cache_key}"
-    low_data = cache.get(low_cache_key)
-    if low_data is None:
-        stock_subq = (
-            Purchase.objects.filter(product=OuterRef('pk')).values('product')
-            .annotate(s=Sum('remaining')).values('s')[:1]
-        )
-        sold_subq = (
-            Sale.objects.filter(product=OuterRef('pk')).values('product')
-            .annotate(s=Sum('quantity')).values('s')[:1]
-        )
-        prod_base = Product.objects
-        if selected_cat_ids_int:
-            prod_base = prod_base.filter(category_id__in=selected_cat_ids_int)
-        low_qs = (
-            prod_base
-            .annotate(stock=Subquery(stock_subq, output_field=IntegerField()),
-                      sold=Subquery(sold_subq, output_field=IntegerField()))
-            .annotate(stock=Coalesce(F('stock'), 0), sold=Coalesce(F('sold'), 0))
-            .filter(stock__lt=DASHBOARD_LOW_STOCK_BELOW)
-            .only('id', 'brand', 'model', 'name', 'category')
-            .prefetch_related('images')
-        )
-        low_by_brand = defaultdict(list)
-        for product in low_qs:
-            stock = int(product.stock or 0)
-            low_by_brand[(product.brand or 'Unknown brand')].append({
-                'id': product.id,
-                'display_name': product.display_name,
-                'brand': product.brand or 'Unknown brand',
-                'stock': stock,
-                'sold': int(product.sold or 0),
-                # small CDN thumbnail (edge-cached, resized) with local fallback
-                'image_url': product_image_cdn_url(product, THUMB) or get_product_image_url(product),
-            })
-        for _brand, _products in low_by_brand.items():
-            _products.sort(key=lambda it: (-it['sold'], it['stock'], it['display_name'].lower()))
-        blocks = [
-            {'brand': brand, 'products': products, 'count': len(products),
-             'out_count': sum(1 for it in products if it['stock'] == 0)}
-            for brand, products in low_by_brand.items()
-        ]
-        blocks.sort(key=lambda it: (-it['count'], it['brand'].lower()))
-        all_low = [it for b in blocks for it in b['products']]
-        focus = sorted(all_low, key=lambda it: (
-            0 if it['stock'] == 0 else 1, it['stock'], -it['sold'], it['display_name'].lower()))[:8]
-        low_data = {
-            'blocks': blocks,
-            'count': len(all_low),
-            'out_of_stock_count': sum(1 for it in all_low if it['stock'] == 0),
-            'low_stock_1_2_count': sum(1 for it in all_low if 1 <= it['stock'] <= 2),
-            'low_stock_3_4_count': sum(1 for it in all_low if 3 <= it['stock'] <= 4),
-            'focus': focus,
-        }
-        cache.set(low_cache_key, low_data, 300)
-
-    low_brand_blocks = low_data['blocks']
+    # Low stock: shared with the alerts panel (services/low_stock.py).
+    low_data = low_stock_data(selected_cat_ids_int)
     low_stock_count = low_data['count']
-    out_of_stock_count = low_data['out_of_stock_count']
-    low_stock_1_2_count = low_data['low_stock_1_2_count']
-    low_stock_3_4_count = low_data['low_stock_3_4_count']
+    out_of_stock_count = low_data['out']
+    low_stock_1_2_count = low_data['low12']
+    low_stock_3_4_count = low_data['low34']
     low_stock_focus_products = low_data['focus']
-    low_stock_primary_blocks = low_brand_blocks[:6]
-    low_stock_extra_blocks = low_brand_blocks[6:]
-    low_stock_extra_brand_count = len(low_stock_extra_blocks)
-    low_stock_extra_product_count = sum(block['count'] for block in low_stock_extra_blocks)
 
     prod_for_totals = Product.objects.all()
     if selected_cat_ids_int:
@@ -2675,11 +2611,6 @@ def dashboard_view(request):
         'total_sales_today': total_sales_today,
         'today_payment_breakdown': today_payment_breakdown,
         'sale_orders_today': sale_orders_today,
-        'low_brand_blocks': low_brand_blocks,
-        'low_stock_primary_blocks': low_stock_primary_blocks,
-        'low_stock_extra_blocks': low_stock_extra_blocks,
-        'low_stock_extra_brand_count': low_stock_extra_brand_count,
-        'low_stock_extra_product_count': low_stock_extra_product_count,
         'low_stock_focus_products': low_stock_focus_products,
         'low_stock_count': low_stock_count,
         'out_of_stock_count': out_of_stock_count,
@@ -4415,6 +4346,17 @@ def check_customer(request):
 
 
 @login_required
+@manager_required
+def alerts_low_stock(request):
+    """The alerts panel: every product running out, as an HTML fragment.
+
+    Fetched by base.html after a page loads, so no page waits for it; the data
+    is cached for a few minutes (services/low_stock.py).
+    """
+    return render(request, 'stock/_low_stock_panel.html', {'low': low_stock_data()})
+
+
+@login_required
 def customers_autocomplete(request):
     query = request.GET.get('q', '').strip()
     results = []
@@ -4434,7 +4376,7 @@ def customers_autocomplete(request):
 
         # Extra keys are additive - the till reads name and id and ignores the
         # rest; the quote screen shows the phone and address it will print.
-        results = [{'id': c.id, 'name': c.name, 'nif': c.nif,
+        results = [{'id': c.id, 'name': c.name, 'nif': c.nif or '', 'label': str(c),
                     'phone': c.phone or '', 'address': c.address or '',
                     'kind': c.kind} for c in customers]
 
@@ -4479,21 +4421,25 @@ def add_customer(request):
     if kind not in (Customer.RETAIL, Customer.REVENDA):
         kind = Customer.RETAIL
 
-    # 基本必填校验
-    if not nif or not name:
-        return JsonResponse({'success': False, 'error': 'NIF and name are required.'})
-
-    # NIF 必须为 9 位数字
-    if not nif.isdigit() or len(nif) != 9:
+    # Name and phone are required; NIF is optional since 2026-10-25 (most
+    # customers never give a usable one). The phone is what tells customers
+    # apart now, so the same number twice is refused.
+    from .services.contacts import customer_with_phone
+    if not name:
+        return JsonResponse({'success': False, 'error': 'Name is required.'})
+    if not phone:
+        return JsonResponse({'success': False, 'error': 'Phone is required.'})
+    taken = customer_with_phone(phone)
+    if taken:
+        return JsonResponse({'success': False,
+                             'error': f'This phone already belongs to {taken.name}.'})
+    if nif and (not nif.isdigit() or len(nif) != 9):
         return JsonResponse({'success': False, 'error': 'NIF must be exactly 9 digits.'})
-
-    # 检查重复
-    if Customer.objects.filter(nif=nif).exists():
+    if nif and Customer.objects.filter(nif=nif).exists():
         return JsonResponse({'success': False, 'error': 'Customer with this NIF already exists.'})
 
-    # 创建客户
     customer = Customer.objects.create(
-        nif=nif, name=name, kind=kind, phone=phone, email=email,
+        nif=nif or None, name=name, kind=kind, phone=phone, email=email,
         address=address, notes=notes
     )
 
@@ -4501,8 +4447,12 @@ def add_customer(request):
         'success': True,
         'id': customer.id,
         'name': customer.name,
+        'nif': customer.nif or '',
+        'label': str(customer),
         'phone': customer.phone,
-        'email': customer.email
+        'email': customer.email,
+        'address': customer.address,
+        'kind': customer.kind,
     })
 
 def _employee_customer_search_view(request):

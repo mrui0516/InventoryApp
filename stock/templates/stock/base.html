@@ -33,6 +33,10 @@
       <button class="erp-burger" type="button" aria-label="Toggle navigation"
               onclick="document.body.classList.toggle('erp-nav-open')">&#9776;</button>
       <a class="erp-topbar-brand" href="{% url 'home' %}">KHAN PERFUME</a>
+      {% if user|is_manager_user %}
+        <button type="button" class="erp-bell" data-bs-toggle="offcanvas" data-bs-target="#alertsPanel"
+                aria-controls="alertsPanel" aria-label="Low stock alerts"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="erp-bell-n js-alert-n" hidden></span></button>
+      {% endif %}
       {# The store a sale lands in, in sight on every phone screen. It used to   #}
       {# live only in the side menu, behind the burger.                          #}
       {% if store_can_switch %}
@@ -70,6 +74,13 @@
             <div style="font-weight:800;color:#fff;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);border-radius:.6rem;padding:.4rem .7rem;">{{ active_store.name }}</div>
           {% endif %}
         </div>
+      {% endif %}
+
+      {% if user|is_manager_user %}
+        {# Products running out, from any page: opens the alerts panel. #}
+        <button type="button" class="erp-alerts" data-bs-toggle="offcanvas" data-bs-target="#alertsPanel" aria-controls="alertsPanel">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span>Low stock</span><span class="erp-bell-n js-alert-n" hidden></span>
+        </button>
       {% endif %}
 
       {# Grouped by what somebody came to do, not by how the code is split.     #}
@@ -228,6 +239,105 @@
   </script>
   {% endif %}
 
+  {% if user.is_authenticated and user|is_manager_user %}
+  <div class="offcanvas offcanvas-end ls-panel" tabindex="-1" id="alertsPanel" aria-labelledby="alertsPanelTitle">
+    <div class="offcanvas-header">
+      <h5 class="offcanvas-title" id="alertsPanelTitle">Low stock</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div class="offcanvas-body" id="alertsPanelBody" data-src="{% url 'alerts_low_stock' %}">
+      <p class="ls-loading">Loading…</p>
+    </div>
+  </div>
+  <script>
+    // Low stock alerts: the fragment is fetched once the page is up, which
+    // fills the count on the bell; the tabs and the brand filter then work on
+    // the rows already in the panel.
+    (function () {
+      var body = document.getElementById('alertsPanelBody');
+      if (!body) return;
+      var band = 'out';
+      function apply() {
+        var root = body.querySelector('.ls');
+        if (!root) return;
+        var brand = root.querySelector('.ls-brand select').value, shown = 0;
+        root.querySelectorAll('.ls-list li').forEach(function (li) {
+          var on = li.dataset.band === band && (!brand || li.dataset.brand === brand);
+          li.hidden = !on;
+          if (on) shown += 1;
+        });
+        root.querySelectorAll('.ls-tab').forEach(function (t) {
+          var on = t.dataset.band === band;
+          t.classList.toggle('is-on', on);
+          t.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+        root.querySelector('.ls-empty').hidden = shown > 0;
+      }
+      function wire() {
+        var root = body.querySelector('.ls');
+        if (!root) return;
+        var urgent = Number(root.dataset.out || 0);
+        document.querySelectorAll('.js-alert-n').forEach(function (n) {
+          n.textContent = urgent > 99 ? '99+' : String(urgent);
+          n.hidden = urgent === 0;
+        });
+        root.querySelectorAll('.ls-tab').forEach(function (t) {
+          t.addEventListener('click', function () { band = t.dataset.band; apply(); });
+        });
+        root.querySelector('.ls-brand select').addEventListener('change', apply);
+        apply();
+      }
+      // A page can open the panel on one band: data-ls-band="low12" on the trigger.
+      document.addEventListener('click', function (e) {
+        var t = e.target.closest('[data-ls-band]');
+        if (t) { band = t.dataset.lsBand; apply(); }
+      });
+      function load() {
+        fetch(body.dataset.src, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+          .then(function (r) { return r.ok ? r.text() : Promise.reject(); })
+          .then(function (html) { body.innerHTML = html; wire(); })
+          .catch(function () { body.innerHTML = '<p class="ls-loading">Could not load. Close and open again.</p>'; });
+      }
+      if (document.readyState === 'complete') load();
+      else window.addEventListener('load', load);
+      document.getElementById('alertsPanel').addEventListener('show.bs.offcanvas', function () {
+        if (!body.querySelector('.ls')) load();
+      });
+    })();
+  </script>
+  {% endif %}
+
+  <script>
+    // Phone tab bar: away while scrolling down, typing, or with a dialog
+    // open; back on a small scroll up or at the top of the page.
+    (function () {
+      var bar = document.querySelector('.erp-tabbar');
+      if (!bar) return;
+      var body = document.body, lastY = window.scrollY, ticking = false;
+      function typing() {
+        var el = document.activeElement;
+        return !!el && (el.matches('input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]), textarea, select') || el.isContentEditable);
+      }
+      function update() {
+        ticking = false;
+        var y = window.scrollY, dy = y - lastY;
+        if (Math.abs(dy) < 6) return;        // ignore jitter
+        var away = y > 60 && dy > 0;
+        if (body.classList.contains('modal-open') || typing()) away = true;
+        body.classList.toggle('tabbar-away', away);
+        lastY = y;
+      }
+      window.addEventListener('scroll', function () {
+        if (!ticking) { ticking = true; window.requestAnimationFrame(update); }
+      }, { passive: true });
+      document.addEventListener('focusin', function () { if (typing()) body.classList.add('tabbar-away'); });
+      document.addEventListener('focusout', function () {
+        setTimeout(function () { if (!typing() && !body.classList.contains('modal-open')) body.classList.remove('tabbar-away'); }, 120);
+      });
+      document.addEventListener('show.bs.modal', function () { body.classList.add('tabbar-away'); });
+      document.addEventListener('hidden.bs.modal', function () { if (!typing()) body.classList.remove('tabbar-away'); });
+    })();
+  </script>
   <script src="{% static 'js/popper.min.js' %}"></script>
   <script src="{% static 'js/bootstrap.min.js' %}"></script>
 </body>

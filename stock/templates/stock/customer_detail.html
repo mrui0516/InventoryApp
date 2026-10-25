@@ -1,4 +1,5 @@
 {% extends 'stock/base.html' %}
+{% load contact_tags %}
 {% block title %}Customer Details{% endblock %}
 {% block content %}
 <div class="container my-4 customer-page">
@@ -755,8 +756,8 @@
               <span class="hero-value">{{ customer.nif|default:"-" }}</span>
             </div>
             <div class="hero-field">
-              <span class="hero-label">Phone</span>
-              <span class="hero-value">{{ customer.phone|default:"-" }}</span>
+              <span class="hero-label">WhatsApp</span>
+              <span class="hero-value">{% if customer.phone %}<a class="wa-link" href="{{ customer.phone|whatsapp_url }}" target="_blank" rel="noopener" aria-label="WhatsApp {{ customer.phone }}">{% include "stock/_wa_icon.html" %}{{ customer.phone }}</a>{% else %}-{% endif %}</span>
             </div>
             <div class="hero-field">
               <span class="hero-label">Email</span>

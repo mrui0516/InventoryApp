@@ -37,7 +37,11 @@ class Customer(models.Model):
         (REVENDA, 'Revenda'),
     ]
 
-    nif = models.CharField(max_length=9, unique=True, verbose_name="NIF")
+    # Optional since 2026-10-25: most walk-in and many Revenda customers never
+    # give a usable NIF, and the till used to invent placeholder numbers to get
+    # past the form. NULL (never '') when missing, so unique still holds for the
+    # ones that are filled in. The phone is what identifies a customer now.
+    nif = models.CharField(max_length=9, unique=True, null=True, blank=True, verbose_name="NIF")
     name = models.CharField(max_length=100, db_index=True)
     kind = models.CharField(max_length=10, choices=KIND_CHOICES, default=RETAIL,
                             db_index=True, verbose_name="Customer type")
@@ -50,7 +54,12 @@ class Customer(models.Model):
     notes = models.TextField(blank=True, null=True, verbose_name="Notes")
 
     def __str__(self):
-        return f"{self.name} ({self.nif})"
+        return f"{self.name} ({self.ident})" if self.ident else self.name
+
+    @property
+    def ident(self):
+        """What tells two customers with the same name apart: NIF, else phone."""
+        return self.nif or self.phone or ''
 
     @property
     def is_revenda(self):

@@ -381,6 +381,13 @@ def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_
     walk_in_qty = 0
     walk_in_order_keys = set()
     store_buckets = {}
+    # Retail vs Revenda, by the customer's type; a sale with no customer
+    # (walk-in) is retail. Same lines as the headline, so they add up to it.
+    channel_buckets = {
+        kind: {"kind": kind, "amount": Decimal("0.00"), "qty": 0,
+               "profit": Decimal("0.00"), "order_keys": set(), "customer_ids": set()}
+        for kind in ("retail", "revenda")
+    }
 
     for sale in sales:
         line_total = (sale.unit_price or Decimal("0.00")) * sale.quantity
@@ -416,6 +423,14 @@ def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_
         store_bucket["qty"] += sale.quantity
         store_bucket["profit"] += line_profit
         store_bucket["order_keys"].add(order_key)
+
+        channel = channel_buckets["revenda" if (customer and customer.kind == "revenda") else "retail"]
+        channel["amount"] += line_total
+        channel["qty"] += sale.quantity
+        channel["profit"] += line_profit
+        channel["order_keys"].add(order_key)
+        if customer:
+            channel["customer_ids"].add(customer.id)
 
         if customer:
             customer_bucket = customer_buckets.setdefault(
@@ -789,7 +804,27 @@ def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_
         })
         cursor += timedelta(days=1)
 
+    channel_split = []
+    for label, kind in (("Retail", "retail"), ("Revenda", "revenda")):
+        bucket = channel_buckets[kind]
+        orders = len(bucket["order_keys"])
+        channel_split.append({
+            "kind": kind,
+            "label": label,
+            "amount": bucket["amount"],
+            "qty": bucket["qty"],
+            "profit": bucket["profit"],
+            "orders": orders,
+            "customers": len(bucket["customer_ids"]),
+            "avg_ticket": (bucket["amount"] / orders) if orders else Decimal("0.00"),
+            "margin_pct": ((bucket["profit"] / bucket["amount"]) * Decimal("100.00")
+                           if bucket["amount"] else Decimal("0.00")),
+            "share_pct": ((bucket["amount"] / total_sales_amount) * Decimal("100.00")
+                          if total_sales_amount else Decimal("0.00")),
+        })
+
     return {
+        "channel_split": channel_split,
         "month_sales_amount": total_sales_amount,
         "month_sales_qty": total_sales_qty,
         "month_sales_profit": total_sales_profit,

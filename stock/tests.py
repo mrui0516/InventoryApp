@@ -368,14 +368,15 @@ class WorkflowRegressionTests(TestCase):
         client = Client(enforce_csrf_checks=True)
         client.login(username="cashier", password="pw123456")
 
-        blocked = client.post(reverse("add_customer_ajax"), {"nif": "111222333", "name": "Carol"})
+        blocked = client.post(reverse("add_customer_ajax"),
+                              {"nif": "111222333", "name": "Carol", "phone": "911222333"})
         self.assertEqual(blocked.status_code, 403)
 
         page = client.get(reverse("customer_search"))
         csrf_token = page.cookies["csrftoken"].value
         allowed = client.post(
             reverse("add_customer_ajax"),
-            {"nif": "111222333", "name": "Carol"},
+            {"nif": "111222333", "name": "Carol", "phone": "911222333"},
             HTTP_X_CSRFTOKEN=csrf_token,
         )
 
@@ -8632,20 +8633,23 @@ class CustomerKindTests(TestCase):
     # -- creating one ------------------------------------------------------
     def test_quick_add_can_create_a_revenda(self):
         self.client.post(reverse("add_customer_ajax"), {
-            "nif": "900000060", "name": "Nova Revenda", "kind": "revenda"})
+            "nif": "900000060", "name": "Nova Revenda", "kind": "revenda",
+            "phone": "930000060"})   # required since 2026-10-25
         self.assertEqual(Customer.objects.get(nif="900000060").kind,
                          Customer.REVENDA)
 
     def test_quick_add_from_the_till_still_works_without_a_kind(self):
         """The till posts to the same endpoint and sends no kind at all."""
         self.client.post(reverse("add_customer_ajax"), {
-            "nif": "900000061", "name": "Balcao"})
+            "nif": "900000061", "name": "Balcao",
+            "phone": "930000061"})   # required since 2026-10-25
         self.assertEqual(Customer.objects.get(nif="900000061").kind,
                          Customer.RETAIL)
 
     def test_an_unknown_kind_does_not_become_the_stored_value(self):
         self.client.post(reverse("add_customer_ajax"), {
-            "nif": "900000062", "name": "Estranho", "kind": "wholesale"})
+            "nif": "900000062", "name": "Estranho", "kind": "wholesale",
+            "phone": "930000062"})   # required since 2026-10-25
         self.assertEqual(Customer.objects.get(nif="900000062").kind,
                          Customer.RETAIL)
 
@@ -8653,6 +8657,7 @@ class CustomerKindTests(TestCase):
     def test_quick_add_stores_the_address(self):
         self.client.post(reverse("add_customer_ajax"), {
             "nif": "900000080", "name": "Loja do Bairro", "kind": "revenda",
+            "phone": "930000080",   # required since 2026-10-25
             "address": "Rua das Flores 12\n2700-123 Amadora"})
         customer = Customer.objects.get(nif="900000080")
         self.assertEqual(customer.address, "Rua das Flores 12\n2700-123 Amadora")
@@ -8661,15 +8666,15 @@ class CustomerKindTests(TestCase):
         """Blank, not None - so templates and the wholesale paperwork never
         have to guard against a null."""
         self.client.post(reverse("add_customer_ajax"), {
-            "nif": "900000081", "name": "Sem Morada"})
+            "nif": "900000081", "name": "Sem Morada", "phone": "930000081"})
         self.assertEqual(Customer.objects.get(nif="900000081").address, "")
 
     def test_the_till_dialog_asks_for_the_type_and_the_address(self):
         """Most customers are created at the till, so the type has to be
         askable there or the classification never gets filled in."""
         response = self.client.get(reverse("outbound"))
-        self.assertContains(response, 'id="ac-kind"')
-        self.assertContains(response, 'value="revenda"')
+        # One shared dialog since 2026-10-25; the type is a pair of radios.
+        self.assertContains(response, 'name="kind" value="revenda"')
         self.assertContains(response, 'id="ac-address"')
 
     def test_the_employee_dialog_asks_for_them_too(self):
@@ -8677,11 +8682,11 @@ class CustomerKindTests(TestCase):
             "kindemp", password="pw123456")
         self.client.force_login(employee)
         response = self.client.get(reverse("customer_search"))
-        self.assertContains(response, 'id="ac_kind"')
-        self.assertContains(response, 'id="ac_address"')
-        # and its hand-built request body actually sends them
-        self.assertContains(response, "body.append('kind'")
-        self.assertContains(response, "body.append('address'")
+        # The shared dialog (2026-10-25) posts the whole form, so every field
+        # it shows is sent - no hand-built body to forget one.
+        self.assertContains(response, 'name="kind" value="revenda"')
+        self.assertContains(response, 'id="ac-address"')
+        self.assertContains(response, "body: new FormData(form)")
 
     def test_the_manager_dialog_asks_for_them_too(self):
         response = self.client.get(reverse("customer_search"))
@@ -10431,3 +10436,171 @@ class AllStoresNavTests(TestCase):
         nav = html[html.index('<nav class="erp-nav">'):html.index('</nav>', html.index('<nav class="erp-nav">'))]
         self.assertIn(reverse("outbound"), nav)
         self.assertIn(reverse("pedido"), nav)
+
+
+class CustomerContactTests(TestCase):
+    """NIF optional, phone required and unique, phones open WhatsApp (2026-10-25)."""
+
+    def setUp(self):
+        self.admin = get_user_model().objects.create_superuser("cc2_admin", password="pw123456")
+        self.client.force_login(self.admin)
+
+    def _add(self, **data):
+        base = {'name': 'Ana Lopes', 'phone': '912 345 678', 'kind': 'retail'}
+        base.update(data)
+        return self.client.post(reverse("add_customer_ajax"), base).json()
+
+    def test_a_customer_needs_no_nif(self):
+        first = self._add()
+        second = self._add(name='Rui', phone='913000000')
+        self.assertTrue(first['success'] and second['success'])
+        self.assertEqual(Customer.objects.filter(nif__isnull=True).count(), 2)
+        self.assertEqual(first['label'], 'Ana Lopes (912 345 678)')
+
+    def test_the_phone_is_required(self):
+        data = self._add(phone='')
+        self.assertFalse(data['success'])
+        self.assertIn('Phone', data['error'])
+
+    def test_the_same_number_written_differently_is_refused(self):
+        self._add()
+        data = self._add(name='Ana 2', phone='+351 912345678')
+        self.assertFalse(data['success'])
+        self.assertIn('Ana Lopes', data['error'])
+
+    def test_a_nif_when_given_is_still_checked(self):
+        self.assertFalse(self._add(nif='123')['success'])
+        self.assertTrue(self._add(nif='123456789')['success'])
+        self.assertFalse(self._add(name='B', phone='919999999', nif='123456789')['success'])
+
+    def test_the_edit_form_stores_a_blank_nif_as_null(self):
+        from .forms import CustomerForm
+        Customer.objects.create(name="Other", nif=None, phone="920000000")
+        form = CustomerForm(data={'name': 'Sem NIF', 'phone': '921111111', 'kind': 'retail',
+                                  'nif': '', 'email': '', 'address': '', 'notes': ''})
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertIsNone(form.save().nif)
+        clash = CustomerForm(data={'name': 'X', 'phone': '920 000 000', 'kind': 'retail', 'nif': ''})
+        self.assertFalse(clash.is_valid())
+        self.assertIn('phone', clash.errors)
+
+    def test_whatsapp_links(self):
+        from .services.contacts import whatsapp_url
+        self.assertEqual(whatsapp_url('912 345 678'), 'https://wa.me/351912345678')
+        self.assertEqual(whatsapp_url('+44 7700 900123'), 'https://wa.me/447700900123')
+        self.assertEqual(whatsapp_url('00351912345678'), 'https://wa.me/351912345678')
+        self.assertEqual(whatsapp_url(''), '')
+
+    def test_the_customer_list_opens_whatsapp_not_the_dialer(self):
+        Customer.objects.create(name="Wa Cliente", nif="555555555", phone="934 111 222")
+        html = self.client.get(reverse("customer_search") + "?q=Wa").content.decode()
+        self.assertIn('href="https://wa.me/351934111222"', html)
+        self.assertNotIn('href="tel:', html)
+
+    def test_every_page_uses_the_one_dialog(self):
+        from .stores import ACTIVE_STORE_SESSION_KEY
+        store = Store.objects.create(name="Dlg Store", code="DLG")
+        session = self.client.session
+        session[ACTIVE_STORE_SESSION_KEY] = store.id
+        session.save()
+        for name in ("outbound", "customer_search"):
+            html = self.client.get(reverse(name)).content.decode()
+            self.assertEqual(html.count('id="addCustomerModal"'), 1, name)
+            self.assertIn('id="ac-phone"', html, name)
+            self.assertIn('modal-fullscreen-sm-down', html, name)
+        employee = get_user_model().objects.create_user("cc2_emp", password="pw123456")
+        StoreProfile.objects.update_or_create(user=employee, defaults={'store': store})
+        self.client.force_login(employee)
+        html = self.client.get(reverse("customer_search")).content.decode()
+        self.assertEqual(html.count('id="addCustomerModal"'), 1)
+
+
+class PhoneTabBarTests(TestCase):
+    """The phone tab bar gets out of the way while scrolling or typing."""
+
+    def test_sticky_bars_follow_the_live_offset(self):
+        with open('stock/static/css/app.css', encoding='utf-8') as fh:
+            css = re.sub(r'/\*.*?\*/', '', fh.read(), flags=re.S)
+        self.assertIn('body.tabbar-away{ --tabbar-live:0px; }', css)
+        self.assertIn('bottom:calc(var(--tabbar-live) + .5rem) !important', css)
+
+    def test_the_page_script_hides_it(self):
+        user = get_user_model().objects.create_superuser("tb_admin", password="pw123456")
+        self.client.force_login(user)
+        html = self.client.get(reverse("customer_search")).content.decode()
+        self.assertIn("classList.toggle('tabbar-away', away)", html)
+
+
+class LowStockAlertsTests(TestCase):
+    """One low-stock list for the Dashboard card and the alerts panel."""
+
+    def setUp(self):
+        cache.clear()
+        self.manager = get_user_model().objects.create_superuser("ls_admin", password="pw123456")
+        self.client.force_login(self.manager)
+        cat = Category.objects.create(name="LS Cat")
+        mk = lambda name, code: Product.objects.create(name=name, brand="LSB", barcode=code,
+                                                        category=cat, default_price=Decimal("10"))
+        self.out = mk("Out", "9930000000001")
+        Purchase.objects.create(product=self.out, quantity=3, remaining=0, cost_price=Decimal("5"))
+        self.two = mk("Two", "9930000000002")
+        Purchase.objects.create(product=self.two, quantity=5, remaining=2, cost_price=Decimal("5"))
+        self.plenty = mk("Plenty", "9930000000003")
+        Purchase.objects.create(product=self.plenty, quantity=9, remaining=9, cost_price=Decimal("5"))
+        self.never = mk("Never stocked", "9930000000004")
+
+    def test_never_stocked_products_are_not_running_out(self):
+        from .services.low_stock import low_stock_data
+        data = low_stock_data()
+        names = {it['display_name'] for it in data['items']}
+        self.assertIn(self.out.display_name, names)
+        self.assertIn(self.two.display_name, names)
+        self.assertNotIn(self.plenty.display_name, names)
+        self.assertNotIn(self.never.display_name, names)
+        self.assertEqual((data['out'], data['low12'], data['low34']), (1, 1, 0))
+
+    def test_the_panel_lists_them_for_managers_only(self):
+        html = self.client.get(reverse("alerts_low_stock")).content.decode()
+        self.assertIn('data-out="1"', html)
+        self.assertIn('data-band="low12"', html)
+        employee = get_user_model().objects.create_user("ls_emp", password="pw123456")
+        self.client.force_login(employee)
+        self.assertEqual(self.client.get(reverse("alerts_low_stock")).status_code, 302)
+        html = self.client.get(reverse("customer_search")).content.decode()
+        self.assertNotIn('id="alertsPanel"', html)
+
+    def test_every_manager_page_can_open_the_panel(self):
+        html = self.client.get(reverse("customer_search")).content.decode()
+        self.assertIn('id="alertsPanel"', html)
+        self.assertIn('data-bs-target="#alertsPanel"', html)
+
+    def test_the_dashboard_keeps_a_summary(self):
+        html = self.client.get(reverse("dashboard") + f"?cat={self.out.category_id}").content.decode()
+        card = html[html.index('id="low-stock"'):]
+        self.assertIn('class="ls-sum"', card)
+        self.assertIn('data-ls-band="low12"', card)
+        self.assertNotIn('Brands to review', html)
+
+
+class ChannelSplitTests(TestCase):
+    """Dashboard: the month's sales split into Retail and Revenda."""
+
+    def test_split_by_customer_type_walk_ins_are_retail(self):
+        from .services.dashboard import build_monthly_dashboard_snapshot
+        cat = Category.objects.create(name="CH Cat")
+        product = Product.objects.create(name="Ch", brand="X", barcode="9920000000001",
+                                         category=cat, default_price=Decimal("10"))
+        revenda = Customer.objects.create(name="Rev", nif="604000001", kind=Customer.REVENDA)
+        retail = Customer.objects.create(name="Ret", nif="604000002")
+        for customer, price in ((revenda, "30"), (retail, "10"), (None, "20")):
+            order = SaleOrder.objects.create(customer=customer)
+            Sale.objects.create(order=order, product=product, customer=customer, quantity=1,
+                                unit_price=Decimal(price), payment_method="cash")
+        today = timezone.localdate()
+        snap = build_monthly_dashboard_snapshot(month_start=today.replace(day=1), period_end=today)
+        split = {c['kind']: c for c in snap['channel_split']}
+        self.assertEqual(split['revenda']['amount'], Decimal("30"))
+        self.assertEqual(split['retail']['amount'], Decimal("30"))
+        self.assertEqual(split['retail']['orders'], 2)
+        self.assertEqual(split['retail']['customers'], 1)
+        self.assertEqual(split['revenda']['share_pct'], Decimal("50"))

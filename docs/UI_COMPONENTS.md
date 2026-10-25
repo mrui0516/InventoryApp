@@ -117,7 +117,9 @@
 --sidebar-w --tabbar-h
 ```
 
-`--tabbar-h` 很重要：任何吸底元素都要写 `bottom:calc(var(--tabbar-h) + .5rem)`，否则手机上会被底部标签栏挡住。
+`--tabbar-h` 很重要：它给页面底部留出标签栏的高度。**吸底元素要写 `bottom:calc(var(--tabbar-live) + .5rem)`**(2026-10-25 起):底栏在滚动/输入时会收起,`body.tabbar-away` 把 `--tabbar-live` 设为 0,吸底条随之贴底;`--tabbar-h` 本身不变,否则每次滚动页面都会跳。
+
+**共用部件(2026-10-25)**:`_add_customer_modal.html`(新建客户,`after='event'` 时只派发 `customer:created` 事件由页面处理,默认刷新)、`_low_stock_panel.html` + `#alertsPanel`(提醒侧栏,任意按钮加 `data-bs-toggle="offcanvas" data-bs-target="#alertsPanel"` 即可打开,加 `data-ls-band="low12"` 指定分组)、`_wa_icon.html` + `contact_tags.whatsapp_url` 过滤器(`.wa-link` / `.btn-wa`)。
 
 `position:sticky` 只在它的祖先都不裁剪溢出时才生效:祖先上的 `overflow:hidden`/`auto`(哪怕只是 `overflow-x:hidden`)会把该祖先变成一个"永远不滚动的滚动容器",吸底条就停在原地不动。手机端 `.erp-content` 为此用 `overflow-x:clip`(2026-10-24 前是 `hidden`,Add/Edit Product 和 Correct Order 的吸底保存条在手机上一直没吸住)。防止横向溢出时用 `clip`,不要用 `hidden`。
 

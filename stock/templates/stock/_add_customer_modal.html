@@ -1,0 +1,150 @@
+{# One add-customer dialog for every page (Sell, Customers, the employee list). #}
+{# Name and phone first - they are what is asked at the counter; NIF is       #}
+{# optional; the rarely used fields fold away. Full screen on a phone.        #}
+{# after="reload" (default) reloads the page; after="event" leaves it to the  #}
+{# page, which listens for the "customer:created" event on document.          #}
+<div class="modal fade" id="addCustomerModal" tabindex="-1" aria-hidden="true"
+     aria-labelledby="addCustomerTitle" data-after="{{ after|default:'reload' }}">
+  <div class="modal-dialog modal-dialog-scrollable modal-fullscreen-sm-down">
+    <form id="addCustomerForm" class="modal-content" novalidate>
+      {% csrf_token %}
+      <div class="modal-header">
+        <h5 class="modal-title" id="addCustomerTitle">New customer</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body ac-body">
+        <div class="ac-error d-none" id="ac-error" role="alert"></div>
+
+        <div class="ac-field">
+          <label for="ac-name">Name</label>
+          <input type="text" id="ac-name" name="name" class="form-control" maxlength="100"
+                 autocomplete="name" autocapitalize="words" required>
+        </div>
+        <div class="ac-field">
+          <label for="ac-phone">Phone <span class="ac-hint">WhatsApp</span></label>
+          <input type="tel" id="ac-phone" name="phone" class="form-control" maxlength="20"
+                 inputmode="tel" autocomplete="tel" placeholder="912 345 678" required>
+        </div>
+        <div class="ac-field">
+          <span class="ac-label" id="ac-kind-label">Customer type</span>
+          <div class="ac-kind" role="radiogroup" aria-labelledby="ac-kind-label">
+            <label><input type="radio" name="kind" value="retail" checked><span>Retail</span></label>
+            <label><input type="radio" name="kind" value="revenda"><span>Revenda</span></label>
+          </div>
+        </div>
+        <div class="ac-field">
+          <label for="ac-nif">NIF <span class="ac-hint">optional · 9 digits</span></label>
+          <input type="text" id="ac-nif" name="nif" class="form-control" maxlength="9" inputmode="numeric" autocomplete="off">
+        </div>
+
+        <details class="ac-more">
+          <summary>Email, address, notes</summary>
+          <div class="ac-field">
+            <label for="ac-email">Email</label>
+            <input type="email" id="ac-email" name="email" class="form-control" inputmode="email" autocomplete="email">
+          </div>
+          <div class="ac-field">
+            <label for="ac-address">Address</label>
+            <textarea id="ac-address" name="address" class="form-control" rows="2" autocomplete="street-address"></textarea>
+          </div>
+          <div class="ac-field">
+            <label for="ac-notes">Notes</label>
+            <textarea id="ac-notes" name="notes" class="form-control" rows="2"></textarea>
+          </div>
+        </details>
+      </div>
+      <div class="modal-footer ac-foot">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="ac-save">Save customer</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+  /* align-content:start - full screen on a phone, a grid would otherwise
+     stretch every row to fill the height and the inputs grow to ~75px. */
+  .ac-body{ display:grid; gap:.85rem; align-content:start; }
+  .ac-field{ display:grid; gap:.3rem; }
+  .ac-field label, .ac-label{ font-size:.88rem; font-weight:700; color:var(--app-text); }
+  .ac-hint{ font-weight:600; color:var(--app-primary); font-size:.82rem; }
+  .ac-field .form-control{ min-height:46px; }
+  .ac-kind{ display:grid; grid-template-columns:1fr 1fr; gap:.5rem; }
+  .ac-kind label{ margin:0; }
+  .ac-kind input{ position:absolute; opacity:0; pointer-events:none; }
+  .ac-kind span{ display:flex; align-items:center; justify-content:center; min-height:46px;
+                 border:1px solid var(--app-border-strong); border-radius:var(--app-radius-sm);
+                 font-weight:700; color:var(--app-text); cursor:pointer; background:var(--app-surface); }
+  .ac-kind input:checked + span{ border-color:var(--app-accent); background:var(--app-accent-soft);
+                                 color:var(--app-accent-ink); box-shadow:0 0 0 1px var(--app-accent) inset; }
+  .ac-kind input:focus-visible + span{ outline:2px solid var(--app-accent); outline-offset:2px; }
+  .ac-more{ border-top:1px solid var(--app-border); padding-top:.7rem; }
+  .ac-more summary{ font-weight:700; color:var(--app-accent-ink); cursor:pointer; min-height:36px;
+                    display:flex; align-items:center; }
+  .ac-more[open] summary{ margin-bottom:.6rem; }
+  .ac-more .ac-field + .ac-field{ margin-top:.75rem; }
+  .ac-error{ padding:.6rem .75rem; border-radius:var(--app-radius-sm); background:var(--app-danger-soft);
+             color:#7f1d1d; font-weight:600; }
+  .ac-field .is-invalid{ border-color:var(--app-danger); }
+  @media (max-width: 575.98px){
+    .ac-foot{ display:grid; grid-template-columns:1fr 2fr; gap:.5rem; }
+    .ac-foot .btn{ min-height:48px; margin:0; }
+  }
+</style>
+
+<script>
+(function () {
+  const modalEl = document.getElementById('addCustomerModal');
+  if (!modalEl) return;
+  const form = document.getElementById('addCustomerForm');
+  const errorBox = document.getElementById('ac-error');
+  const save = document.getElementById('ac-save');
+  const nameIn = document.getElementById('ac-name');
+  const phoneIn = document.getElementById('ac-phone');
+  const nifIn = document.getElementById('ac-nif');
+
+  function fail(message, field) {
+    errorBox.textContent = message;
+    errorBox.classList.remove('d-none');
+    [nameIn, phoneIn, nifIn].forEach((el) => el.classList.toggle('is-invalid', el === field));
+    if (field) field.focus();
+  }
+  function clearError() {
+    errorBox.classList.add('d-none');
+    [nameIn, phoneIn, nifIn].forEach((el) => el.classList.remove('is-invalid'));
+  }
+
+  nifIn.addEventListener('input', () => { nifIn.value = nifIn.value.replace(/\D/g, '').slice(0, 9); });
+  modalEl.addEventListener('show.bs.modal', () => { form.reset(); clearError(); save.disabled = false; });
+  modalEl.addEventListener('shown.bs.modal', () => nameIn.focus());
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    clearError();
+    if (!nameIn.value.trim()) return fail('Enter the customer’s name.', nameIn);
+    if (phoneIn.value.replace(/\D/g, '').length < 6) return fail('Enter a phone number - it is how the customer is found and contacted.', phoneIn);
+    if (nifIn.value && nifIn.value.length !== 9) return fail('NIF must be exactly 9 digits, or leave it empty.', nifIn);
+    save.disabled = true;
+    save.textContent = 'Saving…';
+    fetch('{% url "add_customer_ajax" %}', {
+      method: 'POST',
+      body: new FormData(form),
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data || !data.success) {
+          const msg = (data && data.error) || 'Could not add the customer.';
+          const field = /phone/i.test(msg) ? phoneIn : (/NIF/.test(msg) ? nifIn : (/name/i.test(msg) ? nameIn : null));
+          fail(msg, field);
+          return;
+        }
+        bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+        document.dispatchEvent(new CustomEvent('customer:created', { detail: data }));
+        if (modalEl.dataset.after !== 'event') window.location.reload();
+      })
+      .catch(() => fail('Network error. Try again.'))
+      .then(() => { save.disabled = false; save.textContent = 'Save customer'; });
+  });
+}());
+</script>

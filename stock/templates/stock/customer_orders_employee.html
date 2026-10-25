@@ -1,4 +1,5 @@
 {% extends 'stock/base.html' %}
+{% load contact_tags %}
 {% block title %}{{ customer.name }}{% endblock %}
 {% block content %}
 <div class="page-shell">
@@ -6,7 +7,7 @@
     <div class="page-head">
       <div>
         <h1 class="page-title">{{ customer.name }}</h1>
-        <p class="page-sub num">{{ customer.phone|default:"-" }}{% if customer.email %} - {{ customer.email }}{% endif %}</p>
+        <p class="page-sub num">{% if customer.phone %}<a class="wa-link" href="{{ customer.phone|whatsapp_url }}" target="_blank" rel="noopener" aria-label="WhatsApp {{ customer.phone }}">{% include "stock/_wa_icon.html" %}{{ customer.phone }}</a>{% else %}-{% endif %}{% if customer.email %} - {{ customer.email }}{% endif %}</p>
       </div>
     </div>
   </section>

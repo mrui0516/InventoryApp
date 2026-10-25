@@ -367,53 +367,7 @@
 </div>
 
 <!-- Add Customer Modal -->
-<div class="modal fade" id="addCustomerModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-scrollable">
-    <form id="addCustomerForm" class="modal-content">
-      {% csrf_token %}
-      <div class="modal-header">
-        <h5 class="modal-title">Add New Customer</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <div class="mb-2">
-          <label for="ac-nif" class="form-label">NIF</label>
-          <input type="text" id="ac-nif" name="nif" class="form-control" maxlength="9" required>
-        </div>
-        <div class="mb-2">
-          <label for="ac-name" class="form-label">Name</label>
-          <input type="text" id="ac-name" name="name" class="form-control" required>
-        </div>
-        <div class="mb-2">
-          <label for="ac-kind" class="form-label">Customer type</label>
-          <select id="ac-kind" name="kind" class="form-select">
-            <option value="retail" selected>Retail</option>
-            <option value="revenda">Revenda</option>
-          </select>
-        </div>
-        <div class="mb-2">
-          <label for="ac-phone" class="form-label">Phone</label>
-          <input type="text" id="ac-phone" name="phone" class="form-control">
-        </div>
-        <div class="mb-2">
-          <label for="ac-email" class="form-label">Email</label>
-          <input type="email" id="ac-email" name="email" class="form-control">
-        </div>
-        <div class="mb-2">
-          <label for="ac-address" class="form-label">Address</label>
-          <textarea id="ac-address" name="address" class="form-control" rows="2"></textarea>
-        </div>
-        <div class="mb-2">
-          <label for="ac-notes" class="form-label">Notes</label>
-          <textarea id="ac-notes" name="notes" class="form-control" rows="2"></textarea>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button type="submit" class="btn btn-primary">Save customer</button>
-      </div>
-    </form>
-  </div>
-</div>
+{% include 'stock/_add_customer_modal.html' with after='event' %}
 
 <style>
   /* --ds-* design tokens inherited from app.css (canonical dense-flat) */
@@ -428,7 +382,7 @@
     min-width:0;            /* allow the column to shrink so wide tables scroll, not overflow */
   }
   .checkout-bar{
-    position:sticky; bottom:calc(var(--tabbar-h) + .5rem); z-index:5;
+    position:sticky; bottom:calc(var(--tabbar-live) + .5rem); z-index:5; transition:bottom .22s ease;
     display:flex; align-items:center; gap:.9rem; flex-wrap:wrap;
     margin-top:1rem; padding:.7rem .9rem;
     background:var(--app-surface); border:1px solid var(--app-border-strong);
@@ -1450,7 +1404,7 @@ document.addEventListener('DOMContentLoaded', () => {
           btn.type='button';
           btn.className='list-group-item list-group-item-action';
           btn.setAttribute('role','option');
-          btn.textContent=`${c.name} (${c.nif})`;
+          btn.textContent=c.label || c.name;
           btn.onclick=()=>{
             customerSearch.value=btn.textContent;
             customerIdInput.value=c.id;
@@ -2061,34 +2015,14 @@ document.addEventListener('DOMContentLoaded', () => {
     checkoutForm.requestSubmit();
   });
 
-  // ===== 新增客户（AJAX） =====
-  const addCustomerForm = document.getElementById('addCustomerForm');
-  if (addCustomerForm) {
-    addCustomerForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const fd = new FormData(addCustomerForm);
-      try {
-        const resp = await fetch('/add_customer_ajax/', {
-          method: 'POST',
-          body: fd,
-          headers: { 'X-Requested-With': 'XMLHttpRequest' }
-        });
-        const data = await resp.json();
-        if (data && data.success) {
-          document.getElementById('customer-id').value = data.id;
-          document.getElementById('customer-search').value = data.name;
-          const modalEl = document.getElementById('addCustomerModal');
-          const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-          modal.hide();
-          recalc();
-        } else {
-          alert(data && data.error ? data.error : 'Failed to add customer.');
-        }
-      } catch (err) {
-        alert('Network error adding customer.');
-      }
-    });
-  }
+  // ===== A customer just added becomes this sale's customer =====
+  document.addEventListener('customer:created', (e) => {
+    const c = e.detail || {};
+    customerIdInput.value = c.id;
+    customerSearch.value = c.label || c.name || '';
+    loadLastPrices(c.id);
+    recalc();
+  });
   recalc();
 });
 </script>

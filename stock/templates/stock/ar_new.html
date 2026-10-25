@@ -15,7 +15,7 @@
        value="{{ pre_customer.id|default:'' }}">
       <input type="text" id="customer-search" class="form-control"
        placeholder="Search by NIF or name" autocomplete="off"
-       value="{% if pre_customer %}{{ pre_customer.name }} ({{ pre_customer.nif }}){% endif %}">
+       value="{% if pre_customer %}{{ pre_customer }}{% endif %}">
       <div id="customer-suggestions"
            class="list-group position-absolute w-100 shadow-sm d-none"
            role="listbox" aria-label="Customer suggestions"
@@ -137,7 +137,7 @@
       btn.type = 'button';
       btn.className = 'list-group-item list-group-item-action';
       btn.setAttribute('role', 'option');
-      btn.textContent = `${c.name} (${c.nif})`;
+      btn.textContent = c.label || c.name;
       btn.addEventListener('click', ()=> chooseCustomer(idx));
       box.appendChild(btn);
     });
@@ -147,7 +147,7 @@
   function chooseCustomer(idx){
     const c = items[idx];
     if (!c) return;
-    search.value = `${c.name} (${c.nif})`;
+    search.value = c.label || c.name;
     customerHidden.value = c.id;
     box.classList.add('d-none');
   }

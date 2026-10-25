@@ -1,4 +1,5 @@
 {% extends 'stock/base.html' %}
+{% load contact_tags %}
 {% block title %}Customer Management{% endblock %}
 
 {% block content %}
@@ -296,7 +297,7 @@
                   <div data-part="title">{{ customer.name }}{% if customer.is_revenda %} &middot; Revenda{% endif %}</div>
                   <div data-part="body">
                     <dl class="ol-totals">
-                      {% if customer.phone %}<div><dt>Phone</dt><dd><a href="tel:{{ customer.phone }}">{{ customer.phone }}</a></dd></div>{% endif %}
+                      {% if customer.phone %}<div><dt>WhatsApp</dt><dd><a class="wa-link" href="{{ customer.phone|whatsapp_url }}" target="_blank" rel="noopener" aria-label="WhatsApp {{ customer.phone }}">{% include "stock/_wa_icon.html" %}{{ customer.phone }}</a></dd></div>{% endif %}
                       {% if customer.email %}<div><dt>Email</dt><dd>{{ customer.email }}</dd></div>{% endif %}
                       {% if customer.address %}<div><dt>Address</dt><dd>{{ customer.address|linebreaksbr }}</dd></div>{% endif %}
                       {% if show_sensitive and customer.nif %}<div><dt>NIF</dt><dd>{{ customer.nif }}</dd></div>{% endif %}
@@ -307,6 +308,7 @@
                     </dl>
                   </div>
                   <div data-part="foot">
+                    {% if customer.phone|whatsapp_url %}<a class="btn btn-wa" href="{{ customer.phone|whatsapp_url }}" target="_blank" rel="noopener">{% include "stock/_wa_icon.html" %}WhatsApp</a>{% endif %}
                     <a class="btn btn-primary" href="{% url 'customer_detail' customer.id %}">Profile</a>
                     {% if show_sensitive %}
                       {% if customer.is_revenda %}<a class="btn btn-outline-primary" href="{% url 'pedido' %}?customer={{ customer.id }}">Pedido</a>{% endif %}
@@ -325,7 +327,7 @@
               </td>
 
               <td class="cl-hide-sm">
-                {% if customer.phone %}<span class="cl-num">{{ customer.phone }}</span>{% endif %}
+                {% if customer.phone %}<span class="cl-num"><a class="wa-link" href="{{ customer.phone|whatsapp_url }}" target="_blank" rel="noopener" aria-label="WhatsApp {{ customer.phone }}">{% include "stock/_wa_icon.html" %}{{ customer.phone }}</a></span>{% endif %}
                 {% if customer.phone and customer.email %}<span class="cl-sub"> · </span>{% endif %}
                 {% if customer.email %}<span class="cl-sub">{{ customer.email }}</span>{% endif %}
                 {% if not customer.phone and not customer.email %}<span class="cl-sub">&mdash;</span>{% endif %}
@@ -391,57 +393,6 @@
     </div>
   </div>
 
-  {% if show_sensitive %}
-    <div class="modal fade" id="addCustomerModal" tabindex="-1" aria-hidden="true">
-      <div class="modal-dialog modal-dialog-scrollable">
-        <form id="addCustomerForm" class="modal-content">
-          {% csrf_token %}
-          <div class="modal-header">
-            <h5 class="modal-title">Add New Customer</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <div class="mb-3">
-              <label class="form-label">NIF</label>
-              <input type="text" name="nif" class="form-control" maxlength="9" inputmode="numeric" pattern="\d{9}" required>
-              <div class="help-inline text-error d-none" id="nifHelp">NIF must be exactly 9 digits.</div>
-            </div>
-            <div class="mb-3">
-              <label class="form-label">Name</label>
-              <input type="text" name="name" class="form-control" required>
-            </div>
-            <div class="mb-3">
-              <label class="form-label">Customer type</label>
-              <select name="kind" class="form-select">
-                <option value="retail" selected>Retail</option>
-                <option value="revenda">Revenda</option>
-              </select>
-            </div>
-            <div class="mb-3">
-              <label class="form-label">Phone</label>
-              <input type="text" name="phone" class="form-control" inputmode="tel">
-            </div>
-            <div class="mb-3">
-              <label class="form-label">Email</label>
-              <input type="email" name="email" class="form-control" inputmode="email">
-            </div>
-            <div class="mb-3">
-              <label class="form-label">Address</label>
-              <textarea name="address" class="form-control" rows="2"></textarea>
-            </div>
-            <div>
-              <label class="form-label">Notes</label>
-              <textarea name="notes" class="form-control" rows="3"></textarea>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <span id="add-result" class="me-auto text-muted"></span>
-            <button type="submit" id="saveBtn" class="btn btn-primary" disabled>Save Customer</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  {% endif %}
 </div>
 
 {# One detail layer for every row: full screen on a phone, a dialog elsewhere. #}
@@ -494,65 +445,5 @@
   });
 </script>
 
-{% if show_sensitive %}
-  <script>
-    document.addEventListener('DOMContentLoaded', function () {
-      const modalEl = document.getElementById('addCustomerModal');
-      const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-      const form = document.getElementById('addCustomerForm');
-      const saveBtn = document.getElementById('saveBtn');
-      const result = document.getElementById('add-result');
-      const nifInput = form.querySelector('input[name="nif"]');
-      const nameInput = form.querySelector('input[name="name"]');
-      const nifHelp = document.getElementById('nifHelp');
-
-      function validate() {
-        const nifOk = /^\d{9}$/.test(nifInput.value.trim());
-        const nameOk = nameInput.value.trim().length > 0;
-        nifHelp.classList.toggle('d-none', nifOk);
-        saveBtn.disabled = !(nifOk && nameOk);
-      }
-
-      nifInput.addEventListener('input', () => {
-        nifInput.value = nifInput.value.replace(/\D/g, '').slice(0, 9);
-        validate();
-      });
-      nameInput.addEventListener('input', validate);
-      modalEl.addEventListener('shown.bs.modal', () => setTimeout(() => nifInput.focus(), 120));
-      validate();
-
-      form.addEventListener('submit', function (event) {
-        event.preventDefault();
-        result.className = 'me-auto text-muted';
-        result.textContent = 'Saving...';
-        saveBtn.disabled = true;
-
-        fetch('/add_customer_ajax/', {
-          method: 'POST',
-          body: new FormData(form)
-        })
-          .then((response) => response.json())
-          .then((data) => {
-            if (data.success) {
-              result.className = 'me-auto text-success';
-              result.textContent = 'Created: ' + (data.name || '');
-              setTimeout(() => {
-                modal.hide();
-                window.location.reload();
-              }, 900);
-              return;
-            }
-            result.className = 'me-auto text-error';
-            result.textContent = data.error || 'Unable to create the customer.';
-            saveBtn.disabled = false;
-          })
-          .catch(() => {
-            result.className = 'me-auto text-error';
-            result.textContent = 'Network error. Please try again.';
-            saveBtn.disabled = false;
-          });
-      });
-    });
-  </script>
-{% endif %}
+{% if show_sensitive %}{% include 'stock/_add_customer_modal.html' %}{% endif %}
 {% endblock %}

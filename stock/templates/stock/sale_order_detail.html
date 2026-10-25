@@ -329,7 +329,7 @@
         {% if order.customer %}
           <div class="pos-row"><div>Customer: {{ order.customer.name }}</div></div>
           {% if show_sensitive %}
-            <div class="pos-row"><div>ID: {{ order.customer.nif }}</div></div>
+            {% if order.customer.nif %}<div class="pos-row"><div>ID: {{ order.customer.nif }}</div></div>{% endif %}
           {% endif %}
         {% endif %}
         <div class="pos-center pos-sep">------------------------------</div>

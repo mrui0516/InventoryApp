@@ -1,0 +1,36 @@
+{# The alerts panel's contents, fetched when a page loads (managers only).  #}
+{# One row per product, most urgent first; tabs and the brand filter work   #}
+{# on the rows already here, so switching never waits on the server.        #}
+<div class="ls" data-out="{{ low.out }}" data-low12="{{ low.low12 }}" data-low34="{{ low.low34 }}" data-total="{{ low.count }}">
+  <div class="ls-tabs" role="tablist" aria-label="Stock left">
+    <button type="button" role="tab" class="ls-tab is-on" data-band="out" aria-selected="true">Out <b>{{ low.out }}</b></button>
+    <button type="button" role="tab" class="ls-tab" data-band="low12" aria-selected="false">1–2 left <b>{{ low.low12 }}</b></button>
+    <button type="button" role="tab" class="ls-tab" data-band="low34" aria-selected="false">3–4 left <b>{{ low.low34 }}</b></button>
+  </div>
+  <label class="ls-brand">
+    <span class="visually-hidden">Brand</span>
+    <select class="form-select form-select-sm" aria-label="Brand">
+      <option value="">All brands</option>
+      {% for block in low.blocks %}<option value="{{ block.brand }}">{{ block.brand }} ({{ block.count }})</option>{% endfor %}
+    </select>
+  </label>
+  <ul class="ls-list">
+    {% for p in low.items %}
+      <li data-band="{{ p.band }}" data-brand="{{ p.brand }}">
+        <a class="ls-row" href="{% url 'product_detail' p.id %}">
+          {% if p.image_url %}<img class="ls-img" src="{{ p.image_url }}" alt="" loading="lazy">{% else %}<span class="ls-img ls-noimg" aria-hidden="true"></span>{% endif %}
+          <span class="ls-main">
+            <span class="ls-name">{{ p.display_name }}</span>
+            <span class="ls-meta">{{ p.brand }} · sold {{ p.sold }}</span>
+          </span>
+          <span class="ls-stock {{ p.band }}">{% if p.stock == 0 %}Out{% else %}{{ p.stock }} left{% endif %}</span>
+        </a>
+      </li>
+    {% endfor %}
+  </ul>
+  <p class="ls-empty" hidden>Nothing here.</p>
+  <div class="ls-foot">
+    <a href="{% url 'product_list' %}?stock_status=out_of_stock">Out of stock in Products</a>
+    <a href="{% url 'product_list' %}?stock_status=low_stock">Low stock in Products</a>
+  </div>
+</div>
