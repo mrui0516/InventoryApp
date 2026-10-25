@@ -11,7 +11,7 @@
 | 维度 | 状态 | 说明 |
 |---|---|---|
 | 功能完整度 | ✅ 已覆盖 PRD 全部 20 个模块 | 正在生产使用中（真实业务数据） |
-| 自动化测试 | ✅ 801/801 通过 | `python manage.py test stock` |
+| 自动化测试 | ✅ 816/816 通过 | `python manage.py test stock` |
 | 数据库迁移 | ✅ 无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
 | 版本控制 | ✅ 已推送 GitHub，与 origin/master 同步 | 见第 4 节 |
 | 本地虚拟环境 | ⚠ `.venv` 不完整/未使用 | 见第 3 节 |
