@@ -16,6 +16,7 @@ The reading, in order:
 4. Match a product: by EAN first, then by the words of the name.
 """
 import io
+from difflib import get_close_matches
 import re
 from decimal import Decimal, InvalidOperation
 
@@ -206,6 +207,11 @@ def match_products(rows):
     if need_names:
         for p in Product.objects.only('id', 'brand', 'model', 'name', 'barcode', 'volume_ml', 'spec'):
             words = set(_words(' '.join(filter(None, [p.brand, p.model, p.name, p.spec]))))
+            # Initials too, as people write them: "cdn" for CLUB DE NUIT.
+            for part in (p.brand, p.model, p.name):
+                parts = _words(part)
+                if len(parts) >= 2:
+                    words.add(''.join(w[0] for w in parts))
             catalogue.append((p, words))
 
     for row in rows:
@@ -214,16 +220,29 @@ def match_products(rows):
         if product:
             row['product'], row['match'] = product, 'ean'
             continue
-        wanted = [w for w in _words(row['name']) if w not in STOPWORDS and not w.isdigit()]
         volume = _volume(row['name'])
+        # Numbers stay ("Rouge 540"), except the volume, which is compared on
+        # its own against the product's millilitres.
+        wanted = [w for w in _words(row['name'])
+                  if w not in STOPWORDS and not (w.isdigit() and volume and int(w) == volume)
+                  and not re.fullmatch(r'\d+ml', w)]
         scored = []
         for p, words in catalogue:
-            hits = sum(1 for w in wanted if w in words)
+            hits = 0.0
+            for w in wanted:
+                if w in words:
+                    hits += 1
+                elif len(w) >= 4 and get_close_matches(w, words, n=1, cutoff=0.8):
+                    hits += 0.8          # a typo: "sabal" for SABAH
             if not hits:
                 continue
             score = hits / max(len(wanted), 1)
+            # the closer product wins over one with many words besides
+            score += 0.1 * min(hits / max(len(words), 1), 1)
+            # A volume that agrees helps; one that does not only slightly hurts -
+            # people round (CDN Urban Man Elixir is 105 ml, written "100ml").
             if volume and p.volume_ml:
-                score += 0.25 if p.volume_ml == volume else -0.5
+                score += 0.15 if p.volume_ml == volume else -0.1
             scored.append((score, hits, p))
         # ties go to the product that shares more of the words
         scored.sort(key=lambda s: (-s[0], -s[1]))

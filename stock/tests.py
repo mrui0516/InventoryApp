@@ -10857,6 +10857,25 @@ class QuickImportTests(TestCase):
         denied = self.client.post(reverse("quick_import"), {"mode": "inbound", "text": "6290360598888 x2"})
         self.assertEqual(denied.status_code, 403)
 
+    def test_a_short_list_with_typos_and_initials(self):
+        """The other way lists arrive: names and units only, typed in a hurry."""
+        cat = Category.objects.first()
+        cdn = Product.objects.create(brand="ARMAF", model="CLUB DE NUIT", name="URBAN MAN ELIXIR",
+                                     barcode="6294015100001", category=cat, default_price=Decimal("40"),
+                                     volume_ml=105)
+        sabah = Product.objects.create(brand="AL WATANIAH", model="SABAH AL WARD", name="SABAH AL WARD",
+                                       barcode="6294015100002", category=cat, default_price=Decimal("20"))
+        text = ("sabal al ward - 12 units\n"
+                "armaf cdn urban man elixir 100ml- 6 units\n"
+                "momento 6 unis")
+        rows = self.qi.match_products(self.qi.parse_text(text))
+        self.assertEqual([(r["name"], r["qty"], r["unit_price"]) for r in rows],
+                         [("sabal al ward", 12, None), ("armaf cdn urban man elixir 100ml", 6, None),
+                          ("momento", 6, None)])
+        self.assertEqual(rows[0]["product"], sabah)     # "sabal" is a typo for SABAH
+        self.assertEqual(rows[1]["product"], cdn)       # cdn = Club De Nuit; 100 vs 105 ml
+        self.assertIsNone(rows[2]["product"])           # nothing called that here
+
     def test_the_three_pages_offer_it(self):
         from .stores import ACTIVE_STORE_SESSION_KEY
         store = Store.objects.create(name="QI Store", code="QIS")
