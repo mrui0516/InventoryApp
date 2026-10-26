@@ -9,6 +9,7 @@
     "sending": "A enviar…",
     "success": "Pedido recebido. Se ainda não confirmou este aviso, procure o email de confirmação na sua caixa de entrada.",
     "failure": "Não foi possível enviar o pedido. Tente novamente dentro de instantes.",
+    "unavailable": "Os avisos de reposição ainda não estão disponíveis. Tente novamente mais tarde.",
     "available": "Esta capacidade já está disponível. Atualize a página para comprar.",
     "limited": "Recebemos vários pedidos. Tente novamente mais tarde.",
     "close": "Fechar",

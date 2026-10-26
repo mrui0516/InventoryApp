@@ -7,6 +7,7 @@ Renders the shared email subscription dialog and product variant selection behav
     <button type="button" data-restock-close class="scentory-restock-dialog__close" aria-label="{{ 'scentory_restock.close' | t }}">×</button>
     <h2 id="RestockDialogTitle">{{ 'scentory_restock.title' | t }}</h2>
     <p class="scentory-restock-dialog__product"></p>
+    <span data-restock-unavailable hidden>{{ 'scentory_restock.unavailable' | t }}</span>
     <p data-restock-intro>{{ 'scentory_restock.intro' | t }}</p>
     <form>
       <label for="RestockCapacity">{{ 'scentory_restock.capacity' | t }}</label>
@@ -112,7 +113,7 @@ Renders the shared email subscription dialog and product variant selection behav
           this.intro.textContent=messaging?this.dataset.messagingIntro:this.defaultIntro;
           this.privacy.textContent=messaging?this.dataset.messagingPrivacy:this.defaultPrivacy;
           this.submit.disabled=false;
-        }catch(error){if(this.request===request&&this.dialog.open){this.message.textContent=this.dataset.failure;this.message.hidden=false;}}
+        }catch(error){if(this.request===request&&this.dialog.open){this.message.textContent=this.querySelector('[data-restock-unavailable]').textContent;this.message.hidden=false;}}
         finally{clearTimeout(timeout);}
       }
       async send() {

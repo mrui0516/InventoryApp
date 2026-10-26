@@ -9,6 +9,7 @@
     "sending": "Sending…",
     "success": "Request received. If you have not confirmed this notification yet, check your inbox for the confirmation email.",
     "failure": "We could not send your request. Please try again shortly.",
+    "unavailable": "Restock alerts are not available yet. Please try again later.",
     "available": "This size is available now. Refresh the page to shop.",
     "limited": "We have received several requests. Please try again later.",
     "close": "Close",

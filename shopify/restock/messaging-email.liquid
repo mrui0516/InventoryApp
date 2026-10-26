@@ -27,6 +27,6 @@
 {% if cancel_parts.size == 2 %}
   {% assign cancel_token = cancel_parts.last | split: '~' | first %}
   {% if cancel_token.size == 36 %}
-    <p style="font-size:12px;"><a href="https://gestao.scentory.pt/api/restock/unsubscribe/{{ cancel_token | url_encode }}/">Cancelar o aviso deste perfume</a></p>
+    <p style="font-size:12px;"><a href="https://scentory.eu.pythonanywhere.com/api/restock/unsubscribe/{{ cancel_token | url_encode }}/">Cancelar o aviso deste perfume</a></p>
   {% endif %}
 {% endif %}

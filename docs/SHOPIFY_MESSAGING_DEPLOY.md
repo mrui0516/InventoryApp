@@ -2,6 +2,8 @@
 
 代码分支：`codex/restock-app-20261026`。该分支独立于另一个 AI 的工作区；没有合并或推送 master。无需安装压缩包，无新增 Python 依赖。
 
+2026-10-26 接口核查：原先配置的 `gestao.scentory.pt` 返回 DNS NXDOMAIN；现有库存 App 可通过 `scentory.eu.pythonanywhere.com` 访问，但部署新代码前 `/api/restock/status/` 为 404。草稿订阅接口及默认取消链接已改用现有 PythonAnywhere 域名。若以后启用自定义域名，需先在 PythonAnywhere Web 和域名 DNS 配置并验证，再同时更新主题接口、RESTOCK_PUBLIC_URL 以及邮件中的取消链接。
+
 ## 1. PythonAnywhere 更新代码与建表
 
 在 Bash console 逐条执行，一条报错就停下：
@@ -31,7 +33,7 @@ RESTOCK_PROVIDER=messaging
 RESTOCK_MESSAGING_API_VERSION=2026-10
 RESTOCK_MESSAGING_FLOW_READY=0
 RESTOCK_NOTIFICATIONS_ENABLED=0
-RESTOCK_PUBLIC_URL=https://gestao.scentory.pt/api/restock/
+RESTOCK_PUBLIC_URL=https://scentory.eu.pythonanywhere.com/api/restock/
 RESTOCK_ALLOWED_ORIGINS=https://www.scentory.pt,https://scentory.pt
 ```
 
@@ -78,7 +80,7 @@ python manage.py check_restock_messaging
 python manage.py process_restock_notifications
 ```
 
-访问 `https://gestao.scentory.pt/api/restock/status/` 应看到 `enabled: true`、`provider: "messaging"`、`requires_marketing_consent: true`。此状态只表示启用条件满足，不能代替实际收信验证。
+访问 `https://scentory.eu.pythonanywhere.com/api/restock/status/` 应看到 `enabled: true`、`provider: "messaging"`、`requires_marketing_consent: true`。此状态只表示启用条件满足，不能代替实际收信验证。
 
 ## 5. 持续处理队列
 
