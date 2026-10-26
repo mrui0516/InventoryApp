@@ -4,6 +4,8 @@
 <div class="container-fluid py-3">
   <h1 class="h4">Restock demand</h1>
   <p class="text-muted">Waiting = confirmed emails awaiting this exact capacity. Unconfirmed requests are listed separately.</p>
+  {% if flow_waiting or flow_blocked %}<p>Awaiting Flow completion: <strong>{{ flow_waiting }}</strong> · Needs review: <strong>{{ flow_blocked }}</strong>. <a href="{% url 'admin:restock_alerts_messagingslot_changelist' %}">View Messaging queue</a></p>{% endif %}
+  <p class="text-muted">For Messaging, Notified means the Flow send action completed; it does not prove inbox delivery.</p>
   <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Product / capacity</th><th>SKU</th><th>Waiting</th><th>Unconfirmed</th><th>Notified</th></tr></thead><tbody>
   {% for row in rows %}<tr><td>{{ row.product_title }}<br><small>{{ row.variant_title }}</small></td><td>{{ row.sku }}</td><td><strong>{{ row.waiting }}</strong></td><td>{{ row.pending }}</td><td>{{ row.notified }}</td></tr>{% empty %}<tr><td colspan="5">No restock requests yet.</td></tr>{% endfor %}
   </tbody></table></div>

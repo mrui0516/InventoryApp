@@ -101,3 +101,8 @@ def push_products(product_ids):
             logger.info('Shopify stock %s for %s (%s)', code, product.barcode, detail)
         except Exception:
             logger.exception('Shopify stock push failed for %s', product.barcode)
+    try:
+        from restock_alerts.services import wake_worker
+        wake_worker()
+    except Exception:
+        logger.exception('Restock alert wake-up failed; the queue will be reconciled by the worker')

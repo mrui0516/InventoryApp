@@ -1,0 +1,22 @@
+{
+  "scentory_restock": {
+    "button": "Notify me when back in stock",
+    "title": "Get a restock email",
+    "intro": "Choose a size and confirm your email. We will notify you when this option is available again.",
+    "capacity": "Size",
+    "email": "Your email",
+    "submit": "Request notification",
+    "sending": "Sending…",
+    "success": "Request received. If you have not confirmed this notification yet, check your inbox for the confirmation email.",
+    "failure": "We could not send your request. Please try again shortly.",
+    "available": "This size is available now. Refresh the page to shop.",
+    "limited": "We have received several requests. Please try again later.",
+    "close": "Close",
+    "privacy_note": "We use your email for this notification. You can cancel at any time.",
+    "privacy_link": "Privacy policy",
+    "marketing_consent": "I agree to receive marketing emails from Scentory, including restock alerts. I can unsubscribe at any time.",
+    "messaging_intro": "Choose a size and enter your email. We will let you know when this option is available again.",
+    "messaging_success": "Your request is registered. We will email you when this size is back in stock.",
+    "messaging_privacy": "Your email preference is saved in Shopify. You can cancel this alert or unsubscribe from marketing emails at any time."
+  }
+}

@@ -28,10 +28,19 @@ VARIANT_QUERY = '''query RestockVariant($query:String!){
 def enabled():
     if not getattr(settings,'RESTOCK_NOTIFICATIONS_ENABLED',False):
         return False
+    if provider() == 'messaging':
+        from .messaging import configured
+        return configured()
+    if provider() != 'smtp':
+        return False
     backend = settings.EMAIL_BACKEND
     if getattr(settings,'TESTING',False) and backend.endswith('.locmem.EmailBackend'):
         return True
     return backend.endswith('.smtp.EmailBackend') and bool(settings.EMAIL_HOST)
+
+
+def provider():
+    return getattr(settings, 'RESTOCK_PROVIDER', 'smtp')
 
 
 def lookup_variant(sku, client=None):
@@ -56,17 +65,20 @@ def product_url(subscription):
     return 'https://www.scentory.pt/products/'+subscription.product_handle+'?'+urlencode({'variant':variant_id})
 
 
-def register(email, variant):
+def register(email, variant, customer_id='', consent_at=None):
     now = timezone.now()
+    selected = provider()
+    if selected == 'messaging' and (not customer_id or not consent_at):
+        raise ValueError('ExplicitMarketingConsentRequired')
     with transaction.atomic():
         sub, created = Subscription.objects.select_for_update().get_or_create(
             email=email.strip().lower(), variant_id=variant['id'], defaults={
                 'sku':variant['sku'],'product_title':variant['product_title'],
                 'variant_title':variant['title'],'product_handle':variant['handle']})
-        if not created and sub.status in (Subscription.ACTIVE,Subscription.QUEUED):
+        if not created and sub.provider == selected and sub.status in (Subscription.ACTIVE,Subscription.QUEUED):
             return sub
         if not created:
-            if sub.status==Subscription.PENDING and sub.requested_at>now-timedelta(minutes=10):
+            if sub.provider == selected and sub.status==Subscription.PENDING and sub.requested_at>now-timedelta(minutes=10):
                 return sub
             sub.generation += 1
             sub.confirm_token = uuid.uuid4()
@@ -75,7 +87,17 @@ def register(email, variant):
             sub.requested_at = now
             sub.confirmed_at = sub.notified_at = None
             sub.save()
-        Email.objects.get_or_create(subscription=sub,kind=Email.CONFIRM,generation=sub.generation)
+        sub.provider = selected
+        if selected == 'messaging':
+            sub.shopify_customer_id = customer_id
+            sub.marketing_consented_at = consent_at
+            sub.marketing_consent_version = 'restock-marketing-v1'
+            sub.status = Subscription.ACTIVE
+            sub.confirmed_at = now
+        sub.save()
+        if selected == 'smtp':
+            Email.objects.get_or_create(subscription=sub,kind=Email.CONFIRM,generation=sub.generation,
+                                        defaults={'provider': selected})
     return sub
 
 
@@ -90,6 +112,10 @@ def process_notifications(limit=100):
     counts = {'queued':0,'sent':0,'failed':0}
     if not enabled():
         return counts
+    selected = provider()
+    if selected == 'messaging':
+        from .messaging import reconcile_receipts
+        counts['sent'] += reconcile_receipts(limit)
     stocks = {}
 
     def stock(sku, fresh=False):
@@ -101,7 +127,7 @@ def process_notifications(limit=100):
                 stocks[sku] = None
         return stocks[sku]
 
-    for sub in Subscription.objects.filter(status=Subscription.ACTIVE).order_by(F('checked_at').asc(nulls_first=True),'pk')[:limit]:
+    for sub in Subscription.objects.filter(status=Subscription.ACTIVE,provider=selected).order_by(F('checked_at').asc(nulls_first=True),'pk')[:limit]:
         variant = stock(sub.sku)
         Subscription.objects.filter(pk=sub.pk,status=Subscription.ACTIVE).update(checked_at=timezone.now())
         if not variant or variant['id']!=sub.variant_id or not variant['available']:
@@ -109,12 +135,13 @@ def process_notifications(limit=100):
         with transaction.atomic():
             if not Subscription.objects.filter(pk=sub.pk,status=Subscription.ACTIVE).update(status=Subscription.QUEUED):
                 continue
-            Email.objects.get_or_create(subscription=sub,kind=Email.RESTOCK,generation=sub.generation)
+            Email.objects.get_or_create(subscription=sub,kind=Email.RESTOCK,generation=sub.generation,
+                                        defaults={'provider': selected})
             counts['queued'] += 1
 
     now = timezone.now()
     eligible = Q(status=Email.PENDING) | Q(status=Email.PROCESSING,lease_until__lt=now)
-    jobs = list(Email.objects.filter(eligible,available_at__lte=now,attempts__lt=6).order_by('pk').values_list('pk',flat=True)[:limit])
+    jobs = list(Email.objects.filter(eligible,provider=selected,available_at__lte=now,attempts__lt=6).order_by('available_at','pk').values_list('pk',flat=True)[:limit])
     for pk in jobs:
         claimed_at = timezone.now()
         if not Email.objects.filter(eligible,pk=pk).update(status=Email.PROCESSING,lease_until=claimed_at+timedelta(minutes=5),attempts=F('attempts')+1):
@@ -132,6 +159,18 @@ def process_notifications(limit=100):
                 Email.objects.filter(pk=pk).update(status=Email.PENDING,attempts=F('attempts')-1,
                                                   available_at=now+timedelta(minutes=1),lease_until=None)
                 continue
+        if selected == 'messaging':
+            from .messaging import dispatch
+            try:
+                dispatch(job)
+            except Exception as exc:
+                # Failures before a remote submission are retryable. The bridge
+                # itself blocks ambiguous writes so they never enter this retry.
+                Email.objects.filter(pk=pk,status=Email.PROCESSING).update(
+                    status=Email.FAILED if job.attempts>=6 else Email.PENDING,
+                    last_error=type(exc).__name__,available_at=now+timedelta(minutes=min(60,2**job.attempts)),lease_until=None)
+                counts['failed'] += 1
+            continue
         context = _context(sub)
         context['confirmation'] = job.kind==Email.CONFIRM
         title = sub.product_title.replace('\r',' ').replace('\n',' ')

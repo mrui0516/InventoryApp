@@ -1,0 +1,32 @@
+<h2>O perfume que esperava está de volta</h2>
+{% assign tags_text = customer.tags | join: '~' | prepend: '~' | append: '~' %}
+{% assign ready_parts = tags_text | split: '~scentory-restock-ready|' %}
+{% assign shown = false %}
+{% if ready_parts.size == 2 %}
+  {% assign ready = ready_parts.last | split: '~' | first | split: '|' %}
+  {% if ready.size == 2 %}
+    {% assign perfume = all_products[ready[0]] %}
+    {% assign variant_id = ready[1] | plus: 0 %}
+    {% assign selected_variant = perfume.variants | where: 'id', variant_id | first %}
+    {% if perfume != blank and selected_variant.available %}
+      {% assign shown = true %}
+      <div style="padding:18px 0;border-top:1px solid #eee7db;">
+        <h2 style="font-size:20px;font-weight:500;">{{ perfume.title | escape }}</h2>
+        <p>{{ selected_variant.title | escape }}</p>
+        {% assign variant_url = perfume.url | append: '?variant=' | append: selected_variant.id %}
+        <a href="{{ shop.url }}{{ variant_url }}" style="display:inline-block;padding:12px 22px;background:#121212;color:#f6e7c1;border-radius:6px;text-decoration:none;">Ver perfume</a>
+      </div>
+    {% endif %}
+  {% endif %}
+{% endif %}
+{% unless shown %}
+  <p>A disponibilidade pode ter mudado. Consulte os perfumes disponíveis na nossa loja.</p>
+  <p><a href="{{ shop.url }}/collections/all">Explorar perfumes</a></p>
+{% endunless %}
+{% assign cancel_parts = tags_text | split: '~scentory-restock-cancel|' %}
+{% if cancel_parts.size == 2 %}
+  {% assign cancel_token = cancel_parts.last | split: '~' | first %}
+  {% if cancel_token.size == 36 %}
+    <p style="font-size:12px;"><a href="https://gestao.scentory.pt/api/restock/unsubscribe/{{ cancel_token | url_encode }}/">Cancelar o aviso deste perfume</a></p>
+  {% endif %}
+{% endif %}

@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils import timezone
-from .models import RestockSubscription,RestockEmail
+from .models import RestockSubscription,RestockEmail,MessagingSlot
 
 
 @admin.register(RestockSubscription)
@@ -17,8 +17,8 @@ class SubscriptionAdmin(admin.ModelAdmin):
 
 @admin.register(RestockEmail)
 class EmailAdmin(admin.ModelAdmin):
-    list_display = ('subscription','kind','status','attempts','sent_at','last_error')
-    list_filter = ('status','kind')
+    list_display = ('subscription','provider','kind','status','attempts','sent_at','last_error')
+    list_filter = ('provider','status','kind')
     readonly_fields = tuple(field.name for field in RestockEmail._meta.fields)
     actions = ['retry_failed']
 
@@ -27,5 +27,21 @@ class EmailAdmin(admin.ModelAdmin):
 
     @admin.action(description='Retry failed emails')
     def retry_failed(self,request,queryset):
-        count=queryset.filter(status=RestockEmail.FAILED).update(status=RestockEmail.PENDING,attempts=0,available_at=timezone.now(),lease_until=None)
-        self.message_user(request,f'{count} email(s) queued for retry.')
+        count=queryset.filter(status=RestockEmail.FAILED,provider='smtp').update(status=RestockEmail.PENDING,attempts=0,available_at=timezone.now(),lease_until=None)
+        self.message_user(request,f'{count} SMTP email(s) queued for retry. Messaging failures require inspecting the Flow run; they are never blindly resent.')
+
+    def has_delete_permission(self,request,obj=None):
+        return False
+
+
+@admin.register(MessagingSlot)
+class MessagingSlotAdmin(admin.ModelAdmin):
+    list_display = ('email','state','job','started_at','checked_at')
+    list_filter = ('state',)
+    readonly_fields = tuple(field.name for field in MessagingSlot._meta.fields)
+
+    def has_add_permission(self,request):
+        return False
+
+    def has_delete_permission(self,request,obj=None):
+        return False

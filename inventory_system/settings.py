@@ -265,8 +265,11 @@ CLOUDINARY_API_SECRET = os.environ.get('CLOUDINARY_API_SECRET', '')
 CLOUDINARY_FOLDER = os.environ.get('CLOUDINARY_FOLDER', 'product_images')
 CLOUDINARY_AUTO_SYNC = os.environ.get('CLOUDINARY_AUTO_SYNC', '') in {'1', 'true', 'True', 'yes', 'on'}
 
-# Transactional, per-capacity back-in-stock emails; disabled until SMTP is configured.
+# Per-capacity restock alerts; disabled until a provider is configured.
 RESTOCK_NOTIFICATIONS_ENABLED = os.environ.get('RESTOCK_NOTIFICATIONS_ENABLED','') in {'1','true','True','yes','on'}
+RESTOCK_PROVIDER = os.environ.get('RESTOCK_PROVIDER', 'smtp').strip().lower()
+RESTOCK_MESSAGING_FLOW_READY = os.environ.get('RESTOCK_MESSAGING_FLOW_READY', '') in {'1','true','True','yes','on'}
+RESTOCK_MESSAGING_API_VERSION = os.environ.get('RESTOCK_MESSAGING_API_VERSION', '2026-10')
 RESTOCK_BACKGROUND = os.environ.get('RESTOCK_BACKGROUND','1') not in {'0','false','False','off'}
 RESTOCK_ALLOWED_ORIGINS = [value.strip() for value in os.environ.get('RESTOCK_ALLOWED_ORIGINS','https://www.scentory.pt,https://scentory.pt').split(',') if value.strip()]
 RESTOCK_PUBLIC_URL = os.environ.get('RESTOCK_PUBLIC_URL','https://gestao.scentory.pt/api/restock/')

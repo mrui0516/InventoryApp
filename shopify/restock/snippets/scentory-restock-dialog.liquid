@@ -1,0 +1,137 @@
+{% doc %}
+Renders the shared email subscription dialog and product variant selection behavior.
+{% enddoc %}
+{% if settings.scentory_restock_url != blank %}
+<scentory-restock-dialog data-messaging-success="{{ 'scentory_restock.messaging_success' | t | escape }}" data-messaging-intro="{{ 'scentory_restock.messaging_intro' | t | escape }}" data-messaging-privacy="{{ 'scentory_restock.messaging_privacy' | t | escape }}" data-endpoint="{{ settings.scentory_restock_url | escape }}" data-success="{{ 'scentory_restock.success' | t | escape }}" data-failure="{{ 'scentory_restock.failure' | t | escape }}" data-available="{{ 'scentory_restock.available' | t | escape }}" data-limited="{{ 'scentory_restock.limited' | t | escape }}" data-sending="{{ 'scentory_restock.sending' | t | escape }}">
+  <dialog class="scentory-restock-dialog" aria-labelledby="RestockDialogTitle">
+    <button type="button" data-restock-close class="scentory-restock-dialog__close" aria-label="{{ 'scentory_restock.close' | t }}">×</button>
+    <h2 id="RestockDialogTitle">{{ 'scentory_restock.title' | t }}</h2>
+    <p class="scentory-restock-dialog__product"></p>
+    <p data-restock-intro>{{ 'scentory_restock.intro' | t }}</p>
+    <form>
+      <label for="RestockCapacity">{{ 'scentory_restock.capacity' | t }}</label>
+      <select id="RestockCapacity" name="variant" required></select>
+      <label for="RestockEmail">{{ 'scentory_restock.email' | t }}</label>
+      <input id="RestockEmail" name="email" type="email" autocomplete="email" maxlength="254" required>
+      <label class="scentory-restock-dialog__consent" data-restock-consent hidden><input name="marketing_consent" type="checkbox" value="yes"><span>{{ 'scentory_restock.marketing_consent' | t }}</span></label>
+      <div class="scentory-restock-dialog__trap" aria-hidden="true"><label>Website<input name="website" tabindex="-1" autocomplete="off"></label></div>
+      <button class="button scentory-restock-dialog__submit" type="submit">{{ 'scentory_restock.submit' | t }}</button>
+    </form>
+    <p class="scentory-restock-dialog__message" role="status" aria-live="polite" hidden></p>
+    <p class="scentory-restock-dialog__privacy"><span data-restock-privacy>{{ 'scentory_restock.privacy_note' | t }}</span> <a href="/policies/privacy-policy">{{ 'scentory_restock.privacy_link' | t }}</a></p>
+  </dialog>
+</scentory-restock-dialog>
+{% endif %}
+{% stylesheet %}
+  .scentory-restock-dialog { width: min(44rem,calc(100vw - 3rem)); max-height: calc(100dvh - 3rem); overflow-y: auto; box-sizing: border-box; padding: 2.4rem; border: 1px solid #e3d8c4; border-radius: 1.4rem; background: #fffdf9; color: #211d16; }
+  .scentory-restock-dialog::backdrop { background: #15110a70; }
+  .scentory-restock-dialog h2 { padding-right: 2.6rem; margin: 0 0 1.2rem; font-size: 2.4rem; }
+  .scentory-restock-dialog__close { position: absolute; right: .8rem; top: .8rem; width: 4.4rem; height: 4.4rem; border: 0; background: transparent; font-size: 2.8rem; cursor: pointer; }
+  .scentory-restock-dialog__product { font-weight: 600; }
+  .scentory-restock-dialog form { display: grid; gap: .8rem; }
+  .scentory-restock-dialog label { margin-top: .6rem; }
+  .scentory-restock-dialog input, .scentory-restock-dialog select { width: 100%; min-height: 4.6rem; padding: .9rem; border: 1px solid #cfc5b4; border-radius: .5rem; background: white; color: #211d16; font: inherit; font-size: 16px; }
+  .scentory-restock-dialog__consent:not([hidden]) { display: flex; align-items: flex-start; gap: 1rem; font-size: 1.3rem; line-height: 1.5; }
+  .scentory-restock-dialog input[type="checkbox"] { width: 1.8rem; min-height: 1.8rem; height: 1.8rem; margin: .3rem 0 0; padding: 0; flex: 0 0 1.8rem; accent-color: #211d16; }
+  .scentory-restock-dialog__submit { margin-top: 1rem; width: 100%; }
+  .scentory-restock-dialog__privacy { font-size: 1.2rem; color: #6d6456; line-height: 1.6; }
+  .scentory-restock-dialog__privacy a { color: inherit; }
+  .scentory-restock-dialog__message { padding: 1rem; background: #f6f0e4; border-radius: .5rem; }
+  .scentory-restock-dialog__trap { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+  .nv-spotlight__slide:not(.is-active) .scentory-restock-trigger { visibility: hidden; }
+  .nv-spotlight__slide > .scentory-restock-trigger { margin-top: .8rem; }
+{% endstylesheet %}
+{% javascript %}
+  if (!customElements.get('scentory-restock-product')) {
+    customElements.define('scentory-restock-product',class extends HTMLElement {
+      connectedCallback() {
+        this.button = this.querySelector('[data-restock-trigger]');
+        this.variants = JSON.parse(this.button.dataset.restockVariants);
+        this.onChange = event => {
+          if (event.target.name === 'id' && event.target.form?.id === this.dataset.formId) this.update(event.target.value);
+        };
+        document.addEventListener('change',this.onChange);
+        if (typeof subscribe === 'function' && typeof PUB_SUB_EVENTS !== 'undefined') {
+          this.unsubscribe = subscribe(PUB_SUB_EVENTS.variantChange,event => {
+            if (String(event.data.sectionId)===this.dataset.sectionId) this.update(event.data.variant?.id,event.data.variant);
+          });
+        }
+        this.update(this.button.dataset.restockSelected);
+      }
+      update(id,fresh) {
+        const variant = fresh || this.variants.find(v=>String(v.id)===String(id));
+        this.hidden = !variant || variant.available || !variant.sku;
+        if (variant) this.button.dataset.restockSelected = String(variant.id);
+      }
+      disconnectedCallback() { document.removeEventListener('change',this.onChange);this.unsubscribe?.(); }
+    });
+  }
+  if (!customElements.get('scentory-restock-dialog')) {
+    customElements.define('scentory-restock-dialog',class extends HTMLElement {
+      connectedCallback() {
+        this.abort = new AbortController();
+        const signal = this.abort.signal;
+        this.dialog = this.querySelector('dialog');this.form = this.querySelector('form');
+        this.consent = this.querySelector('[data-restock-consent]');this.checkbox = this.form.elements.marketing_consent;
+        this.intro = this.querySelector('[data-restock-intro]');this.defaultIntro=this.intro.textContent;
+        this.privacy = this.querySelector('[data-restock-privacy]');this.defaultPrivacy=this.privacy.textContent;
+        this.select = this.querySelector('select');this.message = this.querySelector('[role="status"]');
+        this.submit = this.form.querySelector('[type="submit"]');this.submitLabel = this.submit.textContent;
+        document.addEventListener('click',event=>{
+          const button=event.target.closest('[data-restock-trigger]');
+          if (!button || event.defaultPrevented) return;
+          event.preventDefault();this.open(button);
+        },{signal});
+        this.querySelector('[data-restock-close]').addEventListener('click',()=>this.dialog.close(),{signal});
+        this.dialog.addEventListener('close',()=>{this.request?.abort();if(this.spotlight){this.spotlight.dialogOpen=false;this.spotlight.restart();}this.trigger?.focus();},{signal});
+        this.form.addEventListener('submit',event=>{event.preventDefault();this.send();},{signal});
+      }
+      async open(trigger) {
+        this.request?.abort();this.trigger=trigger;
+        this.variants=JSON.parse(trigger.dataset.restockVariants).filter(v=>!v.available&&v.sku);
+        if(!this.variants.length)return;
+        this.querySelector('.scentory-restock-dialog__product').textContent=trigger.dataset.restockTitle;
+        this.select.replaceChildren(...this.variants.map(v=>{const option=document.createElement('option');option.value=v.id;option.textContent=v.title==='Default Title'?'—':v.title;return option;}));
+        if(this.variants.some(v=>v.id===trigger.dataset.restockSelected))this.select.value=trigger.dataset.restockSelected;
+        this.message.hidden=true;this.submit.disabled=true;this.submit.textContent=this.submitLabel;
+        this.provider=null;this.checkbox.checked=false;this.checkbox.required=false;this.consent.hidden=true;
+        this.intro.textContent=this.defaultIntro;this.privacy.textContent=this.defaultPrivacy;
+        this.spotlight=trigger.closest('scentory-spotlight');if(this.spotlight){this.spotlight.dialogOpen=true;this.spotlight.stop();}
+        this.dialog.showModal();
+        const request=this.request=new AbortController();
+        const timeout=setTimeout(()=>request.abort(),10000);
+        try {
+          const response=await fetch(this.dataset.endpoint.replace(/\/$/,'')+'/status/',{credentials:'omit',signal:request.signal});
+          if(!response.ok)throw new Error('Unavailable');
+          const config=await response.json();
+          if(this.request!==request||!this.dialog.open)return;
+          if(!config.enabled)throw new Error('Unavailable');
+          this.provider=config.provider||'smtp';
+          const messaging=this.provider==='messaging';
+          this.consent.hidden=!messaging;this.checkbox.required=messaging;
+          this.intro.textContent=messaging?this.dataset.messagingIntro:this.defaultIntro;
+          this.privacy.textContent=messaging?this.dataset.messagingPrivacy:this.defaultPrivacy;
+          this.submit.disabled=false;
+        }catch(error){if(this.request===request&&this.dialog.open){this.message.textContent=this.dataset.failure;this.message.hidden=false;}}
+        finally{clearTimeout(timeout);}
+      }
+      async send() {
+        if(!this.provider||!this.form.reportValidity())return;
+        const variant=this.variants.find(v=>v.id===this.select.value);if(!variant)return;
+        this.request?.abort();const request=this.request=new AbortController();
+        this.submit.disabled=true;this.submit.textContent=this.dataset.sending;this.message.hidden=true;
+        try {
+          const response=await fetch(this.dataset.endpoint.replace(/\/$/,'')+'/subscribe/',{
+            method:'POST',credentials:'omit',signal:request.signal,headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({email:this.form.elements.email.value.trim(),variant_id:variant.id,sku:variant.sku,website:this.form.elements.website.value,marketing_consent:this.checkbox.checked,consent_version:'restock-marketing-v1'})
+          });
+          if(response.ok){const result=await response.json();this.message.textContent=result.provider==='messaging'?this.dataset.messagingSuccess:this.dataset.success;}
+          else{this.message.textContent=response.status===409?this.dataset.available:response.status===429?this.dataset.limited:this.dataset.failure;this.submit.disabled=false;}
+          this.message.hidden=false;
+        }catch(error){if(error.name!=='AbortError'){this.message.textContent=this.dataset.failure;this.message.hidden=false;this.submit.disabled=false;}}
+        finally{if(this.request===request)this.submit.textContent=this.submitLabel;}
+      }
+      disconnectedCallback(){this.request?.abort();this.abort?.abort();}
+    });
+  }
+{% endjavascript %}

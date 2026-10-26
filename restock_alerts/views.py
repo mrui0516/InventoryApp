@@ -18,7 +18,7 @@ from django.views.decorators.http import require_GET
 
 from stock.permissions import has_manager_access
 from . import services
-from .models import RestockSubscription as Subscription
+from .models import RestockSubscription as Subscription, MessagingSlot
 
 
 def _response(data,origin,status=200):
@@ -67,6 +67,9 @@ def subscribe(request):
         return _response({'error':'invalid'},origin,400)
     if data.get('website'):
         return _response({'ok':True},origin)
+    if services.provider() == 'messaging' and (
+            data.get('marketing_consent') is not True or data.get('consent_version') != 'restock-marketing-v1'):
+        return _response({'error':'marketing_consent_required'},origin,400)
     if _limited('email:'+email,5,3600) or _limited('ip:'+request.META.get('REMOTE_ADDR',''),40,600):
         return _response({'error':'rate_limit'},origin,429)
     try:
@@ -77,14 +80,24 @@ def subscribe(request):
         return _response({'error':'invalid_variant'},origin,400)
     if variant['available']:
         return _response({'error':'already_available'},origin,409)
-    services.register(email,variant)
+    if services.provider() == 'messaging':
+        from .messaging import consenting_customer
+        consent_at = timezone.now()
+        try:
+            customer_id = consenting_customer(email, consent_at)
+        except Exception:
+            return _response({'error':'unavailable'},origin,503)
+        services.register(email,variant,customer_id=customer_id,consent_at=consent_at)
+    else:
+        services.register(email,variant)
     transaction.on_commit(services.wake_worker)
-    return _response({'ok':True},origin)
+    return _response({'ok':True,'provider':services.provider()},origin)
 
 
 @require_GET
 def status(request):
-    return _response({'enabled':services.enabled()},request.headers.get('Origin',''))
+    return _response({'enabled':services.enabled(),'provider':services.provider(),
+                      'requires_marketing_consent':services.provider() == 'messaging'},request.headers.get('Origin',''))
 
 
 @require_GET
@@ -122,4 +135,6 @@ def demand(request):
         pending=Count('id',filter=Q(status=Subscription.PENDING)),
         notified=Count('id',filter=Q(status=Subscription.NOTIFIED)),
     ).order_by('-waiting','-pending','product_title')
-    return render(request,'restock_alerts/demand.html',{'rows':rows})
+    return render(request,'restock_alerts/demand.html',{'rows':rows,
+        'flow_waiting':MessagingSlot.objects.filter(state='waiting').count(),
+        'flow_blocked':MessagingSlot.objects.filter(state='blocked').count()})
