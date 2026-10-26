@@ -1,0 +1,19 @@
+Scentory Portugal
+
+{% if confirmation %}Confirme o seu pedido de aviso de disponibilidade:
+{% else %}O perfume que pediu voltou a estar disponível:
+{% endif %}{{ subscription.product_title }} — {{ subscription.variant_title }}
+
+{% if confirmation %}Clique para confirmar o seu email. Só enviaremos o aviso desta capacidade depois da confirmação:
+{{ confirm_url }}
+O link de confirmação é válido durante 7 dias.
+{% else %}Ver o perfume e a capacidade que escolheu:
+{{ product_url }}
+A disponibilidade pode mudar e este aviso não reserva stock.
+{% endif %}
+Cancelar este aviso:
+{{ unsubscribe_url }}
+
+Se não fez este pedido, pode ignorar a mensagem ou cancelá-lo no link acima.
+Loja C03A, C.C. Babilónia, Piso 1, Amadora, Portugal.
+www.scentory.pt · info@scentory.pt

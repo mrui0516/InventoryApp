@@ -1,0 +1,2 @@
+{% extends 'admin/change_list.html' %}
+{% block object-tools-items %}<li><a href="{% url 'restock_demand' %}">Demand by product / capacity</a></li>{{ block.super }}{% endblock %}

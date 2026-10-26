@@ -22,6 +22,7 @@ urlpatterns = [
     # The root goes wherever this user's day starts (Today for a manager).
     path('', lambda request: redirect('home')),
     path('admin/', admin.site.urls),
+    path('api/restock/', include('restock_alerts.urls')),
     path('', include('stock.urls')),
     
 ]
