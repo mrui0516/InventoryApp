@@ -10767,9 +10767,21 @@ class RestockBellRowTests(TestCase):
         Product.objects.filter(id=self.older.id).update(restock=False)
         self.assertEqual(self._order(), [self.newer.id, self.older.id])
         html = self.client.get(reverse("product_list") + "?q=RB").content.decode()
-        self.assertEqual(html.count('<tr class="is-muted">'), 1)
+        self.assertEqual(html.count('<tr class="is-muted"'), 1)
         first_cell = html[html.index('<div class="product-block'):]
         self.assertLess(first_cell.index('restock-bell'), first_cell.index('Older') if 'Older' in first_cell else 10**9)
+
+    def test_bell_off_with_stock_left_keeps_its_place_and_look(self):
+        """Only a sold-out product steps back; one still on the shelf stays put."""
+        Purchase.objects.create(product=self.older, quantity=5, remaining=5, cost_price=Decimal("4"))
+        Product.objects.filter(id=self.older.id).update(restock=False)
+        self.assertEqual(self._order()[0], self.older.id)
+        html = self.client.get(reverse("product_list") + "?q=RB").content.decode()
+        self.assertNotIn('<tr class="is-muted"', html)
+        self.assertEqual(html.count('restock-bell is-off'), 1)            # the bell still says so
+        # sold out: now it steps back
+        Purchase.objects.filter(product=self.older).update(remaining=0)
+        self.assertEqual(self._order(), [self.newer.id, self.older.id])
 
     def test_receiving_it_switches_the_bell_back_on(self):
         Product.objects.filter(id=self.older.id).update(restock=False)

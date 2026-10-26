@@ -278,8 +278,9 @@
           <tbody>
             {% if products %}
               {% for product in products %}
-                {# Bell off: greyed, and listed after every product being restocked. #}
-                <tr class="{% if not product.restock %}is-muted{% endif %}">
+                {# Bell off AND sold out: greyed and listed last. With the bell off but #}
+                {# stock still on the shelf, the row stays where it is and looks normal. #}
+                <tr class="{% if not product.restock and product.total_stock <= 0 %}is-muted{% endif %}" data-stock="{{ product.total_stock }}">
                   <td>
                     <div class="product-block{% if can_manage %} has-bell{% endif %} d-none d-sm-grid">
                       {% if can_manage %}<button type="button" class="restock-bell{% if not product.restock %} is-off{% endif %}" data-url="{% url 'toggle_restock' product.id %}" aria-pressed="{% if product.restock %}true{% else %}false{% endif %}" title="{% if product.restock %}Restock on - shows in low stock{% else %}Restock off - hidden from low stock{% endif %}" aria-label="Restock for {{ product.display_name }}"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path class="bell-slash" d="M3 3l18 18"/></svg></button>{% endif %}
@@ -427,11 +428,12 @@
   td .transit-pill{ display:flex; width:max-content; margin:.3rem auto 0; }
   .pm-fig .transit-pill{ margin-top:.2rem; }
   .product-block.has-bell{ grid-template-columns:32px 64px minmax(0,1fr); gap:.75rem; }
-  /* bell off: the row steps back */
+  /* bell off and sold out: the row steps back - but the photo keeps its
+     colours, it is how the product is told apart */
   tr.is-muted > td{ background:var(--app-surface-2) !important; }
-  tr.is-muted .thumb, tr.is-muted .pm-thumb{ filter:grayscale(1); opacity:.55; }
   tr.is-muted .product-name, tr.is-muted .pm-name, tr.is-muted .price-stack,
-  tr.is-muted .stock-pill, tr.is-muted .sales-stack, tr.is-muted .brand-pill{ opacity:.55; }
+  tr.is-muted .stock-pill, tr.is-muted .sales-stack, tr.is-muted .brand-pill,
+  tr.is-muted .product-meta, tr.is-muted .pm-sub, tr.is-muted .pm-fig{ opacity:.55; }
   .restock-bell{ display:inline-grid; place-items:center; width:32px; height:32px; padding:0; border-radius:999px;
                  border:1px solid var(--app-border-strong); background:var(--app-surface); color:var(--app-accent-ink); cursor:pointer; }
   .restock-bell .bell-slash{ display:none; }
@@ -467,9 +469,12 @@ document.addEventListener('click', (e) => {
     .then(d => {
       const row = bell.closest('tr');
       if (row) {
-        row.classList.toggle('is-muted', !d.restock);
+        // Only a sold-out product steps back; one still in stock stays put.
+        const soldOut = Number(row.dataset.stock || 0) <= 0;
+        const mute = !d.restock && soldOut;
+        row.classList.toggle('is-muted', mute);
         row.querySelectorAll('.restock-bell').forEach(b => b.classList.toggle('is-off', !d.restock));
-        if (!d.restock) row.parentNode.appendChild(row);
+        if (mute) row.parentNode.appendChild(row);
       }
       bell.classList.toggle('is-off', !d.restock);
       bell.setAttribute('aria-pressed', d.restock ? 'true' : 'false');
