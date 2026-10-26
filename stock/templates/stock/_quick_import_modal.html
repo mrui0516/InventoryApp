@@ -1,0 +1,237 @@
+{# Quick import, shared by Inbound, Sell and Pedido (mode = inbound/sell/pedido). #}
+{# Paste lines or pick a text PDF -> confirm every line -> the page fills its    #}
+{# own form from the "quickimport:apply" event. Nothing is saved from here.     #}
+<div class="modal fade" id="quickImportModal" tabindex="-1" aria-hidden="true" aria-labelledby="qiTitle"
+     data-mode="{{ mode }}" data-url="{% url 'quick_import' %}" data-search="/api/products_autocomplete/?scope=stock&q=">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">
+    <form class="modal-content" id="qiForm" novalidate>
+      {% csrf_token %}
+      <div class="modal-header">
+        <h5 class="modal-title" id="qiTitle">Quick import</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="qi-error d-none" id="qiError" role="alert"></div>
+
+        <div id="qiStepRead">
+          <label class="qi-label" for="qiText">Paste the lines</label>
+          <textarea id="qiText" class="form-control qi-text" rows="9"
+                    placeholder="1 6290362346531 Lattafa Yara Elixir EDP 100ml 8 12,75 € 102,00 €&#10;6290360596587 x3&#10;Yara Tous 4"></textarea>
+          <div class="qi-or"><span>or</span></div>
+          <label class="qi-file">
+            <input type="file" id="qiFile" accept="application/pdf,.pdf">
+            <span id="qiFileName">Choose an invoice PDF</span>
+          </label>
+        </div>
+
+        <div id="qiStepConfirm" class="d-none">
+          <div class="qi-sum" id="qiSum"></div>
+          <div class="qi-list" id="qiList"></div>
+        </div>
+      </div>
+      <div class="modal-footer qi-foot">
+        <button type="button" class="btn btn-outline-secondary d-none" id="qiBack">Back</button>
+        <button type="submit" class="btn btn-primary" id="qiRead">Read lines</button>
+        <button type="button" class="btn btn-primary d-none" id="qiApply">Add lines</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+  .qi-label{ display:block; font-weight:700; margin-bottom:.35rem; }
+  .qi-text{ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.9rem; }
+  .qi-or{ display:flex; align-items:center; gap:.6rem; margin:.8rem 0; color:var(--app-muted); font-size:.85rem; }
+  .qi-or::before,.qi-or::after{ content:""; flex:1; border-top:1px solid var(--app-border); }
+  .qi-file{ display:flex; align-items:center; justify-content:center; min-height:52px; margin:0; cursor:pointer;
+            border:1px dashed var(--app-border-strong); border-radius:var(--app-radius-sm); font-weight:700;
+            color:var(--app-accent-ink); background:var(--app-surface-2); }
+  .qi-file input{ position:absolute; opacity:0; width:1px; height:1px; }
+  .qi-error{ margin-bottom:.7rem; padding:.6rem .75rem; border-radius:var(--app-radius-sm);
+             background:var(--app-danger-soft); color:#7f1d1d; font-weight:600; }
+  .qi-sum{ display:flex; flex-wrap:wrap; gap:.35rem .5rem; margin-bottom:.6rem; font-size:.88rem; }
+  .qi-sum span{ padding:.12rem .55rem; border-radius:999px; border:1px solid var(--app-border); font-weight:700; }
+  .qi-sum .bad{ color:#b42318; border-color:#fbd5d5; background:#fef2f2; }
+  .qi-sum .warn{ color:#9a6700; border-color:#f6e3b4; background:#fffbeb; }
+  .qi-list{ display:grid; gap:.45rem; }
+  .qi-row{ display:grid; grid-template-columns:minmax(0,1fr) 84px 104px 34px; gap:.5rem; align-items:start;
+           padding:.55rem .6rem; border:1px solid var(--app-border); border-radius:var(--app-radius-sm); background:var(--app-surface); }
+  .qi-row.is-missing{ border-color:#fbd5d5; background:#fffafa; }
+  .qi-row.is-removed{ display:none; }
+  .qi-prod{ min-width:0; }
+  .qi-title{ font-weight:700; color:var(--app-text); line-height:1.25; }
+  .qi-meta{ font-size:.82rem; color:var(--app-primary); margin-top:.1rem; overflow-wrap:anywhere; }
+  .qi-tag{ display:inline-block; font-size:.74rem; font-weight:800; padding:.02rem .45rem; border-radius:999px; margin-right:.3rem; }
+  .qi-tag.ean{ background:#ecfdf5; color:#0f766e; }
+  .qi-tag.name{ background:#eaf5fd; color:#1b6fae; }
+  .qi-tag.none{ background:#fef2f2; color:#b42318; }
+  .qi-tag.sum-bad{ background:#fffbeb; color:#9a6700; }
+  .qi-pick{ margin-top:.35rem; display:grid; gap:.3rem; }
+  .qi-pick input{ min-height:38px; }
+  .qi-cands{ display:flex; flex-wrap:wrap; gap:.3rem; }
+  .qi-cands button{ border:1px solid var(--app-border-strong); background:var(--app-surface); border-radius:999px;
+                    padding:.15rem .6rem; font-size:.82rem; font-weight:600; text-align:left; }
+  .qi-num label{ display:block; font-size:.74rem; font-weight:700; color:var(--app-muted); margin-bottom:.1rem; }
+  .qi-num input{ text-align:right; min-height:38px; padding:.25rem .45rem; }
+  .qi-x{ border:0; background:none; color:#b42318; font-size:1.3rem; line-height:1; padding:.35rem; }
+  .qi-foot .btn{ min-height:44px; }
+  @media (max-width:575.98px){
+    .qi-row{ grid-template-columns:1fr 1fr 34px; }
+    .qi-prod{ grid-column:1 / -1; }
+  }
+</style>
+
+<script>
+(function () {
+  const modal = document.getElementById('quickImportModal');
+  if (!modal) return;
+  const mode = modal.dataset.mode;
+  const form = document.getElementById('qiForm');
+  const text = document.getElementById('qiText');
+  const file = document.getElementById('qiFile');
+  const fileName = document.getElementById('qiFileName');
+  const errorBox = document.getElementById('qiError');
+  const stepRead = document.getElementById('qiStepRead');
+  const stepConfirm = document.getElementById('qiStepConfirm');
+  const list = document.getElementById('qiList');
+  const sum = document.getElementById('qiSum');
+  const btnRead = document.getElementById('qiRead');
+  const btnBack = document.getElementById('qiBack');
+  const btnApply = document.getElementById('qiApply');
+  const priceLabel = mode === 'inbound' ? 'Cost €' : 'Price €';
+  let rows = [];
+
+  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+  const money = (v) => { const n = parseFloat(String(v ?? '').replace(',', '.')); return isFinite(n) ? n : null; };
+  function fail(msg) { errorBox.textContent = msg; errorBox.classList.remove('d-none'); }
+  function clearError() { errorBox.classList.add('d-none'); }
+  function showStep(confirm) {
+    stepRead.classList.toggle('d-none', confirm);
+    stepConfirm.classList.toggle('d-none', !confirm);
+    btnRead.classList.toggle('d-none', confirm);
+    btnBack.classList.toggle('d-none', !confirm);
+    btnApply.classList.toggle('d-none', !confirm);
+  }
+
+  file.addEventListener('change', () => { fileName.textContent = file.files[0] ? file.files[0].name : 'Choose an invoice PDF'; });
+  modal.addEventListener('show.bs.modal', () => {
+    form.reset(); rows = []; clearError(); showStep(false);
+    fileName.textContent = 'Choose an invoice PDF';
+  });
+  btnBack.addEventListener('click', () => { clearError(); showStep(false); });
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    clearError();
+    const body = new FormData();
+    body.append('csrfmiddlewaretoken', form.querySelector('[name=csrfmiddlewaretoken]').value);
+    body.append('mode', mode);
+    if (file.files[0]) body.append('file', file.files[0]);
+    else body.append('text', text.value);
+    btnRead.disabled = true; btnRead.textContent = 'Reading…';
+    fetch(modal.dataset.url, { method: 'POST', body })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.error) return fail(d.error);
+        rows = d.rows.map((r) => Object.assign(r, {
+          price: r.unit_price || (mode === 'inbound' && r.product && r.product.lastCost != null ? Number(r.product.lastCost).toFixed(2) : ''),
+          removed: false,
+        }));
+        render();
+        showStep(true);
+      })
+      .catch(() => fail('Could not read the lines. Check the connection and try again.'))
+      .then(() => { btnRead.disabled = false; btnRead.textContent = 'Read lines'; });
+  });
+
+  function render() {
+    const live = rows.filter((r) => !r.removed);
+    const found = live.filter((r) => r.product).length;
+    const missing = live.length - found;
+    const sumBad = live.filter((r) => r.check === false).length;
+    const total = live.reduce((s, r) => s + (r.product ? (money(r.price) || 0) * (Number(r.qty) || 0) : 0), 0);
+    sum.innerHTML = `<span>${live.length} line${live.length === 1 ? '' : 's'}</span>`
+      + `<span>${found} matched</span>`
+      + (missing ? `<span class="bad">${missing} without a product</span>` : '')
+      + (sumBad ? `<span class="warn">${sumBad} total${sumBad === 1 ? '' : 's'} not adding up</span>` : '')
+      + `<span>€${total.toFixed(2)}</span>`;
+    btnApply.textContent = `Add ${found} line${found === 1 ? '' : 's'}`;
+    btnApply.disabled = found === 0;
+
+    list.innerHTML = '';
+    rows.forEach((r, i) => {
+      const el = document.createElement('div');
+      el.className = 'qi-row' + (r.product ? '' : ' is-missing') + (r.removed ? ' is-removed' : '');
+      const tag = r.product
+        ? (r.match === 'name' ? '<span class="qi-tag name">by name</span>' : (r.match === 'hand' ? '<span class="qi-tag name">picked</span>' : '<span class="qi-tag ean">EAN</span>'))
+        : '<span class="qi-tag none">not found</span>';
+      const sumTag = r.check === false ? '<span class="qi-tag sum-bad">total differs</span>' : '';
+      // what the text said, for comparison (the EAN already shows when it matched)
+      const read = r.match === 'ean' ? r.name : [r.ean, r.name].filter(Boolean).join(' · ');
+      el.innerHTML = `
+        <div class="qi-prod">
+          <div class="qi-title">${r.product ? esc(r.product.display_name) : esc(r.name || r.ean || 'Unknown line')}</div>
+          <div class="qi-meta">${tag}${sumTag}${r.product ? esc(r.product.barcode) + (read ? ' · read: ' + esc(read) : '') : (r.total ? 'line total €' + esc(r.total) : '')}</div>
+          ${r.product ? '' : `
+            <div class="qi-pick">
+              ${r.candidates.length ? `<div class="qi-cands">${r.candidates.map((c) => `<button type="button" data-pick="${c.id}">${esc(c.title)}</button>`).join('')}</div>` : ''}
+              <input type="search" class="form-control form-control-sm qi-search" placeholder="Search the product…" aria-label="Search product for this line">
+              <div class="qi-cands qi-results"></div>
+            </div>`}
+        </div>
+        <div class="qi-num"><label>Qty</label><input type="number" min="1" class="form-control form-control-sm qi-qty" value="${esc(r.qty)}"></div>
+        <div class="qi-num"><label>${priceLabel}</label><input type="text" inputmode="decimal" class="form-control form-control-sm qi-price" value="${esc(r.price)}" placeholder="${mode === 'inbound' ? '' : 'system'}"></div>
+        <button type="button" class="qi-x" aria-label="Remove this line">&times;</button>`;
+      el.querySelector('.qi-qty').addEventListener('input', (e) => { r.qty = Math.max(1, parseInt(e.target.value || '1', 10) || 1); renderSumOnly(); });
+      el.querySelector('.qi-price').addEventListener('input', (e) => { r.price = e.target.value.replace(/[^\d.,]/g, ''); renderSumOnly(); });
+      el.querySelector('.qi-x').addEventListener('click', () => { r.removed = true; render(); });
+      el.querySelectorAll('[data-pick]').forEach((b) => b.addEventListener('click', () => pick(r, b.dataset.pick)));
+      const search = el.querySelector('.qi-search');
+      if (search) {
+        let timer = null;
+        search.addEventListener('input', () => {
+          clearTimeout(timer);
+          const q = search.value.trim();
+          const out = el.querySelector('.qi-results');
+          if (q.length < 2) { out.innerHTML = ''; return; }
+          timer = setTimeout(() => {
+            fetch(modal.dataset.search + encodeURIComponent(q)).then((x) => x.json()).then((d) => {
+              out.innerHTML = (d.results || []).slice(0, 6).map((p) => `<button type="button" data-pick="${p.id}">${esc(p.display_name || p.name)}</button>`).join('');
+              out.querySelectorAll('[data-pick]').forEach((b) => b.addEventListener('click', () => pick(r, b.dataset.pick)));
+            });
+          }, 220);
+        });
+      }
+      list.appendChild(el);
+    });
+  }
+  function renderSumOnly() {
+    const keep = document.activeElement;
+    const live = rows.filter((r) => !r.removed && r.product);
+    const total = live.reduce((s, r) => s + (money(r.price) || 0) * (Number(r.qty) || 0), 0);
+    const last = sum.lastElementChild;
+    if (last) last.textContent = '€' + total.toFixed(2);
+    if (keep) keep.focus();
+  }
+  function pick(row, id) {
+    fetch(`${modal.dataset.url}?mode=${encodeURIComponent(mode)}&product=${encodeURIComponent(id)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d.product) return;
+        row.product = d.product;
+        row.match = 'hand';
+        if (!row.price && mode === 'inbound' && d.product.lastCost != null) row.price = Number(d.product.lastCost).toFixed(2);
+        render();
+      });
+  }
+
+  btnApply.addEventListener('click', () => {
+    const lines = rows.filter((r) => !r.removed && r.product).map((r) => ({
+      product: r.product, qty: Math.max(1, Number(r.qty) || 1), price: money(r.price),
+    }));
+    if (!lines.length) return;
+    bootstrap.Modal.getOrCreateInstance(modal).hide();
+    document.dispatchEvent(new CustomEvent('quickimport:apply', { detail: { lines } }));
+  });
+}());
+</script>

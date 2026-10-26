@@ -66,6 +66,7 @@
   .pd-errors ul{ margin:.3rem 0 0; padding-left:1.1rem; }
 
   .pd-head .pd-new{ margin-left:auto; font-size:.9rem; font-weight:700; }
+  .qi-label-row{ display:flex; align-items:center; justify-content:space-between; gap:.6rem; margin-bottom:.35rem; } .qi-label-row .form-label, .qi-label-row label{ margin:0; } .qi-open{ display:inline-flex; align-items:center; gap:.35rem; font-weight:700; min-height:36px; white-space:nowrap; flex:0 0 auto; }
   .pd-editing{ font-size:.92rem; font-weight:700; color:var(--accent); }
   .pd-saved{ font-size:.9rem; font-weight:700; color:var(--app-good); }
 
@@ -180,7 +181,10 @@
     <div class="pd-card">
       <h3>Produtos</h3>
       <div class="pd-field pd-search" style="margin-bottom:.7rem;">
-        <label for="pd-prod-q">Adicionar produto (nome, marca, EAN)</label>
+        <div class="qi-label-row">
+          <label for="pd-prod-q">Adicionar produto (nome, marca, EAN)</label>
+          <button type="button" class="btn btn-sm btn-outline-primary qi-open" data-bs-toggle="modal" data-bs-target="#quickImportModal"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg> Quick import</button>
+        </div>
         <input type="text" id="pd-prod-q" autocomplete="off" placeholder="Escreva para procurar">
         <div class="pd-sugg" id="pd-prod-sugg" hidden></div>
       </div>
@@ -574,6 +578,20 @@
     liveErrors.hidden = false;
   }
 
+  // Quick import: the pasted price when there was one; otherwise what this
+  // customer last paid, else wholesale (a product without one is left blank
+  // and flagged, as a hand-added row is).
+  document.addEventListener('quickimport:apply', function (e) {
+    const lines = (e.detail && e.detail.lines) || [];
+    lines.forEach(function (l) {
+      const p = l.product;
+      const last = lastPrices[p.id];
+      let price = l.price != null ? l.price : (last ? Number(last.price) : p.wholesale_price);
+      addRow(p, { quantity: l.qty, unit_price: price != null ? Number(price).toFixed(2) : '' });
+    });
+    recalc();
+  });
+
   // A reopened draft: its rows and fees as they were printed.
   const draftRows = JSON.parse(document.getElementById('pd-draft-rows').textContent || '[]');
   draftRows.forEach(function (row) { addRow(row, row); });
@@ -584,4 +602,5 @@
   loadLastPrices();
 })();
 </script>
+{% include 'stock/_quick_import_modal.html' with mode='pedido' %}
 {% endblock %}

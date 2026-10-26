@@ -10741,3 +10741,130 @@ class StoneThemePreviewTests(TestCase):
             css = fh.read()
         self.assertIn('.theme-stone{', css)
         self.assertIn('--app-accent:#3ba6f1', css)
+
+QUICK_IMPORT_SAMPLE = """1 6290362346531Lattafa/Yara Elixir Eau de Parfum 100
+
+ml
+
+8 12,75 \u20ac12,75
+\u20ac
+102,00 \u20ac
+
+2 6290360598888Lattafa Afeef EDP 100ml 8 19,50 \u20ac19,50
+\u20ac
+156,00 \u20ac
+
+6 6290360596587Maison
+
+Alhambra/Philos?Pura?EDP?30?ml
+
+12 3,70 \u20ac 3,70
+\u20ac
+44,40 \u20ac
+
+7 Maison Alhambra/Salvo Elixir Eau de
+
+Parfum 30 ml
+
+12 3,70 \u20ac 3,70
+\u20ac
+44,40 \u20ac
+"""
+
+
+class QuickImportTests(TestCase):
+    """Quick import on Inbound, Sell and Pedido (2026-10-26): read pasted text
+    or a text PDF, match products, hand the lines back for confirmation."""
+
+    def setUp(self):
+        from .services import quick_import
+        self.qi = quick_import
+        self.admin = get_user_model().objects.create_superuser("qi_admin", password="pw123456")
+        self.client.force_login(self.admin)
+        cat = Category.objects.create(name="QI Cat")
+        mk = lambda brand, model, name, code, ml: Product.objects.create(
+            brand=brand, model=model, name=name, barcode=code, category=cat,
+            default_price=Decimal("30"), wholesale_price=Decimal("15"), volume_ml=ml)
+        self.yara = mk("LATTAFA", "YARA", "ELIXIR", "6290362346531", 100)
+        self.afeef = mk("LATTAFA", "AFEEF", "AFEEF", "6290360598888", 100)
+        self.philos = mk("Maison Alhambra", "PHILOS", "PURA EDP", "6290360596587", 30)
+        self.salvo = mk("Maison Alhambra", "SALVO", "Elixir EDP", "6290362346067", 30)
+        mk("Maison Alhambra", "SALVO", "Intense EDP", "6290362346068", 100)
+
+    def test_the_messy_invoice_text_is_read_line_by_line(self):
+        rows = self.qi.parse_text(QUICK_IMPORT_SAMPLE)
+        self.assertEqual([(r["ean"], r["qty"], str(r["unit_price"]), str(r["total"]), r["check"]) for r in rows], [
+            ("6290362346531", 8, "12.75", "102.00", True),
+            ("6290360598888", 8, "19.50", "156.00", True),
+            ("6290360596587", 12, "3.70", "44.40", True),
+            (None, 12, "3.70", "44.40", True),
+        ])
+        self.assertEqual(rows[2]["name"], "Maison Alhambra Philos Pura EDP 30 ml")
+
+    def test_products_match_by_ean_then_by_name(self):
+        rows = self.qi.match_products(self.qi.parse_text(QUICK_IMPORT_SAMPLE))
+        self.assertEqual([(r["match"], r["product"]) for r in rows], [
+            ("ean", self.yara), ("ean", self.afeef), ("ean", self.philos), ("name", self.salvo)])
+
+    def test_a_line_that_does_not_add_up_is_flagged(self):
+        row = self.qi.parse_text("1 6290360598888 Lattafa Afeef 8 19,50 \u20ac 150,00 \u20ac\n2 x 1 1,00 \u20ac 1,00 \u20ac")[0]
+        self.assertFalse(row["check"])
+
+    def test_a_plain_list_is_read_too(self):
+        rows = self.qi.parse_text("6290360596587 x3\nAfeef 100ml 2")
+        self.assertEqual([(r["ean"], r["qty"], r["unit_price"]) for r in rows],
+                         [("6290360596587", 3, None), (None, 2, None)])
+
+    def test_the_invoice_total_line_is_not_a_product_price(self):
+        rows = self.qi.parse_text("1 6290362346531 Yara 8 12,75 \u20ac 102,00 \u20ac\n"
+                                  "2 6290360598888 Afeef 8 19,50 \u20ac 156,00 \u20ac\nTotal 258,00 \u20ac")
+        self.assertEqual([str(r["total"]) for r in rows], ["102.00", "156.00"])
+        self.assertTrue(all(r["check"] for r in rows))
+
+    def test_the_endpoint_reads_a_text_pdf(self):
+        from io import BytesIO
+        from reportlab.pdfgen import canvas
+        buf = BytesIO()
+        pdf = canvas.Canvas(buf)
+        pdf.drawString(40, 800, "1 6290362346531 Lattafa Yara Elixir EDP 100ml 8 12,75 EUR 102,00 EUR")
+        pdf.drawString(40, 780, "2 6290360598888 Lattafa Afeef EDP 100ml 8 19,50 EUR 156,00 EUR")
+        pdf.save()
+        upload = SimpleUploadedFile("fatura.pdf", buf.getvalue(), content_type="application/pdf")
+        data = self.client.post(reverse("quick_import"), {"mode": "inbound", "file": upload}).json()
+        self.assertEqual([(r["product"]["id"], r["qty"], r["unit_price"]) for r in data["rows"]],
+                         [(self.yara.id, 8, "12.75"), (self.afeef.id, 8, "19.50")])
+
+    def test_a_pdf_without_text_says_to_paste(self):
+        from io import BytesIO
+        from reportlab.pdfgen import canvas
+        buf = BytesIO()
+        canvas.Canvas(buf).save()          # a blank page: no text layer, like a scan
+        upload = SimpleUploadedFile("scan.pdf", buf.getvalue(), content_type="application/pdf")
+        response = self.client.post(reverse("quick_import"), {"mode": "inbound", "file": upload})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("paste", response.json()["error"])
+
+    def test_one_product_by_hand(self):
+        data = self.client.get(reverse("quick_import") + f"?mode=pedido&product={self.salvo.id}").json()
+        self.assertEqual(data["product"]["barcode"], self.salvo.barcode)
+        self.assertIn("availability", data["product"])
+
+    def test_employees_may_import_on_sell_only(self):
+        employee = get_user_model().objects.create_user("qi_emp", password="pw123456")
+        self.client.force_login(employee)
+        ok = self.client.post(reverse("quick_import"), {"mode": "sell", "text": "6290360598888 x2"})
+        self.assertEqual(ok.status_code, 200)
+        denied = self.client.post(reverse("quick_import"), {"mode": "inbound", "text": "6290360598888 x2"})
+        self.assertEqual(denied.status_code, 403)
+
+    def test_the_three_pages_offer_it(self):
+        from .stores import ACTIVE_STORE_SESSION_KEY
+        store = Store.objects.create(name="QI Store", code="QIS")
+        session = self.client.session
+        session[ACTIVE_STORE_SESSION_KEY] = store.id
+        session.save()
+        for name, mode in (("inbound", "inbound"), ("outbound", "sell"), ("pedido", "pedido")):
+            html = self.client.get(reverse(name)).content.decode()
+            self.assertIn('id="quickImportModal"', html, name)
+            self.assertIn(f'data-mode="{mode}"', html, name)
+            self.assertIn("quickimport:apply", html, name)

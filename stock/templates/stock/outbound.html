@@ -34,7 +34,10 @@
 
 <!-- 扫码 / 模糊搜索 -->
 <form id="scan-form" class="mb-3 position-relative">
-  <label for="barcode" class="form-label">Scan barcode or search product</label>
+  <div class="qi-label-row">
+    <label for="barcode" class="form-label">Scan barcode or search product</label>
+    <button type="button" class="btn btn-sm btn-outline-primary qi-open" data-bs-toggle="modal" data-bs-target="#quickImportModal"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg> Quick import</button>
+  </div>
   <div class="input-group">
     <input
       type="text"
@@ -885,6 +888,7 @@
   }
   .line-modal-preview strong{ display:block; font-size:1.05rem; margin-top:.15rem; font-variant-numeric:tabular-nums; }
   .price-opt small{ display:block; font-size:.74rem; font-weight:600; color:var(--app-muted); }
+  .qi-label-row{ display:flex; align-items:center; justify-content:space-between; gap:.6rem; margin-bottom:.35rem; } .qi-label-row .form-label, .qi-label-row label{ margin:0; } .qi-open{ display:inline-flex; align-items:center; gap:.35rem; font-weight:700; min-height:36px; white-space:nowrap; flex:0 0 auto; }
 
   /* ===== Pedido draft banner ===== */
   .pedido-banner{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.4rem 1rem;
@@ -1740,6 +1744,27 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  // ===== Quick import: confirmed lines join the cart =====
+  // The pasted price when the text had one; otherwise what this customer last
+  // paid, else retail. Payment is chosen afterwards (the "pay all" bar).
+  document.addEventListener('quickimport:apply', (e) => {
+    const lines = (e.detail && e.detail.lines) || [];
+    lines.forEach((l) => {
+      const p = l.product;
+      const last = lastPrices[p.barcode] ? Number(lastPrices[p.barcode].price) : null;
+      const base = l.price != null ? l.price : (last != null ? last : (p.retail != null ? p.retail : p.wholesale));
+      cart.push({
+        uid: uidSeq++, barcode: p.barcode, title: p.title, stock: p.stock,
+        retail: p.retail, wholesale: p.wholesale, lastCost: p.lastCost, image_url: p.image_url,
+        brand: p.brand, model: p.model, pname: p.pname, spec: p.spec,
+        qty: l.qty, base: Number(base) || 0, discount: 0,
+        payment: '', isSplit: false, paymentSplit: null,
+      });
+    });
+    renderCart();
+    toastInfo(`Added ${lines.length} line${lines.length === 1 ? '' : 's'} - choose how it was paid.`);
+  });
+
   // ===== Opened from a Pedido draft =====
   const pedidoEl = document.getElementById('pedido-payload');
   const pedido = pedidoEl ? JSON.parse(pedidoEl.textContent || 'null') : null;
@@ -2028,5 +2053,5 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 {% if pedido_payload %}{{ pedido_payload|json_script:"pedido-payload" }}{% endif %}
 
+{% include 'stock/_quick_import_modal.html' with mode='sell' %}
 {% endblock %}
-

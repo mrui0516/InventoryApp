@@ -6,6 +6,7 @@ django-widget-tweaks==1.5.0
 openpyxl==3.1.5
 packaging==25.0
 pillow==11.3.0
+pypdf==6.19.0
 python-dateutil==2.9.0.post0
 pytz==2025.2
 qrcode==8.2

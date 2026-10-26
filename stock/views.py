@@ -4417,6 +4417,79 @@ def customers_autocomplete(request):
 
 
 @login_required
+def quick_import(request):
+    """Quick import for Inbound, Sell and Pedido: read pasted text or a PDF.
+
+    POST ``text`` or ``file`` (+ ``mode``) -> the lines read, each with the
+    product it matched (by EAN, else by name) and up to three guesses.
+    GET ``?product=<id>`` -> one product in the same shape, for a line the
+    person matched by hand. Nothing is saved here: the page shows the lines
+    for confirmation, then fills its own form.
+    """
+    from .services import quick_import as qi
+    mode = (request.POST.get('mode') or request.GET.get('mode') or 'sell').strip()
+    if mode not in ('inbound', 'sell', 'pedido'):
+        mode = 'sell'
+    if mode != 'sell' and not has_manager_access(request.user):
+        return JsonResponse({'error': 'Not allowed.'}, status=403)
+
+    if request.method == 'GET':
+        raw = (request.GET.get('product') or '').strip()
+        product = Product.objects.filter(id=int(raw)).first() if raw.isdigit() else None
+        if product is None:
+            return JsonResponse({'error': 'Product not found.'}, status=404)
+        return JsonResponse({'product': _quick_import_product(product)})
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST text or a PDF.'}, status=405)
+    try:
+        upload = request.FILES.get('file')
+        if upload is not None:
+            if not (upload.name or '').lower().endswith('.pdf'):
+                raise qi.QuickImportError('Only PDF files can be read - or paste the text.')
+            text = qi.pdf_text(upload)
+        else:
+            text = request.POST.get('text') or ''
+        if not text.strip():
+            raise qi.QuickImportError('Paste the lines or choose a PDF first.')
+        rows = qi.match_products(qi.parse_text(text))
+    except qi.QuickImportError as exc:
+        return JsonResponse({'error': str(exc)}, status=400)
+    if not rows:
+        return JsonResponse({'error': 'No product lines found in this text.'}, status=400)
+
+    def money(v):
+        return f'{v:.2f}' if v is not None else None
+
+    return JsonResponse({'rows': [{
+        'ean': row['ean'] or '',
+        'name': row['name'],
+        'qty': row['qty'],
+        'qty_read': row['qty_read'],
+        'unit_price': money(row['unit_price']),
+        'total': money(row['total']),
+        'check': row['check'],
+        'match': row['match'],
+        'product': _quick_import_product(row['product']) if row['product'] else None,
+        'candidates': [{'id': p.id, 'title': p.display_name, 'barcode': p.barcode}
+                       for p in row['candidates']],
+    } for row in rows]})
+
+
+def _quick_import_product(product):
+    """Everything any of the three pages needs to add the product as a line."""
+    from .pedido_views import _availability_label, _on_order_ids
+    ctx = _sell_line_ctx(product)
+    ctx.update({
+        'id': product.id,
+        'display_name': product.display_name,
+        'wholesale_price': ctx['wholesale'],
+        'availability': _availability_label(product, _on_order_ids()),
+    })
+    return ctx
+
+
+@login_required
 def customer_last_prices(request):
     """What a customer last paid for each product they have bought.
 

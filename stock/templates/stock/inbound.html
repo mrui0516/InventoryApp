@@ -178,7 +178,10 @@
 
 <!-- Scan / Search (with autocomplete dropdown) -->
 <form id="scan-form" class="mb-3 position-relative">
-  <label for="barcode" class="form-label">Scan or Search Product</label>
+  <div class="qi-label-row">
+    <label for="barcode" class="form-label">Scan or Search Product</label>
+    <button type="button" class="btn btn-sm btn-outline-primary qi-open" data-bs-toggle="modal" data-bs-target="#quickImportModal"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg> Quick import</button>
+  </div>
   <div class="input-group">
     <input
       type="text"
@@ -508,6 +511,7 @@
   .alert-danger{  background: #fef2f2; border-color:#fecaca; }
 
   #scan-form .form-label{ font-weight:700; color:var(--ds-text); }
+  .qi-label-row{ display:flex; align-items:center; justify-content:space-between; gap:.6rem; margin-bottom:.35rem; } .qi-label-row .form-label, .qi-label-row label{ margin:0; } .qi-open{ display:inline-flex; align-items:center; gap:.35rem; font-weight:700; min-height:36px; white-space:nowrap; flex:0 0 auto; }
   #barcode{
     border-radius:.7rem; border:1px solid var(--ds-border);
     padding:.65rem .9rem; box-shadow: 0 1px 0 rgba(0,0,0,.02) inset;
@@ -1078,6 +1082,25 @@ document.addEventListener('DOMContentLoaded', () => {
     barcodeInput.focus();
   });
 
+  // Quick import: the confirmed lines arrive as products with a quantity and
+  // the invoice's unit cost (or the last cost when the invoice had none).
+  document.addEventListener('quickimport:apply', (e) => {
+    const lines = (e.detail && e.detail.lines) || [];
+    lines.forEach((l) => {
+      const p = l.product;
+      const existing = cartBody.querySelector(`tr[data-barcode="${CSS.escape(p.barcode)}"]`);
+      const before = existing ? Number(existing.querySelector('.qty').value || 0) : 0;
+      if (!existing) addToCart(p.title || p.display_name, p.barcode, p.lastCost ?? null, p.image_url || '');
+      const tr = cartBody.querySelector(`tr[data-barcode="${CSS.escape(p.barcode)}"]`);
+      if (!tr) return;
+      tr.querySelector('.qty').value = before + l.qty;
+      const cost = l.price != null ? l.price : p.lastCost;
+      if (cost != null) tr.querySelector('.cost').value = Number(cost).toFixed(2);
+    });
+    recalcAndSave();
+    setInfo('info', `Added <strong>${lines.length}</strong> line${lines.length === 1 ? '' : 's'} from quick import - check them, then confirm.`);
+  });
+
   // Shared by the Enter key and the camera scanner.
   function lookupBarcode(code){
     return fetch(`/check_barcode/?scope=stock&barcode=${encodeURIComponent(code)}`)
@@ -1292,4 +1315,5 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 
+{% include 'stock/_quick_import_modal.html' with mode='inbound' %}
 {% endblock %}

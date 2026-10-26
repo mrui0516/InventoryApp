@@ -76,6 +76,7 @@ InventoryApp/
 │   │   ├── order_charges.py            # 运费/费用:charges_json 解析与保存;客户上次售价 last_prices()
 │   │   ├── contacts.py                 # 电话:同号判定(后 9 位)、WhatsApp 链接、customer_with_phone()
 │   │   ├── low_stock.py                # 低库存清单(Dashboard 摘要与提醒侧栏共用,缓存 5 分钟)
+│   │   ├── quick_import.py             # 快速识别:粘贴文字 / 文字 PDF(pypdf)→ 行(EAN、数量、价格、总额校验)→ 匹配产品
 │   │   ├── receipt_pdf.py              # 订单 A4 收据 PDF（欧洲葡语,用 doc_pdf;NIF 校验位通过才印）
 │   │   ├── sales_report_pdf.py         # Orders > Export PDF 销售报表（英文,用 doc_pdf;与页面同一数据）
 │   │   ├── shopify_client.py / shopify_sync.py       # Shopify Admin API：按 barcode=SKU 挂图/建品
