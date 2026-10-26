@@ -18,7 +18,7 @@ from django.core.paginator import Paginator
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Q, Sum, Count, Max
+from django.db.models import Q, Sum, Count, Max, Case, When
 from django.db.models.functions import Coalesce
 from django.http import (
     HttpResponse, JsonResponse, FileResponse
@@ -1334,8 +1334,12 @@ def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_cat
         'price_desc': ['-default_price', 'brand', 'model', 'name'],
         'price_asc': ['default_price', 'brand', 'model', 'name'],
     }
-    # Products with the restock bell off come after all the others, whatever the sort.
-    products_qs = products_qs.order_by('-restock', *sort_options.get(sort_by, sort_options['latest']))
+    # Bell off and sold out: after all the others, whatever the sort. A product
+    # with the bell off but stock left keeps its place.
+    products_qs = (products_qs
+                   .annotate(stepped_back=Case(When(restock=False, total_stock__lte=0, then=Value(1)),
+                                               default=Value(0), output_field=IntegerField()))
+                   .order_by('stepped_back', *sort_options.get(sort_by, sort_options['latest'])))
 
     # Only the top-level categories are offered as filter chips: twelve chips
     # is not a filter, it is a wall. Picking one covers everything beneath it.
