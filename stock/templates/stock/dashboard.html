@@ -15,7 +15,26 @@
   </div>
 
   {% if isManger %}
-    <form method="get" class="dash-card pad">
+    {# Phone: month stepper + categories in one row; any change applies at once. #}
+    <form method="get" class="dash-mbar d-md-none" id="dashMbar">
+      <a class="mb-step" href="{{ prev_month_url }}" aria-label="Previous month">&lsaquo;</a>
+      <label class="mb-month">
+        <span>{{ month_label }}</span>
+        <input type="month" name="month" value="{{ selected_month }}" aria-label="Month" onchange="this.form.submit()">
+      </label>
+      {% if next_month_url %}<a class="mb-step" href="{{ next_month_url }}" aria-label="Next month">&rsaquo;</a>{% else %}<span class="mb-step is-off" aria-hidden="true">&rsaquo;</span>{% endif %}
+      <details class="mb-cats">
+        <summary>{% if selected_cat_chips %}{% for chip in selected_cat_chips %}{{ chip.name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% elif dashboard_defaulted_to_perfume %}{{ dashboard_default_category_name }}{% else %}All categories{% endif %}</summary>
+        <div class="mb-cat-list">
+          {% for c in categories %}
+            <label><input type="checkbox" name="cat" value="{{ c.id }}" {% if c.id|stringformat:"s" in selected_cat_ids %}checked{% endif %} onchange="this.form.submit()"> {{ c.name }}</label>
+          {% endfor %}
+          <a href="{{ current_month_url }}">This month</a>
+        </div>
+      </details>
+    </form>
+
+    <form method="get" class="dash-card pad d-none d-md-block dash-sec-filter">
       <div class="row g-3 align-items-end">
         <div class="col-lg-3 col-md-4">
           <label class="toolbar-label" for="dashboard-month">Month</label>
@@ -60,7 +79,7 @@
       </div>
     </form>
 
-    <div class="dash-card pad">
+    <div class="dash-card pad dash-sec-month">
       <div class="section-head">
         <div>
           <h2>{{ month_label }}</h2>
@@ -149,7 +168,7 @@
     {% if isManger and channel_split and month_sales_amount %}
     {# Retail and Revenda side by side: the same month's sales, split by the #}
     {# customer's type. A sale with no customer (walk-in) counts as retail. #}
-    <div class="dash-card pad">
+    <div class="dash-card pad dash-sec-channel">
       <div class="section-head">
         <div><h2>Retail vs Revenda</h2></div>
         <div class="quick-tags"><span class="note-pill">{{ month_label }}</span></div>
@@ -172,7 +191,7 @@
     {% endif %}
 
     {% if store_is_all and month_store_breakdown|length > 1 %}
-    <div class="dash-card pad">
+    <div class="dash-card pad dash-sec-stores">
       <div class="section-head">
         <div>
           <h2>Store comparison</h2>
@@ -198,7 +217,7 @@
     </div>
     {% endif %}
 
-    <div class="summary-grid">
+    <div class="summary-grid dash-sec-trend">
       <div class="dash-card pad h-100">
         <div class="section-top">
           <div>
@@ -220,7 +239,13 @@
 
                 </div>
               </div>
-              <div class="mix-list">
+              {% if month_payment_breakdown %}
+                <div class="pm-bar d-md-none" aria-hidden="true">{% for row in month_payment_breakdown %}<span class="pm-seg pm-{{ forloop.counter }}" style="width:{{ row.share_pct|stringformat:'.2f' }}%"></span>{% endfor %}</div>
+                <ul class="pm-legend d-md-none">
+                  {% for row in month_payment_breakdown %}<li><i class="pm-dot pm-{{ forloop.counter }}"></i>{{ row.label }} <b>EUR {{ row.amount|floatformat:2 }}</b> <small>{{ row.share_pct|floatformat:0 }}%</small></li>{% endfor %}
+                </ul>
+              {% endif %}
+              <div class="mix-list d-none d-md-grid">
                 {% for row in month_payment_breakdown %}
                   {% if forloop.counter <= 4 %}
                     <div class="mix-item">
@@ -238,7 +263,7 @@
               </div>
             </div>
           </div>
-          <div class="col-lg-6">
+          <div class="col-lg-6 d-none d-md-block">
             <div class="mini-card h-100">
               <div class="section-top">
                 <div>
@@ -265,28 +290,27 @@
       </div>
 
       <div class="dash-card pad">
-        <div class="section-top">
+        <details class="dash-fold" data-fold open>
+        <summary><div class="section-head">
           <div>
-            <h3>Inventory intelligence</h3>
+            <h2>Inventory intelligence</h2>
           </div>
-        </div>
+        </div></summary>
         <div class="stack-list">
           <div class="inventory-box">
             <div class="mini-head"><span class="muted">Current stock units</span><span class="item-value">{{ current_stock_units }}</span></div>
             <div class="mini-head mt-2"><span class="muted">Current stock cost</span><span class="item-value">EUR {{ current_stock_cost|floatformat:2 }}</span></div>
             <div class="mini-head mt-2"><span class="muted">Current stock SKUs</span><span class="item-value">{{ current_stock_sku_count }}</span></div>
           </div>
+          {# Only when it says something else: filtered to Perfumes, these rows #}
+          {# repeated the ones above. Low stock has its own card (and panel). #}
+          {% if perfume_stock_units != current_stock_units or perfume_stock_sku_count != current_stock_sku_count %}
           <div class="inventory-box">
             <div class="mini-head"><span class="muted">Perfume units</span><span class="item-value">{{ perfume_stock_units }}</span></div>
             <div class="mini-head mt-2"><span class="muted">Perfume stock cost</span><span class="item-value">EUR {{ perfume_stock_cost|floatformat:2 }}</span></div>
             <div class="mini-head mt-2"><span class="muted">Perfume SKUs</span><span class="item-value">{{ perfume_stock_sku_count }}</span></div>
           </div>
-          <div class="inventory-box">
-            <div class="mini-head"><span class="muted">Low-stock SKUs</span><span class="note-pill warn">{{ low_stock_count }}</span></div>
-            <div class="mini-head mt-2"><span class="muted">Out of stock</span><span class="note-pill bad">{{ out_of_stock_count }}</span></div>
-            <div class="mini-head mt-2"><span class="muted">1-2 units left</span><span class="item-value">{{ low_stock_1_2_count }}</span></div>
-            <div class="mini-head mt-2"><span class="muted">3-4 units left</span><span class="item-value">{{ low_stock_3_4_count }}</span></div>
-          </div>
+          {% endif %}
           <div class="inventory-box">
             <div class="section-top">
               <div>
@@ -306,10 +330,11 @@
             </div>
           </div>
         </div>
+        </details>
       </div>
     </div>
 
-    <div class="dash-card pad">
+    <div class="dash-card pad dash-sec-focus">
       <details class="dash-fold" data-fold open>
       <summary><div class="section-head">
         <div>
@@ -397,7 +422,7 @@
           </details>
     </div>
 
-    <div class="dash-card pad">
+    <div class="dash-card pad dash-sec-capital">
       <details class="dash-fold" data-fold open>
       <summary><div class="section-head">
         <div>
@@ -477,6 +502,47 @@
       </div>
 
           </details>
+    </div>
+  {% endif %}
+
+{% if isManger %}
+    {# A summary only: the whole list lives in the alerts panel (the bell),  #}
+    {# which every page can open. Each total opens the panel on its band.     #}
+    <div class="dash-card pad dash-sec-low" id="low-stock">
+      <div class="section-head">
+        <div><h2>Low stock</h2></div>
+        {% if low_stock_count %}
+          <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="offcanvas"
+                  data-bs-target="#alertsPanel" data-ls-band="out">View all {{ low_stock_count }}</button>
+        {% endif %}
+      </div>
+      {% if low_stock_count %}
+        <div class="ls-sum">
+          <button type="button" class="ls-sum-tile out" data-bs-toggle="offcanvas" data-bs-target="#alertsPanel" data-ls-band="out">
+            <span class="k">Out</span><span class="v">{{ out_of_stock_count }}</span></button>
+          <button type="button" class="ls-sum-tile low12" data-bs-toggle="offcanvas" data-bs-target="#alertsPanel" data-ls-band="low12">
+            <span class="k">1–2 left</span><span class="v">{{ low_stock_1_2_count }}</span></button>
+          <button type="button" class="ls-sum-tile low34" data-bs-toggle="offcanvas" data-bs-target="#alertsPanel" data-ls-band="low34">
+            <span class="k">3–4 left</span><span class="v">{{ low_stock_3_4_count }}</span></button>
+        </div>
+        <div class="ls-sub">Most urgent</div>
+        <ul class="ls-list ls-inline">
+          {% for p in low_stock_focus_products %}
+            <li>
+              <a class="ls-row" href="{% url 'product_detail' p.id %}">
+                {% if p.image_url %}<img class="ls-img" src="{{ p.image_url }}" alt="" loading="lazy">{% else %}<span class="ls-img" aria-hidden="true"></span>{% endif %}
+                <span class="ls-main">
+                  <span class="ls-name">{{ p.display_name }}</span>
+                  <span class="ls-meta">{{ p.brand }} · sold {{ p.sold }}</span>
+                </span>
+                <span class="ls-stock {{ p.band }}">{% if p.stock == 0 %}Out{% else %}{{ p.stock }} left{% endif %}</span>
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="tiny">No low-stock products right now.</div>
+      {% endif %}
     </div>
   {% endif %}
 
@@ -560,46 +626,6 @@
 
 </div>
 
-{% if isManger %}
-  {# A summary only: the whole list lives in the alerts panel (the bell),  #}
-  {# which every page can open. Each total opens the panel on its band.     #}
-  <div class="dash-card pad mt-4" id="low-stock">
-    <div class="section-head">
-      <div><h2>Low stock</h2></div>
-      {% if low_stock_count %}
-        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="offcanvas"
-                data-bs-target="#alertsPanel" data-ls-band="out">View all {{ low_stock_count }}</button>
-      {% endif %}
-    </div>
-    {% if low_stock_count %}
-      <div class="ls-sum">
-        <button type="button" class="ls-sum-tile out" data-bs-toggle="offcanvas" data-bs-target="#alertsPanel" data-ls-band="out">
-          <span class="k">Out</span><span class="v">{{ out_of_stock_count }}</span></button>
-        <button type="button" class="ls-sum-tile low12" data-bs-toggle="offcanvas" data-bs-target="#alertsPanel" data-ls-band="low12">
-          <span class="k">1–2 left</span><span class="v">{{ low_stock_1_2_count }}</span></button>
-        <button type="button" class="ls-sum-tile low34" data-bs-toggle="offcanvas" data-bs-target="#alertsPanel" data-ls-band="low34">
-          <span class="k">3–4 left</span><span class="v">{{ low_stock_3_4_count }}</span></button>
-      </div>
-      <div class="ls-sub">Most urgent</div>
-      <ul class="ls-list ls-inline">
-        {% for p in low_stock_focus_products %}
-          <li>
-            <a class="ls-row" href="{% url 'product_detail' p.id %}">
-              {% if p.image_url %}<img class="ls-img" src="{{ p.image_url }}" alt="" loading="lazy">{% else %}<span class="ls-img" aria-hidden="true"></span>{% endif %}
-              <span class="ls-main">
-                <span class="ls-name">{{ p.display_name }}</span>
-                <span class="ls-meta">{{ p.brand }} · sold {{ p.sold }}</span>
-              </span>
-              <span class="ls-stock {{ p.band }}">{% if p.stock == 0 %}Out{% else %}{{ p.stock }} left{% endif %}</span>
-            </a>
-          </li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <div class="tiny">No low-stock products right now.</div>
-    {% endif %}
-  </div>
-{% endif %}
 
 <div class="modal fade" id="dashboardProductPreviewModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">

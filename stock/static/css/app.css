@@ -789,3 +789,73 @@ body.anon .erp-content{
   .ch-s{ font-size:.85rem; }
   .ch-head{ font-size:.74rem; letter-spacing:.04em; }
 }
+
+/* --------------------------- Dashboard on a phone --------------------------- */
+/* What to act on first: the month, Retail vs Revenda, low stock, stores, the
+   trend; the reading-heavy sections are folds (closed on a phone). */
+.dash-mbar{ display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; }
+.mb-step{ display:grid; place-items:center; width:44px; height:44px; border:1px solid var(--app-border-strong);
+          border-radius:var(--app-radius-sm); background:var(--app-surface); font-size:1.5rem; line-height:1;
+          color:var(--app-text); text-decoration:none; flex:0 0 auto; }
+.mb-step.is-off{ opacity:.35; }
+.mb-month{ position:relative; flex:1 1 7rem; min-width:0; height:44px; margin:0; display:grid; place-items:center;
+           border:1px solid var(--app-border-strong); border-radius:var(--app-radius-sm); background:var(--app-surface);
+           font-weight:800; color:var(--app-text); }
+.mb-month input{ position:absolute; inset:0; opacity:0; width:100%; height:100%; cursor:pointer; }
+.mb-cats{ position:relative; flex:1 1 100%; }
+.mb-cats > summary{ list-style:none; min-height:40px; display:flex; align-items:center; gap:.4rem; padding:0 .8rem;
+                    border:1px solid var(--app-border-strong); border-radius:999px; background:var(--app-surface);
+                    font-weight:700; color:var(--app-accent-ink); cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mb-cats > summary::-webkit-details-marker{ display:none; }
+.mb-cats > summary::after{ content:"\25BE"; margin-left:auto; color:var(--app-muted); }
+.mb-cat-list{ position:absolute; z-index:30; left:0; right:0; top:calc(100% + .3rem); display:grid; gap:.1rem;
+              padding:.4rem; max-height:55vh; overflow:auto; background:var(--app-surface);
+              border:1px solid var(--app-border-strong); border-radius:var(--app-radius); box-shadow:var(--app-shadow-md); }
+.mb-cat-list label{ display:flex; align-items:center; gap:.6rem; min-height:44px; padding:0 .5rem; margin:0; font-weight:600; }
+.mb-cat-list a{ display:flex; align-items:center; min-height:44px; padding:0 .5rem; font-weight:700; border-top:1px solid var(--app-border); }
+
+.pm-bar{ display:flex; height:12px; border-radius:999px; overflow:hidden; background:var(--app-surface-2); margin:.2rem 0 .6rem; }
+.pm-1{ background:#2563eb; } .pm-2{ background:#10b981; } .pm-3{ background:#f59e0b; } .pm-4{ background:#7c3aed; } .pm-5{ background:#64748b; }
+.pm-legend{ list-style:none; margin:0; padding:0; display:grid; gap:.35rem; }
+.pm-legend li{ display:flex; align-items:center; gap:.45rem; font-size:.9rem; color:var(--app-primary); }
+.pm-legend b{ margin-left:auto; color:var(--app-text); font-variant-numeric:tabular-nums; }
+.pm-legend small{ min-width:2.6rem; text-align:right; font-weight:700; }
+.pm-dot{ width:.7rem; height:.7rem; border-radius:999px; display:inline-block; flex:0 0 auto; }
+.d-md-grid{ display:grid; }
+
+@media (max-width:767.98px){
+  .dash-page{ gap:.75rem; }
+  .dash-head .btn{ padding:.35rem .7rem; font-size:.9rem; }
+  /* the order things are acted on */
+  .dash-page > .dash-head{ order:0; }
+  .dash-page > .dash-mbar{ order:1; }
+  .dash-page > .dash-sec-month{ order:2; }
+  .dash-page > .dash-sec-channel{ order:3; }
+  .dash-page > .dash-sec-low{ order:4; }
+  .dash-page > .dash-sec-stores{ order:5; }
+  .dash-page > .dash-sec-trend{ order:6; }
+  .dash-page > .dash-sec-focus{ order:7; }
+  .dash-page > .dash-sec-capital{ order:8; }
+  .d-md-grid{ display:none !important; }
+
+  /* the month: one wide figure, then a 2x2 of small ones */
+  .dash-sec-month .quick-tags{ gap:.35rem; }
+  .dash-sec-month .note-pill{ font-size:.82rem; padding:.15rem .55rem; }
+  .dash-sec-month .snapshot-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); gap:.45rem; }
+  .dash-sec-month .snapshot-card{ padding:.6rem .7rem; }
+  .dash-sec-month .snapshot-card.highlight{ grid-column:1 / -1; background:#10213a; border-color:#10213a; }
+  .dash-sec-month .snapshot-card.highlight .metric-label{ color:#9fb6dd; }
+  .dash-sec-month .snapshot-card.highlight .metric-value{ color:#fff; font-size:1.6rem; }
+  .dash-sec-month .snapshot-card.highlight .metric-sub{ color:#c7d5ee; }
+  .dash-sec-month .snapshot-card:not(.highlight) .metric-value{ font-size:1.15rem; margin-top:.25rem; }
+  .dash-sec-month .snapshot-card:not(.highlight) .metric-sub{ font-size:.85rem; margin-top:.25rem; }
+
+  /* the month bar above already names the month */
+  .dash-sec-month > .section-head h2{ display:none; }
+  /* three is enough to act on; "View all" opens the panel with the rest */
+  .dash-sec-low .ls-inline li:nth-child(n+4){ display:none; }
+  #salesBarChart{ height:200px !important; }
+  .dash-sec-trend .chart-wrap{ padding:.5rem; }
+  .dash-sec-trend .quick-tags .note-pill{ font-size:.82rem; }
+  .dash-sec-stores .row{ --bs-gutter-y:.5rem; }
+}
