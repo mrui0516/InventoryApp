@@ -197,6 +197,10 @@ class Product(models.Model):
     GENDER_SHOPIFY_TAGS = {'men': 'Homem', 'women': 'Mulher', 'unisex': 'Unissexo'}
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES, blank=True, default='', db_index=True)
     archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    # The restock bell (2026-10-26). Off = the shop is not buying this again for
+    # now, so it stays out of the low-stock list - but the product, its stock
+    # and its sales are untouched, and every analysis still sees it.
+    restock = models.BooleanField(default=True, db_index=True)
 
     # --- perfume attributes (see docs/PERFUME_ATTRIBUTES.md) ---
     volume_ml = models.PositiveIntegerField(null=True, blank=True, db_index=True)

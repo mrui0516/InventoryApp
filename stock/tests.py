@@ -10643,7 +10643,7 @@ class DashboardPhoneLayoutTests(TestCase):
 
     def test_low_stock_sits_inside_the_page_grid(self):
         """CSS order only works on children of .dash-page."""
-        page = self.html.index('<div class="dash-page">')
+        page = self.html.index('<div class="dash-page')
         low = self.html.index('id="low-stock"')
         self.assertGreater(low, page)
         self.assertNotIn('<span class="muted">Low-stock SKUs</span>', self.html)
@@ -10651,3 +10651,93 @@ class DashboardPhoneLayoutTests(TestCase):
     def test_inventory_is_a_fold(self):
         inv = self.html.index('<h2>Inventory intelligence</h2>')
         self.assertIn('<details class="dash-fold" data-fold open>', self.html[inv - 200:inv])
+
+class RestockAndTransitTests(TestCase):
+    """Low stock leaves out products not being restocked, and products on the
+    way; deleted products leave no trace but their sales (2026-10-26)."""
+
+    def setUp(self):
+        cache.clear()
+        self.admin = get_user_model().objects.create_superuser("rt_admin", password="pw123456")
+        self.client.force_login(self.admin)
+        self.cat = Category.objects.create(name="RT Cat")
+
+    def _low(self, name, code, remaining=1):
+        p = Product.objects.create(name=name, brand="RTB", barcode=code, category=self.cat,
+                                   default_price=Decimal("10"))
+        Purchase.objects.create(product=p, quantity=5, remaining=remaining, cost_price=Decimal("4"))
+        return p
+
+    def _names(self):
+        from .services.low_stock import low_stock_data
+        return {it['display_name'] for it in low_stock_data()['items']}
+
+    def test_the_bell_off_leaves_low_stock_but_keeps_the_product(self):
+        p = self._low("Bell", "9910000000001")
+        self.assertIn(p.display_name, self._names())
+        response = self.client.post(reverse("toggle_restock", args=[p.id]))
+        self.assertEqual(response.json(), {'id': p.id, 'restock': False})
+        self.assertNotIn(p.display_name, self._names())       # cache dropped at once
+        self.assertTrue(Product.objects.filter(id=p.id, restock=False).exists())
+        self.client.post(reverse("toggle_restock", args=[p.id]))
+        self.assertIn(p.display_name, self._names())
+
+    def test_the_bell_is_for_managers(self):
+        p = self._low("Bell2", "9910000000002")
+        employee = get_user_model().objects.create_user("rt_emp", password="pw123456")
+        self.client.force_login(employee)
+        self.client.post(reverse("toggle_restock", args=[p.id]))
+        self.assertTrue(Product.objects.get(id=p.id).restock)
+
+    def test_a_product_on_the_way_is_not_low_stock_and_says_so(self):
+        p = self._low("Transit", "9910000000003", remaining=0)
+        order = InboundOrder.objects.create(status='pending_receipt')
+        InboundPendingItem.objects.create(inbound_order=order, product=p, quantity=6,
+                                          cost_price=Decimal("4"))
+        self.assertNotIn(p.display_name, self._names())
+        html = self.client.get(reverse("product_list") + "?q=Transit").content.decode()
+        self.assertIn('+6<span class="tp-long"> on the way</span>', html)
+        self.assertIn(reverse("toggle_restock", args=[p.id]), html)
+
+    def test_a_deleted_product_is_not_stock_any_more(self):
+        from .services.dashboard import build_monthly_dashboard_snapshot
+        gone = self._low("Diffuser", "9910000000004", remaining=3)
+        self.client.post(reverse("delete_product", args=[gone.id]))
+        today = timezone.localdate()
+        snap = build_monthly_dashboard_snapshot(month_start=today.replace(day=1), period_end=today)
+        self.assertNotIn(gone.id, [r['product_id'] for r in snap['slow_movers']])
+        self.assertNotIn(gone.id, [r['product_id'] for r in snap['capital_locked_products']])
+        self.assertEqual(snap['current_stock_units'], 0)
+        self.assertNotIn(gone.display_name, self._names())
+
+    def test_a_thumbnail_falls_back_to_the_photo_on_this_server(self):
+        from unittest import mock as _mock
+        from django.template.loader import render_to_string
+        p = self._low("Photo", "9910000000005")
+        with _mock.patch("stock.services.cloudinary_urls.product_image_cdn_url",
+                         return_value="https://res.cloudinary.com/x/image/upload/t/9910000000005.jpg"), \
+             _mock.patch("stock.views.get_product_image_url", return_value="/media/p/photo.jpg"):
+            from .services.low_stock import low_stock_data
+            cache.clear()
+            item = next(it for it in low_stock_data()['items'] if it['id'] == p.id)
+        self.assertEqual(item['image_fallback'], "/media/p/photo.jpg")
+        html = render_to_string('stock/_low_stock_panel.html',
+                                {'low': {'items': [item], 'blocks': [], 'count': 1, 'out': 0, 'low12': 1, 'low34': 0}})
+        self.assertIn('data-fallback="/media/p/photo.jpg"', html)
+        self.assertIn('onerror=', html)
+
+class StoneThemePreviewTests(TestCase):
+    """The stone theme is tried on the Dashboard only (2026-10-26)."""
+
+    def test_only_the_dashboard_wears_it(self):
+        user = get_user_model().objects.create_superuser("st_admin", password="pw123456")
+        self.client.force_login(user)
+        dash = self.client.get(reverse("dashboard")).content.decode()
+        self.assertIn('class="dash-page theme-stone"', dash)
+        self.assertIn('family=Inter', dash)
+        other = self.client.get(reverse("customer_search")).content.decode()
+        self.assertNotIn('theme-stone', other)
+        with open('stock/static/css/app.css', encoding='utf-8') as fh:
+            css = fh.read()
+        self.assertIn('.theme-stone{', css)
+        self.assertIn('--app-accent:#3ba6f1', css)

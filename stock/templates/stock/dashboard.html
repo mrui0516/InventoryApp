@@ -2,9 +2,16 @@
 {% load math_extras access_tags %}
 {% block title %}{% if user|is_manager_user %}Dashboard{% else %}Today{% endif %}{% endblock %}
 
+{% block extra_head %}
+  {# The stone theme's type (Inter for UI, Inter Tight for headings). #}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@400;500;600&display=swap">
+{% endblock %}
+
 {% block content %}
 
-<div class="dash-page">
+<div class="dash-page theme-stone">
   <div class="dash-head">
     <div>
       <h1 class="dash-title">{% if isManger %}Dashboard{% else %}Today{% endif %}</h1>
@@ -530,7 +537,7 @@
           {% for p in low_stock_focus_products %}
             <li>
               <a class="ls-row" href="{% url 'product_detail' p.id %}">
-                {% if p.image_url %}<img class="ls-img" src="{{ p.image_url }}" alt="" loading="lazy">{% else %}<span class="ls-img" aria-hidden="true"></span>{% endif %}
+                {% if p.image_url %}<img class="ls-img" src="{{ p.image_url }}" alt="" loading="lazy"{% if p.image_fallback and p.image_fallback != p.image_url %} data-fallback="{{ p.image_fallback }}" onerror="if(this.dataset.fallback){this.src=this.dataset.fallback;this.removeAttribute('data-fallback');}else{this.style.visibility='hidden';}"{% endif %}>{% else %}<span class="ls-img" aria-hidden="true"></span>{% endif %}
                 <span class="ls-main">
                   <span class="ls-name">{{ p.display_name }}</span>
                   <span class="ls-meta">{{ p.brand }} · sold {{ p.sold }}</span>
@@ -669,12 +676,12 @@
     var detailUrls = [{% for point in chart_data %}"{{ point.detail_url }}"{% if not forloop.last %}, {% endif %}{% endfor %}];
     new Chart(chartElement.getContext('2d'), {
       type: 'bar',
-      data: {labels: labels, datasets: [{label: 'Daily Sales (EUR)', data: salesValues, backgroundColor: 'rgba(21,94,239,.82)', borderColor: 'rgba(15,23,42,.92)', borderWidth: 1.4, borderRadius: 7, maxBarThickness: 28}]},
+      data: {labels: labels, datasets: [{label: 'Daily Sales (EUR)', data: salesValues, backgroundColor: '#3ba6f1', hoverBackgroundColor: '#3398e1', borderWidth: 0, borderRadius: 6, maxBarThickness: 28}]},
       options: {
         responsive: true, maintainAspectRatio: false, plugins: {legend: {display: false}},
         scales: {
-          x: {grid: {display: false}, ticks: {color: '#526071', maxRotation: 0, minRotation: 0, autoSkip: true}},
-          y: {beginAtZero: true, ticks: {color: '#526071', callback: function (value) { return 'EUR ' + value; }}, grid: {color: 'rgba(148,163,184,.24)'}}
+          x: {grid: {display: false}, border: {color: '#e8e6e5'}, ticks: {color: '#78716c', maxRotation: 0, minRotation: 0, autoSkip: true}},
+          y: {beginAtZero: true, border: {display: false}, ticks: {color: '#78716c', callback: function (value) { return 'EUR ' + value; }}, grid: {color: '#f0eeed'}}
         },
         onClick: function (event, elements) {
           if (!elements.length) return;

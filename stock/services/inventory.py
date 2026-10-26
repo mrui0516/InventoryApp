@@ -6,7 +6,8 @@ from ..models import Purchase
 def build_inventory_snapshot(product=None):
     inventory_rows = list(
         Purchase.objects
-        .filter(remaining__gt=0)
+        # A deleted (archived) product's leftover batches are not stock any more.
+        .filter(remaining__gt=0, product__archived_at__isnull=True)
         .select_related("product", "product__category")
     )
 

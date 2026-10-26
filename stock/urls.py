@@ -45,6 +45,7 @@ urlpatterns = [
     path('products/<int:pk>/sync-shopify/', views.sync_product_to_shopify, name='sync_product_to_shopify'),
     path('products/sync-shopify-all/', views.sync_all_perfumes_to_shopify, name='sync_all_perfumes_to_shopify'),
     path('products/<int:pk>/edit/', views.edit_product_view, name='edit_product'),
+    path('products/<int:pk>/restock/', views.toggle_restock, name='toggle_restock'),
     path('products/<int:pk>/delete/', views.delete_product_view, name='delete_product'),
 
     path('export-sales-purchases-pdf/', views.export_sales_purchases_pdf, name='export_sales_purchases_pdf'),

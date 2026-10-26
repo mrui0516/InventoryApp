@@ -609,8 +609,24 @@ def _build_pending_reviews():
     return reviews
 
 
+def _refreshes_low_stock(view):
+    """Inbound orders decide what is "on the way", which keeps a product out of
+    low stock - so any change to one drops the cached list."""
+    from functools import wraps
+
+    @wraps(view)
+    def wrapped(request, *args, **kwargs):
+        response = view(request, *args, **kwargs)
+        if request.method == 'POST':
+            from .services.low_stock import forget
+            forget()
+        return response
+    return wrapped
+
+
 @login_required
 @manager_required
+@_refreshes_low_stock
 def inbound_view(request):
 
     today = timezone.localdate()
@@ -758,6 +774,7 @@ def suppliers_autocomplete(request):
 
 @login_required
 @manager_required
+@_refreshes_low_stock
 def inbound_receive_view(request, order_id):
     """复核 / 编辑 / 确认收货 / 取消 一张暂定（pending_receipt）入库单。
 
@@ -1132,9 +1149,12 @@ def product_list_view(request):
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
 
+    from .services.low_stock import in_transit_quantities
+    transit = in_transit_quantities(p.id for p in page_obj)
     for p in page_obj:
         p.display_price = p.default_price
         p.primary_image_url = get_product_image_url(p)
+        p.in_transit = transit.get(p.id, 0)
 
     total_stock = sum(p.total_stock for p in page_obj)
     query_params = request.GET.copy()
@@ -2388,6 +2408,19 @@ def edit_product_view(request, pk):
         'brand_series_map_json': json.dumps(build_brand_series_map()),
         'brand_catalog_json': json.dumps(build_brand_catalog()),
     })
+
+
+@require_POST
+@login_required
+@manager_required
+def toggle_restock(request, pk):
+    """Switch a product's restock bell. Off keeps it out of low stock only."""
+    from .services import low_stock
+    product = get_object_or_404(Product, pk=pk)
+    product.restock = not product.restock
+    product.save(update_fields=['restock'])
+    low_stock.forget()
+    return JsonResponse({'id': product.id, 'restock': product.restock})
 
 
 @require_POST

@@ -18,7 +18,7 @@
     {% for p in low.items %}
       <li data-band="{{ p.band }}" data-brand="{{ p.brand }}">
         <a class="ls-row" href="{% url 'product_detail' p.id %}">
-          {% if p.image_url %}<img class="ls-img" src="{{ p.image_url }}" alt="" loading="lazy">{% else %}<span class="ls-img ls-noimg" aria-hidden="true"></span>{% endif %}
+          {% if p.image_url %}<img class="ls-img" src="{{ p.image_url }}" alt="" loading="lazy"{% if p.image_fallback and p.image_fallback != p.image_url %} data-fallback="{{ p.image_fallback }}" onerror="if(this.dataset.fallback){this.src=this.dataset.fallback;this.removeAttribute('data-fallback');}else{this.style.visibility='hidden';}"{% endif %}>{% else %}<span class="ls-img ls-noimg" aria-hidden="true"></span>{% endif %}
           <span class="ls-main">
             <span class="ls-name">{{ p.display_name }}</span>
             <span class="ls-meta">{{ p.brand }} · sold {{ p.sold }}</span>

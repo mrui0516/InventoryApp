@@ -8,6 +8,11 @@ A product only counts once it has been part of the business: bought in at
 least once, or sold. A catalogue entry that was never stocked is "0 in stock"
 too, but it is not running out of anything - counting those made Today show
 336 low-stock products, which meant nothing.
+
+Two more stay out (2026-10-26): a product whose restock bell is off (the
+shop is not buying it again for now) and one already on an inbound order
+that has not arrived - it is being restocked. Both are still in the catalogue
+and in every analysis; only this list leaves them out.
 """
 from collections import defaultdict
 
@@ -33,9 +38,30 @@ def band_for(stock):
     return LOW_1_2 if stock <= 2 else LOW_3_4
 
 
+GENERATION_KEY = 'lowstock:gen'
+
+
 def cache_key(category_ids=()):
     scope = ','.join(str(cid) for cid in sorted(category_ids or ()))
-    return f'lowstock:v2:{scope}'
+    return f'lowstock:v3:{cache.get(GENERATION_KEY, 0)}:{scope}'
+
+
+def forget():
+    """Drop every cached list - after a bell is switched or an order changes."""
+    try:
+        cache.incr(GENERATION_KEY)
+    except ValueError:
+        cache.set(GENERATION_KEY, 1, None)
+
+
+def in_transit_quantities(product_ids=None):
+    """``{product_id: units}`` on inbound orders not received yet."""
+    from django.db.models import Sum as _Sum
+    from ..models import InboundPendingItem
+    rows = InboundPendingItem.objects.filter(inbound_order__status='pending_receipt')
+    if product_ids is not None:
+        rows = rows.filter(product_id__in=list(product_ids))
+    return dict(rows.values('product_id').annotate(q=_Sum('quantity')).values_list('product_id', 'q'))
 
 
 def low_stock_data(category_ids=()):
@@ -57,7 +83,7 @@ def low_stock_data(category_ids=()):
                   .annotate(s=Sum('remaining')).values('s')[:1])
     sold_subq = (Sale.objects.filter(product=OuterRef('pk')).values('product')
                  .annotate(s=Sum('quantity')).values('s')[:1])
-    products = Product.objects
+    products = Product.objects.filter(restock=True).exclude(id__in=list(in_transit_quantities()))
     if category_ids:
         products = products.filter(category_id__in=list(category_ids))
     low = (products
@@ -79,8 +105,11 @@ def low_stock_data(category_ids=()):
             'stock': stock,
             'sold': int(product.sold or 0),
             'band': band_for(stock),
-            # small CDN thumbnail (edge-cached, resized) with local fallback
+            # Small CDN thumbnail, and the photo on this server as the fallback:
+            # a product never mirrored to Cloudinary has a CDN address that 404s,
+            # which is why some thumbnails came out blank.
             'image_url': product_image_cdn_url(product, THUMB) or get_product_image_url(product),
+            'image_fallback': get_product_image_url(product),
         })
     items.sort(key=lambda it: (it['stock'] > 0, it['stock'], -it['sold'], it['display_name'].lower()))
 

@@ -859,3 +859,102 @@ body.anon .erp-content{
   .dash-sec-trend .quick-tags .note-pill{ font-size:.82rem; }
   .dash-sec-stores .row{ --bs-gutter-y:.5rem; }
 }
+
+/* ============================ Stone theme (preview) ============================
+   The "warm paper + one cyan" look (docs/DESIGN.md, Seline reference), tried on
+   the Dashboard first (2026-10-26) before it goes app-wide. Scoped to
+   .theme-stone so nothing else changes. Kept from the app, on purpose: the
+   information density, and red/orange/green for status only (out of stock,
+   debt, overdue, WhatsApp) - the reference's "one accent only" would hide them.
+
+   The old aliases (--text, --muted, --border, ...) are resolved once at :root,
+   so overriding only --app-* here would not reach them: both are set.
+   To roll out app-wide, move this token block to :root and drop the scope. */
+.theme-stone{
+  --app-bg:#fafaf9; --app-surface:#ffffff; --app-surface-2:#f5f5f4;
+  --app-text:#0c0a09; --app-muted:#78716c; --app-primary:#57534e;
+  --app-border:#e8e6e5; --app-border-strong:#d6d3d1;
+  --app-accent:#3ba6f1; --app-accent-ink:#1b6fae;     /* ink: cyan dark enough for small text */
+  --app-accent-soft:#eaf5fd; --app-accent-line:#c1e1f7;
+  --app-shadow:0 4px 16px rgba(0,0,0,.05);
+  --app-shadow-md:0 12px 45px rgba(17,12,46,.12);
+  --app-radius:10px; --app-radius-sm:8px; --app-radius-xs:6px;
+  --font-ui:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-head:"Inter Tight","Inter",ui-sans-serif,system-ui,sans-serif;
+
+  --bg:var(--app-bg); --card:var(--app-surface); --soft:var(--app-surface-2);
+  --text:var(--app-text); --muted:var(--app-muted); --border:var(--app-border);
+  --accent:var(--app-accent); --accent-soft:var(--app-accent-soft);
+  --shadow:var(--app-shadow); --shadow-md:var(--app-shadow-md);
+  --radius:var(--app-radius); --radius-sm:var(--app-radius-sm);
+
+  font-family:var(--font-ui); color:var(--app-text);
+  font-feature-settings:"cv11","ss01"; letter-spacing:.002em;
+}
+body:has(.theme-stone){ background:#fafaf9; }
+
+/* headings: quiet weight, tight tracking - size carries the hierarchy */
+.theme-stone .dash-title{ font-family:var(--font-head); font-weight:400; font-size:2rem; letter-spacing:-.025em; }
+.theme-stone .section-head h2,
+.theme-stone .section-head h3,
+.theme-stone .section-top h3{ font-family:var(--font-head); font-weight:500; letter-spacing:-.017em; color:var(--app-text); }
+.theme-stone .section-head h2{ font-size:1.2rem; }
+.theme-stone .metric-label,
+.theme-stone .toolbar-label,
+.theme-stone .ls-sub,
+.theme-stone .ls-sum-tile .k,
+.theme-stone .ch-head{ font-weight:600; letter-spacing:.04em; color:var(--app-muted); }
+.theme-stone .metric-value,
+.theme-stone .ch-v,
+.theme-stone .ls-sum-tile .v{ font-family:var(--font-head); font-weight:500; letter-spacing:-.02em; }
+
+/* surfaces: white cards, hairline borders, one soft shadow; inner boxes flat */
+.theme-stone .dash-card{ background:#fff; border:1px solid var(--app-border); box-shadow:var(--app-shadow); }
+.theme-stone .snapshot-card,
+.theme-stone .mini-card,
+.theme-stone .mix-item,
+.theme-stone .inventory-box,
+.theme-stone .ch-card,
+.theme-stone .chart-wrap{ background:#fff; border-color:var(--app-border); }
+.theme-stone .snapshot-card.highlight{ background:#1c1917; border-color:#1c1917; }
+.theme-stone .snapshot-card.highlight .metric-label{ color:#a8a29e; }
+.theme-stone .snapshot-card.highlight .metric-value{ color:#fff; }
+.theme-stone .snapshot-card.highlight .metric-sub{ color:#d6d3d1; }
+
+/* controls: pills; the cyan fill is kept for the one primary action */
+.theme-stone .btn{ border-radius:999px; font-weight:500; }
+.theme-stone .btn-primary{ background:#3ba6f1; border-color:#3398e1; color:#fff; }
+.theme-stone .btn-primary:hover,
+.theme-stone .btn-primary:focus{ background:#3398e1; border-color:#2a87cc; color:#fff; }
+.theme-stone .btn-outline-primary{ color:var(--app-text); border-color:var(--app-border); background:#fff; }
+.theme-stone .btn-outline-primary:hover{ color:var(--app-text); background:#f5f5f4; border-color:var(--app-border-strong); }
+.theme-stone .btn-outline-secondary,
+.theme-stone .btn-outline-dark{ color:var(--app-text); border-color:var(--app-border); background:#fff; }
+.theme-stone .btn-outline-secondary:hover,
+.theme-stone .btn-outline-dark:hover{ color:var(--app-text); background:#f5f5f4; }
+.theme-stone .note-pill{ background:#fff; border-color:var(--app-border); color:var(--app-primary); font-weight:600; }
+.theme-stone .note-pill.good{ background:#ecfdf5; border-color:#c7f0dd; color:#0f766e; }
+.theme-stone .note-pill.bad{ background:#fef2f2; border-color:#fbd5d5; color:#b42318; }
+.theme-stone .note-pill.warn{ background:#fffbeb; border-color:#f6e3b4; color:#9a6700; }
+.theme-stone .chip{ background:var(--app-accent-soft); border-color:var(--app-accent-line); color:var(--app-accent-ink); }
+.theme-stone .form-control,
+.theme-stone .form-select{ border-radius:6px; border-color:var(--app-border-strong); }
+.theme-stone .form-control:focus,
+.theme-stone .form-select:focus{ border-color:#3ba6f1; box-shadow:0 0 0 2px rgba(59,166,241,.35); }
+.theme-stone .mb-step,
+.theme-stone .mb-month{ border-color:var(--app-border); border-radius:999px; }
+.theme-stone .mb-cats > summary{ border-color:var(--app-border); color:var(--app-text); }
+
+/* data colours: cyan for the subject, stone greys for the rest */
+.theme-stone .mix-fill{ background:#3ba6f1; }
+.theme-stone .mix-track{ background:#f5f5f4; border-color:var(--app-border); }
+.theme-stone .ch-seg.retail,
+.theme-stone .ch-card.retail .ch-dot{ background:#3ba6f1; }
+.theme-stone .ch-seg.revenda,
+.theme-stone .ch-card.revenda .ch-dot{ background:#44403c; }
+.theme-stone .pm-1{ background:#3ba6f1; } .theme-stone .pm-2{ background:#44403c; }
+.theme-stone .pm-3{ background:#a8a29e; } .theme-stone .pm-4{ background:#c1e1f7; } .theme-stone .pm-5{ background:#e7e5e4; }
+.theme-stone .ls-sum-tile{ background:#fff; border-color:var(--app-border); }
+.theme-stone .ls-sum-tile.out{ background:#fef2f2; border-color:#fbd5d5; }
+.theme-stone .ls-inline{ border-color:var(--app-border); }
+.theme-stone .ls-row{ border-color:var(--app-border); }

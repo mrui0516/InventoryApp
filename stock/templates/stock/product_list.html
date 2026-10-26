@@ -330,8 +330,10 @@
                           {% else %}
                             <span class="stock-pill zero">0</span>
                           {% endif %}
+                          {% if product.in_transit %}<span class="transit-pill" title="On an inbound order not received yet"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 4h13v11H1z"/><path d="M14 8h4l3 3v4h-7z"/><circle cx="5.5" cy="17.5" r="1.8"/><circle cx="17.5" cy="17.5" r="1.8"/></svg>+{{ product.in_transit }}<span class="tp-long"> on the way</span></span>{% endif %}
                         </div>
                       </a>
+                      {% if can_manage %}<button type="button" class="restock-bell pm-bell{% if not product.restock %} is-off{% endif %}" data-url="{% url 'toggle_restock' product.id %}" aria-pressed="{% if product.restock %}true{% else %}false{% endif %}" title="{% if product.restock %}Restock on - shows in low stock{% else %}Restock off - hidden from low stock{% endif %}" aria-label="Restock for {{ product.display_name }}"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path class="bell-slash" d="M3 3l18 18"/></svg></button>{% endif %}
                       {% if can_manage %}<a class="pm-edit" href="{% url 'edit_product' product.id %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" aria-label="Edit {{ product.display_name }}">
                         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
                       </a>{% endif %}
@@ -353,13 +355,17 @@
                     </div>
                   </td>
                   <td class="text-center d-none d-sm-table-cell">
-                    {% if product.total_stock > 5 %}
-                      <span class="stock-pill ok">{{ product.total_stock }}</span>
-                    {% elif product.total_stock > 0 %}
-                      <span class="stock-pill low">{{ product.total_stock }}</span>
-                    {% else %}
-                      <span class="stock-pill zero">0</span>
-                    {% endif %}
+                    <div class="stock-cell">
+                      {% if product.total_stock > 5 %}
+                        <span class="stock-pill ok">{{ product.total_stock }}</span>
+                      {% elif product.total_stock > 0 %}
+                        <span class="stock-pill low">{{ product.total_stock }}</span>
+                      {% else %}
+                        <span class="stock-pill zero">0</span>
+                      {% endif %}
+                      {% if can_manage %}<button type="button" class="restock-bell{% if not product.restock %} is-off{% endif %}" data-url="{% url 'toggle_restock' product.id %}" aria-pressed="{% if product.restock %}true{% else %}false{% endif %}" title="{% if product.restock %}Restock on - shows in low stock{% else %}Restock off - hidden from low stock{% endif %}" aria-label="Restock for {{ product.display_name }}"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path class="bell-slash" d="M3 3l18 18"/></svg></button>{% endif %}
+                    </div>
+                    {% if product.in_transit %}<span class="transit-pill" title="On an inbound order not received yet"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 4h13v11H1z"/><path d="M14 8h4l3 3v4h-7z"/><circle cx="5.5" cy="17.5" r="1.8"/><circle cx="17.5" cy="17.5" r="1.8"/></svg>+{{ product.in_transit }}<span class="tp-long"> on the way</span></span>{% endif %}
                   </td>
                   <td class="d-none d-sm-table-cell">
                     <div class="actions">
@@ -414,7 +420,41 @@
   </div>
 </div>
 
+<style>
+  .stock-cell{ display:inline-flex; align-items:center; gap:.35rem; }
+  .restock-bell{ display:inline-grid; place-items:center; width:32px; height:32px; padding:0; border-radius:999px;
+                 border:1px solid var(--app-border-strong); background:var(--app-surface); color:var(--app-accent-ink); cursor:pointer; }
+  .restock-bell .bell-slash{ display:none; }
+  .restock-bell.is-off{ color:var(--app-muted); background:var(--app-surface-2); }
+  .restock-bell.is-off .bell-slash{ display:inline; }
+  .restock-bell:disabled{ opacity:.5; }
+  .transit-pill{ display:inline-flex; align-items:center; gap:.25rem; margin-top:.25rem; padding:.05rem .5rem; border-radius:999px; font-size:.8rem; font-weight:700;
+                 background:#dbeafe; color:#1e40af; white-space:nowrap; }
+  @media (max-width:575.98px){ .transit-pill .tp-long{ display:none; } }
+  /* phone: a column of its own beside the edit pencil, like it */
+  .pm-bell{ flex:0 0 44px; width:44px; height:auto; align-self:stretch; border-radius:0; border:0;
+            border-left:1px solid var(--pl-border); background:transparent; }
+  .pm-bell.is-off{ background:var(--app-surface-2); }
+</style>
 <script>
+// The restock bell: off = not buying this again for now, so it leaves low
+// stock. One tap, saved at once; the product and its history stay as they are.
+document.addEventListener('click', (e) => {
+  const bell = e.target.closest('.restock-bell');
+  if (!bell) return;
+  e.preventDefault();
+  bell.disabled = true;
+  const token = (document.cookie.split('; ').find(c => c.startsWith('csrftoken=')) || '').split('=')[1] || '';
+  fetch(bell.dataset.url, { method: 'POST', headers: { 'X-CSRFToken': token, 'X-Requested-With': 'XMLHttpRequest' } })
+    .then(r => r.ok ? r.json() : Promise.reject())
+    .then(d => {
+      bell.classList.toggle('is-off', !d.restock);
+      bell.setAttribute('aria-pressed', d.restock ? 'true' : 'false');
+      bell.title = d.restock ? 'Restock on - shows in low stock' : 'Restock off - hidden from low stock';
+    })
+    .catch(() => alert('Could not change the restock bell. Try again.'))
+    .then(() => { bell.disabled = false; });
+});
 document.addEventListener('click', (e) => {
   const target = e.target.closest('.js-zoom');
   if (!target) return;

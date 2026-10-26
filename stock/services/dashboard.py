@@ -662,7 +662,9 @@ def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_
 
     inventory_qs = (
         Purchase.objects
-        .filter(remaining__gt=0)
+        # Deleted (archived) products leave no trace but their sales - their
+        # leftover batches were showing up as slow movers and stock value.
+        .filter(remaining__gt=0, product__archived_at__isnull=True)
         .select_related("product__category")
         .prefetch_related("product__images")
     )
@@ -768,7 +770,8 @@ def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_
 
     perfume_inventory_rows = list(
         Purchase.objects
-        .filter(remaining__gt=0, product__category__name__iexact="Perfumes")
+        .filter(remaining__gt=0, product__category__name__iexact="Perfumes",
+                product__archived_at__isnull=True)
         .select_related("product")
     )
     perfume_stock_units = sum((row.remaining or 0) for row in perfume_inventory_rows)
