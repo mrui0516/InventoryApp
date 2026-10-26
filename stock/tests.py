@@ -9546,7 +9546,8 @@ class RoundANavigationTests(TestCase):
     def test_the_deep_analysis_folds(self):
         self._as(self.admin)
         dashboard = self.client.get(reverse("dashboard")).content.decode()
-        self.assertEqual(dashboard.count('<details class="dash-fold" data-fold open>'), 2)
+        # Inventory joined the folds on 2026-10-26 (Dashboard phone layout).
+        self.assertEqual(dashboard.count('<details class="dash-fold" data-fold open>'), 3)
 
     # -- Today ---------------------------------------------------------------
     def test_today_has_no_to_do_line(self):
