@@ -609,6 +609,15 @@ def _build_pending_reviews():
     return reviews
 
 
+def _bought_again(product):
+    """Receiving a product means it is being restocked again: a bell that was
+    switched off comes back on, and the product returns to low stock when it
+    runs low."""
+    if not product.restock:
+        Product.objects.filter(pk=product.pk).update(restock=True)
+        product.restock = True
+
+
 def _refreshes_low_stock(view):
     """Inbound orders decide what is "on the way", which keeps a product out of
     low stock - so any change to one drops the cached list."""
@@ -744,6 +753,7 @@ def inbound_view(request):
                         cost_price=cost_price,
                         date=timezone.now(),
                     )
+                    _bought_again(product)
                     order_total += cost_price * qty
 
                 context['success'] = (
@@ -837,6 +847,7 @@ def inbound_receive_view(request, order_id):
                             cost_price=it.cost_price,
                             date=now,
                         )
+                        _bought_again(it.product)
                     order.mark_received(now)
                     order.pending_items.all().delete()
                     messages.success(
@@ -1323,7 +1334,8 @@ def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_cat
         'price_desc': ['-default_price', 'brand', 'model', 'name'],
         'price_asc': ['default_price', 'brand', 'model', 'name'],
     }
-    products_qs = products_qs.order_by(*sort_options.get(sort_by, sort_options['latest']))
+    # Products with the restock bell off come after all the others, whatever the sort.
+    products_qs = products_qs.order_by('-restock', *sort_options.get(sort_by, sort_options['latest']))
 
     # Only the top-level categories are offered as filter chips: twelve chips
     # is not a filter, it is a wall. Picking one covers everything beneath it.

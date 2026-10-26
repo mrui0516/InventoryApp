@@ -57,7 +57,7 @@
   .op-kpi .v{ font-size:1.3rem; font-weight:800; color:var(--ink); font-variant-numeric:tabular-nums;
               white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .op-kpi .s{ font-size:.82rem; font-weight:600; color:var(--muted); }
-  .op-kpi.hi{ background:#10213a; border-color:#10213a; }
+  .op-kpi.hi{ background:#1c1917; border-color:#1c1917; }
   .op-kpi.hi .k{ color:#9fb6dd; }
   .op-kpi.hi .v{ color:#fff; font-size:1.55rem; }
   .op-kpi.hi .s{ color:#c7d5ee; }
@@ -72,7 +72,7 @@
   .op-pay .legend b{ color:var(--ink); font-variant-numeric:tabular-nums; }
   .op-pay .legend small{ color:var(--muted); font-weight:700; }
   .op-pay .dot{ width:.65rem; height:.65rem; border-radius:3px; display:inline-block; }
-  .pay-cash{ background:#16a34a; } .pay-card{ background:#2563eb; } .pay-mbway{ background:#e11d48; }
+  .pay-cash{ background:#16a34a; } .pay-card{ background:#3ba6f1; } .pay-mbway{ background:#e11d48; }
   .pay-other{ background:#94a3b8; }
   .op-note{ font-size:.82rem; color:var(--app-warn); background:var(--app-warn-soft); border:1px solid #f5d99b;
             border-radius:var(--app-radius-sm); padding:.35rem .6rem; margin-bottom:.5rem; }
@@ -530,7 +530,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (trendEl) {
       var d = JSON.parse(document.getElementById('trendData').textContent);
       var sets = [
-        { label: 'Sales', data: d.map(function (x) { return x.sales; }), backgroundColor: '#2563eb', borderRadius: 5, maxBarThickness: 38 },
+        { label: 'Sales', data: d.map(function (x) { return x.sales; }), backgroundColor: '#3ba6f1', borderRadius: 5, maxBarThickness: 38 },
         { label: 'Purchases', data: d.map(function (x) { return x.purchases; }), backgroundColor: '#f59e0b', borderRadius: 5, maxBarThickness: 38 }
       ];
       if (showProfit) sets.push({ type: 'line', label: 'Gross profit', data: d.map(function (x) { return x.profit; }), borderColor: '#10b981', backgroundColor: '#10b981', borderWidth: 2, tension: 0.3, pointRadius: 2 });
@@ -553,7 +553,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (yearEl) {
       var y = JSON.parse(document.getElementById('yearChartData').textContent);
       new Chart(yearEl, { type: 'bar',
-        data: { labels: y.map(function (x) { return x.label; }), datasets: [{ data: y.map(function (x) { return x.amount; }), backgroundColor: '#2563eb', borderRadius: 6, maxBarThickness: 44 }] },
+        data: { labels: y.map(function (x) { return x.label; }), datasets: [{ data: y.map(function (x) { return x.amount; }), backgroundColor: '#3ba6f1', borderRadius: 6, maxBarThickness: 44 }] },
         options: { responsive: true, maintainAspectRatio: false,
           plugins: { legend: { display: false }, tooltip: { callbacks: { label: function (c) { return money(c.raw); } } } },
           scales: { y: { beginAtZero: true, ticks: { callback: function (v) { return '€' + v; } } } },

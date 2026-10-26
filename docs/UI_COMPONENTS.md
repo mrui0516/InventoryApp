@@ -106,7 +106,7 @@
 
 ## 5. 设计令牌（不要写死颜色）
 
-颜色/圆角/阴影全部走 `app.css` 的 `--app-*` 变量：
+颜色/圆角/阴影全部走 `app.css` 的 `--app-*` 变量(2026-10-26 起为石色主题:`--app-bg:#fafaf9`、文字 `#0c0a09`、边框 `#e8e6e5`;**`--app-accent:#1677bd` 用于按钮/选中态等白字底色,`--app-accent-bright:#3ba6f1` 只用于图表、色条等数据色**,不要在亮青蓝上写白字):
 
 ```
 --app-bg --app-surface --app-surface-2 --app-text --app-muted

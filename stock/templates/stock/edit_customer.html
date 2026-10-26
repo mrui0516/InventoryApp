@@ -9,7 +9,7 @@
     --ds-card:#fff;
     --ds-text:#1f2937;
     --ds-muted:#6b7280;
-    --ds-accent:#3b82f6;
+    --ds-accent:var(--app-accent);
     --ds-radius:.9rem;
   }
 
@@ -55,7 +55,7 @@
   form.ds-card select:focus,
   form.ds-card textarea:focus{
     border-color: color-mix(in oklab, var(--ds-accent) 55%, #7aa2ff 45%);
-    box-shadow: 0 0 0 .2rem rgba(59,130,246,.14);
+    box-shadow: 0 0 0 .2rem rgba(59,166,241,.14);
     outline: none;
   }
   /* Django 错误信息 */

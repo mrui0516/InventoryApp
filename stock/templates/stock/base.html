@@ -18,13 +18,17 @@
         var p = [1, 2, 3, 4, 5].map(function (i) { return (s.getPropertyValue('--chart-' + i) || '').trim(); }).filter(Boolean);
         if (p.length) return p;
       } catch (e) { /* fall through */ }
-      return ['#2563eb', '#10b981', '#f59e0b', '#7c3aed', '#64748b'];
+      return ['#3ba6f1', '#10b981', '#f59e0b', '#7c3aed', '#78716c'];
     })();
   </script>
 
+  {# The stone theme's type: Inter for the interface, Inter Tight for headings. #}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Inter+Tight:wght@400;500;600&display=swap">
   {% block extra_head %}{% endblock %}
 </head>
-<body class="bg-light{% if not user.is_authenticated %} anon{% endif %}">
+<body class="bg-light theme-stone{% if not user.is_authenticated %} anon{% endif %}">
   {% with current_url=request.resolver_match.url_name %}
   <div class="erp-layout">
 

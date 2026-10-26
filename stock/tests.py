@@ -10727,20 +10727,74 @@ class RestockAndTransitTests(TestCase):
         self.assertIn('onerror=', html)
 
 class StoneThemePreviewTests(TestCase):
-    """The stone theme is tried on the Dashboard only (2026-10-26)."""
+    """The stone theme: tried on the Dashboard, app-wide since 2026-10-26."""
 
-    def test_only_the_dashboard_wears_it(self):
+    def test_every_page_wears_it(self):
         user = get_user_model().objects.create_superuser("st_admin", password="pw123456")
         self.client.force_login(user)
-        dash = self.client.get(reverse("dashboard")).content.decode()
-        self.assertIn('class="dash-page theme-stone"', dash)
-        self.assertIn('family=Inter', dash)
-        other = self.client.get(reverse("customer_search")).content.decode()
-        self.assertNotIn('theme-stone', other)
+        for name in ("dashboard", "customer_search", "product_list"):
+            html = self.client.get(reverse(name)).content.decode()
+            self.assertIn('class="bg-light theme-stone', html, name)
+            self.assertEqual(html.count('fonts.googleapis.com/css2'), 1, name)   # fonts once, from base.html
         with open('stock/static/css/app.css', encoding='utf-8') as fh:
             css = fh.read()
-        self.assertIn('.theme-stone{', css)
-        self.assertIn('--app-accent:#3ba6f1', css)
+        root = css[css.index(':root{'):css.index('}', css.index(':root{'))]
+        self.assertIn('--app-bg:#fafaf9', root)
+        # white text sits on this one, so it has to be deep enough to read
+        self.assertIn('--app-accent:#1677bd', root)
+        self.assertIn('--app-accent-bright:#3ba6f1', root)
+
+
+class RestockBellRowTests(TestCase):
+    """Product list: the bell leads the row; off = greyed and listed last;
+    receiving the product switches it back on (2026-10-26)."""
+
+    def setUp(self):
+        self.admin = get_user_model().objects.create_superuser("rb_admin", password="pw123456")
+        self.client.force_login(self.admin)
+        cat = Category.objects.create(name="RB Cat")
+        self.newer = Product.objects.create(name="Newer", brand="RB", barcode="9890000000002",
+                                            category=cat, default_price=Decimal("10"))
+        self.older = Product.objects.create(name="Older", brand="RB", barcode="9890000000001",
+                                            category=cat, default_price=Decimal("10"))
+
+    def _order(self):
+        products = list(self.client.get(reverse("product_list") + "?q=RB").context["products"])
+        return [p.id for p in products]
+
+    def test_a_bell_off_product_is_listed_last_and_greyed(self):
+        self.assertEqual(self._order()[0], self.older.id)        # latest added first
+        Product.objects.filter(id=self.older.id).update(restock=False)
+        self.assertEqual(self._order(), [self.newer.id, self.older.id])
+        html = self.client.get(reverse("product_list") + "?q=RB").content.decode()
+        self.assertEqual(html.count('<tr class="is-muted">'), 1)
+        first_cell = html[html.index('<div class="product-block'):]
+        self.assertLess(first_cell.index('restock-bell'), first_cell.index('Older') if 'Older' in first_cell else 10**9)
+
+    def test_receiving_it_switches_the_bell_back_on(self):
+        Product.objects.filter(id=self.older.id).update(restock=False)
+        supplier = Supplier.objects.create(name="RB Supplier")
+        order = InboundOrder.objects.create(status='pending_receipt', supplier=supplier)
+        item = InboundPendingItem.objects.create(inbound_order=order, product=self.older, quantity=4,
+                                                 cost_price=Decimal("5"))
+        self.client.post(reverse("inbound_receive", args=[order.id]), {
+            "action": "receive", "supplier": str(supplier.id), "invoice_no": "RB-1",
+            "invoice_date": "2026-10-26", "note": "",
+            "lines-TOTAL_FORMS": "1", "lines-INITIAL_FORMS": "1", "lines-MIN_NUM_FORMS": "0",
+            "lines-MAX_NUM_FORMS": "1000", "lines-0-id": str(item.id), "lines-0-quantity": "4",
+            "lines-0-cost_price": "5.00", "lines-0-DELETE": "",
+        })
+        self.assertEqual(InboundOrder.objects.get(id=order.id).status, 'received')
+        self.assertTrue(Product.objects.get(id=self.older.id).restock)
+
+    def test_direct_inbound_switches_the_bell_back_on(self):
+        Product.objects.filter(id=self.older.id).update(restock=False)
+        self.client.post(reverse("inbound"), {
+            "items_json": json.dumps([{"barcode": self.older.barcode, "qty": 3, "cost_price": "5.00"}]),
+            "idemp_key": "rb-test-1",
+        })
+        self.assertTrue(Purchase.objects.filter(product=self.older).exists())
+        self.assertTrue(Product.objects.get(id=self.older.id).restock)
 
 QUICK_IMPORT_SAMPLE = """1 6290362346531Lattafa/Yara Elixir Eau de Parfum 100
 
