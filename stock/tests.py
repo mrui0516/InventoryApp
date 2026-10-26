@@ -10615,3 +10615,38 @@ class StaticVersionTests(TestCase):
         html = self.client.get(reverse("customer_search")).content.decode()
         self.assertRegex(html, r'href="/static/css/app\.css\?v=\d+"')
         self.assertRegex(html, r'src="/static/js/bootstrap\.min\.js\?v=\d+"')
+
+class DashboardPhoneLayoutTests(TestCase):
+    """The Dashboard on a phone (2026-10-26): a one-row month bar, sections in
+    the order they are acted on, the reading-heavy ones folded, no repeats."""
+
+    def setUp(self):
+        cache.clear()
+        user = get_user_model().objects.create_superuser("dp_admin", password="pw123456")
+        self.client.force_login(user)
+        Category.objects.create(name="Perfumes")
+        self.html = self.client.get(reverse("dashboard")).content.decode()
+
+    def test_the_phone_bar_switches_month_and_categories_without_apply(self):
+        bar = self.html[self.html.index('id="dashMbar"'):self.html.index('</form>', self.html.index('id="dashMbar"'))]
+        self.assertIn('type="month" name="month"', bar)
+        self.assertIn('onchange="this.form.submit()"', bar)
+        self.assertIn('name="cat"', bar)
+
+    def test_every_section_carries_its_phone_order(self):
+        for cls in ("dash-sec-month", "dash-sec-low", "dash-sec-trend", "dash-sec-focus", "dash-sec-capital"):
+            self.assertIn(cls, self.html, cls)
+        with open('stock/static/css/app.css', encoding='utf-8') as fh:
+            css = fh.read()
+        self.assertIn('.dash-page > .dash-sec-low{ order:4; }', css)
+
+    def test_low_stock_sits_inside_the_page_grid(self):
+        """CSS order only works on children of .dash-page."""
+        page = self.html.index('<div class="dash-page">')
+        low = self.html.index('id="low-stock"')
+        self.assertGreater(low, page)
+        self.assertNotIn('<span class="muted">Low-stock SKUs</span>', self.html)
+
+    def test_inventory_is_a_fold(self):
+        inv = self.html.index('<h2>Inventory intelligence</h2>')
+        self.assertIn('<details class="dash-fold" data-fold open>', self.html[inv - 200:inv])
