@@ -1,0 +1,39 @@
+<div data-part="title">{{ product.display_name }}</div>
+<div data-part="body">
+  <div class="sp-hero">
+    {% if image_url %}<img class="sp-img" src="{{ image_url }}" alt="">{% else %}<div class="sp-img sp-img-empty">No photo</div>{% endif %}
+    <div class="sp-hero-text">
+      <div class="sp-code">{{ product.barcode|default:"No EAN" }}</div>
+      {% if product.category %}<div class="sp-sub">{{ product.category.name }}{% if product.variant_label %} &middot; {{ product.variant_label }}{% endif %}</div>{% endif %}
+      {% if not product.restock %}<span class="sp-tag muted">Not restocking</span>{% endif %}
+    </div>
+  </div>
+
+  <div class="sp-kpis{% if show_sensitive %} sp-kpis-2{% endif %}">
+    <div class="sp-kpi{% if stock <= 0 %} neg{% elif stock <= 5 %} warn{% endif %}"><span>In stock</span><b>{{ stock }}</b>{% if in_transit %}<small>+{{ in_transit }} on the way</small>{% endif %}</div>
+    <div class="sp-kpi"><span>Retail</span><b>{% if product.default_price %}&euro;{{ product.default_price|floatformat:2 }}{% else %}&mdash;{% endif %}</b></div>
+    <div class="sp-kpi"><span>Wholesale</span><b>{% if product.wholesale_price %}&euro;{{ product.wholesale_price|floatformat:2 }}{% else %}&mdash;{% endif %}</b></div>
+    {% if show_sensitive %}<div class="sp-kpi"><span>FIFO cost</span><b>{% if fifo_cost is not None %}&euro;{{ fifo_cost|floatformat:2 }}{% else %}&mdash;{% endif %}</b></div>{% endif %}
+  </div>
+
+  {% if show_sales_sensitive %}
+  <section class="sp-sec">
+    <h6>Sales &middot; {{ sold_30d }} in 30 days &middot; {{ sold_total }} in all</h6>
+    {% for s in recent_sales %}
+      <a class="sp-row" href="{% if s.order_id %}{% url 'sale_order_detail' s.order_id %}{% else %}#{% endif %}">
+        <span class="sp-row-main">{{ s.date|date:"Y-m-d" }}{% if s.order and s.order.customer %} &middot; {{ s.order.customer.name }}{% endif %}</span>
+        <span class="sp-row-fig">{{ s.quantity }} &times; &euro;{{ s.unit_price|floatformat:2 }}</span>
+      </a>
+    {% empty %}
+      <p class="sp-empty">No sales yet.</p>
+    {% endfor %}
+  </section>
+  {% endif %}
+</div>
+<div data-part="foot">
+  <a class="btn btn-primary" href="{% url 'product_detail' product.id %}">Open</a>
+  {% if show_sensitive %}
+    <a class="btn btn-outline-secondary" href="{% url 'edit_product' product.id %}">Edit</a>
+    <a class="btn btn-outline-secondary" href="{% url 'product_sales_history' %}?product={{ product.id }}">History</a>
+  {% endif %}
+</div>

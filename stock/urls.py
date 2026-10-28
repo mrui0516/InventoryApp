@@ -4,7 +4,7 @@ from django.contrib.auth import views as auth_views
 from django.conf import settings
 from django.conf.urls.static import static
 
-from . import pedido_views, shelf_views, views
+from . import panel_views, pedido_views, shelf_views, views
 
 
 urlpatterns = [
@@ -75,6 +75,9 @@ urlpatterns = [
     path('add_customer_ajax/', views.add_customer, name='add_customer_ajax'),
     path('customers/', views.customer_search_view, name='customer_search'),
     path('customers/<int:customer_id>/', views.customer_detail_view, name='customer_detail'),
+    path('customers/<int:customer_id>/panel/', panel_views.customer_panel, name='customer_panel'),
+    path('products/<int:pk>/panel/', panel_views.product_panel, name='product_panel'),
+    path('suppliers/<int:supplier_id>/panel/', panel_views.supplier_panel, name='supplier_panel'),
     path('customers/<int:customer_id>/edit/', views.edit_customer_view, name='edit_customer'),
     path('customers/delete/<int:pk>/', views.delete_customer, name='delete_customer'),
 

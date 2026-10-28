@@ -296,7 +296,7 @@
                             <span class="metric-pill">Sold {{ product.total_sold_qty }}</span>
                           {% endif %}
                         </div>
-                        <div class="product-name mt-2">{{ product.display_name }}</div>
+                        <a class="product-name mt-2 d-block text-reset text-decoration-none" href="{% url 'product_detail' product.id %}" data-panel="{% url 'product_panel' product.id %}">{{ product.display_name }}</a>
                         <div class="product-meta">
                           Barcode: {{ product.barcode }}
                           {% if product.category %} - {{ product.category.name }}{% endif %}
@@ -312,7 +312,7 @@
 
                     <div class="pm-item d-sm-none">
                       {% if can_manage %}<button type="button" class="restock-bell pm-bell{% if not product.restock %} is-off{% endif %}" data-url="{% url 'toggle_restock' product.id %}" aria-pressed="{% if product.restock %}true{% else %}false{% endif %}" title="{% if product.restock %}Restock on - shows in low stock{% else %}Restock off - hidden from low stock{% endif %}" aria-label="Restock for {{ product.display_name }}"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path class="bell-slash" d="M3 3l18 18"/></svg></button>{% endif %}
-                      <a class="pm-row" href="{% url 'product_detail' product.id %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}">
+                      <a class="pm-row" href="{% url 'product_detail' product.id %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" data-panel="{% url 'product_panel' product.id %}">
                         {% if product.primary_image_url %}
                           <img src="{{ product.primary_image_url }}" alt="" class="pm-thumb" loading="lazy">
                         {% else %}
@@ -371,7 +371,7 @@
                   </td>
                   <td class="d-none d-sm-table-cell">
                     <div class="actions">
-                      <a href="{% url 'product_detail' product.id %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="btn btn-sm btn-outline-primary">View</a>
+                      <a href="{% url 'product_detail' product.id %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="btn btn-sm btn-outline-primary" data-panel="{% url 'product_panel' product.id %}">View</a>
                       {% if can_manage %}<a href="{% url 'edit_product' product.id %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="btn btn-sm btn-outline-secondary">Edit</a>{% endif %}
                     </div>
                   </td>

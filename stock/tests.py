@@ -9761,7 +9761,8 @@ class OrdersPageTests(TestCase):
         tpl = tpl[:tpl.index("</template>")]
         self.assertIn(reverse("sale_order_detail", args=[order.id]), tpl)
         self.assertIn(reverse("sale_order_correction_edit", args=[order.id]), tpl)
-        self.assertIn('modal-fullscreen-sm-down', html)
+        # 2026-10-28: opened in the shared side panel (full width on a phone)
+        self.assertIn('id="sidePanel"', html)
 
     def test_a_manager_who_is_not_admin_is_not_offered_correct(self):
         order = self._order([(self.a, "10", "cash")])
@@ -9973,12 +9974,14 @@ class PagePolishTests(TestCase):
         self.assertEqual(pay[0]["share"], 100.0)
         self.assertEqual(response.context["summary"]["margin"], 100)  # no cost recorded
 
-    def test_customer_rows_open_a_layer_instead_of_folding(self):
+    def test_customer_rows_open_the_side_panel_instead_of_folding(self):
+        # 2026-10-28: the dialog became the shared side panel (base.html),
+        # filled from customer_panel, so the list keeps its place.
         customer = Customer.objects.create(nif="970000001", name="Ana Linha")
         html = self.client.get(reverse("customer_search")).content.decode()
-        self.assertIn(f'data-layer="cl-{customer.id}"', html)
-        self.assertIn(f'<template id="cl-{customer.id}">', html)
-        self.assertIn('id="clLayer"', html)
+        self.assertIn(f'data-panel="{reverse("customer_panel", args=[customer.id])}"', html)
+        self.assertIn('id="sidePanel"', html)
+        self.assertNotIn('id="clLayer"', html)
         self.assertNotIn("cl-expand", html)
 
     def test_status_and_sort_fold_on_a_phone_and_say_when_in_use(self):
@@ -11394,3 +11397,81 @@ class BackNavigationTests(TestCase):
         response = self.client.post(reverse("delete_customer", args=[customer.id]),
                                     {"next": "/customers/?q=gone"})
         self.assertRedirects(response, "/customers/?q=gone", fetch_redirect_response=False)
+
+
+class SidePanelTests(TestCase):
+    """Customer, product and supplier essentials in the side panel - the same
+    access rules as the full pages they summarise."""
+
+    def setUp(self):
+        cache.clear()
+        self.admin = get_user_model().objects.create_superuser("sp_admin", password="pw123456")
+        self.employee = get_user_model().objects.create_user("sp_emp", password="pw123456")
+        cat = Category.objects.create(name="SP Cat")
+        self.product = Product.objects.create(name="SP Oud", brand="SPB", barcode="6290000000888", category=cat,
+                                              default_price=Decimal("45"), wholesale_price=Decimal("30"))
+        Purchase.objects.create(product=self.product, quantity=4, remaining=4, cost_price=Decimal("17.25"))
+        self.customer = Customer.objects.create(name="Panel Ana", phone="912000999")
+        order = SaleOrder.objects.create(customer=self.customer)
+        Sale.objects.create(order=order, product=self.product, quantity=2, unit_price=Decimal("40"),
+                            payment_method="cash")
+        self.order = order
+        self.supplier = Supplier.objects.create(name="Panel Supplier", phone="912000111")
+        self.pending = InboundOrder.objects.create(supplier=self.supplier, status="pending_receipt",
+                                                   total_amount=Decimal("90"))
+
+    def test_customer_panel_parts_recent_orders_and_spend(self):
+        self.client.force_login(self.admin)
+        body = self.client.get(reverse("customer_panel", args=[self.customer.id])).content.decode()
+        for part in ('data-part="title"', 'data-part="body"', 'data-part="foot"'):
+            self.assertIn(part, body)
+        self.assertIn("#%d" % self.order.id, body)
+        self.assertIn("&euro;80.00", body)               # spent
+        self.assertIn("SP Oud", body)                    # buys most
+        self.assertIn(reverse("customer_detail", args=[self.customer.id]), body)
+
+    def test_an_employee_sees_the_customer_without_money(self):
+        self.client.force_login(self.employee)
+        response = self.client.get(reverse("customer_panel", args=[self.customer.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Spent")
+        self.assertNotContains(response, "Owes")
+        self.assertNotContains(response, "80.00")
+
+    def test_product_panel_stock_prices_and_cost_for_managers(self):
+        InboundPendingItem.objects.create(inbound_order=self.pending, product=self.product,
+                                          quantity=6, cost_price=Decimal("15"))
+        self.client.force_login(self.admin)
+        body = self.client.get(reverse("product_panel", args=[self.product.id])).content.decode()
+        self.assertIn("6290000000888", body)
+        self.assertIn("<b>4</b>", body)
+        self.assertIn("+6 on the way", body)
+        self.assertIn("&euro;17.25", body)              # FIFO cost
+        self.assertIn(reverse("edit_product", args=[self.product.id]), body)
+
+    def test_an_employee_never_sees_the_cost(self):
+        self.client.force_login(self.employee)
+        body = self.client.get(reverse("product_panel", args=[self.product.id])).content.decode()
+        self.assertIn("&euro;45.00", body)
+        self.assertNotIn("17.25", body)
+        self.assertNotIn("FIFO", body)
+        self.assertNotIn(reverse("edit_product", args=[self.product.id]), body)
+
+    def test_supplier_panel_is_for_managers_and_links_the_check_list(self):
+        self.client.force_login(self.admin)
+        body = self.client.get(reverse("supplier_panel", args=[self.supplier.id])).content.decode()
+        self.assertIn("On the way", body)
+        self.assertIn(reverse("inbound_checklist", args=[self.pending.id]), body)
+        self.client.force_login(self.employee)
+        self.assertEqual(self.client.get(reverse("supplier_panel", args=[self.supplier.id])).status_code, 302)
+
+    def test_lists_open_the_panel_and_keep_the_full_page_link(self):
+        self.client.force_login(self.admin)
+        products = self.client.get(reverse("product_list")).content.decode()
+        self.assertIn(f'data-panel="{reverse("product_panel", args=[self.product.id])}"', products)
+        suppliers = self.client.get(reverse("supplier_list")).content.decode()
+        self.assertIn(f'href="{reverse("supplier_detail", args=[self.supplier.id])}" data-panel="'
+                      f'{reverse("supplier_panel", args=[self.supplier.id])}"', suppliers)
+        orders = self.client.get(reverse("sales_records")).content.decode()
+        self.assertIn('data-layer="ol-', orders)
+        self.assertNotIn('id="opLayer"', orders)

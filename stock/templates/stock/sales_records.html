@@ -161,10 +161,6 @@
   .ol-totals dd{ margin:0; font-weight:700; }
   .ol-totals .grand dd{ font-size:1.05rem; font-weight:900; }
   .ol-totals .neg{ color:var(--app-danger); }
-  #opLayer .modal-footer:empty{ display:none; }
-  #opLayer .ord-item{ grid-template-columns:34px minmax(0,1fr); }
-  #opLayer .ord-fig{ grid-column:2; flex-wrap:wrap; gap:.3rem .7rem; }
-  #opLayer .ord-name{ font-size:.95rem; }
 
   @media (max-width: 760px){
     .op-grid2{ grid-template-columns:1fr; }
@@ -437,44 +433,11 @@
   {% endif %}
 </div>
 
-{# One detail layer for every row: full screen on a phone, a dialog elsewhere.  #}
-{# The page underneath never moves, so closing it leaves you where you were.     #}
-<div class="modal fade" id="opLayer" tabindex="-1" aria-hidden="true" aria-labelledby="opLayerTitle">
-  <div class="modal-dialog modal-dialog-scrollable modal-lg modal-fullscreen-sm-down">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="opLayerTitle"></h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body" id="opLayerBody"></div>
-      <div class="modal-footer" id="opLayerFoot"></div>
-    </div>
-  </div>
-</div>
-
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-  var layerEl = document.getElementById('opLayer');
-  var layer = bootstrap.Modal.getOrCreateInstance(layerEl);
-
-  function part(fragment, name) {
-    var el = fragment.querySelector('[data-part="' + name + '"]');
-    return el ? el.innerHTML : '';
-  }
-
-  // Rows and "Load more" are delegated: rows added later work the same way.
+  // Rows open the side panel (base.html, [data-layer]). "Load more" is
+  // delegated, so rows added later work the same way.
   document.addEventListener('click', function (event) {
-    var open = event.target.closest('[data-layer]');
-    if (open) {
-      var tpl = document.getElementById(open.dataset.layer);
-      if (!tpl) return;
-      var content = tpl.content;
-      document.getElementById('opLayerTitle').innerHTML = part(content, 'title');
-      document.getElementById('opLayerBody').innerHTML = part(content, 'body');
-      document.getElementById('opLayerFoot').innerHTML = part(content, 'foot').trim();
-      layer.show();
-      return;
-    }
     var more = event.target.closest('[data-more]');
     if (more) {
       more.disabled = true;
@@ -485,10 +448,6 @@ document.addEventListener('DOMContentLoaded', function () {
         .then(function (html) { more.closest('.op-more').outerHTML = html; })
         .catch(function () { more.disabled = false; more.textContent = label + ' - failed, tap to retry'; });
     }
-  });
-
-  layerEl.addEventListener('hidden.bs.modal', function () {
-    document.getElementById('opLayerBody').innerHTML = '';
   });
 
   // Recent ranges: kept per browser, folded under More filters.

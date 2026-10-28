@@ -120,7 +120,7 @@
             {% for supplier in group.suppliers %}
               <tr>
                 <td>
-                  <div class="supplier-name trunc">{{ supplier.name }}</div>
+                  <a class="supplier-name trunc d-block text-reset text-decoration-none" href="{% url 'supplier_detail' supplier.id %}" data-panel="{% url 'supplier_panel' supplier.id %}">{{ supplier.name }}</a>
                   <div class="meta trunc">{{ supplier.contact_person|default:supplier.address|default:"&mdash;" }}</div>
                 </td>
                 <td class="trunc">{{ supplier.phone|default:"—" }}</td>
@@ -155,7 +155,7 @@
       <div class="d-sm-none">
         {% for supplier in group.suppliers %}
           <div class="sup-item">
-            <a class="sup-main" href="{% url 'supplier_detail' supplier.id %}">
+            <a class="sup-main" href="{% url 'supplier_detail' supplier.id %}" data-panel="{% url 'supplier_panel' supplier.id %}">
               <span class="sup-name">{{ supplier.name }}</span>
               <span class="sup-sub">{{ supplier.phone|default:supplier.contact_person|default:"No phone" }}</span>
               <span class="sup-fig">

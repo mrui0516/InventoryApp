@@ -89,6 +89,12 @@
   - 新标签页、书签、二维码打开的页面没有轨迹,Back 指向它的上级页面(产品 → Products、编辑产品 → 该产品、客户编辑 → 该客户、对货单 → Inbound / Deliveries 等,`context_processors.BACK_PARENTS`)。
   - **保存与删除回到来处**:供应商新增 / 编辑 / 删除、删除产品、删除客户、删除订单(修正页)的表单带上 `next`(Back 指向的那一页),服务器保存后跳回它(`views._back_to`,只接受本站地址);删除时跳过被删记录自己的页面。表单页上的 Cancel 与 Back 去同一个地方。
   - 原各页自带的 Back / Back to list / Back to suppliers 按钮删去,以免两个返回不一致。
+- **F2.1.10 侧边详情面板(2026-10-28)**:列表里点一条记录,右侧滑出它的要点(手机全屏),列表不刷新,页码、筛选、滚动都留在原处;面板底部是操作和"打开完整页面"。与低库存提醒同一种面板,一套样式(`base.html #sidePanel`)。
+  - **客户**(Customers,点行或姓名):订单数与最近一次、消费额(经理)、欠款(经理,大于 0 标红);WhatsApp、邮箱、NIF(经理)、地址;最近 5 张订单(可点开);最常买的 3 个产品。底部 WhatsApp / Profile / Pedido(Revenda)/ IOU。员工看不到金额。
+  - **产品**(Products,点行、名称或 View):照片、EAN、分类与规格、不再补货标记;库存(在途件数)、零售价、批发价、FIFO 成本(仅经理);近 30 天与累计销量和最近 5 笔销售(经理)。底部 Open / Edit / History(编辑与历史仅经理)。
+  - **供应商**(Suppliers,点名称,仅经理):已收货单数、累计进货额、到货时效中位数;联系人、WhatsApp、邮箱、网站、国家;在途订单(点开即对货单);最近 5 次到货。底部 WhatsApp / Open / Edit。
+  - **订单**(Orders):原来的居中弹窗改为同一个侧边面板,内容不变。Today 页每张订单本来就完整展开,不加面板。
+  - 面板内容由 `stock/panel_views.py` 返回(`customer_panel` / `product_panel` / `supplier_panel`),权限与对应的完整页面一致;链接保留完整页面地址,Ctrl/中键点击仍在新标签页打开完整页面。
 
 ### 模块 2.2 — 经营仪表盘（Dashboard → Business 下的 Trends）
 

@@ -1,0 +1,48 @@
+{% load contact_tags %}
+<div data-part="title">{{ supplier.name }}</div>
+<div data-part="body">
+  <div class="sp-kpis">
+    <div class="sp-kpi"><span>Received</span><b>{{ received_count }}</b><small>orders</small></div>
+    <div class="sp-kpi"><span>Bought</span><b>&euro;{{ bought|floatformat:"0g" }}</b></div>
+    <div class="sp-kpi"><span>Lead time</span><b>{% if lead %}{{ lead.median_label }}{% else %}&mdash;{% endif %}</b>{% if lead %}<small>median of {{ lead.sample }}</small>{% endif %}</div>
+  </div>
+
+  {% if supplier.contact_person or supplier.phone or supplier.email or supplier.country or supplier.website %}
+  <dl class="sp-kv">
+    {% if supplier.contact_person %}<div><dt>Contact</dt><dd>{{ supplier.contact_person }}</dd></div>{% endif %}
+    {% if supplier.phone %}<div><dt>WhatsApp</dt><dd><a class="wa-link" href="{{ supplier.phone|whatsapp_url }}" target="_blank" rel="noopener">{% include "stock/_wa_icon.html" %}{{ supplier.phone }}</a></dd></div>{% endif %}
+    {% if supplier.email %}<div><dt>Email</dt><dd><a href="mailto:{{ supplier.email }}">{{ supplier.email }}</a></dd></div>{% endif %}
+    {% if supplier.website %}<div><dt>Website</dt><dd>{{ supplier.website }}</dd></div>{% endif %}
+    {% if supplier.country %}<div><dt>Country</dt><dd>{{ supplier.country }}</dd></div>{% endif %}
+  </dl>
+  {% endif %}
+
+  {% if pending %}
+  <section class="sp-sec">
+    <h6>On the way</h6>
+    {% for o in pending %}
+      <a class="sp-row" href="{% url 'inbound_checklist' o.id %}">
+        <span class="sp-row-main"><b>#{{ o.id }}</b> &middot; placed {{ o.placed_at|default:o.created_at|date:"Y-m-d" }}</span>
+        <span class="sp-row-fig">{{ o.units }} unit{{ o.units|pluralize }} &middot; &euro;{{ o.total_amount|floatformat:2 }}</span>
+      </a>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  <section class="sp-sec">
+    <h6>Last deliveries</h6>
+    {% for o in recent %}
+      <div class="sp-row">
+        <span class="sp-row-main"><b>#{{ o.id }}</b> &middot; {{ o.received_at|date:"Y-m-d" }}{% if o.invoice_no %} &middot; {{ o.invoice_no }}{% endif %}</span>
+        <span class="sp-row-fig">{{ o.units }} unit{{ o.units|pluralize }} &middot; &euro;{{ o.total_amount|floatformat:2 }}</span>
+      </div>
+    {% empty %}
+      <p class="sp-empty">Nothing received yet.</p>
+    {% endfor %}
+  </section>
+</div>
+<div data-part="foot">
+  {% if supplier.phone|whatsapp_url %}<a class="btn btn-wa" href="{{ supplier.phone|whatsapp_url }}" target="_blank" rel="noopener">{% include "stock/_wa_icon.html" %}WhatsApp</a>{% endif %}
+  <a class="btn btn-primary" href="{% url 'supplier_detail' supplier.id %}">Open</a>
+  <a class="btn btn-outline-secondary" href="{% url 'supplier_edit' supplier.id %}">Edit</a>
+</div>

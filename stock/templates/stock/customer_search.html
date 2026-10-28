@@ -278,12 +278,12 @@
         </thead>
         <tbody>
           {% for customer in customers %}
-            <tr data-layer="cl-{{ customer.id }}">
+            <tr data-panel="{% url 'customer_panel' customer.id %}">
               <td class="cl-cell-who">
                 <div class="cl-who">
                   <span class="cl-av" data-t="{{ customer.avatar_tint }}" aria-hidden="true">{{ customer.initials }}</span>
                   <span class="cl-whotext">
-                    <a class="cl-name" href="{% url 'customer_detail' customer.id %}">{{ customer.name }}</a>
+                    <a class="cl-name" href="{% url 'customer_detail' customer.id %}" data-panel="{% url 'customer_panel' customer.id %}">{{ customer.name }}</a>
                     {% if customer.is_revenda %}<span class="cl-tag">Revenda</span>{% endif %}
                     {% if show_sensitive and customer.nif %}<div class="cl-sub">NIF {{ customer.nif }}</div>{% endif %}
                   </span>
@@ -293,29 +293,6 @@
                 {% elif show_sales_sensitive %}
                   <span class="cl-m-fig">EUR {{ customer.total_spent|floatformat:"2g" }}<small>spent</small></span>
                 {% endif %}
-                <template id="cl-{{ customer.id }}">
-                  <div data-part="title">{{ customer.name }}{% if customer.is_revenda %} &middot; Revenda{% endif %}</div>
-                  <div data-part="body">
-                    <dl class="ol-totals">
-                      {% if customer.phone %}<div><dt>WhatsApp</dt><dd><a class="wa-link" href="{{ customer.phone|whatsapp_url }}" target="_blank" rel="noopener" aria-label="WhatsApp {{ customer.phone }}">{% include "stock/_wa_icon.html" %}{{ customer.phone }}</a></dd></div>{% endif %}
-                      {% if customer.email %}<div><dt>Email</dt><dd>{{ customer.email }}</dd></div>{% endif %}
-                      {% if customer.address %}<div><dt>Address</dt><dd>{{ customer.address|linebreaksbr }}</dd></div>{% endif %}
-                      {% if show_sensitive and customer.nif %}<div><dt>NIF</dt><dd>{{ customer.nif }}</dd></div>{% endif %}
-                      <div><dt>Orders</dt><dd>{{ customer.total_orders }}</dd></div>
-                      <div><dt>Last order</dt><dd>{% if customer.last_order_at %}{{ customer.last_order_at|date:"Y-m-d" }}{% else %}&mdash;{% endif %} &middot; {{ customer.activity_label }}</dd></div>
-                      {% if show_sales_sensitive %}<div class="grand"><dt>Spent</dt><dd>EUR {{ customer.total_spent|floatformat:"2g" }}</dd></div>{% endif %}
-                      {% if show_sensitive %}<div class="grand"><dt>Balance</dt><dd{% if customer.balance_due > 0 %} class="neg"{% endif %}>EUR {{ customer.balance_due|floatformat:"2g" }}</dd></div>{% endif %}
-                    </dl>
-                  </div>
-                  <div data-part="foot">
-                    {% if customer.phone|whatsapp_url %}<a class="btn btn-wa" href="{{ customer.phone|whatsapp_url }}" target="_blank" rel="noopener">{% include "stock/_wa_icon.html" %}WhatsApp</a>{% endif %}
-                    <a class="btn btn-primary" href="{% url 'customer_detail' customer.id %}">Profile</a>
-                    {% if show_sensitive %}
-                      {% if customer.is_revenda %}<a class="btn btn-outline-primary" href="{% url 'pedido' %}?customer={{ customer.id }}">Pedido</a>{% endif %}
-                      <a class="btn btn-outline-secondary" href="{% url 'ar_new' %}?customer={{ customer.id }}">IOU</a>
-                    {% endif %}
-                  </div>
-                </template>
               </td>
 
               {# Phone only: the line you scan without opening anything. #}
@@ -395,53 +372,13 @@
 
 </div>
 
-{# One detail layer for every row: full screen on a phone, a dialog elsewhere. #}
-<div class="modal fade" id="clLayer" tabindex="-1" aria-hidden="true" aria-labelledby="clLayerTitle">
-  <div class="modal-dialog modal-dialog-scrollable modal-fullscreen-sm-down">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="clLayerTitle"></h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body" id="clLayerBody"></div>
-      <div class="modal-footer" id="clLayerFoot"></div>
-    </div>
-  </div>
-</div>
-<style>
-  #clLayer .ol-totals{ margin:0; display:grid; gap:.35rem; }
-  #clLayer .ol-totals > div{ display:flex; justify-content:space-between; gap:1rem; font-size:.95rem; }
-  #clLayer .ol-totals dt{ font-weight:600; color:var(--app-muted); }
-  #clLayer .ol-totals dd{ margin:0; font-weight:700; text-align:right; color:var(--app-text); }
-  #clLayer .ol-totals .grand dd{ font-size:1.08rem; font-weight:900; }
-  #clLayer .ol-totals .neg{ color:var(--app-danger); }
-</style>
 <script>
   document.addEventListener('DOMContentLoaded', function () {
     var fold = document.querySelector('.cl-fold');
     if (fold && !fold.dataset.active && window.matchMedia('(max-width: 860px)').matches) {
       fold.open = false;
     }
-    // A tap on a row opens its detail; a tap on a link inside it is a link.
-    var layerEl = document.getElementById('clLayer');
-    var table = document.querySelector('table.cl');
-    if (!layerEl || !table) return;
-    var layer = bootstrap.Modal.getOrCreateInstance(layerEl);
-    function part(fragment, name) {
-      var el = fragment.querySelector('[data-part="' + name + '"]');
-      return el ? el.innerHTML : '';
-    }
-    table.addEventListener('click', function (event) {
-      if (event.target.closest('a, button')) return;
-      var row = event.target.closest('tr[data-layer]');
-      if (!row) return;
-      var tpl = document.getElementById(row.dataset.layer);
-      if (!tpl) return;
-      document.getElementById('clLayerTitle').innerHTML = part(tpl.content, 'title');
-      document.getElementById('clLayerBody').innerHTML = part(tpl.content, 'body');
-      document.getElementById('clLayerFoot').innerHTML = part(tpl.content, 'foot');
-      layer.show();
-    });
+    // A tap on a row (or the name) opens the side panel (base.html).
   });
 </script>
 

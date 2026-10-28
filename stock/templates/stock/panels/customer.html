@@ -1,0 +1,47 @@
+{% load contact_tags %}
+<div data-part="title">{{ customer.name }}{% if customer.is_revenda %} <span class="sp-tag">Revenda</span>{% endif %}</div>
+<div data-part="body">
+  <div class="sp-kpis">
+    <div class="sp-kpi"><span>Orders</span><b>{{ order_count }}</b>{% if last_order %}<small>last {{ last_order.created_at|date:"Y-m-d" }}</small>{% endif %}</div>
+    {% if show_sales_sensitive %}<div class="sp-kpi"><span>Spent</span><b>&euro;{{ spent|floatformat:2 }}</b></div>{% endif %}
+    {% if show_sensitive %}<div class="sp-kpi{% if balance > 0 %} neg{% endif %}"><span>Owes</span><b>&euro;{{ balance|floatformat:2 }}</b></div>{% endif %}
+  </div>
+
+  {% if customer.phone or customer.email or customer.address or customer.nif and show_sensitive %}
+  <dl class="sp-kv">
+    {% if customer.phone %}<div><dt>WhatsApp</dt><dd><a class="wa-link" href="{{ customer.phone|whatsapp_url }}" target="_blank" rel="noopener">{% include "stock/_wa_icon.html" %}{{ customer.phone }}</a></dd></div>{% endif %}
+    {% if customer.email %}<div><dt>Email</dt><dd><a href="mailto:{{ customer.email }}">{{ customer.email }}</a></dd></div>{% endif %}
+    {% if show_sensitive and customer.nif %}<div><dt>NIF</dt><dd>{{ customer.nif }}</dd></div>{% endif %}
+    {% if customer.address %}<div><dt>Address</dt><dd>{{ customer.address|linebreaksbr }}</dd></div>{% endif %}
+  </dl>
+  {% endif %}
+
+  <section class="sp-sec">
+    <h6>Recent orders</h6>
+    {% for o in recent %}
+      <a class="sp-row" href="{% url 'sale_order_detail' o.id %}">
+        <span class="sp-row-main"><b>#{{ o.id }}</b> &middot; {{ o.created_at|date:"Y-m-d" }}{% if store_is_all and o.store %} &middot; {{ o.store.name }}{% endif %}</span>
+        <span class="sp-row-fig">{{ o.qty }} pcs{% if show_sales_sensitive %} &middot; &euro;{{ o.amount|floatformat:2 }}{% endif %}</span>
+      </a>
+    {% empty %}
+      <p class="sp-empty">No orders yet.</p>
+    {% endfor %}
+  </section>
+
+  {% if top %}
+  <section class="sp-sec">
+    <h6>Buys most</h6>
+    {% for t in top %}
+      <a class="sp-row" href="{% url 'product_detail' t.product_id %}"><span class="sp-row-main">{{ t.name }}</span><span class="sp-row-fig">&times;{{ t.qty }}</span></a>
+    {% endfor %}
+  </section>
+  {% endif %}
+</div>
+<div data-part="foot">
+  {% if customer.phone|whatsapp_url %}<a class="btn btn-wa" href="{{ customer.phone|whatsapp_url }}" target="_blank" rel="noopener">{% include "stock/_wa_icon.html" %}WhatsApp</a>{% endif %}
+  <a class="btn btn-primary" href="{% url 'customer_detail' customer.id %}">Profile</a>
+  {% if show_sensitive %}
+    {% if customer.is_revenda %}<a class="btn btn-outline-primary" href="{% url 'pedido' %}?customer={{ customer.id }}">Pedido</a>{% endif %}
+    <a class="btn btn-outline-secondary" href="{% url 'ar_new' %}?customer={{ customer.id }}">IOU</a>
+  {% endif %}
+</div>

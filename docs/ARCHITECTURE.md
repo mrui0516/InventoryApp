@@ -607,6 +607,12 @@ Excel 和 PDF 用**同一套判断和同一组颜色**，两份文件不会互�
 - 任何 `[data-nav-back]` 元素（Back 条、表单页的 Cancel）都被指向轨迹的上一条。
 - `form[data-return="back"|"here"]`：脚本补一个隐藏 `next`（上一条，或当前页本身）；`data-return-skip` 列出要跳过的路径前缀（被删除记录的页面）。服务器用 `views._back_to(request, default, avoid=...)` 跳转：`url_has_allowed_host_and_scheme` 校验，`avoid` 里的路径不去。
 
+### 6.3 侧边详情面板（2026-10-28）
+
+- `base.html` 里一个 Bootstrap offcanvas `#sidePanel`（标题 / 内容 / 底部操作三段），全站共用。点击委托在 document 上：`[data-panel="<url>"]` 取回片段，`[data-layer="<template id>"]` 用页面里的 `<template>`；两者都由 `data-part="title|body|foot"` 三段组成。可点击的整行里，内部的链接和按钮保持各自的行为；Ctrl/Shift/中键不拦截。请求带序号，快速连点只显示最后一次的结果。
+- 片段视图在 `stock/panel_views.py`，权限与对应完整页面相同（供应商 `@manager_required`；金额、成本按 `has_manager_access` / `has_sales_sensitive_access`）。客户面板按当前店铺统计，与客户列表一致。
+- 样式在 `app.css` 的 `.sp-*`：`sp-kpis`（指标格，`sp-kpis-2` 两列）、`sp-kv`（键值）、`sp-sec` + `sp-row`（短列表）、`sp-foot`（按钮平分宽度）。
+
 ---
 
 ## 7. 测试架构

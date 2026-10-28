@@ -236,6 +236,64 @@
   {% endwith %}
 
   {% if user.is_authenticated %}
+  {# Side panel: a record's essentials over the list it was tapped in - the     #}
+  {# list keeps its page, filters and scroll. Opened by any [data-panel] (a URL  #}
+  {# returning title/body/foot parts, stock/panel_views.py) or [data-layer] (the #}
+  {# id of a <template> on the page carrying the same parts).                    #}
+  <div class="offcanvas offcanvas-end sp" tabindex="-1" id="sidePanel" aria-labelledby="spTitle">
+    <div class="offcanvas-header">
+      <h5 class="offcanvas-title" id="spTitle"></h5>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div class="offcanvas-body" id="spBody"></div>
+    <div class="sp-foot" id="spFoot"></div>
+  </div>
+  <script>
+    (function () {
+      var el = document.getElementById('sidePanel'), seq = 0;
+      if (!el) return;
+      var title = document.getElementById('spTitle'), body = document.getElementById('spBody'),
+          foot = document.getElementById('spFoot');
+      function panel() { return bootstrap.Offcanvas.getOrCreateInstance(el); }
+      function fill(root) {
+        function part(name) { var p = root.querySelector('[data-part="' + name + '"]'); return p ? p.innerHTML.trim() : ''; }
+        title.innerHTML = part('title'); body.innerHTML = part('body'); foot.innerHTML = part('foot');
+        body.scrollTop = 0;
+      }
+      function load(url, fallback) {
+        var mine = ++seq;
+        title.textContent = ''; foot.innerHTML = '';
+        body.innerHTML = '<p class="sp-loading">Loading…</p>';
+        panel().show();
+        fetch(url, { headers: { 'X-Requested-With': 'fetch' } })
+          .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+          .then(function (html) {
+            if (mine !== seq) return;
+            var t = document.createElement('template'); t.innerHTML = html; fill(t.content);
+          })
+          .catch(function () {
+            if (mine !== seq) return;
+            body.innerHTML = '<p class="sp-loading">Could not load.' + (fallback ? ' <a href="' + fallback + '">Open the page</a>' : '') + '</p>';
+          });
+      }
+      document.addEventListener('click', function (e) {
+        var opener = e.target.closest('[data-panel], [data-layer]');
+        if (!opener || e.metaKey || e.ctrlKey || e.shiftKey || e.button > 0) return;
+        // a link or button inside a clickable row keeps its own job
+        var inner = e.target.closest('a, button');
+        if (inner && inner !== opener && opener.contains(inner)) return;
+        e.preventDefault();
+        if (opener.dataset.layer) {
+          var tpl = document.getElementById(opener.dataset.layer);
+          if (!tpl) return;
+          ++seq; fill(tpl.content); panel().show();
+        } else {
+          load(opener.dataset.panel, opener.getAttribute('href'));
+        }
+      });
+      el.addEventListener('hidden.bs.offcanvas', function () { body.innerHTML = ''; foot.innerHTML = ''; });
+    })();
+  </script>
   <script>
     // Navigation trail of this tab (sessionStorage): every page visited, in
     // order. Coming back to a page cuts the trail back to it; the same page
