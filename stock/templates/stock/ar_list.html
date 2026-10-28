@@ -50,7 +50,10 @@
     }
   </style>
 
-  <h1 class="pos-title mb-3">Customer IOUs</h1>
+  <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
+    <h1 class="pos-title mb-0">Customer IOUs</h1>
+    {% if show_sensitive %}<a href="{% url 'ar_new' %}" class="btn btn-sm btn-primary">+ New IOU</a>{% endif %}
+  </div>
 
   {% if show_sensitive %}
     <div class="row g-3 mb-3">
@@ -75,27 +78,29 @@
     </div>
   {% endif %}
 
-  <form method="get" class="row g-2 mb-3 filter-card">
-    <div class="col-md-3"><input type="text" name="q" value="{{ q }}" class="form-control" placeholder="Search customer name"></div>
-    <div class="col-md-2">
-      <select name="status" class="form-select">
-        <option value="">All Status</option>
-        <option value="unpaid" {% if status == 'unpaid' %}selected{% endif %}>Unpaid</option>
-        <option value="partial" {% if status == 'partial' %}selected{% endif %}>Partial</option>
-        <option value="paid" {% if status == 'paid' %}selected{% endif %}>Paid</option>
-      </select>
-    </div>
-    <div class="col-md-3">
-      <select name="sort" class="form-select">
-        <option value="-id" {% if sort == '-id' %}selected{% endif %}>Newest</option>
-        <option value="date" {% if sort == 'date' %}selected{% endif %}>Oldest</option>
-      </select>
-    </div>
-    <div class="col-md-2 d-grid"><button class="btn btn-primary">Search</button></div>
-    {% if show_sensitive %}
-      <div class="col-md-2 d-grid"><a href="{% url 'ar_new' %}" class="btn btn-success">New IOU</a></div>
+  <div class="filter-card mb-3">
+    {% include "stock/_fbar.html" with placeholder="Customer name" panel="fb-panel" on=filters_on %}
+    <nav class="ftabs" aria-label="Status">
+      <a class="{% if not status %}on{% endif %}" href="{% querystring status=None page=None %}">All</a>
+      <a class="{% if status == 'unpaid' %}on{% endif %}" href="{% querystring status='unpaid' page=None %}">Unpaid</a>
+      <a class="{% if status == 'partial' %}on{% endif %}" href="{% querystring status='partial' page=None %}">Partial</a>
+      <a class="{% if status == 'paid' %}on{% endif %}" href="{% querystring status='paid' page=None %}">Paid</a>
+    </nav>
+    {% if q or filters_on %}
+      <div class="fchips">
+        {% if q %}<a class="fchip" href="{% querystring q=None page=None %}">&ldquo;{{ q }}&rdquo;<span aria-hidden="true">&times;</span></a>{% endif %}
+        {% if filters_on %}<a class="fchip" href="{% querystring sort=None page=None %}">Oldest first<span aria-hidden="true">&times;</span></a>{% endif %}
+      </div>
     {% endif %}
-  </form>
+    <template id="fb-panel">
+      <div data-part="title">Filters</div>
+      <div data-part="body"><div class="fopts"><section><h6>Sort</h6><div class="fopt-list">
+        <a class="fopt{% if not filters_on %} on{% endif %}" href="{% querystring sort=None page=None %}">Newest first</a>
+        <a class="fopt{% if filters_on %} on{% endif %}" href="{% querystring sort='date' page=None %}">Oldest first</a>
+      </div></section></div></div>
+      <div data-part="foot"></div>
+    </template>
+  </div>
 
   <div class="table-responsive table-wrap d-none d-sm-block">
     <table class="table table-sm table-hover align-middle mb-0">

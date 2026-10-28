@@ -70,26 +70,30 @@
           <span class="sup-stat"><b>{{ lead_tracked }}</b> lead-time tracked</span>
         </div>
       </div>
-      <a href="{% url 'supplier_create' %}" class="btn btn-primary">Add supplier</a>
+      <a href="{% url 'supplier_create' %}" class="btn btn-sm btn-primary">+ Add supplier</a>
     </div>
   </section>
 
   <section class="panel p-3">
-    <form method="get" class="row g-2 align-items-center">
-      <div class="col-12 col-md-7">
-        <input type="text" name="q" value="{{ query }}" class="form-control" aria-label="Search suppliers" placeholder="Search name, phone, country, address or product type">
+    {% include "stock/_fbar.html" with placeholder="Name, phone, country, address or product type" panel="fb-panel" on=country_filter %}
+    {% if query or country_filter %}
+      <div class="fchips">
+        {% if query %}<a class="fchip" href="{% querystring q=None %}">&ldquo;{{ query }}&rdquo;<span aria-hidden="true">&times;</span></a>{% endif %}
+        {% if country_filter %}<a class="fchip" href="{% querystring country=None %}">{% if country_filter == '__none__' %}No country{% else %}{{ country_filter }}{% endif %}<span aria-hidden="true">&times;</span></a>{% endif %}
+        <a class="fchip-clear" href="{% url 'supplier_list' %}">Clear all</a>
       </div>
-      <div class="col-8 col-md-3">
-        <select name="country" class="form-select" aria-label="Country">
-          <option value="">All countries</option>
-          {% for c in country_options %}<option value="{{ c }}" {% if country_filter == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
-          <option value="__none__" {% if country_filter == '__none__' %}selected{% endif %}>No country</option>
-        </select>
+    {% endif %}
+    <template id="fb-panel">
+      <div data-part="title">Filters</div>
+      <div data-part="body">
+        <div class="fopts"><section><h6>Country</h6><div class="fopt-list">
+          <a class="fopt{% if not country_filter %} on{% endif %}" href="{% querystring country=None %}">All</a>
+          {% for c in country_options %}<a class="fopt{% if country_filter == c %} on{% endif %}" href="{% querystring country=c %}">{{ c }}</a>{% endfor %}
+          <a class="fopt{% if country_filter == '__none__' %} on{% endif %}" href="{% querystring country='__none__' %}">No country</a>
+        </div></section></div>
       </div>
-      <div class="col-4 col-md-2 d-grid">
-        <button class="btn btn-primary">Filter</button>
-      </div>
-    </form>
+      <div data-part="foot"><a class="btn btn-outline-secondary" href="{% url 'supplier_list' %}">Clear all</a></div>
+    </template>
   </section>
 
   {% for group in supplier_groups %}

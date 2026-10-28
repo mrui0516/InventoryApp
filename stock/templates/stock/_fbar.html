@@ -1,0 +1,16 @@
+{% load filterbar %}
+{# The list's search, and the button that opens its other filters in the side #}
+{# panel (a <template id="{{ panel }}"> on the page). See UI_COMPONENTS.md.      #}
+<form method="get" class="fbar" role="search">
+  {% keep_params "q" %}
+  <label class="fbar-search">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+    <input type="search" name="q" value="{{ query }}" placeholder="{{ placeholder }}" aria-label="Search" enterkeyhint="search">
+  </label>
+  {% if panel %}
+  <button type="button" class="fbar-btn{% if on %} on{% endif %}" data-layer="{{ panel }}">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16"/><path d="M7 12h10"/><path d="M10 18h4"/></svg>
+    Filters{% if on %}<span class="fbar-dot" aria-label="in use"></span>{% endif %}
+  </button>
+  {% endif %}
+</form>

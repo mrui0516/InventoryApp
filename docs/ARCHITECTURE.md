@@ -613,6 +613,10 @@ Excel 和 PDF 用**同一套判断和同一组颜色**，两份文件不会互�
 - 片段视图在 `stock/panel_views.py`，权限与对应完整页面相同（供应商 `@manager_required`；金额、成本按 `has_manager_access` / `has_sales_sensitive_access`）。客户面板按当前店铺统计，与客户列表一致。
 - 样式在 `app.css` 的 `.sp-*`：`sp-kpis`（指标格，`sp-kpis-2` 两列）、`sp-kv`（键值）、`sp-sec` + `sp-row`（短列表）、`sp-foot`（按钮平分宽度）。
 
+### 6.4 列表筛选栏（2026-10-28）
+
+- `templates/stock/_fbar.html` + `templatetags/filterbar.py`（`keep_params`：把当前 URL 里除搜索词与 `page` 外的参数写成隐藏字段）。所有筛选选项、标签、"去掉"链接都是普通 GET 链接，由 Django 5.1+ 内置的 `{% querystring %}` 在模板里生成，无需额外 JS；Filters 面板复用 6.3 的侧边面板（`data-layer`）。视图只多给一个 `filters_on`（面板里的筛选是否在用）。
+
 ---
 
 ## 7. 测试架构

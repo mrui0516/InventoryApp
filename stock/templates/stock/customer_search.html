@@ -180,11 +180,8 @@
   <div class="cl-top">
     <h1>Customer Management</h1>
     <div class="spacer"></div>
-    {% if query or kind_filter or status_filter %}
-      <a href="{% url 'customer_search' %}" class="btn btn-outline-secondary btn-sm">Clear filters</a>
-    {% endif %}
     {% if show_sensitive %}
-      <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addCustomerModal">Add Customer</button>
+      <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addCustomerModal">+&nbsp;Add<span class="d-none d-sm-inline">&nbsp;customer</span></button>
     {% endif %}
   </div>
 
@@ -200,53 +197,43 @@
   </div>
 
   <div class="cl-filters">
-    <form method="get" role="search" class="cl-searchrow">
-      <input type="text" name="q" value="{{ query }}" placeholder="Name, NIF, phone or email">
-      {% if kind_filter %}<input type="hidden" name="kind" value="{{ kind_filter }}">{% endif %}
-      {% if status_filter %}<input type="hidden" name="status" value="{{ status_filter }}">{% endif %}
-      <input type="hidden" name="sort" value="{{ sort_key }}">
-      <input type="hidden" name="dir" value="{{ sort_dir }}">
-      <button type="submit" class="btn btn-primary btn-sm px-3">Search</button>
-    </form>
-
-    <div class="cl-chiprow">
-      <div class="cl-chipset">
-        <span class="cap">Type</span>
-        <a class="cl-chip{% if not kind_filter %} on{% endif %}" href="?{{ qs_without_kind }}">All <span class="n">{{ kind_counts.all_count }}</span></a>
-        <a class="cl-chip{% if kind_filter == 'retail' %} on{% endif %}" href="?{{ qs_without_kind }}kind=retail">Retail <span class="n">{{ kind_counts.retail_count }}</span></a>
-        <a class="cl-chip{% if kind_filter == 'revenda' %} on{% endif %}" href="?{{ qs_without_kind }}kind=revenda">Revenda <span class="n">{{ kind_counts.revenda_count }}</span></a>
+    {% include "stock/_fbar.html" with placeholder="Name, NIF, phone or email" panel="fb-panel" on=filters_on %}
+    <nav class="ftabs" aria-label="Type">
+      <a class="{% if not kind_filter %}on{% endif %}" href="?{{ qs_without_kind }}">All <span class="n">{{ kind_counts.all_count }}</span></a>
+      <a class="{% if kind_filter == 'retail' %}on{% endif %}" href="?{{ qs_without_kind }}kind=retail">Retail <span class="n">{{ kind_counts.retail_count }}</span></a>
+      <a class="{% if kind_filter == 'revenda' %}on{% endif %}" href="?{{ qs_without_kind }}kind=revenda">Revenda <span class="n">{{ kind_counts.revenda_count }}</span></a>
+    </nav>
+    {% if query or filters_on %}
+      <div class="fchips">
+        {% if query %}<a class="fchip" href="{% querystring q=None page=None %}">&ldquo;{{ query }}&rdquo;<span aria-hidden="true">&times;</span></a>{% endif %}
+        {% if status_filter %}<a class="fchip" href="?{{ qs_without_status }}">{% if status_filter == 'active' %}Active{% elif status_filter == 'quiet' %}Quiet{% elif status_filter == 'new' %}No orders{% else %}Open balance{% endif %}<span aria-hidden="true">&times;</span></a>{% endif %}
+        {% if sort_key != 'last' or sort_dir != 'desc' %}<a class="fchip" href="?{{ qs_without_sort }}">Sort: {% if sort_key == 'last' %}Last order{% elif sort_key == 'orders' %}Orders{% elif sort_key == 'spent' %}Spent{% elif sort_key == 'balance' %}Balance{% else %}Name{% endif %} {% if sort_dir == 'asc' %}&uarr;{% else %}&darr;{% endif %}<span aria-hidden="true">&times;</span></a>{% endif %}
+        <a class="fchip-clear" href="{% url 'customer_search' %}{% if kind_filter %}?kind={{ kind_filter }}{% endif %}">Clear all</a>
       </div>
-
-      {# Folded on a phone unless one of them is in use. #}
-      <details class="cl-fold" open data-active="{% if status_filter or sort_key != 'last' or sort_dir != 'desc' %}1{% endif %}">
-        <summary>More filters</summary>
-      <div class="cl-chipset">
-        <span class="cap">Status</span>
-        <a class="cl-chip{% if not status_filter %} on{% endif %}" href="?{{ qs_without_status }}">All <span class="n">{{ status_counts.all_count }}</span></a>
-        <a class="cl-chip{% if status_filter == 'active' %} on{% endif %}" href="?{{ qs_without_status }}status=active">Active <span class="n">{{ status_counts.active_count }}</span></a>
-        <a class="cl-chip{% if status_filter == 'quiet' %} on{% endif %}" href="?{{ qs_without_status }}status=quiet">Quiet <span class="n">{{ status_counts.quiet_count }}</span></a>
-        <a class="cl-chip{% if status_filter == 'new' %} on{% endif %}" href="?{{ qs_without_status }}status=new">No orders <span class="n">{{ status_counts.new_count }}</span></a>
-        {% if show_sensitive %}
-          <a class="cl-chip{% if status_filter == 'debt' %} on{% endif %}" href="?{{ qs_without_status }}status=debt">Open balance <span class="n">{{ status_counts.debt_count }}</span></a>
-        {% endif %}
-      </div>
-
-      {# Headers sort on a wide screen; this row replaces them on a phone. #}
-      <div class="cl-chipset cl-sortbar">
-        <span class="cap">Sort</span>
-        <a class="cl-chip{% if sort_key == 'last' %} on{% endif %}" href="?{{ qs_without_sort }}sort=last&amp;dir={{ sort_next.last }}">Last order {{ sort_arrow.last }}</a>
-        <a class="cl-chip{% if sort_key == 'orders' %} on{% endif %}" href="?{{ qs_without_sort }}sort=orders&amp;dir={{ sort_next.orders }}">Orders {{ sort_arrow.orders }}</a>
-        {% if show_sales_sensitive %}
-          <a class="cl-chip{% if sort_key == 'spent' %} on{% endif %}" href="?{{ qs_without_sort }}sort=spent&amp;dir={{ sort_next.spent }}">Spent {{ sort_arrow.spent }}</a>
-        {% endif %}
-        {% if show_sensitive %}
-          <a class="cl-chip{% if sort_key == 'balance' %} on{% endif %}" href="?{{ qs_without_sort }}sort=balance&amp;dir={{ sort_next.balance }}">Balance {{ sort_arrow.balance }}</a>
-        {% endif %}
-        <a class="cl-chip{% if sort_key == 'name' %} on{% endif %}" href="?{{ qs_without_sort }}sort=name&amp;dir={{ sort_next.name }}">Name {{ sort_arrow.name }}</a>
-      </div>
-      </details>
-    </div>
+    {% endif %}
   </div>
+  <template id="fb-panel">
+    <div data-part="title">Filters</div>
+    <div data-part="body">
+      <div class="fopts">
+        <section><h6>Status</h6><div class="fopt-list">
+          <a class="fopt{% if not status_filter %} on{% endif %}" href="?{{ qs_without_status }}">All <span class="n">{{ status_counts.all_count }}</span></a>
+          <a class="fopt{% if status_filter == 'active' %} on{% endif %}" href="?{{ qs_without_status }}status=active">Active <span class="n">{{ status_counts.active_count }}</span></a>
+          <a class="fopt{% if status_filter == 'quiet' %} on{% endif %}" href="?{{ qs_without_status }}status=quiet">Quiet <span class="n">{{ status_counts.quiet_count }}</span></a>
+          <a class="fopt{% if status_filter == 'new' %} on{% endif %}" href="?{{ qs_without_status }}status=new">No orders <span class="n">{{ status_counts.new_count }}</span></a>
+          {% if show_sensitive %}<a class="fopt{% if status_filter == 'debt' %} on{% endif %}" href="?{{ qs_without_status }}status=debt">Open balance <span class="n">{{ status_counts.debt_count }}</span></a>{% endif %}
+        </div></section>
+        <section><h6>Sort</h6><div class="fopt-list">
+          <a class="fopt{% if sort_key == 'last' %} on{% endif %}" href="?{{ qs_without_sort }}sort=last&amp;dir={{ sort_next.last }}">Last order {{ sort_arrow.last }}</a>
+          <a class="fopt{% if sort_key == 'orders' %} on{% endif %}" href="?{{ qs_without_sort }}sort=orders&amp;dir={{ sort_next.orders }}">Orders {{ sort_arrow.orders }}</a>
+          {% if show_sales_sensitive %}<a class="fopt{% if sort_key == 'spent' %} on{% endif %}" href="?{{ qs_without_sort }}sort=spent&amp;dir={{ sort_next.spent }}">Spent {{ sort_arrow.spent }}</a>{% endif %}
+          {% if show_sensitive %}<a class="fopt{% if sort_key == 'balance' %} on{% endif %}" href="?{{ qs_without_sort }}sort=balance&amp;dir={{ sort_next.balance }}">Balance {{ sort_arrow.balance }}</a>{% endif %}
+          <a class="fopt{% if sort_key == 'name' %} on{% endif %}" href="?{{ qs_without_sort }}sort=name&amp;dir={{ sort_next.name }}">Name {{ sort_arrow.name }}</a>
+        </div></section>
+      </div>
+    </div>
+    <div data-part="foot"><a class="btn btn-outline-secondary" href="{% url 'customer_search' %}{% if kind_filter %}?kind={{ kind_filter }}{% endif %}">Clear all</a></div>
+  </template>
 
   <div class="cl-tablewrap">
     <div class="cl-scroll">
@@ -374,10 +361,6 @@
 
 <script>
   document.addEventListener('DOMContentLoaded', function () {
-    var fold = document.querySelector('.cl-fold');
-    if (fold && !fold.dataset.active && window.matchMedia('(max-width: 860px)').matches) {
-      fold.open = false;
-    }
     // A tap on a row (or the name) opens the side panel (base.html).
   });
 </script>

@@ -38,6 +38,7 @@
 ```
 
 - **页面不要自己放 Back 按钮**：base.html 的 Back 条已在每页顶部（规则见 ARCHITECTURE 6.2）。表单页的 Cancel 加 `data-nav-back`；保存/删除后要回到来处的表单加 `data-return="back"`（列表页内联的表单用 `"here"`），删除表单再加 `data-return-skip="<被删记录的路径前缀>"`；视图用 `_back_to()` 跳转。
+- **列表页的搜索与筛选**：`{% include "stock/_fbar.html" with placeholder="…" panel="fb-panel" on=filters_on %}`（搜索框 + Filters 按钮；`{% keep_params %}` 让搜索保留其他筛选）；分类用 `nav.ftabs`；在用的筛选用 `.fchips` > `a.fchip`（链接即"去掉这一个"）+ `a.fchip-clear`；面板内容写在 `<template id="fb-panel">`，每组 `.fopts section` > `h6` + `.fopt-list` > `a.fopt(.on)`。链接一律用 Django 自带 `{% querystring key=value page=None %}` 生成。**筛选不要用实心按钮**：实心/描边按钮只留给操作（新增、保存）。
 - **记录详情用侧边面板，不要再做居中弹窗**：链接或行加 `data-panel="{% url '..._panel' id %}"`（保留 `href` 指向完整页面），或 `data-layer="<template id>"`；片段只写 `data-part="title|body|foot"` 三段，用 `sp-kpis` / `sp-kv` / `sp-sec` + `sp-row` 排版（ARCHITECTURE 6.3）。
 - `page-shell` 纵向栅格容器 · `page-card` 卡片面板 · `pad` 内边距
 - `page-head` / `section-head` / `strip-head`：左标题右操作，自动换行

@@ -9984,11 +9984,15 @@ class PagePolishTests(TestCase):
         self.assertNotIn('id="clLayer"', html)
         self.assertNotIn("cl-expand", html)
 
-    def test_status_and_sort_fold_on_a_phone_and_say_when_in_use(self):
+    def test_status_and_sort_live_in_the_filters_panel_and_say_when_in_use(self):
+        # 2026-10-28: status and sort moved behind "Filters" (side panel); the
+        # button is marked and a removable chip names the filter in use.
         html = self.client.get(reverse("customer_search")).content.decode()
-        self.assertIn('<details class="cl-fold" open data-active="">', html)
+        self.assertIn('<template id="fb-panel">', html)
+        self.assertNotIn('class="fbar-btn on"', html)
         html = self.client.get(reverse("customer_search"), {"status": "new"}).content.decode()
-        self.assertIn('<details class="cl-fold" open data-active="1">', html)
+        self.assertIn('class="fbar-btn on"', html)
+        self.assertIn('class="fchip"', html)
 
     def test_pedido_has_no_explanatory_line(self):
         response = self.client.get(reverse("pedido"))

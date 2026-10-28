@@ -94,67 +94,60 @@
           <form method="post" action="{% url 'sync_all_perfumes_to_shopify' %}" class="d-inline"
                 onsubmit="return confirm('Sync ALL perfumes to Shopify? This runs in the background and updates prices, inventory and descriptions.');">
             {% csrf_token %}
-            <button type="submit" class="btn btn-outline-primary"><span class="d-none d-sm-inline">Sync all perfumes to Shopify</span><span class="d-sm-none">Sync Shopify</span></button>
+            <button type="submit" class="btn btn-sm btn-outline-secondary"><span class="d-none d-sm-inline">Sync all perfumes to Shopify</span><span class="d-sm-none">Sync Shopify</span></button>
           </form>
         {% endif %}
-        {% if can_manage %}<a href="{% url 'add_product' %}" class="btn btn-primary"><span class="d-none d-sm-inline">Add Product</span><span class="d-sm-none">+ Add</span></a>{% endif %}
+        {% if can_manage %}<a href="{% url 'add_product' %}" class="btn btn-sm btn-primary">+&nbsp;<span class="d-none d-sm-inline">Add product</span><span class="d-sm-none">Add</span></a>{% endif %}
       </div>
     </div>
   </section>
 
   <section class="page-card pad">
-    <form method="get" class="toolbar">
-      <input type="hidden" name="category" id="categoryInput" value="{% if selected_category %}{{ selected_category }}{% endif %}">
-      <div class="cat-chips" role="group" aria-label="Filter by category">
-        <button type="submit" onclick="document.getElementById('categoryInput').value=''" class="btn btn-sm {% if not selected_category %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</button>
-        {% for c in categories %}
-          <button type="submit" onclick="document.getElementById('categoryInput').value='{{ c.id }}'" class="btn btn-sm {% if selected_category == c.id %}btn-primary{% else %}btn-outline-secondary{% endif %}">{{ c.name }}</button>
-        {% endfor %}
-      </div>
-
-      <div class="filter-row">
-        <input type="text" name="q" value="{{ query }}" class="form-control fr-search" aria-label="Search products"
-               placeholder="Search barcode, brand, model, name, spec or color">
-        <div class="collapse mf-collapse" id="moreFilters">
-          <select name="brand" class="form-select" aria-label="Brand">
-            <option value="">All Brands</option>
-            {% for brand in brands %}
-              <option value="{{ brand.id }}" {% if selected_brand == brand.id %}selected{% endif %}>{{ brand.name }}</option>
-            {% endfor %}
-          </select>
-          <select name="stock_status" class="form-select" aria-label="Stock status">
-            <option value="">All Stock</option>
-            <option value="in_stock" {% if stock_status == 'in_stock' %}selected{% endif %}>In stock</option>
-            <option value="low_stock" {% if stock_status == 'low_stock' %}selected{% endif %}>Low stock</option>
-            <option value="out_of_stock" {% if stock_status == 'out_of_stock' %}selected{% endif %}>Out of stock</option>
-          </select>
-          <select name="sort" class="form-select" aria-label="Sort by">
-            <option value="latest" {% if sort_by == 'latest' %}selected{% endif %}>Latest added</option>
-            <option value="name_asc" {% if sort_by == 'name_asc' %}selected{% endif %}>Name A-Z</option>
-            <option value="stock_desc" {% if sort_by == 'stock_desc' %}selected{% endif %}>Stock high to low</option>
-            <option value="price_desc" {% if sort_by == 'price_desc' %}selected{% endif %}>Retail price high to low</option>
-            <option value="price_asc" {% if sort_by == 'price_asc' %}selected{% endif %}>Retail price low to high</option>
-            {% if show_sales_sensitive %}
-              <option value="sales_desc" {% if sort_by == 'sales_desc' %}selected{% endif %}>Best selling</option>
-              <option value="recent_sales_desc" {% if sort_by == 'recent_sales_desc' %}selected{% endif %}>Best selling 30d</option>
-            {% endif %}
-          </select>
-        </div>
-        <button class="btn btn-outline-secondary mf-btn d-sm-none" type="button" data-bs-toggle="collapse" data-bs-target="#moreFilters" aria-controls="moreFilters">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16"/><path d="M7 12h10"/><path d="M10 18h4"/></svg>
-          Filters
-        </button>
-        <button type="submit" class="btn btn-primary apply-btn">Apply</button>
-        <a href="{% url 'product_list' %}" class="btn btn-link reset-btn">Reset</a>
-      </div>
-    </form>
-    {% if active_filter_labels %}
-      <div class="chip-row mt-3">
-        {% for item in active_filter_labels %}
-          <span class="chip">{{ item.label }}</span>
-        {% endfor %}
+    {% include "stock/_fbar.html" with placeholder="Barcode, brand, model, name, spec or color" panel="fb-panel" on=filters_on %}
+    <nav class="ftabs" aria-label="Category">
+      <a class="{% if not selected_category %}on{% endif %}" href="{% querystring category=None page=None %}">All</a>
+      {% for c in categories %}<a class="{% if selected_category == c.id %}on{% endif %}" href="{% querystring category=c.id page=None %}">{{ c.name }}</a>{% endfor %}
+    </nav>
+    {% if query or selected_brand or stock_status or sort_by != 'latest' %}
+      <div class="fchips">
+        {% if query %}<a class="fchip" href="{% querystring q=None page=None %}">&ldquo;{{ query }}&rdquo;<span aria-hidden="true">&times;</span></a>{% endif %}
+        {% for b in brands %}{% if b.id == selected_brand %}<a class="fchip" href="{% querystring brand=None page=None %}">{{ b.name }}<span aria-hidden="true">&times;</span></a>{% endif %}{% endfor %}
+        {% if stock_status %}<a class="fchip" href="{% querystring stock_status=None page=None %}">{% if stock_status == 'in_stock' %}In stock{% elif stock_status == 'low_stock' %}Low stock{% else %}Out of stock{% endif %}<span aria-hidden="true">&times;</span></a>{% endif %}
+        {% if sort_by != 'latest' %}<a class="fchip" href="{% querystring sort=None page=None %}">Sort: {% if sort_by == 'name_asc' %}Name A-Z{% elif sort_by == 'stock_desc' %}Stock high-low{% elif sort_by == 'price_desc' %}Price high-low{% elif sort_by == 'price_asc' %}Price low-high{% elif sort_by == 'sales_desc' %}Best selling{% else %}Best selling 30d{% endif %}<span aria-hidden="true">&times;</span></a>{% endif %}
+        <a class="fchip-clear" href="{% querystring q=None brand=None stock_status=None sort=None page=None %}">Clear all</a>
       </div>
     {% endif %}
+    <template id="fb-panel">
+      <div data-part="title">Filters</div>
+      <div data-part="body">
+        <div class="fopts">
+          <section><h6>Stock</h6><div class="fopt-list">
+            <a class="fopt{% if not stock_status %} on{% endif %}" href="{% querystring stock_status=None page=None %}">Any</a>
+            <a class="fopt{% if stock_status == 'in_stock' %} on{% endif %}" href="{% querystring stock_status='in_stock' page=None %}">In stock</a>
+            <a class="fopt{% if stock_status == 'low_stock' %} on{% endif %}" href="{% querystring stock_status='low_stock' page=None %}">Low stock</a>
+            <a class="fopt{% if stock_status == 'out_of_stock' %} on{% endif %}" href="{% querystring stock_status='out_of_stock' page=None %}">Out of stock</a>
+          </div></section>
+          <section><h6>Sort</h6><div class="fopt-list">
+            <a class="fopt{% if sort_by == 'latest' %} on{% endif %}" href="{% querystring sort=None page=None %}">Latest added</a>
+            <a class="fopt{% if sort_by == 'name_asc' %} on{% endif %}" href="{% querystring sort='name_asc' page=None %}">Name A-Z</a>
+            <a class="fopt{% if sort_by == 'stock_desc' %} on{% endif %}" href="{% querystring sort='stock_desc' page=None %}">Stock high-low</a>
+            <a class="fopt{% if sort_by == 'price_desc' %} on{% endif %}" href="{% querystring sort='price_desc' page=None %}">Price high-low</a>
+            <a class="fopt{% if sort_by == 'price_asc' %} on{% endif %}" href="{% querystring sort='price_asc' page=None %}">Price low-high</a>
+            {% if show_sales_sensitive %}
+              <a class="fopt{% if sort_by == 'sales_desc' %} on{% endif %}" href="{% querystring sort='sales_desc' page=None %}">Best selling</a>
+              <a class="fopt{% if sort_by == 'recent_sales_desc' %} on{% endif %}" href="{% querystring sort='recent_sales_desc' page=None %}">Best selling 30d</a>
+            {% endif %}
+          </div></section>
+          <section><h6>Brand</h6>
+            <select class="form-select" aria-label="Brand" onchange="location.href=this.value">
+              <option value="{% querystring brand=None page=None %}">All brands</option>
+              {% for b in brands %}<option value="{% querystring brand=b.id page=None %}"{% if b.id == selected_brand %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
+            </select>
+          </section>
+        </div>
+      </div>
+      <div data-part="foot"><a class="btn btn-outline-secondary" href="{% querystring q=None brand=None stock_status=None sort=None page=None %}">Clear all</a></div>
+    </template>
 
     <details class="export-details">
     <summary>Export</summary>

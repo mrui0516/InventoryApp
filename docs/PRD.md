@@ -95,6 +95,12 @@
   - **供应商**(Suppliers,点名称,仅经理):已收货单数、累计进货额、到货时效中位数;联系人、WhatsApp、邮箱、网站、国家;在途订单(点开即对货单);最近 5 次到货。底部 WhatsApp / Open / Edit。
   - **订单**(Orders):原来的居中弹窗改为同一个侧边面板,内容不变。Today 页每张订单本来就完整展开,不加面板。
   - 面板内容由 `stock/panel_views.py` 返回(`customer_panel` / `product_panel` / `supplier_panel`),权限与对应的完整页面一致;链接保留完整页面地址,Ctrl/中键点击仍在新标签页打开完整页面。
+- **F2.1.11 统一的搜索与筛选(2026-10-28)**:Products、Customers、Suppliers、IOU 四个列表页同一种排列,三种控件三种样子,不会再和按钮混淆:
+  - 第一行:带放大镜的搜索框(回车即搜,不再有 Search / Apply / Filter 大按钮)+ **Filters** 按钮;有筛选在用时按钮变蓝并带圆点。
+  - 分类 / 类型 / 状态用**下划线标签**(Products:All / 各顶级分类;Customers:All / Retail / Revenda 带数量;IOU:All / Unpaid / Partial / Paid)。
+  - 其余筛选在 Filters 打开的侧边面板里,一组一个选择,点一下立即生效(Products:库存、排序、品牌下拉;Customers:状态带数量、排序;Suppliers:国家;IOU:排序),底部 Clear all。
+  - 正在用的筛选在搜索框下方显示为**可单独删除的小标签**(“关键词” ×、In stock ×、Sort: … ×)+ Clear all;删一个只去掉这一个。搜索时保留其他筛选,翻页回到第 1 页。
+  - 页面顶部操作按钮(+ Add、+ New IOU、+ Add supplier、Sync Shopify)改为小号,手机上与标题同一行。Orders 的时间段与显示方式选中时改为浅蓝底,不再是实心蓝。
 
 ### 模块 2.2 — 经营仪表盘（Dashboard → Business 下的 Trends）
 

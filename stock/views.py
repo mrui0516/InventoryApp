@@ -1266,6 +1266,7 @@ def product_list_view(request):
         'total_stock': total_stock,
         'filter_querystring': query_params.urlencode(),
         'active_filter_labels': active_filter_labels,
+        'filters_on': bool(selected_brand_id or stock_status) or sort_by != 'latest',
         'can_manage': has_manager_access(request.user),
         'show_sales_sensitive': show_sales_sensitive,
         'export_defaults': {
@@ -5059,6 +5060,7 @@ def customer_search_view(request):
         'sort_dir': sort_dir,
         'sort_next': sort_next,
         'sort_arrow': sort_arrow,
+        'filters_on': bool(status_filter) or (sort_key, sort_dir) != ('last', 'desc'),
         # Each link changes one thing and keeps the rest, pagination included.
         'qs_keep_all': _querystring(q=query, kind=kind_filter, status=status_filter,
                                     sort=sort_key, dir=sort_dir),
@@ -5978,6 +5980,7 @@ def ar_list_view(request):
         'q': q,
         'status': status,
         'sort': sort,
+        'filters_on': sort == 'date',
         'invoices': invoices,
         'totals': totals,
         'show_sensitive': show_sensitive,
