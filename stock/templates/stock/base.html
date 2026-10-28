@@ -110,6 +110,9 @@
 
         <div class="erp-nav-group">Products</div>
         <a class="erp-nav-link {% if current_url in 'product_list,product_detail,edit_product,add_product' %}active{% endif %}" href="{% url 'product_list' %}">Products</a>
+        {% if not user|is_manager_user %}
+        <a class="erp-nav-link {% if current_url in 'inbound_checklists,inbound_checklist' %}active{% endif %}" href="{% url 'inbound_checklists' %}">Deliveries</a>
+        {% endif %}
         {% if user|is_manager_user %}
         <a class="erp-nav-link {% if current_url == 'catalog' %}active{% endif %}" href="{% url 'catalog' %}">Catalog View</a>
         <a class="erp-nav-link {% if current_url == 'shelf' or current_url == 'shelf_style' %}active{% endif %}" href="{% url 'shelf' %}">Shelf</a>

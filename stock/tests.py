@@ -11110,3 +11110,51 @@ class CardFeeTests(TestCase):
         self.assertNotEqual(self.client.post(reverse("business_settings"), {"card_fee_pct": "9"}).status_code, 200)
         from .models import BusinessSettings
         self.assertEqual(BusinessSettings.get().card_fee_pct, Decimal("1.00"))
+
+
+class InboundChecklistTests(TestCase):
+    """A delivery's check list: photo, name, EAN and quantity for any staff
+    account - never the supplier, invoice or cost."""
+
+    def setUp(self):
+        cache.clear()
+        cat = Category.objects.create(name="Chk Cat")
+        self.product = Product.objects.create(name="Chk Oud", brand="Chk", barcode="6291100000017",
+                                              category=cat, default_price=Decimal("40"))
+        supplier = Supplier.objects.create(name="Secret Supplier Lda")
+        self.order = InboundOrder.objects.create(supplier=supplier, status="pending_receipt",
+                                                 invoice_no="INV-SECRET-9", total_amount=Decimal("123.45"))
+        InboundPendingItem.objects.create(inbound_order=self.order, product=self.product,
+                                          quantity=12, cost_price=Decimal("10.29"))
+        self.employee = get_user_model().objects.create_user("chk_emp", password="pw123456")
+
+    def test_an_employee_sees_name_ean_and_quantity_only(self):
+        self.client.force_login(self.employee)
+        response = self.client.get(reverse("inbound_checklist", args=[self.order.id]))
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn("Chk Oud", body)
+        self.assertIn("6291100000017", body)
+        self.assertIn("12", body)
+        for secret in ("Secret Supplier", "INV-SECRET-9", "10.29", "123.45"):
+            self.assertNotIn(secret, body)
+
+    def test_the_employee_menu_lists_deliveries_on_the_way(self):
+        self.client.force_login(self.employee)
+        response = self.client.get(reverse("inbound_checklists"))
+        self.assertContains(response, reverse("inbound_checklist", args=[self.order.id]))
+        self.assertNotContains(response, "Secret Supplier")
+        self.assertContains(response, 'href="%s"' % reverse("inbound_checklists"))
+
+    def test_a_received_delivery_has_no_check_list(self):
+        InboundOrder.objects.filter(pk=self.order.pk).update(status="received")
+        self.client.force_login(self.employee)
+        self.assertEqual(self.client.get(reverse("inbound_checklist", args=[self.order.id])).status_code, 404)
+
+    def test_inbound_links_each_pending_order_to_its_check_list(self):
+        admin = get_user_model().objects.create_superuser("chk_admin", password="pw123456")
+        self.client.force_login(admin)
+        response = self.client.get(reverse("inbound"))
+        self.assertContains(response, reverse("inbound_checklist", args=[self.order.id]))
+        back = self.client.get(reverse("inbound_checklist", args=[self.order.id]))
+        self.assertContains(back, 'href="%s"' % reverse("inbound"))

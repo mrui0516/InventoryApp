@@ -612,6 +612,51 @@ def _build_pending_reviews():
     return reviews
 
 
+def _check_lines(order):
+    """What staff need to check a delivery against: photo, name, EAN, quantity.
+    No supplier, invoice or cost - the check list is open to every account."""
+    lines = []
+    for item in order.pending_items.all():
+        lines.append({
+            'image_url': get_product_image_url(item.product),
+            'name': build_product_label(item.product),
+            'ean': item.product.barcode or '',
+            'quantity': item.quantity,
+        })
+    return lines
+
+
+@login_required
+def inbound_checklists_view(request):
+    """Deliveries on the way, for staff to check off when the boxes arrive."""
+    orders = []
+    for order in _pending_inbound_orders():
+        items = list(order.pending_items.all())
+        orders.append({
+            'id': order.id,
+            'placed': order.placed_at or order.created_at,
+            'products': len(items),
+            'units': sum(i.quantity for i in items),
+        })
+    return render(request, 'stock/inbound_checklists.html', {'orders': orders})
+
+
+@login_required
+def inbound_checklist_view(request, order_id):
+    order = get_object_or_404(
+        InboundOrder.objects.prefetch_related('pending_items__product__images'),
+        id=order_id, status='pending_receipt',
+    )
+    lines = _check_lines(order)
+    return render(request, 'stock/inbound_checklist.html', {
+        'order_id': order.id,
+        'placed': order.placed_at or order.created_at,
+        'lines': lines,
+        'units': sum(l['quantity'] for l in lines),
+        'back_url': reverse('inbound') if has_manager_access(request.user) else reverse('inbound_checklists'),
+    })
+
+
 def csrf_failure(request, reason=""):
     """A stale form (an old copy restored by a phone browser) was sent.
 

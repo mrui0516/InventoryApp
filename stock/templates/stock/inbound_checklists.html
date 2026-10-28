@@ -1,0 +1,42 @@
+{% extends 'stock/base.html' %}
+{% block title %}Deliveries{% endblock %}
+{% block content %}
+<style>
+  .chk-head{ display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; margin-bottom:.75rem; }
+  .chk-back{ display:inline-flex; align-items:center; gap:.3rem; font-weight:700; font-size:.9rem;
+    color:var(--app-accent); text-decoration:none; padding:.35rem 0; }
+  .chk-title{ font-size:1.25rem; font-weight:800; margin:0; color:var(--app-text); }
+  .chk-meta{ color:var(--app-muted); font-size:.85rem; width:100%; }
+  .chk-list{ display:grid; gap:.4rem; }
+  .chk-row{ display:grid; grid-template-columns:56px minmax(0,1fr) auto; align-items:center; gap:.7rem;
+    padding:.5rem .65rem; background:var(--app-surface); border:1px solid var(--app-border);
+    border-radius:var(--app-radius-sm); color:var(--app-text); text-decoration:none; }
+  .chk-img{ width:56px; height:56px; border-radius:var(--app-radius-xs); background:var(--app-surface-2, #f1f3f5);
+    object-fit:contain; display:flex; align-items:center; justify-content:center; color:var(--app-muted); font-size:.7rem; }
+  .chk-name{ font-weight:700; font-size:.95rem; line-height:1.25; overflow-wrap:anywhere; }
+  .chk-ean{ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.85rem; color:var(--app-muted);
+    margin-top:.15rem; letter-spacing:.02em; }
+  .chk-qty{ font-size:1.35rem; font-weight:800; font-variant-numeric:tabular-nums; min-width:3ch; text-align:right; }
+  .chk-qty small{ font-size:.85rem; font-weight:700; color:var(--app-muted); margin-right:.1rem; }
+  .chk-order-fig{ text-align:right; font-variant-numeric:tabular-nums; font-weight:700; }
+  .chk-empty{ padding:1.5rem; text-align:center; color:var(--app-muted); }
+</style>
+<div class="page-shell" style="max-width:44rem;">
+  <div class="chk-head">
+    <h1 class="chk-title">Deliveries on the way</h1>
+  </div>
+  <div class="chk-list">
+    {% for o in orders %}
+    <a class="chk-row" style="grid-template-columns:minmax(0,1fr) auto;" href="{% url 'inbound_checklist' o.id %}">
+      <div>
+        <div class="chk-name">#{{ o.id }}</div>
+        <div class="chk-ean" style="font-family:inherit;">{{ o.placed|date:"Y-m-d" }}</div>
+      </div>
+      <div class="chk-order-fig">{{ o.products }} product{{ o.products|pluralize }} &middot; {{ o.units }} unit{{ o.units|pluralize }} &rsaquo;</div>
+    </a>
+    {% empty %}
+    <div class="chk-empty">No deliveries on the way.</div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

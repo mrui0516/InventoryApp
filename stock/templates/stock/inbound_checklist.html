@@ -1,0 +1,45 @@
+{% extends 'stock/base.html' %}
+{% block title %}Check list #{{ order_id }}{% endblock %}
+{% block content %}
+<style>
+  .chk-head{ display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; margin-bottom:.75rem; }
+  .chk-back{ display:inline-flex; align-items:center; gap:.3rem; font-weight:700; font-size:.9rem;
+    color:var(--app-accent); text-decoration:none; padding:.35rem 0; }
+  .chk-title{ font-size:1.25rem; font-weight:800; margin:0; color:var(--app-text); }
+  .chk-meta{ color:var(--app-muted); font-size:.85rem; width:100%; }
+  .chk-list{ display:grid; gap:.4rem; }
+  .chk-row{ display:grid; grid-template-columns:56px minmax(0,1fr) auto; align-items:center; gap:.7rem;
+    padding:.5rem .65rem; background:var(--app-surface); border:1px solid var(--app-border);
+    border-radius:var(--app-radius-sm); color:var(--app-text); text-decoration:none; }
+  .chk-img{ width:56px; height:56px; border-radius:var(--app-radius-xs); background:var(--app-surface-2, #f1f3f5);
+    object-fit:contain; display:flex; align-items:center; justify-content:center; color:var(--app-muted); font-size:.7rem; }
+  .chk-name{ font-weight:700; font-size:.95rem; line-height:1.25; overflow-wrap:anywhere; }
+  .chk-ean{ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.85rem; color:var(--app-muted);
+    margin-top:.15rem; letter-spacing:.02em; }
+  .chk-qty{ font-size:1.35rem; font-weight:800; font-variant-numeric:tabular-nums; min-width:3ch; text-align:right; }
+  .chk-qty small{ font-size:.85rem; font-weight:700; color:var(--app-muted); margin-right:.1rem; }
+  .chk-order-fig{ text-align:right; font-variant-numeric:tabular-nums; font-weight:700; }
+  .chk-empty{ padding:1.5rem; text-align:center; color:var(--app-muted); }
+</style>
+<div class="page-shell" style="max-width:44rem;">
+  <div class="chk-head">
+    <a class="chk-back" href="{{ back_url }}">&larr; Back</a>
+    <h1 class="chk-title">Check list #{{ order_id }}</h1>
+    <div class="chk-meta">{{ lines|length }} product{{ lines|length|pluralize }} &middot; {{ units }} unit{{ units|pluralize }} &middot; {{ placed|date:"Y-m-d" }}</div>
+  </div>
+  <div class="chk-list">
+    {% for line in lines %}
+    <div class="chk-row">
+      {% if line.image_url %}<img class="chk-img" src="{{ line.image_url }}" alt="" loading="lazy">{% else %}<div class="chk-img">No photo</div>{% endif %}
+      <div style="min-width:0;">
+        <div class="chk-name">{{ line.name }}</div>
+        <div class="chk-ean">{{ line.ean|default:"No EAN" }}</div>
+      </div>
+      <div class="chk-qty"><small>&times;</small>{{ line.quantity }}</div>
+    </div>
+    {% empty %}
+    <div class="chk-empty">This delivery has no products.</div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

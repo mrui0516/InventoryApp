@@ -33,6 +33,7 @@
           </div>
         </div>
         <div class="pend-fig">&euro;{{ pr.order.total_amount|floatformat:2 }}</div>
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'inbound_checklist' pr.order.id %}">Check list</a>
         <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#receive-modal-{{ pr.order.id }}">Receive</button>
       </article>
     {% endfor %}

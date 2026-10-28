@@ -131,6 +131,7 @@
   - **有供应商 → 暂定订单（pending）**：因为只是向供应商下单、收到发票，货物运输需要时间。提交后创建 `InboundOrder(status='pending_receipt')`，行项目存为 **`InboundPendingItem`**（**不创建 `Purchase`、不产生库存**），`invoice_date` 缺省取当天。
   - **无供应商 → 即时入库**：仍为每个商品直接生成"散单"`Purchase`（`inbound_order=None`，`supplier=None`，`remaining=quantity`），立即产生库存。
 - **F2.3.3 待收货列表（展示在 Inbound 页面）**：Inbound 页面顶部列出所有 `pending_receipt` 订单（供应商/发票/行数/总额/创建时间 + "Review & Receive" 入口）。
+- **F2.3.3a 对货单(2026-10-28)**:每张待收货订单有一份对货单,给员工在手机上核对到货:只显示**产品图、产品名、EAN、数量**(加总品种数/件数和下单日期),**不显示供应商、发票、进价、金额**。经理在 Inbound 待收货卡片点 "Check list" 打开;员工(进不了 Inbound)在侧栏 Products 组的 **Deliveries**(`inbound_checklists`,`/inbound/check/`)看到在途订单列表,点进 `/inbound/<id>/check/`(`inbound_checklist`)。只读,不打印;订单收货后对货单消失(404)。
 - **F2.3.4 复核 / 编辑 / 确认收货 / 取消（弹窗）**：在 Inbound 页面点击某暂定单的"Review & Receive"打开**该订单的弹窗**（每张暂定单一个 modal，含小尺寸产品缩略图，不再跳转独立页面），**再次确认所有信息**，可改供应商（模糊搜索）/发票号/发票日期/备注、可改各行数量与进价、可删行；表单提交到 `inbound_receive_view`（`/inbound/<id>/receive/`，仅处理 POST：receive/save/cancel；GET 重定向回 Inbound）。
   - **Confirm receipt（确认收货）**：把每条 `InboundPendingItem` 转为 `Purchase`（`remaining=quantity`，`date=now`），订单置为 `received` 并记录 `received_at`，删除已转换的 pending 行 → **此时才正式入库产生库存**。
   - **Save changes**：仅保存编辑、保持 pending。**Cancel order**：删除该暂定单（货未到/订单取消）。

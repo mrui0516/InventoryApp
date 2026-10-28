@@ -223,7 +223,8 @@ has_admin_access(user)          → is_superuser only
 ### 5.4.1 员工界面收窄（Employee interface restriction，2026-07-16）
 员工（`has_manager_access(user)` 为 False，即非 `is_staff`/非 "Managers" 组/非超管）的可用界面被收窄为一个精简子集，而非完整功能的隐藏字段版本。
 
-- **侧边栏**：员工仅看到 Dashboard / Outbound（POS）/ Products / Sales / Customers 五个入口（`base.html` 用 `{% if user|is_manager_user %}` 包裹其余分组/条目）。隐藏：Today（daily_summary）、Inbound、Attendance、Catalog View、Suppliers、IOU/AR、Admin 分组。
+- **对货单**:`inbound_checklists_view` / `inbound_checklist_view` 只要求登录(员工可用),上下文只含图、名、EAN、数量,不把订单对象(供应商、发票、进价)传给模板。
+- **侧边栏**：员工仅看到 Dashboard / Outbound（POS）/ Products / Deliveries / Sales / Customers 入口（`base.html` 用 `{% if user|is_manager_user %}` 包裹其余分组/条目）。隐藏：Today（daily_summary）、Inbound、Attendance、Catalog View、Suppliers、IOU/AR、Admin 分组。
 - **视图级拦截（`@manager_required`，员工 GET 直接 302 到 dashboard）**：`daily_summary_view`、`inbound_view`/`inbound_receive_view`、`catalog_view`、`ar_list_view`/`ar_detail_view`（连同 AR 全部写操作视图）、`attendance_view`。产品的 `delete_product_view`/`delete_product_image`、以及 Shopify CSV 导出仍仅经理。
 - **Products 对员工重新开放（查看/搜索/新增/编辑/导出）**：`product_list_view`/`product_detail_view`/`add_product_view`/`edit_product_view`/`export_product_list_excel` 均**已移除** `@manager_required`（只保留 `@login_required`）——员工可查看/搜索产品、看详情、**新增并编辑**产品（改字段 + 加图），并下载**面向顾客的产品 Excel**（列仅 图片/产品/分类/零售价/批发价/库存，无成本/供应商/利润）。**仍仅经理**：进货（inbound）、删除产品/图片（`edit_product.html` 中这两处删除控件对员工 `{% if user|is_manager_user %}` 隐藏）、Shopify CSV 导出。敏感产品信息（成本、"Suppliers & cost" 比价、批次成本、销售历史/指标）继续由既有 `show_sensitive`/`show_sales_sensitive` 模板门控隐藏。无审批/待定工作流，无 schema 变更。
 - **Sales（员工）**：`record_view` 首行分支——非经理调用 `_employee_sales_day_view(request)`，渲染 `sales_records_employee.html`：单日订单列表（GET `date`，缺省今天）+ € 金额，无图表/年度总览/采购，按活动店铺（`scope_sales_by_store`）过滤。**订单号搜索**（GET `order`，`.isdigit()` 校验、店铺范围内命中即 302 到 `sale_order_detail`）。每个订单行提供 **View**（Bootstrap 弹窗内联显示该单明细：商品/数量/单价/小计/合计，**不含利润成本**）+ **Print**（链到 `sale_order_detail`）两个按钮。经理保留完整 `record_view` 页面。
