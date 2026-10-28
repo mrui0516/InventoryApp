@@ -9,6 +9,20 @@ BACKFILL_MARGIN = Decimal("0.50")  # no-stock backfill orders book a flat 50% pr
 
 
 def sale_profit_map_for_sale_ids(sale_ids):
+    """``{sale_id: {revenue, cost, profit, card_fee}}``, profit net of card fees."""
+    profit_map = _gross_profit_map(sale_ids)
+    if profit_map:
+        from ..models import Sale
+        from .card_fees import fee_by_sale
+        sales = Sale.objects.filter(id__in=list(profit_map)).only('id', 'order_id', 'quantity', 'unit_price')
+        for sale_id, fee in fee_by_sale(list(sales)).items():
+            row = profit_map[sale_id]
+            row['card_fee'] = fee
+            row['profit'] = row['profit'] - fee
+    return profit_map
+
+
+def _gross_profit_map(sale_ids):
     relevant_sale_ids = {int(sale_id) for sale_id in sale_ids if sale_id}
     if not relevant_sale_ids:
         return {}

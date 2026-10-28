@@ -12,6 +12,9 @@ class SaleOrder(models.Model):
     customer = models.ForeignKey('Customer', on_delete=models.SET_NULL, null=True, blank=True)
     store = models.ForeignKey('Store', on_delete=models.SET_NULL, null=True, blank=True, db_index=True, related_name='sale_orders')
     affects_stock = models.BooleanField(default=True)
+    # What the card terminal kept of this order's card payments, fixed when the
+    # order is made (2026-10-28 on; older orders 0). Deducted from profit.
+    card_fee = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     note = models.CharField(max_length=200, blank=True, null=True)
 

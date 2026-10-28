@@ -1,6 +1,8 @@
 # stock/models/core.py
 """Cross-cutting configuration models used across every domain."""
 from django.conf import settings
+from decimal import Decimal
+
 from django.db import models
 
 
@@ -119,3 +121,23 @@ class PrintProfile(models.Model):
     def get_solo(cls):
         """Backward-compatible accessor → the default store's print header."""
         return cls.get_for_store(Store.get_default())
+
+
+class BusinessSettings(models.Model):
+    """Business-wide settings that are not per store - one row.
+
+    ``card_fee_pct``: what the card terminal keeps of every card payment. Each
+    order stores its own fee when it is made (``SaleOrder.card_fee``), so a
+    later change of rate never rewrites the profit of past sales.
+    """
+    card_fee_pct = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('1.00'),
+                                       verbose_name='Card fee (%)')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return 'Business settings'
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj

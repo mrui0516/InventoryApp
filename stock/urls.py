@@ -63,6 +63,7 @@ urlpatterns = [
     path('api/customer_last_prices/', views.customer_last_prices, name='customer_last_prices'),
     path('api/quick-import/', views.quick_import, name='quick_import'),
     path('alerts/low-stock/', views.alerts_low_stock, name='alerts_low_stock'),
+    path('settings/business/', views.business_settings_view, name='business_settings'),
     path('add_customer_ajax/', views.add_customer, name='add_customer_ajax'),
     path('customers/', views.customer_search_view, name='customer_search'),
     path('customers/<int:customer_id>/', views.customer_detail_view, name='customer_detail'),

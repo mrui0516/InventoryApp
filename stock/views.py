@@ -56,6 +56,7 @@ from .models import (
 )
 from .services import order_charges
 from .services import submissions
+from .services import card_fees
 from .permissions import (
     has_admin_access,
     has_manager_access,
@@ -1108,6 +1109,8 @@ def outbound_view(request):
             for method, amount in payment_totals.items():
                 SaleOrderPayment.objects.create(order=order, method=method, amount=amount)
             order_charges.save_charges(order, charges)
+            # The card terminal's cut, at today's rate, kept with the order.
+            card_fees.record(order, payment_totals)
 
             # The quote is now a sale; it leaves the Pedido drafts list. The
             # status is checked in the update itself, so the same draft sold
@@ -2888,6 +2891,29 @@ def sale_order_detail_view(request, order_id):
         },
     }
     return render(request, 'stock/sale_order_detail.html', context)
+
+
+@login_required
+@admin_required
+def business_settings_view(request):
+    """Settings for the whole business: the card fee rate."""
+    from .models import BusinessSettings
+    settings_row = BusinessSettings.get()
+    error = ''
+    if request.method == 'POST':
+        raw = (request.POST.get('card_fee_pct') or '').strip().replace(',', '.')
+        try:
+            value = Decimal(raw)
+            if value < 0 or value > 10:
+                raise InvalidOperation
+        except (InvalidOperation, ValueError):
+            error = 'Enter a percentage between 0 and 10, e.g. 1 or 1.5.'
+        else:
+            settings_row.card_fee_pct = value.quantize(Decimal('0.01'))
+            settings_row.save(update_fields=['card_fee_pct', 'updated_at'])
+            messages.success(request, f'Card fee set to {settings_row.card_fee_pct}% for new card sales.')
+            return redirect('business_settings')
+    return render(request, 'stock/business_settings.html', {'settings_row': settings_row, 'error': error})
 
 
 @login_required

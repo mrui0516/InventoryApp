@@ -9,7 +9,7 @@ class is re-exported here so existing ``from stock.models import X`` /
 Domain dependency order (acyclic): core → catalog → partners → inventory
 → sales → finance → reporting → hr. Devices sit beside catalog.
 """
-from .core import PrintProfile, Store, StoreProfile
+from .core import BusinessSettings, PrintProfile, Store, StoreProfile
 from .catalog import (Category, Brand, ProductSeries, Product, ProductImage,
                       Concentration, FragranceFamily, Inspiration)
 from .attributes import (CategoryAttribute, AttributeOption, ProductAttributeValue,
@@ -30,7 +30,7 @@ from .submissions import FormSubmission
 
 __all__ = [
     # core
-    'PrintProfile', 'Store', 'StoreProfile',
+    'BusinessSettings', 'PrintProfile', 'Store', 'StoreProfile',
     # catalog
     'Category', 'Brand', 'ProductSeries', 'Product', 'ProductImage',
     'Concentration', 'FragranceFamily', 'Inspiration',

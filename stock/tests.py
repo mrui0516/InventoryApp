@@ -11036,3 +11036,77 @@ class RecordedOnceTests(TestCase):
         self.assertContains(response, "This page had expired", status_code=403)
         self.assertContains(response, "nothing was recorded", status_code=403)
         self.assertEqual(SaleOrder.objects.count(), 0)
+
+class CardFeeTests(TestCase):
+    """Card payments: the terminal's fee (1% by default) comes off profit, from
+    2026-10-28 on; MB WAY and cash have none."""
+
+    def setUp(self):
+        cache.clear()
+        from .stores import ACTIVE_STORE_SESSION_KEY
+        self.admin = get_user_model().objects.create_superuser("cf_fee_admin", password="pw123456")
+        self.client.force_login(self.admin)
+        store = Store.objects.create(name="Fee Store", code="FEE")
+        session = self.client.session
+        session[ACTIVE_STORE_SESSION_KEY] = store.id
+        session.save()
+        cat = Category.objects.create(name="Fee Cat")
+        self.a = Product.objects.create(name="FeeA", brand="F", barcode="9870000000001", category=cat,
+                                        default_price=Decimal("75"))
+        self.b = Product.objects.create(name="FeeB", brand="F", barcode="9870000000002", category=cat,
+                                        default_price=Decimal("25"))
+        for p in (self.a, self.b):
+            Purchase.objects.create(product=p, quantity=10, remaining=10, cost_price=Decimal("10"))
+
+    def _sell(self, payments, token):
+        items = [{"barcode": self.a.barcode, "qty": 1, "price": "75.00", "payment": "card"},
+                 {"barcode": self.b.barcode, "qty": 1, "price": "25.00", "payment": "card"}]
+        self.client.post(reverse("outbound"), {"items_json": json.dumps(items),
+                                               "payments_json": json.dumps(payments),
+                                               "submit_token": token})
+        return SaleOrder.objects.latest("id")
+
+    def test_a_card_sale_carries_one_percent_off_its_profit(self):
+        from .services.profit import sale_profit_map_for_sale_ids
+        order = self._sell([{"method": "card", "amount": "100.00"}], "a" * 32)
+        self.assertEqual(order.card_fee, Decimal("1.00"))
+        lines = {s.product_id: s.id for s in order.items.all()}
+        profit = sale_profit_map_for_sale_ids(lines.values())
+        # spread by value: 0.75 on the 75 line, 0.25 on the 25 line
+        self.assertEqual(profit[lines[self.a.id]]["card_fee"], Decimal("0.75"))
+        self.assertEqual(profit[lines[self.a.id]]["profit"], Decimal("75") - Decimal("10") - Decimal("0.75"))
+        self.assertEqual(profit[lines[self.b.id]]["profit"], Decimal("25") - Decimal("10") - Decimal("0.25"))
+
+    def test_only_the_card_part_of_a_split_pays_the_fee(self):
+        order = self._sell([{"method": "card", "amount": "60.00"}, {"method": "cash", "amount": "40.00"}], "b" * 32)
+        self.assertEqual(order.card_fee, Decimal("0.60"))
+
+    def test_cash_and_mbway_have_no_fee(self):
+        order = self._sell([{"method": "mbway", "amount": "70.00"}, {"method": "cash", "amount": "30.00"}], "c" * 32)
+        self.assertEqual(order.card_fee, Decimal("0.00"))
+
+    def test_a_new_rate_applies_to_new_sales_only(self):
+        first = self._sell([{"method": "card", "amount": "100.00"}], "d" * 32)
+        response = self.client.post(reverse("business_settings"), {"card_fee_pct": "1,5"})
+        self.assertRedirects(response, reverse("business_settings"), fetch_redirect_response=False)
+        second = self._sell([{"method": "card", "amount": "100.00"}], "e" * 32)
+        first.refresh_from_db()
+        self.assertEqual(first.card_fee, Decimal("1.00"))
+        self.assertEqual(second.card_fee, Decimal("1.50"))
+
+    def test_an_order_from_before_fees_stays_as_it_was_when_corrected(self):
+        from .services import card_fees
+        old = SaleOrder.objects.create()
+        SaleOrder.objects.filter(pk=old.pk).update(created_at=timezone.make_aware(timezone.datetime(2026, 9, 1, 12)))
+        old.refresh_from_db()
+        card_fees.refresh_after_correction(old, {"card": Decimal("100")})
+        old.refresh_from_db()
+        self.assertEqual(old.card_fee, Decimal("0.00"))
+
+    def test_the_settings_page_is_for_admins(self):
+        employee = get_user_model().objects.create_user("cf_fee_emp", password="pw123456")
+        self.client.force_login(employee)
+        self.assertNotEqual(self.client.get(reverse("business_settings")).status_code, 200)
+        self.assertNotEqual(self.client.post(reverse("business_settings"), {"card_fee_pct": "9"}).status_code, 200)
+        from .models import BusinessSettings
+        self.assertEqual(BusinessSettings.get().card_fee_pct, Decimal("1.00"))

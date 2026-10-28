@@ -173,6 +173,8 @@ def save_sale_order_correction(*, order, customer, note, order_datetime, line_it
             SaleOrderPayment.objects.create(order=order, method=method, amount=amount)
     if charges is not None:
         save_charges(order, charges)
+    from .card_fees import refresh_after_correction
+    refresh_after_correction(order, payment_totals)
 
     after_data = snapshot_sale_order(order)
 
