@@ -681,7 +681,7 @@ class CustomerDetailViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["total_orders"], 2)
         self.assertEqual(len(response.context["month_blocks"]), 2)
-        self.assertContains(response, "Order Timeline")
+        self.assertContains(response, 'aria-label="Orders"')  # one order list (2026-10-28)
         self.assertContains(response, "Timeline Customer")
         self.assertContains(response, "Order #")
         self.assertTrue(response.context["show_profit"])
@@ -719,8 +719,11 @@ class CustomerDetailViewTests(TestCase):
         cadence = response.context["cadence"]
         self.assertIsNotNone(cadence["since"])
         self.assertIsNotNone(cadence["avg_gap_days"])
-        self.assertContains(response, "Top Products")
-        self.assertContains(response, "Monthly Spend")
+        # 2026-10-28: no charts on this page - the mix is one line of text
+        # and the top products a short list.
+        self.assertContains(response, "Buys most")
+        self.assertContains(response, "Paid by")
+        self.assertNotContains(response, "<canvas")
 
     def test_customer_detail_date_range_filter_scopes_data(self):
         self.client.login(username="customer_timeline_admin", password="pw123456")

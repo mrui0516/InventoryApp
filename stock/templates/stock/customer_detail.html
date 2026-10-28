@@ -1,1165 +1,219 @@
 {% extends 'stock/base.html' %}
 {% load contact_tags %}
-{% block title %}Customer Details{% endblock %}
+{% block title %}{{ customer.name }}{% endblock %}
 {% block content %}
-<div class="container my-4 customer-page">
-  <style>
-    /* Design tokens inherited from app.css (dense-flat system) */
+<style>
+  /* Customer page (2026-10-28): who they are, five numbers, then the orders as
+     one list - the same row-and-panel pattern as Orders. No charts. */
+  .cd{ display:grid; gap:.9rem; grid-template-columns:minmax(0,1fr); }
+  .cd-head{ display:flex; gap:.75rem 1rem; align-items:flex-start; justify-content:space-between; flex-wrap:wrap;
+    background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius); padding:.85rem 1rem; }
+  .cd-id{ min-width:0; flex:1 1 18rem; }
+  .cd-id h1{ font-size:1.35rem; font-weight:800; margin:0; color:var(--app-text); display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
+  .cd-kind{ font-size:.72rem; font-weight:800; padding:.12rem .5rem; border-radius:999px; background:var(--app-surface-2); color:var(--app-primary); }
+  .cd-kind.revenda{ background:#f1e8fd; color:#6b3fb2; }
+  .cd-contact{ display:flex; flex-wrap:wrap; gap:.15rem .9rem; margin-top:.35rem; font-size:.92rem; color:var(--app-primary); }
+  .cd-contact a{ color:inherit; }
+  .cd-contact .wa-link{ color:#128c4a; }
+  .cd-addr{ margin-top:.25rem; font-size:.88rem; color:var(--app-muted); }
+  .cd-note{ margin-top:.45rem; font-size:.88rem; padding:.4rem .6rem; border-radius:var(--app-radius-sm); background:#fff8e6; color:#7a5300; }
+  .cd-actions{ display:flex; gap:.4rem; flex-wrap:wrap; }
+  .cd-del{ border:0; background:none; color:var(--app-danger); font-size:.85rem; font-weight:700; padding:.25rem .4rem; }
 
-    .hero-card,
-    .summary-card,
-    .month-card,
-    .ar-card,
-    .empty-card{
-      background:var(--card);
-      border:1px solid var(--border);
-      border-radius:var(--radius);
-      box-shadow:var(--shadow);
-    }
+  .cd-range{ display:flex; align-items:flex-end; justify-content:space-between; gap:.5rem 1rem; flex-wrap:wrap;
+    border-bottom:1px solid var(--app-border); }
+  .cd-range .ftabs{ border-bottom:0; margin:0; }
+  .cd-custom{ display:flex; align-items:center; gap:.35rem; padding-bottom:.35rem; }
+  .cd-custom input{ height:34px; padding:.2rem .45rem; font-size:.88rem; border:1px solid var(--app-border-strong);
+    border-radius:var(--app-radius-sm); background:var(--app-surface); width:9.2rem; }
+  .cd-custom .btn{ height:34px; }
 
-    .hero-card{
-      padding:1.2rem;
-      display:flex;
-      justify-content:space-between;
-      gap:1.2rem;
-      align-items:flex-start;
-      margin-bottom:1rem;
-    }
-    .hero-main{
-      display:flex;
-      gap:1rem;
-      min-width:0;
-      flex:1;
-    }
-    .avatar{
-      width:72px;
-      height:72px;
-      border-radius:999px;
-      display:grid;
-      place-items:center;
-      font-size:1.5rem;
-      font-weight:900;
-      color:#0c0a09;
-      background:linear-gradient(180deg,#dbeafe,#eff6ff);
-      border:1px solid #bfdbfe;
-      flex:0 0 72px;
-    }
-    .hero-title{
-      margin:0;
-      color:var(--text);
-      font-size:1.9rem;
-      font-weight:900;
-      letter-spacing:-.02em;
-    }
-    .hero-heading{
-      display:flex;
-      align-items:center;
-      gap:.6rem;
-      flex-wrap:wrap;
-    }
-    .kind-pill{
-      display:inline-flex;
-      align-items:center;
-      padding:.3rem .7rem;
-      border-radius:999px;
-      font-size:.78rem;
-      font-weight:900;
-      background:#f5f5f4;
-      color:#475569;
-      border:1px solid #d6d3d1;
-      white-space:nowrap;
-    }
-    .kind-pill.revenda{
-      background:#ede9fe;
-      color:#5b21b6;
-      border-color:#c4b5fd;
-    }
-    .hero-sub{
-      margin:.3rem 0 0;
-      color:var(--muted);
-      font-weight:700;
-    }
-    .hero-grid{
-      display:grid;
-      grid-template-columns:repeat(3, minmax(0, 1fr));
-      gap:.8rem;
-      margin-top:1rem;
-    }
-    .hero-field{
-      padding:.8rem .9rem;
-      border-radius:16px;
-      background:#f5f5f4;
-      border:1px solid rgba(148,163,184,.18);
-    }
-    .hero-label{
-      display:block;
-      color:var(--muted);
-      font-size:.78rem;
-      font-weight:900;
-      letter-spacing:.04em;
-      text-transform:uppercase;
-    }
-    .hero-value{
-      display:block;
-      color:var(--text);
-      font-size:1rem;
-      font-weight:800;
-      margin-top:.2rem;
-      word-break:break-word;
-    }
-    .notes-card{
-      margin-top:.8rem;
-      padding:.85rem .95rem;
-      border-radius:16px;
-      background:#fff7ed;
-      border:1px solid #fed7aa;
-      color:#7c2d12;
-      font-weight:700;
-    }
-    .hero-actions{
-      display:flex;
-      flex-wrap:wrap;
-      gap:.6rem;
-      justify-content:flex-end;
-    }
-    .hero-actions .btn{
-      border-radius:12px;
-      font-weight:800;
-    }
+  .cd-kpis{ display:grid; grid-template-columns:repeat(auto-fit,minmax(9rem,1fr)); gap:.5rem; }
+  .cd-kpis .sp-kpi b{ font-size:1.2rem; }
+  .cd-mix{ font-size:.88rem; color:var(--app-muted); margin-top:-.35rem; }
+  .cd-mix b{ color:var(--app-text); font-weight:700; }
 
-    .summary-grid{
-      display:grid;
-      grid-template-columns:repeat(3, minmax(0, 1fr));
-      gap:.5rem;
-      margin-bottom:.8rem;
-    }
-    .summary-card{
-      padding:.55rem .7rem;
-    }
-    .summary-label{
-      color:var(--muted);
-      font-size:.64rem;
-      font-weight:800;
-      letter-spacing:.05em;
-      text-transform:uppercase;
-    }
-    .summary-value{
-      margin-top:.15rem;
-      color:var(--text);
-      font-size:1.2rem;
-      font-weight:800;
-      line-height:1.1;
-      font-variant-numeric:tabular-nums;
-    }
-    .summary-sub{
-      margin-top:.1rem;
-      color:var(--muted);
-      font-size:.72rem;
-      font-weight:600;
-    }
+  .cd-cols{ display:grid; gap:.9rem; grid-template-columns:minmax(0,1fr) 20rem; align-items:start; }
+  .cd-card{ background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius); overflow:hidden; }
+  .cd-card-head{ display:flex; justify-content:space-between; align-items:baseline; gap:.75rem; padding:.6rem .85rem;
+    border-bottom:1px solid var(--app-border); }
+  .cd-card-head h2{ font-size:1rem; font-weight:800; margin:0; color:var(--app-text); }
+  .cd-card-head span{ font-size:.85rem; color:var(--app-muted); font-variant-numeric:tabular-nums; text-align:right; }
+  .cd-card .sp-row{ padding:.5rem .85rem; }
+  .cd-card .sp-row:first-child{ border-top:0; }
+  .cd-card .sp-empty{ padding:.75rem .85rem; }
+  .cd-overdue{ color:var(--app-danger); font-weight:700; }
 
-    .section-head{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:1rem;
-      margin:1.5rem 0 .9rem;
-    }
-    .section-head h3{
-      margin:0;
-      color:var(--text);
-      font-size:1.25rem;
-      font-weight:900;
-    }
-    .section-note{
-      color:var(--muted);
-      font-size:.92rem;
-      font-weight:700;
-    }
+  .cd-month{ display:flex; justify-content:space-between; gap:.75rem; padding:.4rem .85rem; background:var(--app-surface-2);
+    border-top:1px solid var(--app-border); border-bottom:1px solid var(--app-border); font-size:.8rem; font-weight:800;
+    letter-spacing:.04em; text-transform:uppercase; color:var(--app-muted); }
+  .cd-month:first-child{ border-top:0; }
+  .cd-month span{ text-transform:none; letter-spacing:0; font-weight:600; font-variant-numeric:tabular-nums; }
+  .cd-order{ display:grid; grid-template-columns:4.2rem minmax(0,1fr) auto; gap:.15rem .75rem; align-items:center; width:100%;
+    padding:.55rem .85rem; border:0; border-top:1px solid var(--app-border); background:none; text-align:left; color:var(--app-text); }
+  .cd-month + .cd-order{ border-top:0; }
+  .cd-order:hover{ background:var(--app-surface-2); }
+  .cd-date{ font-weight:700; font-size:.92rem; font-variant-numeric:tabular-nums; line-height:1.2; }
+  .cd-date small{ display:block; font-weight:500; color:var(--app-muted); font-size:.8rem; }
+  .cd-what{ min-width:0; font-size:.92rem; }
+  .cd-what b{ margin-right:.35rem; }
+  .cd-what .items{ color:var(--app-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; }
+  .cd-fig{ text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .cd-fig b{ display:block; font-size:.98rem; }
+  .cd-fig small{ color:var(--app-muted); font-size:.8rem; }
 
-    .ar-card{
-      padding:1rem 1.1rem;
-      margin-bottom:1.2rem;
-    }
-    .ar-head{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:1rem;
-      margin-bottom:.9rem;
-    }
-    .ar-head h4{
-      margin:0;
-      color:var(--text);
-      font-size:1.05rem;
-      font-weight:900;
-    }
-    .ar-grid{
-      display:grid;
-      grid-template-columns:repeat(4, minmax(0, 1fr));
-      gap:.8rem;
-      margin-bottom:1rem;
-    }
-    .ar-stat{
-      padding:.85rem .95rem;
-      border-radius:16px;
-      border:1px solid rgba(148,163,184,.2);
-      background:#f5f5f4;
-    }
-    .ar-stat .label{
-      color:var(--muted);
-      font-size:.78rem;
-      font-weight:900;
-      text-transform:uppercase;
-      letter-spacing:.04em;
-    }
-    .ar-stat .value{
-      margin-top:.2rem;
-      color:var(--text);
-      font-size:1.15rem;
-      font-weight:900;
-    }
-    .chips{
-      display:flex;
-      flex-wrap:wrap;
-      gap:.5rem;
-      margin-bottom:1rem;
-    }
-    .chip{
-      display:inline-flex;
-      align-items:center;
-      padding:.3rem .7rem;
-      border-radius:999px;
-      background:#f5f5f4;
-      border:1px solid rgba(148,163,184,.24);
-      color:#44403c;
-      font-size:.82rem;
-      font-weight:800;
-    }
-    .chip.warn{
-      background:var(--warning-soft);
-      border-color:#fdba74;
-      color:#9a3412;
-    }
-    .chip.danger{
-      background:var(--danger-soft);
-      border-color:#fecaca;
-      color:#991b1b;
-    }
+  .co-line{ display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.1rem .75rem; padding:.45rem 0; border-top:1px solid var(--app-border); font-size:.92rem; }
+  .co-line:first-child{ border-top:0; }
+  .co-line a{ color:var(--app-text); font-weight:600; }
+  .co-line .q{ color:var(--app-primary); font-size:.86rem; }
+  .co-line .v{ text-align:right; font-weight:700; font-variant-numeric:tabular-nums; }
+  .co-line .p{ grid-column:2; text-align:right; font-size:.8rem; color:var(--app-muted); }
+  .co-line .p.neg{ color:var(--app-danger); }
 
-    .month-card{
-      overflow:hidden;
-      margin-bottom:1rem;
-    }
-    .month-head{
-      display:flex;
-      justify-content:space-between;
-      gap:1rem;
-      padding:1rem 1.1rem;
-      background:linear-gradient(180deg,#f8fbff,#ffffff);
-      border-bottom:1px solid rgba(148,163,184,.16);
-    }
-    .month-title{
-      color:var(--text);
-      font-size:1.15rem;
-      font-weight:900;
-    }
-    .month-meta{
-      margin-top:.25rem;
-      color:var(--muted);
-      font-size:.9rem;
-      font-weight:700;
-    }
-    .month-amount{
-      color:var(--success);
-      font-size:1.15rem;
-      font-weight:900;
-      text-align:right;
-    }
-    .month-body{
-      padding:0 1rem 1rem;
-    }
-    .month-payments{
-      display:flex;
-      flex-wrap:wrap;
-      gap:.45rem;
-      padding:1rem 1rem 0;
-    }
-    .month-payments .pay-pill{
-      background:#f5f5f4;
-      border-color:#d6d3d1;
-      color:#0c0a09;
-    }
+  @media (max-width:991.98px){ .cd-cols{ grid-template-columns:minmax(0,1fr); } }
+  @media (max-width:575.98px){
+    .cd-head{ padding:.75rem .8rem; }
+    .cd-id h1{ font-size:1.2rem; }
+    .cd-custom{ width:100%; }
+    .cd-custom input{ flex:1 1 0; width:auto; min-width:0; }
+    .cd-kpis{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .cd-order{ grid-template-columns:3.6rem minmax(0,1fr) auto; gap:.1rem .6rem; padding:.55rem .75rem; }
+  }
+</style>
 
-    .day-entry{
-      margin-top:.85rem;
-      border:1px solid rgba(148,163,184,.18);
-      border-radius:18px;
-      overflow:hidden;
-      background:#fff;
-    }
-    .day-entry summary{
-      list-style:none;
-      cursor:pointer;
-    }
-    .day-entry summary::-webkit-details-marker{
-      display:none;
-    }
-    .day-summary{
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      gap:1rem;
-      padding:.95rem 1rem;
-      background:#fbfdff;
-    }
-    .day-summary-main{
-      min-width:0;
-    }
-    .day-date{
-      color:var(--text);
-      font-size:1rem;
-      font-weight:900;
-    }
-    .day-meta{
-      margin-top:.25rem;
-      color:var(--muted);
-      font-size:.88rem;
-      font-weight:700;
-    }
-    .day-summary-end{
-      display:flex;
-      align-items:center;
-      gap:.9rem;
-    }
-    .day-total{
-      color:var(--success);
-      font-size:1.05rem;
-      font-weight:900;
-      white-space:nowrap;
-    }
-    .day-arrow,
-    .order-arrow{
-      width:12px;
-      height:12px;
-      border-right:3px solid #0c0a09;
-      border-bottom:3px solid #0c0a09;
-      transform:rotate(45deg);
-      transition:transform .2s ease, border-color .2s ease;
-      flex:0 0 auto;
-    }
-    .day-entry[open] .day-arrow,
-    .order-entry[open] .order-arrow{
-      transform:rotate(225deg);
-      border-color:#1b6fae;
-    }
-    .day-body{
-      padding:0 1rem 1rem;
-      border-top:1px solid rgba(148,163,184,.16);
-    }
-
-    .order-entry{
-      margin-top:.85rem;
-      border:1px solid rgba(148,163,184,.18);
-      border-radius:16px;
-      overflow:hidden;
-      background:#fff;
-    }
-    .order-entry summary{
-      list-style:none;
-      cursor:pointer;
-    }
-    .order-entry summary::-webkit-details-marker{
-      display:none;
-    }
-    .order-summary{
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      gap:1rem;
-      padding:.9rem 1rem;
-      background:linear-gradient(180deg,#ffffff,#fbfdff);
-    }
-    .order-summary-main{
-      min-width:0;
-      flex:1;
-    }
-    .order-badge{
-      display:inline-flex;
-      align-items:center;
-      padding:.24rem .65rem;
-      border-radius:999px;
-      background:var(--accent-soft);
-      color:#1b6fae;
-      font-size:.8rem;
-      font-weight:900;
-    }
-    .order-time{
-      margin-top:.45rem;
-      color:var(--text);
-      font-size:1rem;
-      font-weight:900;
-    }
-    .order-meta{
-      margin-top:.25rem;
-      color:var(--muted);
-      font-size:.86rem;
-      font-weight:700;
-    }
-    .order-summary-end{
-      display:flex;
-      align-items:center;
-      gap:1rem;
-    }
-    .order-total{
-      color:var(--success);
-      font-size:1.15rem;
-      font-weight:900;
-      text-align:right;
-    }
-    .profit-note{
-      margin-top:.3rem;
-      color:#065f46;
-      font-size:.8rem;
-      font-weight:900;
-      line-height:1.2;
-    }
-    .profit-note.negative{
-      color:#b91c1c;
-    }
-    .order-payments{
-      display:flex;
-      flex-wrap:wrap;
-      justify-content:flex-end;
-      gap:.4rem;
-      margin-top:.45rem;
-    }
-    .pay-pill{
-      display:inline-flex;
-      align-items:center;
-      padding:.24rem .6rem;
-      border-radius:999px;
-      background:#eff6ff;
-      border:1px solid #bfdbfe;
-      color:#1b6fae;
-      font-size:.78rem;
-      font-weight:800;
-    }
-    .order-body{
-      padding:0 1rem 1rem;
-      border-top:1px solid rgba(148,163,184,.16);
-    }
-    .order-tools{
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      gap:.8rem;
-      padding:.8rem 0;
-    }
-    .hint{
-      color:var(--muted);
-      font-size:.88rem;
-      font-weight:700;
-    }
-
-    .table thead th{
-      background:#f5f5f4;
-      color:#475569;
-      font-size:.78rem;
-      text-transform:uppercase;
-      letter-spacing:.04em;
-    }
-    .table td{
-      vertical-align:middle;
-    }
-    .item-name{
-      color:var(--text);
-      font-weight:800;
-    }
-    .item-name a{
-      color:inherit;
-      text-decoration:none;
-    }
-    .item-name a:hover{
-      color:#1b6fae;
-    }
-    .num{
-      font-variant-numeric:tabular-nums;
-      font-weight:800;
-    }
-    .table-product{
-      display:grid;
-      grid-template-columns:56px minmax(0,1fr);
-      gap:.8rem;
-      align-items:center;
-    }
-    .table-product-thumb-wrap,
-    .table-product-thumb-empty{
-      width:56px;
-      height:56px;
-      border-radius:16px;
-      border:1px solid rgba(148,163,184,.24);
-      background:#f5f5f4;
-    }
-    .table-product-thumb-wrap{
-      padding:0;
-      overflow:hidden;
-      display:block;
-      cursor:zoom-in;
-    }
-    .table-product-thumb{
-      width:100%;
-      height:100%;
-      object-fit:cover;
-      display:block;
-    }
-    .table-product-thumb-empty{
-      display:grid;
-      place-items:center;
-      color:var(--muted);
-      font-size:.7rem;
-      font-weight:800;
-      text-align:center;
-      padding:.25rem;
-    }
-
-    .empty-card{
-      padding:1.1rem 1.2rem;
-      color:var(--muted);
-      font-weight:700;
-    }
-
-    .insight-grid{
-      display:grid;
-      grid-template-columns:1.6fr 1fr;
-      gap:1rem;
-      margin-bottom:1rem;
-    }
-    .panel-card{
-      background:var(--card);
-      border:1px solid var(--border);
-      border-radius:var(--radius);
-      box-shadow:var(--shadow);
-      padding:1rem 1.1rem;
-    }
-    .panel-card h3{
-      margin:0 0 .8rem;
-      color:var(--text);
-      font-size:1.1rem;
-      font-weight:900;
-    }
-    .chart-box{
-      position:relative;
-      height:240px;
-    }
-    .chart-box.donut{
-      height:200px;
-    }
-    .mix-legend{
-      display:flex;
-      flex-wrap:wrap;
-      gap:.45rem;
-      justify-content:center;
-      margin-top:.8rem;
-    }
-    .top-row{
-      display:grid;
-      grid-template-columns:44px minmax(0,1fr) auto;
-      gap:.85rem;
-      align-items:center;
-      padding:.6rem 0;
-      border-top:1px solid rgba(148,163,184,.16);
-    }
-    .top-row:first-of-type{
-      border-top:0;
-    }
-    .top-thumb,
-    .top-thumb-empty{
-      width:44px;
-      height:44px;
-      border-radius:12px;
-      border:1px solid rgba(148,163,184,.24);
-      background:#f5f5f4;
-      overflow:hidden;
-      padding:0;
-    }
-    .top-thumb{cursor:zoom-in;display:block}
-    .top-thumb img{width:100%;height:100%;object-fit:cover;display:block}
-    .top-thumb-empty{display:grid;place-items:center;font-size:.6rem;color:var(--muted);font-weight:800;text-align:center}
-    .top-name{color:var(--text);font-weight:800;text-decoration:none}
-    .top-name:hover{color:#1b6fae}
-    .top-bar{height:7px;border-radius:999px;background:#eef2f7;margin-top:.4rem;overflow:hidden}
-    .top-bar span{display:block;height:100%;background:linear-gradient(90deg,#3ba6f1,#60a5fa)}
-    .top-metric{text-align:right;white-space:nowrap;font-weight:900;color:var(--text)}
-    .top-metric .sub{color:var(--muted);font-size:.82rem;font-weight:700}
-
-    .filter-card{
-      background:var(--card);
-      border:1px solid var(--border);
-      border-radius:var(--radius);
-      box-shadow:var(--shadow);
-      padding:.85rem 1rem;
-      margin-bottom:1rem;
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      gap:1rem;
-      flex-wrap:wrap;
-    }
-    .filter-presets{
-      display:flex;
-      gap:.4rem;
-      flex-wrap:wrap;
-    }
-    .preset{
-      padding:.42rem .85rem;
-      border-radius:999px;
-      border:1px solid rgba(148,163,184,.3);
-      background:#f5f5f4;
-      color:#44403c;
-      font-weight:800;
-      font-size:.86rem;
-      text-decoration:none;
-    }
-    .preset.active{
-      background:var(--accent);
-      border-color:var(--accent);
-      color:#fff;
-    }
-    .filter-range{
-      display:flex;
-      gap:.5rem;
-      align-items:center;
-      flex-wrap:wrap;
-    }
-    .filter-range input[type=date]{
-      border:1px solid var(--border);
-      border-radius:12px;
-      padding:.42rem .6rem;
-      font-weight:700;
-      color:var(--text);
-      background:#fff;
-    }
-    .filter-range .sep{color:var(--muted);font-weight:800}
-
-    details.month-card > summary.month-head{
-      cursor:pointer;
-      list-style:none;
-    }
-    details.month-card > summary.month-head::-webkit-details-marker{display:none}
-    .month-head{border-bottom:0}
-    details.month-card[open] > summary.month-head{
-      border-bottom:1px solid rgba(148,163,184,.16);
-    }
-    .month-head-end{
-      display:flex;
-      align-items:center;
-      gap:.9rem;
-    }
-    .month-arrow{
-      width:12px;
-      height:12px;
-      border-right:3px solid #0c0a09;
-      border-bottom:3px solid #0c0a09;
-      transform:rotate(45deg);
-      transition:transform .2s ease, border-color .2s ease;
-      flex:0 0 auto;
-    }
-    details.month-card[open] .month-arrow{
-      transform:rotate(225deg);
-      border-color:#1b6fae;
-    }
-
-    @media (max-width: 991.98px){
-      .insight-grid{
-        grid-template-columns:1fr;
-      }
-      .hero-card,
-      .hero-main,
-      .month-head,
-      .day-summary,
-      .order-summary{
-        flex-direction:column;
-        align-items:flex-start;
-      }
-      .hero-grid,
-      .summary-grid,
-      .ar-grid{
-        grid-template-columns:1fr 1fr;
-      }
-      .month-amount,
-      .day-total,
-      .order-total{
-        text-align:left;
-      }
-      .order-payments{
-        justify-content:flex-start;
-      }
-    }
-
-    @media (max-width: 575.98px){
-      .ar-grid{
-        grid-template-columns:1fr;
-      }
-      /* contact details: one block of rows instead of four big cards */
-      .hero-grid{ grid-template-columns:1fr; gap:0; border:1px solid var(--app-border);
-                  border-radius:var(--app-radius); overflow:hidden; background:#fff; }
-      .hero-field{ display:grid; grid-template-columns:5.5rem minmax(0,1fr); align-items:center; gap:.6rem;
-                   padding:.55rem .75rem; border:0; border-radius:0; background:#fff;
-                   border-bottom:1px solid var(--app-border); }
-      .hero-field:last-child{ border-bottom:0; }
-      .hero-label{ font-size:.74rem; }
-      .hero-value{ margin-top:0; font-size:.95rem; }
-      .summary-grid{
-        grid-template-columns:repeat(2, minmax(0, 1fr));
-      }
-      .hero-actions,
-      .order-tools{
-        width:100%;
-        justify-content:flex-start;
-      }
-      .table thead{
-        display:none;
-      }
-      .table,
-      .table tbody,
-      .table tr,
-      .table td{
-        display:block;
-        width:100%;
-      }
-      .table tr{
-        padding:.75rem 0;
-        border-top:1px solid #eef2f7;
-      }
-      .table td{
-        border:0;
-        padding:.2rem 0;
-      }
-      .table td::before{
-        content:attr(data-label);
-        display:block;
-        color:var(--muted);
-        font-size:.76rem;
-        font-weight:800;
-        text-transform:uppercase;
-        letter-spacing:.03em;
-        margin-bottom:.1rem;
-      }
-    }
-  </style>
-
-  <div class="hero-card">
-    <div class="hero-main">
-      <div class="avatar">{{ customer.name|default:"?"|first|upper }}</div>
-      <div class="hero-text">
-        <div class="hero-heading">
-          <h1 class="hero-title">{{ customer.name }}</h1>
-          <span class="kind-pill{% if customer.is_revenda %} revenda{% endif %}">{{ customer.kind_label }}</span>
-        </div>
+<div class="cd">
+  <header class="cd-head">
+    <div class="cd-id">
+      <h1>{{ customer.name }} <span class="cd-kind{% if customer.is_revenda %} revenda{% endif %}">{{ customer.kind_label }}</span></h1>
+      <div class="cd-contact">
+        {% if customer.phone %}<a class="wa-link" href="{{ customer.phone|whatsapp_url }}" target="_blank" rel="noopener" aria-label="WhatsApp {{ customer.phone }}">{% include "stock/_wa_icon.html" %}{{ customer.phone }}</a>{% endif %}
         {% if show_sensitive %}
-          <div class="hero-grid">
-            <div class="hero-field">
-              <span class="hero-label">NIF</span>
-              <span class="hero-value">{{ customer.nif|default:"-" }}</span>
-            </div>
-            <div class="hero-field">
-              <span class="hero-label">WhatsApp</span>
-              <span class="hero-value">{% if customer.phone %}<a class="wa-link" href="{{ customer.phone|whatsapp_url }}" target="_blank" rel="noopener" aria-label="WhatsApp {{ customer.phone }}">{% include "stock/_wa_icon.html" %}{{ customer.phone }}</a>{% else %}-{% endif %}</span>
-            </div>
-            <div class="hero-field">
-              <span class="hero-label">Email</span>
-              <span class="hero-value">{{ customer.email|default:"-" }}</span>
-            </div>
-            <div class="hero-field">
-              <span class="hero-label">Address</span>
-              <span class="hero-value">{{ customer.address|default:"-"|linebreaksbr }}</span>
-            </div>
-          </div>
-          {% if customer.notes %}
-            <div class="notes-card">{{ customer.notes }}</div>
-          {% endif %}
+          {% if customer.email %}<a href="mailto:{{ customer.email }}">{{ customer.email }}</a>{% endif %}
+          {% if customer.nif %}<span>NIF {{ customer.nif }}</span>{% endif %}
         {% endif %}
+        {% if cadence.since %}<span>Customer since {{ cadence.since|date:"M Y" }}</span>{% endif %}
       </div>
+      {% if show_sensitive %}
+        {% if customer.address %}<div class="cd-addr">{{ customer.address|linebreaksbr }}</div>{% endif %}
+        {% if customer.notes %}<div class="cd-note">{{ customer.notes }}</div>{% endif %}
+      {% endif %}
     </div>
     {% if show_sensitive %}
-      <div class="hero-actions">
-        <a href="{% url 'edit_customer' customer.id %}" class="btn btn-outline-primary">Edit</a>
-        <a href="{% url 'ar_new' %}?customer={{ customer.id }}" class="btn btn-success">New IOU</a>
-        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteCustomerModal">Delete</button>
+      <div class="cd-actions">
+        <a href="{% url 'edit_customer' customer.id %}" class="btn btn-sm btn-outline-secondary">Edit</a>
+        <a href="{% url 'ar_new' %}?customer={{ customer.id }}" class="btn btn-sm btn-outline-secondary">+ IOU</a>
+        {% if customer.is_revenda %}<a href="{% url 'pedido' %}?customer={{ customer.id }}" class="btn btn-sm btn-outline-secondary">Pedido</a>{% endif %}
+        <button type="button" class="cd-del" data-bs-toggle="modal" data-bs-target="#deleteCustomerModal">Delete</button>
       </div>
     {% endif %}
+  </header>
+
+  <div class="cd-range">
+    <nav class="ftabs" aria-label="Period">
+      <a class="{% if range_key == 'all' %}on{% endif %}" href="?preset=all">All time</a>
+      <a class="{% if range_key == 'year' %}on{% endif %}" href="?preset=year">This year</a>
+      <a class="{% if range_key == 'month' %}on{% endif %}" href="?preset=month">This month</a>
+      {% if range_key == 'custom' %}<a class="on" href="">{{ range_label }}</a>{% endif %}
+    </nav>
+    <form method="get" class="cd-custom" aria-label="Custom range">
+      <input type="date" name="start_date" value="{{ start_date }}" aria-label="From">
+      <input type="date" name="end_date" value="{{ end_date }}" aria-label="To">
+      <button type="submit" class="btn btn-sm btn-outline-secondary">Show</button>
+    </form>
   </div>
 
-  <form method="get" class="filter-card">
-    <div class="filter-presets">
-      <a href="?preset=all" class="preset {% if range_key == 'all' %}active{% endif %}">All time</a>
-      <a href="?preset=month" class="preset {% if range_key == 'month' %}active{% endif %}">This month</a>
-      <a href="?preset=year" class="preset {% if range_key == 'year' %}active{% endif %}">This year</a>
-    </div>
-    <div class="filter-range">
-      <input type="date" name="start_date" value="{{ start_date }}">
-      <span class="sep">→</span>
-      <input type="date" name="end_date" value="{{ end_date }}">
-      <button type="submit" class="btn btn-primary btn-sm">Apply</button>
-      {% if range_active %}<a href="?preset=all" class="btn btn-outline-secondary btn-sm">Reset</a>{% endif %}
-    </div>
-  </form>
-
-  <div class="summary-grid">
+  <div class="cd-kpis">
     {% if show_sales_sensitive %}
-      <div class="summary-card">
-        <div class="summary-label">Total Spent</div>
-        <div class="summary-value">€{{ total_spent|floatformat:2 }}</div>
-      </div>
-      <div class="summary-card">
-        <div class="summary-label">Average Order</div>
-        <div class="summary-value">EUR {{ average_order_value|floatformat:2 }}</div>
-      </div>
+      <div class="sp-kpi"><span>Spent</span><b>&euro;{{ total_spent|floatformat:"2g" }}</b>{% if total_orders %}<small>avg &euro;{{ average_order_value|floatformat:2 }} / order</small>{% endif %}</div>
     {% endif %}
-    <div class="summary-card">
-      <div class="summary-label">Total Orders</div>
-      <div class="summary-value">{{ total_orders }}</div>
-    </div>
-    <div class="summary-card">
-      <div class="summary-label">Last Order</div>
-      <div class="summary-value">
-        {% if last_order_at %}
-          {{ last_order_at|date:"Y-m-d" }}
-        {% else %}
-          -
-        {% endif %}
-      </div>
-      <div class="summary-sub">
-        {% if last_order_at %}
-          {{ last_order_at|date:"H:i" }}
-        {% else %}
-          No orders yet
-        {% endif %}
-      </div>
-    </div>
-    <div class="summary-card">
-      <div class="summary-label">Total Items</div>
-      <div class="summary-value">{{ total_items }}</div>
-    </div>
-    <div class="summary-card">
-      <div class="summary-label">Customer Since</div>
-      <div class="summary-value">{% if cadence.since %}{{ cadence.since|date:"Y-m" }}{% else %}-{% endif %}</div>
-      <div class="summary-sub">{% if cadence.since %}First recorded order{% else %}No orders yet{% endif %}</div>
-    </div>
-    <div class="summary-card">
-      <div class="summary-label">Avg Days Between Orders</div>
-      <div class="summary-value">{% if cadence.avg_gap_days is not None %}{{ cadence.avg_gap_days }}{% else %}-{% endif %}</div>
-      <div class="summary-sub">Across {{ total_orders }} order{{ total_orders|pluralize }}</div>
-    </div>
-    <div class="summary-card">
-      <div class="summary-label">Orders / Month</div>
-      <div class="summary-value">{% if cadence.orders_per_month is not None %}{{ cadence.orders_per_month }}{% else %}-{% endif %}</div>
-    </div>
-    {% if show_sales_sensitive %}
-      <div class="summary-card">
-        <div class="summary-label">Largest Order</div>
-        <div class="summary-value">EUR {{ largest_order_total|floatformat:2 }}</div>
-      </div>
-    {% endif %}
+    <div class="sp-kpi"><span>Orders</span><b>{{ total_orders }}</b><small>{{ total_items }} item{{ total_items|pluralize }}</small></div>
     {% if show_profit %}
-      <div class="summary-card">
-        <div class="summary-label">Net Profit</div>
-        <div class="summary-value">€{{ total_profit|floatformat:2 }}</div>
-      </div>
+      <div class="sp-kpi{% if total_profit < 0 %} neg{% endif %}"><span>Net Profit</span><b>&euro;{{ total_profit|floatformat:"2g" }}</b></div>
+    {% endif %}
+    <div class="sp-kpi"><span>Last order</span><b>{% if last_order_at %}{{ last_order_at|date:"Y-m-d" }}{% else %}&mdash;{% endif %}</b>{% if cadence.avg_gap_days is not None %}<small>every {{ cadence.avg_gap_days }} days</small>{% endif %}</div>
+    {% if show_ar and ar_totals.balance > 0 %}
+      <div class="sp-kpi neg"><span>Owes</span><b>&euro;{{ ar_totals.balance|floatformat:2 }}</b>{% if ar_overdue.count %}<small>{{ ar_overdue.count }} overdue</small>{% endif %}</div>
     {% endif %}
   </div>
+  {% if show_sales_sensitive and payment_mix %}
+    <div class="cd-mix">Paid by {% for p in payment_mix %}<b>{{ p.label }}</b> {{ p.pct }}%{% if not forloop.last %} &middot; {% endif %}{% endfor %}</div>
+  {% endif %}
 
-  {% if show_sales_sensitive and spend_trend %}
-    {{ spend_trend|json_script:"spendTrendData" }}
-    {% if payment_mix %}{{ payment_mix|json_script:"payMixData" }}{% endif %}
-    <div class="insight-grid">
-      <section class="panel-card">
-        <h3>Monthly Spend</h3>
-        <div class="chart-box"><canvas id="custSpendChart"></canvas></div>
-      </section>
-      {% if payment_mix %}
-        <section class="panel-card">
-          <h3>Payment Mix</h3>
-          <div class="chart-box donut"><canvas id="custPayChart"></canvas></div>
-          <div class="mix-legend">
-            {% for p in payment_mix %}<span class="pay-pill">{{ p.label }} {{ p.pct }}%</span>{% endfor %}
-          </div>
+  <div class="cd-cols">
+    <section class="cd-card" aria-label="Orders">
+      <div class="cd-card-head">
+        <h2>Orders</h2>
+        <span>{{ range_label }} &middot; {{ total_orders }} order{{ total_orders|pluralize }}{% if show_sales_sensitive %} &middot; &euro;{{ total_spent|floatformat:"2g" }}{% endif %}</span>
+      </div>
+      {% for month in month_blocks %}
+        <div class="cd-month">{{ month.month_label }}<span>{{ month.totals.orders }} order{{ month.totals.orders|pluralize }}{% if show_sales_sensitive %} &middot; &euro;{{ month.totals.amount|floatformat:"2g" }}{% endif %}{% if show_profit %} &middot; profit &euro;{{ month.totals.profit|floatformat:"2g" }}{% endif %}</span></div>
+        {% for day in month.day_blocks %}{% for order in day.orders %}
+          <button type="button" class="cd-order" data-layer="co-{{ order.id }}" id="{{ order.detail_id }}">
+            <span class="cd-date">{{ order.created_at|date:"d M" }}<small>{{ order.created_at|date:"H:i" }}</small></span>
+            <span class="cd-what"><b>#{{ order.id }}</b>{{ order.display_total_qty }} pcs
+              <span class="items">{% for item in order.items_list|slice:":2" %}{{ item.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if order.items_list|length > 2 %} +{{ order.items_list|length|add:"-2" }}{% endif %}</span>
+            </span>
+            <span class="cd-fig">{% if show_sales_sensitive %}<b>&euro;{{ order.display_total_amount|floatformat:2 }}</b><small>{% for pay in order.display_pay_break %}{{ pay.label }}{% if not forloop.last %} + {% endif %}{% endfor %}</small>{% endif %}</span>
+          </button>
+          <template id="co-{{ order.id }}">
+            <div data-part="title">Order #{{ order.id }} &middot; {{ order.created_at|date:"Y-m-d H:i" }}</div>
+            <div data-part="body">
+              <div>
+                {% for item in order.items_list %}
+                  <div class="co-line">
+                    <div>{% if item.product %}<a href="{% url 'product_detail' item.product.id %}">{{ item.display_name }}</a>{% else %}{{ item.display_name }}{% endif %}
+                      <div class="q">&times;{{ item.quantity }}{% if show_sales_sensitive %} @ &euro;{{ item.unit_price|floatformat:2 }} &middot; {{ item.payment_label }}{% endif %}</div></div>
+                    {% if show_sales_sensitive %}<div class="v">&euro;{{ item.total_price|floatformat:2 }}</div>{% endif %}
+                    {% if show_profit %}<div class="p{% if item.line_profit < 0 %} neg{% endif %}">profit &euro;{{ item.line_profit|floatformat:2 }}</div>{% endif %}
+                  </div>
+                {% endfor %}
+              </div>
+              <dl class="ol-totals">
+                <div><dt>Items</dt><dd>{{ order.display_total_qty }}</dd></div>
+                {% if show_sales_sensitive %}
+                  <div class="grand"><dt>Total</dt><dd>&euro;{{ order.display_total_amount|floatformat:2 }}</dd></div>
+                  {% for pay in order.display_pay_break %}<div><dt>{{ pay.label }}</dt><dd>&euro;{{ pay.amount|floatformat:2 }}</dd></div>{% endfor %}
+                {% endif %}
+                {% if show_profit %}<div><dt>Net Profit</dt><dd{% if order.display_total_profit < 0 %} class="neg"{% endif %}>&euro;{{ order.display_total_profit|floatformat:2 }}</dd></div>{% endif %}
+              </dl>
+            </div>
+            <div data-part="foot">
+              <a class="btn btn-primary" href="{{ order.detail_url }}">Print</a>
+              {% if user.is_superuser %}<a class="btn btn-outline-danger" href="{% url 'sale_order_correction_edit' order.id %}">Correct</a>{% endif %}
+            </div>
+          </template>
+        {% endfor %}{% endfor %}
+      {% empty %}
+        <p class="sp-empty">{% if range_active %}No orders in this period.{% else %}No orders yet.{% endif %}</p>
+      {% endfor %}
+    </section>
+
+    <div class="cd">
+      {% if show_ar and ar_open %}
+        <section class="cd-card" aria-label="Open IOUs">
+          <div class="cd-card-head"><h2>Open IOUs</h2><span>&euro;{{ ar_totals.balance|floatformat:2 }} owed</span></div>
+          {% for inv in ar_open %}
+            <a class="sp-row" href="{% url 'ar_detail' inv.id %}">
+              <span class="sp-row-main"><b>#{{ inv.id }}</b> &middot; {{ inv.date|date:"Y-m-d" }}{% if inv.due_date %} &middot; <span class="{% if inv.is_overdue %}cd-overdue{% endif %}">due {{ inv.due_date|date:"Y-m-d" }}</span>{% endif %}</span>
+              <span class="sp-row-fig">&euro;{{ inv.balance_val|floatformat:2 }}</span>
+            </a>
+          {% endfor %}
+        </section>
+      {% endif %}
+
+      {% if top_products %}
+        <section class="cd-card" aria-label="Buys most">
+          <div class="cd-card-head"><h2>Buys most</h2></div>
+          {% for tp in top_products %}
+            {% if tp.product %}<a class="sp-row" href="{% url 'product_detail' tp.product.id %}" data-panel="{% url 'product_panel' tp.product.id %}">{% else %}<div class="sp-row">{% endif %}
+              <span class="sp-row-main">{{ tp.name }}</span>
+              <span class="sp-row-fig">&times;{{ tp.qty }}{% if show_sales_sensitive %} &middot; &euro;{{ tp.spend|floatformat:0 }}{% endif %}</span>
+            {% if tp.product %}</a>{% else %}</div>{% endif %}
+          {% endfor %}
         </section>
       {% endif %}
     </div>
-  {% endif %}
-
-  {% if top_products %}
-    <section class="panel-card" style="margin-bottom:1rem;">
-      <h3>Top Products</h3>
-      {% for tp in top_products %}
-        <div class="top-row">
-          {% if tp.image_url %}
-            <button type="button" class="top-thumb" data-product-preview-url="{{ tp.image_url }}" data-product-preview-title="{{ tp.name }}">
-              <img src="{{ tp.image_url }}" alt="{{ tp.name }}">
-            </button>
-          {% else %}
-            <div class="top-thumb-empty">No image</div>
-          {% endif %}
-          <div>
-            {% if tp.product %}
-              <a class="top-name" href="{% url 'product_detail' tp.product.id %}">{{ tp.name }}</a>
-            {% else %}
-              <span class="top-name">{{ tp.name }}</span>
-            {% endif %}
-            <div class="top-bar"><span style="width:{{ tp.bar }}%"></span></div>
-          </div>
-          <div class="top-metric">
-            {% if show_sales_sensitive %}
-              €{{ tp.spend|floatformat:2 }}<div class="sub">{{ tp.qty }} units</div>
-            {% else %}
-              {{ tp.qty }} units
-            {% endif %}
-          </div>
-        </div>
-      {% endfor %}
-    </section>
-  {% endif %}
-
-  {% if show_ar %}
-    <div class="ar-card">
-      <div class="ar-head">
-        <h4>IOU Overview</h4>
-        <span class="section-note">Open balances only</span>
-      </div>
-      <div class="ar-grid">
-        <div class="ar-stat">
-          <div class="label">Total Due</div>
-          <div class="value">€{{ ar_totals.total_due|floatformat:2 }}</div>
-        </div>
-        <div class="ar-stat">
-          <div class="label">Total Paid</div>
-          <div class="value">€{{ ar_totals.total_paid|floatformat:2 }}</div>
-        </div>
-        <div class="ar-stat">
-          <div class="label">Balance</div>
-          <div class="value {% if ar_totals.balance > 0 %}text-danger{% else %}text-success{% endif %}">€{{ ar_totals.balance|floatformat:2 }}</div>
-        </div>
-        <div class="ar-stat">
-          <div class="label">Overdue</div>
-          <div class="value">{{ ar_overdue.count }}</div>
-        </div>
-      </div>
-      <div class="chips">
-        <span class="chip">Unpaid: {{ ar_counts.unpaid }}</span>
-        <span class="chip warn">Partial: {{ ar_counts.partial }}</span>
-        <span class="chip">Paid: {{ ar_counts.paid }}</span>
-        <span class="chip danger">Overdue: {{ ar_overdue.count }}</span>
-        <span class="chip">
-          Next Due:
-          {% if ar_next_due %} {{ ar_next_due.due_date|date:"Y-m-d" }} (IOU #{{ ar_next_due.id }}){% else %} -{% endif %}
-        </span>
-      </div>
-      <div class="table-responsive">
-        <table class="table table-sm align-middle mb-0">
-          <thead>
-            <tr>
-              <th>IOU #</th>
-              <th>Date</th>
-              <th>Due</th>
-              <th class="text-end">Total</th>
-              <th class="text-end">Paid</th>
-              <th class="text-end">Balance</th>
-              <th>Status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for inv in ar_open %}
-              <tr>
-                <td data-label="IOU #">#{{ inv.id }}</td>
-                <td data-label="Date">{{ inv.date|date:"Y-m-d" }}</td>
-                <td data-label="Due">
-                  {% if inv.due_date %}
-                    <span class="{% if inv.is_overdue %}text-danger{% endif %}">{{ inv.due_date|date:"Y-m-d" }}</span>
-                  {% else %}
-                    -
-                  {% endif %}
-                </td>
-                <td class="text-end num" data-label="Total">€{{ inv.total_amount|floatformat:2 }}</td>
-                <td class="text-end num" data-label="Paid">€{{ inv.amount_paid|floatformat:2 }}</td>
-                <td class="text-end num {% if inv.balance_val > 0 %}text-danger{% else %}text-success{% endif %}" data-label="Balance">€{{ inv.balance_val|floatformat:2 }}</td>
-                <td data-label="Status">
-                  <span class="badge {% if inv.status == 'paid' %}bg-success{% elif inv.status == 'partial' %}bg-warning text-dark{% else %}bg-danger{% endif %}">{{ inv.status|capfirst }}</span>
-                </td>
-                <td data-label="">
-                  <a class="btn btn-sm btn-outline-primary" href="{% url 'ar_detail' inv.id %}">View</a>
-                </td>
-              </tr>
-            {% empty %}
-              <tr><td colspan="8" class="text-center py-3 text-muted">No open IOUs.</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  {% endif %}
-
-  <div class="section-head">
-    <h3>Order Timeline</h3>
-    <span class="section-note">{{ range_label }} · {{ total_orders }} order{{ total_orders|pluralize }} · {{ total_items }} items{% if show_sales_sensitive %} · €{{ total_spent|floatformat:2 }}{% endif %}</span>
   </div>
-
-  {% for month in month_blocks %}
-    <details class="month-card">
-      <summary class="month-head">
-        <div>
-          <div class="month-title">{{ month.month_label }}</div>
-          <div class="month-meta">{{ month.totals.orders }} orders, {{ month.totals.qty }} items</div>
-        </div>
-        <div class="month-head-end">
-          {% if show_sales_sensitive %}
-            <div>
-              <div class="month-amount">€{{ month.totals.amount|floatformat:2 }}</div>
-              {% if show_profit %}
-                <div class="profit-note {% if month.totals.profit < 0 %}negative{% endif %}">Profit €{{ month.totals.profit|floatformat:2 }}</div>
-              {% endif %}
-            </div>
-          {% endif %}
-          <span class="month-arrow" aria-hidden="true"></span>
-        </div>
-      </summary>
-      {% if show_sales_sensitive and month.payment_breakdown %}
-        <div class="month-payments">
-          {% for pay in month.payment_breakdown %}
-            <span class="pay-pill">{{ pay.label }} EUR {{ pay.amount|floatformat:2 }}</span>
-          {% endfor %}
-        </div>
-      {% endif %}
-      <div class="month-body">
-        {% for day in month.day_blocks %}
-          <details class="day-entry">
-            <summary class="day-summary">
-              <div class="day-summary-main">
-                <div class="day-date">{{ day.date }}</div>
-                <div class="day-meta">{{ day.order_count }} orders, {{ day.totals.qty }} items</div>
-              </div>
-              <div class="day-summary-end">
-                {% if show_sales_sensitive %}
-                  <div>
-                    <div class="day-total">€{{ day.totals.amount|floatformat:2 }}</div>
-                    {% if show_profit %}
-                      <div class="profit-note {% if day.totals.profit < 0 %}negative{% endif %}">Profit €{{ day.totals.profit|floatformat:2 }}</div>
-                    {% endif %}
-                  </div>
-                {% endif %}
-                <span class="day-arrow" aria-hidden="true"></span>
-              </div>
-            </summary>
-            <div class="day-body">
-              {% for order in day.orders %}
-                <details class="order-entry" id="{{ order.detail_id }}">
-                  <summary class="order-summary">
-                    <div class="order-summary-main">
-                      <span class="order-badge">Order #{{ order.id }}</span>
-                      <div class="order-time">{{ order.created_at|date:"H:i" }}</div>
-                      <div class="order-meta">{{ order.display_total_qty }} pcs</div>
-                    </div>
-                    <div class="order-summary-end">
-                      {% if show_sales_sensitive %}
-                        <div>
-                          <div class="order-total">€{{ order.display_total_amount|floatformat:2 }}</div>
-                          {% if show_profit %}
-                            <div class="profit-note {% if order.display_total_profit < 0 %}negative{% endif %}">Profit €{{ order.display_total_profit|floatformat:2 }}</div>
-                          {% endif %}
-                          <div class="order-payments">
-                            {% for pay in order.display_pay_break %}
-                              <span class="pay-pill">{{ pay.label }} €{{ pay.amount|floatformat:2 }}</span>
-                            {% endfor %}
-                          </div>
-                        </div>
-                      {% endif %}
-                      <span class="order-arrow" aria-hidden="true"></span>
-                    </div>
-                  </summary>
-                  <div class="order-body">
-                    <div class="order-tools">
-                      <span class="hint">
-                        {% if show_sales_sensitive %}
-                          Open below to review products, quantities, payment method, and subtotals.
-                        {% else %}
-                          Open below to review products and quantities.
-                        {% endif %}
-                      </span>
-                      <a href="{{ order.detail_url }}" class="btn btn-sm btn-outline-secondary">Print</a>
-                    </div>
-                    <div class="table-responsive">
-                      <table class="table table-sm align-middle mb-0">
-                        <thead>
-                          <tr>
-                            <th>Product</th>
-                            <th class="text-center">Qty</th>
-                            {% if show_sales_sensitive %}
-                              <th class="text-end">Unit Price</th>
-                              <th class="text-end">Subtotal</th>
-                            {% endif %}
-                            {% if show_profit %}
-                              <th class="text-end">Net Profit</th>
-                            {% endif %}
-                            {% if show_sales_sensitive %}
-                              <th>Payment</th>
-                            {% endif %}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {% for item in order.items_list %}
-                            <tr>
-                              <td data-label="Product">
-                                <div class="table-product">
-                                  {% if item.image_url %}
-                                    <button
-                                      type="button"
-                                      class="table-product-thumb-wrap"
-                                      data-product-preview-url="{{ item.image_url }}"
-                                      data-product-preview-title="{{ item.display_name }}"
-                                    >
-                                      <img src="{{ item.image_url }}" alt="{{ item.display_name }}" class="table-product-thumb">
-                                    </button>
-                                  {% else %}
-                                    <div class="table-product-thumb-empty">No image</div>
-                                  {% endif %}
-                                  <div class="item-name">
-                                    {% if item.product %}
-                                      <a href="{% url 'product_detail' item.product.id %}">{{ item.display_name }}</a>
-                                    {% else %}
-                                      {{ item.display_name }}
-                                    {% endif %}
-                                  </div>
-                                </div>
-                              </td>
-                              <td class="text-center num" data-label="Qty">{{ item.quantity }}</td>
-                              {% if show_sales_sensitive %}
-                                <td class="text-end num" data-label="Unit Price">€{{ item.unit_price|floatformat:2 }}</td>
-                                <td class="text-end num" data-label="Subtotal">€{{ item.total_price|floatformat:2 }}</td>
-                              {% endif %}
-                              {% if show_profit %}
-                                <td class="text-end num {% if item.line_profit < 0 %}text-danger{% endif %}" data-label="Net Profit">€{{ item.line_profit|floatformat:2 }}</td>
-                              {% endif %}
-                              {% if show_sales_sensitive %}
-                                <td data-label="Payment"><span class="pay-pill">{{ item.payment_label }}</span></td>
-                              {% endif %}
-                            </tr>
-                          {% endfor %}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </details>
-              {% endfor %}
-            </div>
-          </details>
-        {% endfor %}
-      </div>
-    </details>
-  {% empty %}
-    <div class="empty-card">{% if range_active %}No orders in this date range.{% else %}No orders for this customer yet.{% endif %}</div>
-  {% endfor %}
 
   {% if show_sensitive %}
     <div class="modal fade" id="deleteCustomerModal" tabindex="-1" aria-hidden="true">
@@ -1181,69 +235,5 @@
       </div>
     </div>
   {% endif %}
-
-  <div class="modal fade" id="customerProductPreviewModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title" id="customerProductPreviewTitle">Product image</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body p-3">
-          <img id="customerProductPreviewImg" src="" alt="" class="img-fluid w-100 rounded-4">
-        </div>
-      </div>
-    </div>
-  </div>
 </div>
-<script>
-  (function () {
-    const modalEl = document.getElementById('customerProductPreviewModal');
-    const modalImg = document.getElementById('customerProductPreviewImg');
-    const modalTitle = document.getElementById('customerProductPreviewTitle');
-
-    document.addEventListener('click', (event) => {
-      const trigger = event.target.closest('[data-product-preview-url]');
-      if (!trigger) return;
-      modalImg.src = trigger.dataset.productPreviewUrl;
-      modalImg.alt = trigger.dataset.productPreviewTitle || 'Product image';
-      modalTitle.textContent = trigger.dataset.productPreviewTitle || 'Product image';
-      bootstrap.Modal.getOrCreateInstance(modalEl).show();
-    });
-  }());
-</script>
-{% if show_sales_sensitive and spend_trend %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-  (function () {
-    if (!window.Chart) return;
-    const trendEl = document.getElementById('custSpendChart');
-    if (trendEl) {
-      const d = JSON.parse(document.getElementById('spendTrendData').textContent);
-      new Chart(trendEl, {
-        type: 'bar',
-        data: { labels: d.map(x => x.label), datasets: [{ data: d.map(x => x.amount), backgroundColor: '#3ba6f1', borderRadius: 6, maxBarThickness: 46 }] },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => '€' + Number(c.raw).toFixed(2) } } },
-          scales: { y: { beginAtZero: true, ticks: { callback: v => '€' + v } } }
-        }
-      });
-    }
-    const payEl = document.getElementById('custPayChart');
-    const payDataEl = document.getElementById('payMixData');
-    if (payEl && payDataEl) {
-      const d = JSON.parse(payDataEl.textContent);
-      new Chart(payEl, {
-        type: 'doughnut',
-        data: { labels: d.map(x => x.label), datasets: [{ data: d.map(x => x.amount), backgroundColor: window.CHART_PALETTE, borderWidth: 0 }] },
-        options: {
-          responsive: true, maintainAspectRatio: false, cutout: '60%',
-          plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => c.label + ': €' + Number(c.raw).toFixed(2) } } }
-        }
-      });
-    }
-  }());
-</script>
-{% endif %}
 {% endblock %}
