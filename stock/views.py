@@ -27,6 +27,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.utils.text import slugify
 from django.utils import timezone
 from django.utils.dateparse import parse_date
+from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_POST
 from django.urls import reverse
 from urllib.parse import urlencode
@@ -54,6 +55,7 @@ from .models import (
     PedidoDraft,
 )
 from .services import order_charges
+from .services import submissions
 from .permissions import (
     has_admin_access,
     has_manager_access,
@@ -609,6 +611,18 @@ def _build_pending_reviews():
     return reviews
 
 
+def csrf_failure(request, reason=""):
+    """A stale form (an old copy restored by a phone browser) was sent.
+
+    Says plainly that nothing was recorded and offers the page again, instead
+    of Django's bare "Forbidden". The retry is a GET of the same address, so it
+    can never resend the old form.
+    """
+    from django.utils.http import url_has_allowed_host_and_scheme
+    retry = request.path if url_has_allowed_host_and_scheme(request.path, allowed_hosts=None) else '/'
+    return render(request, 'stock/csrf_failure.html', {'retry_url': retry}, status=403)
+
+
 def _bought_again(product):
     """Receiving a product means it is being restocked again: a bell that was
     switched off comes back on, and the product returns to low stock when it
@@ -636,6 +650,7 @@ def _refreshes_low_stock(view):
 @login_required
 @manager_required
 @_refreshes_low_stock
+@never_cache        # a reopened phone browser loads it fresh, not an old copy
 def inbound_view(request):
 
     today = timezone.localdate()
@@ -663,27 +678,22 @@ def inbound_view(request):
 
     supplier = Supplier.objects.filter(id=supplier_id).first() if supplier_id else None
 
-    # 简易幂等保护：相同负载 8 秒内仅处理一次
-    idem_raw = '|'.join([
-        request.path,
-        items_json,
-        str(supplier_id or ''),
-        invoice_no,
-        invoice_date,
-    ])
-    idem_key = 'idem:' + hashlib.sha256(idem_raw.encode('utf-8', 'ignore')).hexdigest()
-    if not cache.add(idem_key, 1, timeout=8):
-        # 重复提交，直接返回提示，避免重复入库
-        try:
-            items_tmp = json.loads(items_json)
-            total_tmp = sum(Decimal(str(r.get('cost_price', 0))) * int(r.get('qty', 0)) for r in items_tmp)
-        except Exception:
-            total_tmp = Decimal('0.00')
-        context['success'] = f"Duplicate ignored. Total €{total_tmp:.2f}."
-        return render(request, 'stock/inbound.html', context)
+    # The same form posted again (refresh, a reopened browser resending, a
+    # double tap) is recognised by its one-time token and not recorded twice.
+    if submissions.already_claimed(request):
+        messages.info(request, 'That stock-in was already recorded - it was not added again.')
+        return redirect('inbound')
+    # A page cached before tokens existed: the old short guard still applies.
+    if not submissions.token_of(request):
+        idem_raw = '|'.join([request.path, items_json, str(supplier_id or ''), invoice_no, invoice_date])
+        idem_key = 'idem:' + hashlib.sha256(idem_raw.encode('utf-8', 'ignore')).hexdigest()
+        if not cache.add(idem_key, 1, timeout=8):
+            messages.info(request, 'That stock-in was already recorded - it was not added again.')
+            return redirect('inbound')
 
     try:
         with transaction.atomic():
+            submissions.claim(request)      # rolls back with the stock-in if it fails
             order_total = Decimal('0.00')
 
             if supplier:
@@ -760,12 +770,20 @@ def inbound_view(request):
                     f'Stock added (no supplier). Total €{order_total:.2f}.'
                 )
 
+    except submissions.AlreadySubmitted:
+        messages.info(request, 'That stock-in was already recorded - it was not added again.')
+        return redirect('inbound')
     except Product.DoesNotExist:
         context['error'] = 'One product not found by barcode.'
     except ValueError as e:
         context['error'] = str(e)
     except Exception as e:
         context['error'] = 'Unexpected error: ' + str(e)
+
+    if context.get('success') and not context.get('error'):
+        # Redirect, so a refresh shows the page again instead of resending it.
+        messages.success(request, context['success'])
+        return redirect('inbound')
 
     # 刷新待收货列表（可能刚新增了一张暂定单）
     context['pending_reviews'] = _build_pending_reviews()
@@ -940,6 +958,7 @@ def _sell_error(request, message):
 
 
 @login_required
+@never_cache        # a reopened phone browser loads it fresh, not an old copy
 def outbound_view(request):
     # A sale must land on one concrete store. Managers viewing the "All stores"
     # aggregate have no unambiguous target, so block selling until they pick a
@@ -966,25 +985,19 @@ def outbound_view(request):
     customer_id = request.POST.get('customer_id') or None
     customer = Customer.objects.filter(id=customer_id).first() if customer_id else None
 
-    # 简易幂等保护：相同负载 8 秒内仅处理一次
-    idem_raw = '|'.join([
-        request.path,
-        items_json,
-        payments_json,
-        request.POST.get('charges_json') or '',
-        str(customer_id or ''),
-    ])
-    idem_key = 'idem:' + hashlib.sha256(idem_raw.encode('utf-8', 'ignore')).hexdigest()
-    if not cache.add(idem_key, 1, timeout=8):
-        try:
-            items_tmp = json.loads(items_json)
-            total_tmp = sum(Decimal(str(r.get('price', 0))) * int(r.get('qty', 0)) for r in items_tmp)
-            qty_tmp = sum(int(r.get('qty', 0)) for r in items_tmp)
-        except Exception:
-            total_tmp = Decimal('0.00'); qty_tmp = 0
-        return render(request, 'stock/outbound.html', {
-            'success': f'Duplicate ignored. {qty_tmp} item(s), €{total_tmp:.2f}.'
-        })
+    # The same form posted again (refresh, a reopened browser resending, a
+    # double tap) is recognised by its one-time token and not recorded twice.
+    if submissions.already_claimed(request):
+        messages.info(request, 'That sale was already recorded - it was not added again.')
+        return redirect('outbound')
+    # A page cached before tokens existed: the old short guard still applies.
+    if not submissions.token_of(request):
+        idem_raw = '|'.join([request.path, items_json, payments_json,
+                             request.POST.get('charges_json') or '', str(customer_id or '')])
+        idem_key = 'idem:' + hashlib.sha256(idem_raw.encode('utf-8', 'ignore')).hexdigest()
+        if not cache.add(idem_key, 1, timeout=8):
+            messages.info(request, 'That sale was already recorded - it was not added again.')
+            return redirect('outbound')
 
     try:
         items = json.loads(items_json)
@@ -1064,6 +1077,7 @@ def outbound_view(request):
     active_store = store_for_new_sale(request)
     try:
         with transaction.atomic():
+            submissions.claim(request)      # rolls back with the sale if it fails
             order = SaleOrder.objects.create(customer=customer, store=active_store)
 
             for row in parsed_items:
@@ -1104,6 +1118,9 @@ def outbound_view(request):
                 if not sold:
                     raise ValueError(f'Pedido draft #{draft.id} was already sold.')
 
+    except submissions.AlreadySubmitted:
+        messages.info(request, 'That sale was already recorded - it was not added again.')
+        return redirect('outbound')
     except ValidationError as e:
         return _sell_error(request, '; '.join(e.messages))
     except ValueError as e:
@@ -1118,9 +1135,9 @@ def outbound_view(request):
     )
     charge_note = f' + €{charge_sum:.2f} shipping/fees' if charge_sum else ''
     draft_note = f' Pedido draft #{draft.id} marked sold.' if draft is not None else ''
-    return render(request, 'stock/outbound.html', {
-        'success': f'Sale completed. {order_qty} item(s), €{order_revenue:.2f}{charge_note} ({pay_summary}).{draft_note}'
-    })
+    # Redirect, so a refresh shows the page again instead of resending the sale.
+    messages.success(request, f'Sale completed. {order_qty} item(s), €{order_revenue:.2f}{charge_note} ({pay_summary}).{draft_note}')
+    return redirect('outbound')
 
 
 # -----------------------------

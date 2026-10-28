@@ -505,7 +505,7 @@
 ## 3. 非功能性需求（NFR）
 
 - **NFR-1 数据一致性**：所有涉及库存批次扣减/归还、订单与行项目联动修改的操作必须在 `transaction.atomic()` 中完成，避免部分写入导致库存与订单不一致。
-- **NFR-2 幂等性**：进货（2.3）、出货（2.4）等高频表单提交接口必须具备幂等保护（SHA256 + 短 TTL 缓存），防止网络重试/双击导致的重复记录。
+- **NFR-2 幂等性**：进货（2.3）、出货（2.4）等高频表单提交接口必须具备幂等保护，防止网络重试/双击导致的重复记录。**2026-10-28 起**:表单每次打开带一个一次性令牌(`{% submit_token %}`),视图在创建记录的同一事务里写入 `FormSubmission`(唯一键);同一表单再次提交(刷新、手机浏览器重开后重发、连点)不会再记一次,失败的提交不占用令牌、可重试。成功后**重定向**(PRG),刷新不再提示「重新提交表单」;Sell / Inbound 页面 `never_cache`,手机浏览器重开时取新页面;过期表单(CSRF 失败)显示「This page had expired… nothing was recorded」而不是裸的 Forbidden。旧的 8 秒缓存守卫只留给没有令牌的旧页面——它在 PythonAnywhere 多进程下本就不共享,8 秒后的重发也拦不住,这正是线上出现两条记录的原因。
 - **NFR-3 权限隔离**：成本价、FIFO 进价、利润等"销售敏感数据"在所有页面（产品列表/详情、客户详情、销售记录、订单详情、目录页）必须按 `has_manager_access` / `has_sales_sensitive_access` / `is_superuser` 规则统一控制可见性，不应在前端 HTML 中泄露给无权限角色（即使隐藏显示，也不应将原始数值输出到页面 DOM/JSON 中）。
 - **NFR-4 审计可追溯**：历史订单修正必须保留修改前后快照（`SaleOrderChangeLog`），记录操作人与时间。
 - **NFR-5 库存约束**：数据库层面通过 `CheckConstraint` 保证 `Purchase.remaining >= 0` 且 `Purchase.quantity >= Purchase.remaining`，任何业务逻辑不得绕过该约束产生非法数据。

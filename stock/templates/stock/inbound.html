@@ -1,4 +1,5 @@
 ﻿{% extends 'stock/base.html' %}
+{% load submissions %}
 {% load static %}
 {% block title %}Inbound{% endblock %}
 
@@ -231,6 +232,8 @@
 
 <form id="inbound-form" method="post" class="inbound-shell">
   {% csrf_token %}
+  {# recorded once, however often the form is sent (refresh, reopened browser) #}
+  {% submit_token %}
   <input type="hidden" name="items_json" id="items_json">
   <input type="hidden" name="idemp_key" id="idemp_key">
 

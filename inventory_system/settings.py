@@ -71,6 +71,9 @@ if _lan_ip and _lan_ip not in ALLOWED_HOSTS:
 #   CSRF_TRUSTED_ORIGINS=https://pos.example.com
 ALLOWED_HOSTS += [h.strip() for h in os.environ.get('ALLOWED_HOSTS', '').split(',') if h.strip()]
 CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',') if o.strip()]
+# A stale form (an old page a phone browser restored) gets a plain "this page
+# had expired, nothing was recorded" page instead of a bare "Forbidden".
+CSRF_FAILURE_VIEW = 'stock.views.csrf_failure'
 
 
 # ---------------------------------------------------------------------------

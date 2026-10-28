@@ -146,7 +146,7 @@ class WorkflowRegressionTests(TestCase):
                 },
             )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 302)   # redirect after saving (2026-10-28)
         sale = Sale.objects.get()
         summary = DailySalesSummary.objects.get(date=sale.date.date())
         self.assertEqual(summary.total_sales, Decimal("30.00"))
@@ -169,7 +169,7 @@ class WorkflowRegressionTests(TestCase):
                 },
             )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 302)   # redirect after saving (2026-10-28)
         order = SaleOrder.objects.latest("id")
         self.assertEqual(
             {p.method: p.amount for p in order.payments.all()},
@@ -198,7 +198,7 @@ class WorkflowRegressionTests(TestCase):
                 },
             )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 302)   # redirect after saving (2026-10-28)
         order = SaleOrder.objects.latest("id")
         methods = {s.product_id: s.payment_method for s in order.items.all()}
         self.assertEqual(methods[self.product.id], "cash")
@@ -224,7 +224,7 @@ class WorkflowRegressionTests(TestCase):
             },
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 302)   # redirect after saving (2026-10-28)
         order = InboundOrder.objects.latest("id")
         self.assertEqual(order.status, "pending_receipt")
         self.assertEqual(order.pending_items.count(), 1)
@@ -2315,7 +2315,7 @@ class MultiStoreTests(TestCase):
                 "items_json": json.dumps([{"barcode": self.product.barcode, "qty": 1, "price": "20.00", "payment": "cash"}]),
             })
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 302)   # redirect after saving (2026-10-28)
         order = SaleOrder.objects.latest("id")
         self.assertEqual(order.store_id, self.store_b.id)
         self.assertTrue(all(sale.store_id == self.store_b.id for sale in order.items.all()))
@@ -10264,7 +10264,8 @@ class SellFromPedidoTests(TestCase):
 
     def test_selling_records_charges_and_closes_the_draft(self):
         response = self._sell()
-        self.assertContains(response, "Sale completed")
+        # Redirected after saving (2026-10-28); the result is a message on the page.
+        self.assertContains(self.client.get(response.url), "Sale completed")
         order = SaleOrder.objects.get()
         self.assertEqual(order.total_amount, Decimal("45.00"))          # goods only
         self.assertEqual(sorted((c.label, c.amount, c.payment_method) for c in order.charges.all()),
@@ -10953,3 +10954,85 @@ class QuickImportTests(TestCase):
             self.assertIn('id="quickImportModal"', html, name)
             self.assertIn(f'data-mode="{mode}"', html, name)
             self.assertIn("quickimport:apply", html, name)
+
+class RecordedOnceTests(TestCase):
+    """A sale or stock-in is recorded once, however often its form is sent
+    (refresh, a reopened phone browser resending, a double tap) - 2026-10-28."""
+
+    TOKEN = "0123456789abcdef0123456789abcdef"
+
+    def setUp(self):
+        cache.clear()
+        from .stores import ACTIVE_STORE_SESSION_KEY
+        self.admin = get_user_model().objects.create_superuser("ro_admin", password="pw123456")
+        self.client.force_login(self.admin)
+        self.store = Store.objects.create(name="RO Store", code="ROS")
+        session = self.client.session
+        session[ACTIVE_STORE_SESSION_KEY] = self.store.id
+        session.save()
+        cat = Category.objects.create(name="RO Cat")
+        self.product = Product.objects.create(name="Once", brand="RO", barcode="9880000000001",
+                                              category=cat, default_price=Decimal("10"))
+        Purchase.objects.create(product=self.product, quantity=10, remaining=10, cost_price=Decimal("4"))
+
+    def _sell(self, token=None):
+        data = {"items_json": json.dumps([{"barcode": self.product.barcode, "qty": 1, "price": "10.00", "payment": "cash"}]),
+                "payments_json": json.dumps([{"method": "cash", "amount": "10.00"}])}
+        if token:
+            data["submit_token"] = token
+        return self.client.post(reverse("outbound"), data)
+
+    def test_the_same_sale_sent_twice_is_recorded_once(self):
+        first = self._sell(self.TOKEN)
+        self.assertRedirects(first, reverse("outbound"), fetch_redirect_response=False)
+        cache.clear()                     # long after the old 8-second guard
+        again = self._sell(self.TOKEN)
+        self.assertRedirects(again, reverse("outbound"), fetch_redirect_response=False)
+        self.assertEqual(SaleOrder.objects.count(), 1)
+        self.assertEqual(Purchase.objects.get(product=self.product).remaining, 9)
+        page = self.client.get(reverse("outbound"))
+        self.assertContains(page, "already recorded")
+
+    def test_a_new_form_is_a_new_sale(self):
+        self._sell(self.TOKEN)
+        self._sell("fedcba9876543210fedcba9876543210")
+        self.assertEqual(SaleOrder.objects.count(), 2)
+
+    def test_a_failed_sale_can_be_sent_again(self):
+        """The token is claimed inside the sale's transaction, so a sale that
+        fails does not use it up."""
+        Purchase.objects.filter(product=self.product).update(remaining=0)
+        self._sell(self.TOKEN)
+        self.assertEqual(SaleOrder.objects.count(), 0)
+        Purchase.objects.filter(product=self.product).update(remaining=5)
+        cache.clear()
+        self._sell(self.TOKEN)
+        self.assertEqual(SaleOrder.objects.count(), 1)
+
+    def test_the_same_stock_in_sent_twice_is_recorded_once(self):
+        data = {"items_json": json.dumps([{"barcode": self.product.barcode, "qty": 3, "cost_price": "4.00"}]),
+                "submit_token": self.TOKEN}
+        first = self.client.post(reverse("inbound"), data)
+        self.assertRedirects(first, reverse("inbound"), fetch_redirect_response=False)
+        cache.clear()
+        self.client.post(reverse("inbound"), data)
+        self.assertEqual(Purchase.objects.filter(product=self.product, quantity=3).count(), 1)
+
+    def test_the_forms_carry_a_fresh_token_and_are_never_cached(self):
+        import re as _re
+        for name in ("outbound", "inbound"):
+            r1 = self.client.get(reverse(name))
+            r2 = self.client.get(reverse(name))
+            t1 = _re.search(r'name="submit_token" value="([0-9a-f]{32})"', r1.content.decode()).group(1)
+            t2 = _re.search(r'name="submit_token" value="([0-9a-f]{32})"', r2.content.decode()).group(1)
+            self.assertNotEqual(t1, t2, name)
+            self.assertIn("no-store", r1["Cache-Control"], name)
+
+    def test_a_stale_form_gets_a_plain_page_not_forbidden(self):
+        browser = Client(enforce_csrf_checks=True)
+        browser.force_login(self.admin)
+        response = browser.post(reverse("outbound"), {"items_json": "[]"})
+        self.assertEqual(response.status_code, 403)
+        self.assertContains(response, "This page had expired", status_code=403)
+        self.assertContains(response, "nothing was recorded", status_code=403)
+        self.assertEqual(SaleOrder.objects.count(), 0)

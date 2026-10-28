@@ -26,6 +26,7 @@ from .sales import (SaleOrder, Sale, SaleOrderChangeLog, SaleOrderPayment,
 from .finance import ARInvoice, ARItem, ARPayment
 from .reporting import DailySalesSummary, SalesTarget
 from .hr import AttendanceRecord
+from .submissions import FormSubmission
 
 __all__ = [
     # core
@@ -51,6 +52,8 @@ __all__ = [
     # sales
     'SaleOrder', 'Sale', 'SaleOrderChangeLog', 'SaleOrderPayment',
     'SaleOrderCharge', 'PedidoDraft',
+    # forms recorded once
+    'FormSubmission',
     # finance
     'ARInvoice', 'ARItem', 'ARPayment',
     # reporting
