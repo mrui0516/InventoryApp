@@ -2941,23 +2941,105 @@ def sale_order_detail_view(request, order_id):
 @login_required
 @admin_required
 def audit_view(request):
-    """Settings -> Audit: order corrections, hand-set stock counts, deliveries."""
+    """Settings -> Audit opens on its first page."""
+    return redirect('audit_orders')
+
+
+def _audit_page(request, page, template, rows=None, **extra):
+    """Render one Audit page: the tabs, the period and search, 50 rows a page."""
     from .services import audit
-    kind = request.GET.get('kind', '')
-    if kind not in dict(audit.KINDS):
-        kind = ''
+    context = {
+        'page': page,
+        'pages': audit.PAGES,
+        'periods': audit.PERIODS,
+        'period': extra.pop('period', None),
+        'query': extra.pop('query', ''),
+        'open_errors': audit.open_error_count(),
+    }
+    if rows is not None:
+        context['page_obj'] = Paginator(rows, 50).get_page(request.GET.get('page'))
+    context.update(extra)
+    return render(request, template, context)
+
+
+def _audit_filters(request):
+    from .services import audit
     period = request.GET.get('period', '30')
     if period not in dict(audit.PERIODS):
         period = '30'
-    query = (request.GET.get('q') or '').strip()
-    rows, counts = audit.feed(kind, period, query)
-    page_obj = Paginator(rows, 50).get_page(request.GET.get('page'))
-    return render(request, 'stock/audit.html', {
-        'page_obj': page_obj,
-        'kind': kind, 'period': period, 'query': query,
-        'tabs': [('', 'All', sum(counts.values()))] + [(k, label, counts[k]) for k, label in audit.KINDS],
-        'periods': audit.PERIODS,
-    })
+    return period, audit.since_for(period), (request.GET.get('q') or '').strip()
+
+
+@login_required
+@admin_required
+def audit_orders_view(request):
+    from .services import audit
+    period, since, query = _audit_filters(request)
+    return _audit_page(request, 'audit_orders', 'stock/audit_feed.html', audit.order_changes(since, query),
+                       period=period, query=query, search_hint='Order #, reason, user')
+
+
+@login_required
+@admin_required
+def audit_admin_view(request):
+    from .services import audit
+    period, since, query = _audit_filters(request)
+    return _audit_page(request, 'audit_admin', 'stock/audit_feed.html', audit.admin_edits(since, query),
+                       period=period, query=query, search_hint='Record, type, user')
+
+
+@login_required
+@admin_required
+def audit_stock_view(request):
+    from .services import audit
+    period, since, query = _audit_filters(request)
+    return _audit_page(request, 'audit_stock', 'stock/audit_stock.html', audit.stock_counts(since, query),
+                       period=period, query=query, search_hint='Product, EAN, user')
+
+
+@login_required
+@admin_required
+def audit_deliveries_view(request):
+    from .services import audit
+    period, since, query = _audit_filters(request)
+    return _audit_page(request, 'audit_deliveries', 'stock/audit_deliveries.html',
+                       audit.deliveries(since, query),
+                       period=period, query=query, search_hint='Inbound #, supplier, invoice')
+
+
+@login_required
+@admin_required
+def audit_accounts_view(request):
+    from .services import audit
+    period, since, _ = _audit_filters(request)
+    return _audit_page(request, 'audit_accounts', 'stock/audit_accounts.html',
+                       period=period, accounts=audit.accounts(), failed=audit.failed_logins(since))
+
+
+@login_required
+@admin_required
+def audit_errors_view(request):
+    from .services import audit
+    period, since, query = _audit_filters(request)
+    status = request.GET.get('status', 'open')
+    if status not in ('open', 'resolved', 'all'):
+        status = 'open'
+    return _audit_page(request, 'audit_errors', 'stock/audit_errors.html', audit.errors(since, query, status),
+                       period=period, query=query, status=status, search_hint='Message, page, source')
+
+
+@login_required
+@admin_required
+@require_POST
+def audit_error_resolve(request, error_id):
+    """Mark an error dealt with; it comes back if it happens again."""
+    from django.utils.http import url_has_allowed_host_and_scheme
+    from .models import ErrorLog
+    ErrorLog.objects.filter(pk=error_id).update(resolved_at=timezone.now())
+    back = request.POST.get('next') or ''
+    if not url_has_allowed_host_and_scheme(back, allowed_hosts={request.get_host()}):
+        back = reverse('audit_errors')
+    return redirect(back)
 
 
 @login_required

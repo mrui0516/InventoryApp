@@ -1,0 +1,18 @@
+{% extends 'stock/audit_base.html' %}
+{% block audit_body %}
+<div class="aud-list">
+  {% for r in page_obj %}
+    {% ifchanged r.when|date:"Y-m-d" %}<div class="aud-day">{{ r.when|date:"D j M Y" }}</div>{% endifchanged %}
+    <div class="aud-row">
+      <div class="aud-time">{{ r.when|date:"H:i" }}</div>
+      <div class="aud-main">
+        <a class="aud-name" href="{{ r.link }}">{{ r.product }}</a>
+        <div class="aud-sub">{{ r.old }} &rarr; {{ r.new }} &middot; {{ r.scope }}{% if r.who %} &middot; {{ r.who }}{% endif %}{% if r.barcode %} &middot; {{ r.barcode }}{% endif %}</div>
+      </div>
+      <div class="aud-fig {% if r.diff < 0 %}down{% elif r.diff > 0 %}up{% endif %}">{% if r.diff > 0 %}+{% endif %}{{ r.diff }}</div>
+    </div>
+  {% empty %}
+    <div class="aud-empty">No stock counts were changed by hand in this period.</div>
+  {% endfor %}
+</div>
+{% endblock %}

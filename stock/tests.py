@@ -11162,8 +11162,9 @@ class InboundChecklistTests(TestCase):
 
 
 class AuditPageTests(TestCase):
-    """Settings -> Audit: order corrections with their before/after, stock
-    counts set by hand and deliveries received, newest first, admins only."""
+    """Settings -> Audit, one page per kind: order corrections with their
+    before/after, stock counts set by hand, deliveries, Django admin's own
+    history, accounts and errors. Admins only."""
 
     def setUp(self):
         from stock.models import StockAdjustmentLog
@@ -11190,36 +11191,123 @@ class AuditPageTests(TestCase):
         InboundOrder.objects.filter(pk=old.pk).update(received_at=timezone.now() - timedelta(days=200))
         self.client.force_login(self.admin)
 
+    def test_audit_opens_on_order_changes(self):
+        self.assertRedirects(self.client.get(reverse("audit")), reverse("audit_orders"))
+
     def test_an_edit_shows_who_why_and_what_changed_line_by_line(self):
-        body = self.client.get(reverse("audit")).content.decode()
+        body = self.client.get(reverse("audit_orders")).content.decode()
         self.assertIn("Order #4321", body)
         self.assertIn("customer came back for one more", body)
         self.assertIn("Aud Yara: qty 2 \u2192 3, price 25.00 \u2192 20.00", body)
         self.assertIn("+ Aud Afeef \u00d71 @ 0.00", body)
         self.assertIn("\u20ac50.00 \u2192 \u20ac60.00", body)
         self.assertIn("Deleted", body)
-
-    def test_stock_counts_and_deliveries_are_listed(self):
-        body = self.client.get(reverse("audit")).content.decode()
-        self.assertIn("7 \u2192 5 (-2)", body)
-        self.assertIn("Inbound #%d" % self.delivery.id, body)
-        self.assertNotIn("AUD-OLD", body)          # outside the 30 days
-        self.assertIn("AUD-OLD", self.client.get(reverse("audit"), {"period": "all"}).content.decode())
-
-    def test_a_tab_shows_one_kind_and_every_tab_keeps_its_count(self):
-        response = self.client.get(reverse("audit"), {"kind": "stock"})
-        body = response.content.decode()
-        self.assertIn("7 \u2192 5", body)
-        self.assertNotIn("Order #4321", body)
-        self.assertEqual(dict((k, n) for k, _, n in response.context["tabs"]),
-                         {"": 4, "orders": 2, "stock": 1, "deliveries": 1})
+        self.assertNotIn("Aud Supplier", body)       # deliveries have their own page
 
     def test_search_finds_an_order_by_number(self):
-        body = self.client.get(reverse("audit"), {"q": "#4322"}).content.decode()
+        body = self.client.get(reverse("audit_orders"), {"q": "#4322"}).content.decode()
         self.assertIn("Order #4322", body)
         self.assertNotIn("Order #4321", body)
 
+    def test_stock_counts_page(self):
+        response = self.client.get(reverse("audit_stock"))
+        self.assertContains(response, "Aud Yara")
+        self.assertContains(response, "-2")
+        self.assertContains(response, "Whole product")
+
+    def test_deliveries_page_and_its_period(self):
+        body = self.client.get(reverse("audit_deliveries")).content.decode()
+        self.assertIn("Inbound #%d" % self.delivery.id, body)
+        self.assertNotIn("AUD-OLD", body)          # outside the 30 days
+        self.assertIn("AUD-OLD", self.client.get(reverse("audit_deliveries"), {"period": "all"}).content.decode())
+
+    def test_admin_edits_show_django_admin_history(self):
+        from django.contrib.admin.models import CHANGE, LogEntry
+        from django.contrib.contenttypes.models import ContentType
+        LogEntry.objects.create(user=self.admin, content_type=ContentType.objects.get_for_model(Product),
+                                object_id=str(self.yara.id), object_repr="Aud Yara", action_flag=CHANGE,
+                                change_message='[{"changed": {"fields": ["Default price"]}}]')
+        response = self.client.get(reverse("audit_admin"))
+        self.assertContains(response, "Aud Yara")
+        self.assertContains(response, "Changed Default price.")
+        self.assertContains(response, "/admin/stock/product/%d/change/" % self.yara.id)
+
+    def test_accounts_list_roles_last_login_and_failed_logins(self):
+        get_user_model().objects.create_user("aud_emp", password="pw123456")
+        self.client.logout()
+        self.assertFalse(self.client.login(username="aud_emp", password="wrong"))
+        self.assertFalse(self.client.login(username="aud_emp", password="wrong again"))
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("audit_accounts"))
+        self.assertContains(response, "aud_emp")
+        self.assertContains(response, "Employee")
+        self.assertContains(response, "Never signed in")
+        failed = list(response.context["failed"])
+        self.assertEqual([(f.title, f.count) for f in failed], [("Failed login: aud_emp", 2)])
+        # a wrong password is not an app error
+        self.assertNotContains(self.client.get(reverse("audit_errors")), "aud_emp")
+
     def test_only_admins_see_it(self):
-        employee = get_user_model().objects.create_user("aud_emp", password="pw123456")
+        employee = get_user_model().objects.create_user("aud_emp2", password="pw123456")
         self.client.force_login(employee)
-        self.assertEqual(self.client.get(reverse("audit")).status_code, 302)
+        for name in ("audit_orders", "audit_stock", "audit_deliveries", "audit_admin", "audit_accounts", "audit_errors"):
+            self.assertEqual(self.client.get(reverse(name)).status_code, 302, name)
+
+
+class ErrorLogTests(TestCase):
+    """Crashes and warnings land in ErrorLog: one row per problem with a
+    count, shown on Settings -> Audit -> Errors until marked resolved."""
+
+    def setUp(self):
+        self.admin = get_user_model().objects.create_superuser("err_admin", password="pw123456")
+        self.client.force_login(self.admin)
+
+    def _crash(self):
+        import logging
+        try:
+            int("not a number")
+        except ValueError:
+            logging.getLogger("django.request").error("Internal Server Error: %s", "/outbound/", exc_info=True)
+
+    def test_the_same_crash_is_one_row_with_a_count(self):
+        from stock.models import ErrorLog
+        self._crash()
+        self._crash()
+        row = ErrorLog.objects.get()
+        self.assertEqual(row.count, 2)
+        self.assertEqual(row.level, "ERROR")
+        self.assertIn("ValueError: invalid literal", row.title)
+        self.assertIn("Traceback", row.detail)
+        response = self.client.get(reverse("audit_errors"))
+        self.assertContains(response, "ValueError")
+        self.assertContains(response, "&times;2")
+
+    def test_resolved_hides_it_until_it_happens_again(self):
+        from stock.models import ErrorLog
+        self._crash()
+        row = ErrorLog.objects.get()
+        self.assertRedirects(self.client.post(reverse("audit_error_resolve", args=[row.id])),
+                             reverse("audit_errors"), fetch_redirect_response=False)
+        self.assertNotContains(self.client.get(reverse("audit_errors")), "ValueError")
+        self.assertContains(self.client.get(reverse("audit_errors"), {"status": "resolved"}), "ValueError")
+        self._crash()
+        self.assertContains(self.client.get(reverse("audit_errors")), "ValueError")
+
+    def test_app_warnings_are_kept_too(self):
+        import logging
+        from stock.models import ErrorLog
+        logging.getLogger("stock.services.cloudinary_sync").warning("Upload failed for %s", "x.jpg")
+        self.assertEqual(ErrorLog.objects.get().level, "WARNING")
+
+    def test_a_broken_transaction_does_not_break_logging(self):
+        import logging
+        from django.db import IntegrityError, transaction
+        with transaction.atomic():
+            from stock.models import FormSubmission
+            FormSubmission.objects.create(token="d" * 32, path="/")
+            try:
+                with transaction.atomic():
+                    FormSubmission.objects.create(token="d" * 32, path="/")
+            except IntegrityError:
+                pass
+            logging.getLogger("stock.signals").error("after a failed insert")   # must not raise

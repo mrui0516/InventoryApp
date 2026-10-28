@@ -99,7 +99,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
-- 2026-10-28: **Settings 加审计页(Audit)。** 订单修正(谁、原因、逐行前后)、手动改库存、收货入库合并为一个按天分组的记录流,可按类别、时间段、关键词筛选。原 "Order audit" 入口实为修正订单,改名 "Correct orders"。新增 5 个测试;侧栏测试补上 Fees / Audit / Deliveries。
+- 2026-10-28: **Settings 加审计(Audit),分 6 个页面:Orders · Stock · Deliveries · Admin edits · Accounts · Errors。** 订单修正逐行前后、手动改库存、收货入库、Django 后台操作历史(LogEntry)、账号与最后登录 / 失败登录,以及新的错误日志:此前项目没有任何 LOGGING 配置,线上 500 崩溃和 Cloudinary / Shopify 警告无处可查;现在同时写 stderr 和数据库(ErrorLog,迁移 0065),同类合并计次,可标记已解决。原 "Order audit" 入口实为修正订单,改名 "Correct orders"。新增 12 个测试;侧栏测试补上 Fees / Audit / Deliveries。
 - 2026-10-28: **待收货订单加对货单。** 员工手机上核对到货用:只有产品图、名称、EAN、数量,不含供应商/发票/价格。经理从 Inbound 卡片的 Check list 进入,员工从侧栏 Deliveries 进入。新增 4 个测试。
 - 2026-10-28: **刷卡 1% 手续费从利润中扣除。** 老板决定:只从今天起、费率在 Settings → Fees 可改(默认 1%)、MB WAY 无手续费。订单成交时记下自己的手续费(迁移 0064),利润服务统一扣除,所有利润数字一致。新增 6 个测试。
 

@@ -1,0 +1,35 @@
+{% extends 'stock/audit_base.html' %}
+{% block audit_body %}
+<div class="aud-list">
+  {% for a in accounts %}
+    <div class="aud-row two">
+      <div class="aud-main">
+        <div class="aud-line1">
+          <span class="aud-name">{{ a.name }}</span>
+          <span class="aud-tag {% if a.role == 'Admin' %}warn{% elif a.role == 'Manager' %}info{% else %}muted{% endif %}">{{ a.role }}</span>
+          {% if not a.active %}<span class="aud-tag muted">Disabled</span>{% endif %}
+        </div>
+        <div class="aud-sub">{{ a.username }}{% if a.store %} &middot; {{ a.store }}{% endif %} &middot; since {{ a.joined|date:"Y-m-d" }}</div>
+      </div>
+      <div class="aud-side">
+        {% if a.last_login %}{{ a.last_login|date:"Y-m-d H:i" }}<div class="aud-sub">{{ a.last_login|timesince }} ago</div>{% else %}Never signed in{% endif %}
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+<h2 class="aud-section">Failed logins</h2>
+<div class="aud-list">
+  {% for f in failed %}
+    <div class="aud-row two">
+      <div class="aud-main">
+        <span class="aud-name">{{ f.title|cut:"Failed login: " }}</span>
+        <div class="aud-sub">first {{ f.first_seen|date:"Y-m-d H:i" }} &middot; last {{ f.last_seen|date:"Y-m-d H:i" }}</div>
+      </div>
+      <div class="aud-fig {% if f.count >= 5 %}down{% endif %}">&times;{{ f.count }}</div>
+    </div>
+  {% empty %}
+    <div class="aud-empty">No failed logins in this period.</div>
+  {% endfor %}
+</div>
+{% endblock %}

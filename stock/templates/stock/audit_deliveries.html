@@ -1,0 +1,21 @@
+{% extends 'stock/audit_base.html' %}
+{% block audit_body %}
+<div class="aud-list">
+  {% for r in page_obj %}
+    {% ifchanged r.when|date:"Y-m-d" %}<div class="aud-day">{{ r.when|date:"D j M Y" }}</div>{% endifchanged %}
+    <div class="aud-row">
+      <div class="aud-time">{{ r.when|date:"H:i" }}</div>
+      <div class="aud-main">
+        <div class="aud-line1">
+          <span class="aud-name">Inbound #{{ r.id }}</span>
+          {% if r.link %}<a class="aud-detail" href="{{ r.link }}">{{ r.supplier }}</a>{% else %}<span class="aud-detail">{{ r.supplier }}</span>{% endif %}
+        </div>
+        <div class="aud-sub">{{ r.units }} unit{{ r.units|pluralize }}{% if r.invoice %} &middot; {{ r.invoice }}{% endif %}{% if r.took == 0 %} &middot; same day{% elif r.took %} &middot; took {{ r.took }} day{{ r.took|pluralize }}{% endif %}</div>
+      </div>
+      <div class="aud-fig">&euro;{{ r.amount }}</div>
+    </div>
+  {% empty %}
+    <div class="aud-empty">No deliveries received in this period.</div>
+  {% endfor %}
+</div>
+{% endblock %}

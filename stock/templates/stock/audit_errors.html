@@ -1,0 +1,52 @@
+{% extends 'stock/audit_base.html' %}
+{% block extra_filters %}
+<nav class="aud-seg" aria-label="Status">
+  <a class="{% if status == 'open' %}on{% endif %}" href="?status=open&amp;period={{ period }}{% if query %}&amp;q={{ query|urlencode }}{% endif %}">Open</a>
+  <a class="{% if status == 'resolved' %}on{% endif %}" href="?status=resolved&amp;period={{ period }}{% if query %}&amp;q={{ query|urlencode }}{% endif %}">Resolved</a>
+  <a class="{% if status == 'all' %}on{% endif %}" href="?status=all&amp;period={{ period }}{% if query %}&amp;q={{ query|urlencode }}{% endif %}">All</a>
+</nav>
+{% endblock %}
+{% block audit_body %}
+<style>
+  .err-trace{ margin:.4rem 0 0; padding:.6rem .7rem; max-height:22rem; overflow:auto; font-size:.78rem; line-height:1.4;
+    background:#1f1d1b; color:#ece7e1; border-radius:var(--app-radius-xs); white-space:pre; }
+  .err-actions{ display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; margin-top:.35rem; }
+  .err-actions details[open]{ flex-basis:100%; order:2; }
+  /* a small pill, not a big button: it sits on every row */
+  .err-resolve{ font-size:.8rem; font-weight:700; padding:.12rem .6rem; border:1px solid var(--app-border-strong, var(--app-border));
+    border-radius:999px; background:transparent; color:var(--app-muted); }
+  .err-resolve:hover{ color:var(--app-text); border-color:var(--app-text); }
+</style>
+<div class="aud-list">
+  {% for e in page_obj %}
+    <div class="aud-row two">
+      <div class="aud-main">
+        <div class="aud-line1">
+          <span class="aud-tag {% if e.level == 'ERROR' %}danger{% else %}warn{% endif %}">{{ e.get_level_display }}</span>
+          {% if e.resolved_at %}<span class="aud-tag ok">Resolved</span>{% endif %}
+          <span class="aud-name">{{ e.title }}</span>
+        </div>
+        <div class="aud-sub">{{ e.source }}{% if e.path %} &middot; {{ e.path }}{% endif %}{% if e.user %} &middot; {{ e.user.username }}{% endif %} &middot; first {{ e.first_seen|date:"Y-m-d H:i" }}</div>
+        <div class="err-actions">
+          {% if e.detail and e.detail != e.title %}
+          <details class="aud-more"><summary>Details</summary><pre class="err-trace">{{ e.detail }}</pre></details>
+          {% endif %}
+          {% if not e.resolved_at %}
+          <form method="post" action="{% url 'audit_error_resolve' e.id %}">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <button type="submit" class="err-resolve">Mark resolved</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+      <div class="aud-side">
+        <div class="aud-fig">&times;{{ e.count }}</div>
+        {{ e.last_seen|date:"Y-m-d H:i" }}
+      </div>
+    </div>
+  {% empty %}
+    <div class="aud-empty">{% if status == 'open' %}No open errors in this period.{% else %}Nothing in this period.{% endif %}</div>
+  {% endfor %}
+</div>
+{% endblock %}

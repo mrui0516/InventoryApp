@@ -1,0 +1,109 @@
+{% extends 'stock/base.html' %}
+{% block title %}Audit{% endblock %}
+{% block content %}
+<style>
+  .aud-head{ display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; margin-bottom:.4rem; }
+  .aud-title{ font-size:1.35rem; font-weight:800; margin:0; color:var(--app-text); }
+  /* pages: underlined tabs, scroll sideways on a phone */
+  .aud-tabs{ display:flex; gap:1.1rem; border-bottom:1px solid var(--app-border); margin-bottom:.7rem;
+    overflow-x:auto; scrollbar-width:none; }
+  .aud-tabs::-webkit-scrollbar{ display:none; }
+  .aud-tabs a{ padding:.5rem 0; font-weight:700; font-size:.92rem; color:var(--app-muted); text-decoration:none;
+    border-bottom:2px solid transparent; margin-bottom:-1px; white-space:nowrap; }
+  .aud-tabs a.on{ color:var(--app-text); border-bottom-color:var(--app-accent); }
+  .aud-badge{ display:inline-block; min-width:1.2rem; padding:0 .3rem; margin-left:.25rem; border-radius:999px;
+    background:#b42318; color:#fff; font-size:.72rem; line-height:1.2rem; text-align:center; }
+  .aud-filters{ display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; margin-bottom:.7rem; }
+  .aud-filters form{ flex:0 1 18rem; }
+  .aud-filters input[type=search]{ width:100%; }
+  .aud-seg{ display:inline-flex; border:1px solid var(--app-border); border-radius:999px; overflow:hidden; }
+  .aud-seg a{ padding:.3rem .7rem; font-size:.85rem; font-weight:700; color:var(--app-muted); text-decoration:none; }
+  .aud-seg a.on{ background:var(--app-text); color:#fff; }
+
+  .aud-list{ background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius-sm); }
+  .aud-day{ padding:.4rem .75rem; font-size:.78rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase;
+    color:var(--app-muted); background:var(--app-bg, #f6f7f9); border-bottom:1px solid var(--app-border); }
+  .aud-row{ display:grid; grid-template-columns:3.2rem minmax(0,1fr) auto; gap:.2rem .75rem; align-items:baseline;
+    padding:.55rem .75rem; border-bottom:1px solid var(--app-border); }
+  .aud-row:last-child{ border-bottom:0; }
+  .aud-row.two{ grid-template-columns:minmax(0,1fr) auto; }
+  .aud-time{ font-variant-numeric:tabular-nums; color:var(--app-muted); font-size:.85rem; }
+  .aud-main{ min-width:0; }
+  .aud-line1{ display:flex; align-items:baseline; gap:.45rem; flex-wrap:wrap; }
+  .aud-tag{ font-size:.72rem; font-weight:800; padding:.08rem .45rem; border-radius:999px; white-space:nowrap; }
+  .aud-tag.info{ background:var(--app-accent-soft); color:var(--app-accent-ink, var(--app-accent)); }
+  .aud-tag.warn{ background:var(--app-warn-soft); color:var(--app-warn); }
+  .aud-tag.danger{ background:#fdecec; color:#b42318; }
+  .aud-tag.ok{ background:#e7f6ec; color:#1a7f3c; }
+  .aud-tag.muted{ background:var(--app-bg, #f1f3f5); color:var(--app-muted); }
+  .aud-name{ font-weight:700; color:var(--app-text); text-decoration:none; overflow-wrap:anywhere; }
+  a.aud-name:hover{ text-decoration:underline; }
+  .aud-detail{ color:var(--app-primary, var(--app-text)); font-size:.88rem; font-variant-numeric:tabular-nums; }
+  .aud-sub{ font-size:.85rem; color:var(--app-muted); margin-top:.1rem; overflow-wrap:anywhere; }
+  .aud-reason{ font-size:.88rem; color:var(--app-text); margin-top:.15rem; }
+  .aud-reason::before{ content:"Reason: "; color:var(--app-muted); }
+  .aud-changes{ margin:.2rem 0 0; padding:0; list-style:none; font-size:.85rem; color:var(--app-muted); }
+  .aud-changes li{ overflow-wrap:anywhere; }
+  .aud-more summary{ font-size:.85rem; color:var(--app-accent); cursor:pointer; margin-top:.15rem; }
+  .aud-side{ font-size:.85rem; color:var(--app-muted); white-space:nowrap; text-align:right; }
+  .aud-fig{ font-weight:800; color:var(--app-text); font-variant-numeric:tabular-nums; white-space:nowrap; text-align:right; }
+  .aud-fig.down{ color:#b42318; }
+  .aud-fig.up{ color:#1a7f3c; }
+  .aud-empty{ padding:2rem 1rem; text-align:center; color:var(--app-muted); }
+  .aud-pages{ display:flex; justify-content:center; align-items:center; gap:.75rem; margin-top:.75rem; font-size:.9rem; }
+  .aud-section{ font-size:1rem; font-weight:800; margin:1.2rem 0 .5rem; color:var(--app-text); }
+  @media (max-width:575.98px){
+    .aud-filters form{ flex:1 1 100%; }
+    .aud-row{ grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"main time" "main side"; }
+    .aud-main{ grid-area:main; }
+    .aud-time{ grid-area:time; text-align:right; }
+    .aud-row > .aud-side, .aud-row > .aud-fig{ grid-area:side; align-self:start; }
+    .aud-row.two{ grid-template-areas:none; }
+    .aud-row.two > *{ grid-area:auto; }
+  }
+</style>
+
+<div class="page-shell">
+  <div class="aud-head"><h1 class="aud-title">Audit</h1></div>
+
+  <nav class="aud-tabs" aria-label="Audit pages">
+    {% for name, label in pages %}
+    <a class="{% if name == page %}on{% endif %}" href="{% url name %}"{% if name == page %} aria-current="page"{% endif %}>{{ label }}{% if name == 'audit_errors' and open_errors %}<span class="aud-badge">{{ open_errors }}</span>{% endif %}</a>
+    {% endfor %}
+  </nav>
+
+  {% if search_hint or period %}
+  <div class="aud-filters">
+    {% if search_hint %}
+    <form method="get">
+      <input type="hidden" name="period" value="{{ period }}">
+      {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+      <input type="search" name="q" value="{{ query }}" class="form-control form-control-sm" placeholder="{{ search_hint }}" aria-label="Search">
+    </form>
+    {% endif %}
+    {% block extra_filters %}{% endblock %}
+    {% if period %}
+    <nav class="aud-seg" aria-label="Period">
+      {% for value, label in periods %}
+      <a class="{% if value == period %}on{% endif %}" href="?period={{ value }}{% if query %}&amp;q={{ query|urlencode }}{% endif %}{% if status %}&amp;status={{ status }}{% endif %}">{{ label }}</a>
+      {% endfor %}
+    </nav>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% block audit_body %}{% endblock %}
+
+  {% if page_obj and page_obj.paginator.num_pages > 1 %}
+  <nav class="aud-pages" aria-label="Pages">
+    {% if page_obj.has_previous %}<a href="?period={{ period }}{% if query %}&amp;q={{ query|urlencode }}{% endif %}{% if status %}&amp;status={{ status }}{% endif %}&amp;page={{ page_obj.previous_page_number }}">&lsaquo; Newer</a>{% endif %}
+    <span>{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}<a href="?period={{ period }}{% if query %}&amp;q={{ query|urlencode }}{% endif %}{% if status %}&amp;status={{ status }}{% endif %}&amp;page={{ page_obj.next_page_number }}">Older &rsaquo;</a>{% endif %}
+  </nav>
+  {% endif %}
+</div>
+<script>
+  // keep the current page's tab in view on a phone
+  (function(){ var on = document.querySelector('.aud-tabs a.on'); if (on && on.scrollIntoView) on.scrollIntoView({block:'nearest', inline:'center'}); })();
+</script>
+{% endblock %}

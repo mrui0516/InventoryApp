@@ -48,13 +48,15 @@ InventoryApp/
 │   │   ├── sales.py                  # SaleOrder, Sale, SaleOrderChangeLog, SaleOrderPayment, SaleOrderCharge, PedidoDraft
 │   │   ├── finance.py                # ARInvoice, ARItem, ARPayment
 │   │   ├── reporting.py              # DailySalesSummary, SalesTarget
-│   │   └── hr.py                     # AttendanceRecord（原 attendance_models.py 迁入）
+│   │   ├── hr.py                     # AttendanceRecord（原 attendance_models.py 迁入）
+│   │   └── system.py                 # ErrorLog（Settings → Audit → Errors；submissions.py 为 FormSubmission）
 │   ├── attendance_models.py          # 兼容 shim：从 models.hr 重导出 AttendanceRecord
 │   ├── views.py                       # 全部视图逻辑（约 4800 行，60+ 个视图函数）
 │   ├── forms.py                       # 全部表单与 FormSet（534 行）
 │   ├── admin.py                       # Django Admin 自定义（270 行）
 │   ├── urls.py                        # 路由表（60 条 path）
 │   ├── permissions.py                 # 角色判定 + 装饰器
+│   ├── system_log.py                  # 日志 handler:错误 / 警告写入 ErrorLog(同类合并计次);失败登录记录
 │   ├── shelf_views.py                 # 货架图页面（与产品目录无共用，单独拆出）
 │   ├── pedido_views.py                # 报价单页面（表单 → PDF + 本店草稿 PedidoDraft；草稿列表片段、删除）
 │   ├── orders_views.py                # 经理 Orders 页:Sales | Purchases | Analysis(整单搜索、Tender 口径付款、分页)
@@ -79,7 +81,7 @@ InventoryApp/
 │   │   ├── quick_import.py             # 快速识别:粘贴文字 / 文字 PDF(pypdf)→ 行(EAN、数量、价格、总额校验)→ 匹配产品
 │   │   ├── submissions.py              # 表单只记一次:一次性令牌在记录的同一事务里写入 FormSubmission
 │   │   ├── card_fees.py                # 刷卡手续费:成交时记在订单上,利润按行摊销扣除(BusinessSettings.card_fee_pct)
-│   │   ├── audit.py                    # Settings → Audit:订单修正 / 手动改库存 / 收货入库合并成一个记录流
+│   │   ├── audit.py                    # Settings → Audit 6 个页面的数据:订单修正 / 手动改库存 / 收货 / 后台 LogEntry / 账号 / 错误
 │   │   ├── receipt_pdf.py              # 订单 A4 收据 PDF（欧洲葡语,用 doc_pdf;NIF 校验位通过才印）
 │   │   ├── sales_report_pdf.py         # Orders > Export PDF 销售报表（英文,用 doc_pdf;与页面同一数据）
 │   │   ├── shopify_client.py / shopify_sync.py       # Shopify Admin API：按 barcode=SKU 挂图/建品

@@ -328,7 +328,14 @@
 - **F2.9.4** 所有修正操作仅限超级管理员（Admin）执行（`@admin_required` 或等价校验）。
 - **F2.9.5 修正时改店铺**：管理员在订单修正表单可选择本单归属店铺（仅活跃店铺），用于修复下错店铺的订单；保存后订单与其全部明细行改到所选店铺，审计日志记录 旧→新 店铺。库存不受影响，不涉及应收(AR)。
 - **F2.9.6 补录订单可不影响库存**：新增历史订单时可取消「Affects inventory」，该单只记销售额/支付、不扣库存（用于货已出、库存已对账的遗漏订单），利润按销售额 50% 估算，且不参与 FIFO 成本；默认勾选＝正常扣库存。
-- **F2.9.7 审计页(Settings → Audit,2026-10-28,仅超管)**:`/settings/audit/`(`audit`)一个按时间倒序、按天分组的记录流,合并三类事后改动:**订单修正**(`SaleOrderChangeLog`:补录 / 修改 / 删除,谁、原因、金额前后,修改时逐行列出 `数量 a → b`、`价格 a → b`、新增 `+`、删除 `−`,以及客户、店铺的变更;超过 3 行折叠)、**手动改库存**(`StockAdjustmentLog`:旧数 → 新数 (±差),谁)、**收货入库**(`InboundOrder.received_at`:供应商、发票、件数、金额)。下划线标签切换类别(All / Orders / Stock / Deliveries,各带数量),时间段 7 / 30(默认)/ 90 天 / All,搜索订单号、产品、供应商、用户;每页 50 条。服务 `services/audit.py`。**未记录**:正常收银与入库由谁操作(`SaleOrder`、`InboundOrder` 没有用户字段)、取消待收货单、回滚已收货单。
+- **F2.9.7 审计(Settings → Audit,2026-10-28,仅超管)**:`/settings/audit/` 进入后分 6 个页面,顶部下划线标签切换(手机可横向滑动),各页有搜索与时间段 7 / 30(默认)/ 90 天 / All,每页 50 条,按天分组。服务 `services/audit.py`。
+  - **Orders**(`audit_orders`):`SaleOrderChangeLog` 补录 / 修改 / 删除,谁、原因、金额前后;修改时逐行列出 `数量 a → b`、`价格 a → b`、新增 `+`、删除 `−`,以及客户、店铺变更(超过 3 行折叠)。
+  - **Stock**(`audit_stock`):`StockAdjustmentLog` 手动改库存,旧数 → 新数、±差(红减绿增)、整品 / 单批次、谁、EAN。
+  - **Deliveries**(`audit_deliveries`):已收货入库单,供应商、发票、件数、金额、从下单到收货用了几天。
+  - **Admin edits**(`audit_admin`):Django 后台自带的操作历史 `LogEntry`(/admin/ 里谁新增 / 修改 / 删除了什么,修改了哪些字段),可点回后台对应记录。
+  - **Accounts**(`audit_accounts`):所有账号的角色、所属店铺、最后登录时间(从未登录也标出)、停用状态;下方**失败登录**:按尝试的用户名合并计次(`user_login_failed` 信号记录)。
+  - **Errors**(`audit_errors`):`ErrorLog`(迁移 0065)。`settings.LOGGING` 把服务器 500 崩溃(含 traceback、页面、用户)、`django.security` 警告(过期表单、未知域名)和 `stock.*` 自身的警告 / 错误同时写入 stderr(PythonAnywhere 错误日志)和数据库(`stock/system_log.py`)。同一问题(同一异常同一行,或同一警告文本)只占一行,累计次数与首次 / 最近时间;90 天未再出现的自动清理。Open / Resolved / All 筛选,**Mark resolved** 后隐藏,再次发生自动重新打开;标签上红色数字为未解决的错误数。404 等 4xx 不记录。写日志本身失败绝不影响请求。
+  - **未记录**:正常收银与入库由谁操作(`SaleOrder`、`InboundOrder` 没有用户字段)、取消待收货单、回滚已收货单。
 
 ---
 

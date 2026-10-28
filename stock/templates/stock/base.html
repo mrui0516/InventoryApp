@@ -130,7 +130,7 @@
         <a class="erp-nav-link {% if current_url in 'supplier_list,supplier_create,supplier_edit,supplier_detail' %}active{% endif %}" href="{% url 'supplier_list' %}">Suppliers</a>
 
         {# Settings stay folded: weekly work at most, and it was half the menu. #}
-        <details class="erp-nav-fold" {% if current_url in 'attendance,tools,employee_list,employee_create,employee_edit,store_list,store_create,store_edit,print_profile_edit,business_settings,audit,sale_order_correction_center,sale_order_correction_create,sale_order_correction_edit' %}open{% endif %}>
+        <details class="erp-nav-fold" {% if current_url in 'attendance,tools,employee_list,employee_create,employee_edit,store_list,store_create,store_edit,print_profile_edit,business_settings,audit,audit_orders,audit_stock,audit_deliveries,audit_admin,audit_accounts,audit_errors,sale_order_correction_center,sale_order_correction_create,sale_order_correction_edit' %}open{% endif %}>
           <summary class="erp-nav-group">Settings</summary>
           <a class="erp-nav-link {% if current_url == 'attendance' %}active{% endif %}" href="{% url 'attendance' %}">Attendance</a>
           <a class="erp-nav-link {% if current_url == 'tools' %}active{% endif %}" href="{% url 'tools' %}">Tools</a>
@@ -140,7 +140,7 @@
           <a class="erp-nav-link {% if current_url == 'print_profile_edit' %}active{% endif %}" href="{% url 'print_profile_edit' %}">Print Header</a>
           <a class="erp-nav-link {% if current_url == 'business_settings' %}active{% endif %}" href="{% url 'business_settings' %}">Fees</a>
           <a class="erp-nav-link {% if current_url in 'sale_order_correction_center,sale_order_correction_create,sale_order_correction_edit' %}active{% endif %}" href="{% url 'sale_order_correction_center' %}">Correct orders</a>
-          <a class="erp-nav-link {% if current_url == 'audit' %}active{% endif %}" href="{% url 'audit' %}">Audit</a>
+          <a class="erp-nav-link {% if current_url|slice:":5" == 'audit' %}active{% endif %}" href="{% url 'audit' %}">Audit</a>
           {% endif %}
         </details>
         {% endif %}

@@ -75,6 +75,23 @@ CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.environ.get('CSRF_TRUSTED_ORIGINS'
 # had expired, nothing was recorded" page instead of a bare "Forbidden".
 CSRF_FAILURE_VIEW = 'stock.views.csrf_failure'
 
+# Crashes, security warnings and the app's own warnings go to stderr (the
+# host's error log) and to the database, where Settings -> Audit -> Errors
+# shows them (stock/system_log.py). 404s and other 4xx are not recorded.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {'class': 'logging.StreamHandler', 'level': 'WARNING'},
+        'database': {'class': 'stock.system_log.DatabaseHandler', 'level': 'WARNING'},
+    },
+    'loggers': {
+        'django.request': {'handlers': ['console', 'database'], 'level': 'ERROR', 'propagate': False},
+        'django.security': {'handlers': ['console', 'database'], 'level': 'WARNING', 'propagate': False},
+        'stock': {'handlers': ['console', 'database'], 'level': 'WARNING', 'propagate': False},
+    },
+}
+
 
 # ---------------------------------------------------------------------------
 # Production security hardening.

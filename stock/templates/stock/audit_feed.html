@@ -1,0 +1,30 @@
+{% extends 'stock/audit_base.html' %}
+{% block audit_body %}
+<div class="aud-list">
+  {% for e in page_obj %}
+    {% ifchanged e.when|date:"Y-m-d" %}<div class="aud-day">{{ e.when|date:"D j M Y" }}</div>{% endifchanged %}
+    <div class="aud-row">
+      <div class="aud-time">{{ e.when|date:"H:i" }}</div>
+      <div class="aud-main">
+        <div class="aud-line1">
+          <span class="aud-tag {{ e.tone }}">{{ e.tag }}</span>
+          {% if e.link %}<a class="aud-name" href="{{ e.link }}">{{ e.title }}</a>{% else %}<span class="aud-name">{{ e.title }}</span>{% endif %}
+          <span class="aud-detail">{{ e.detail }}</span>
+        </div>
+        {% if e.reason %}<div class="aud-reason">{{ e.reason }}</div>{% endif %}
+        {% if e.changes %}
+          <ul class="aud-changes">{% for c in e.changes|slice:":3" %}<li>{{ c }}</li>{% endfor %}</ul>
+          {% if e.changes|length > 3 %}
+          <details class="aud-more"><summary>{{ e.changes|length|add:"-3" }} more</summary>
+            <ul class="aud-changes">{% for c in e.changes|slice:"3:" %}<li>{{ c }}</li>{% endfor %}</ul>
+          </details>
+          {% endif %}
+        {% endif %}
+      </div>
+      <div class="aud-side">{{ e.who }}</div>
+    </div>
+  {% empty %}
+    <div class="aud-empty">Nothing in this period.</div>
+  {% endfor %}
+</div>
+{% endblock %}
