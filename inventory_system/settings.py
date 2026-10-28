@@ -136,6 +136,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     "stock.apps.StockConfig",
+    "restock_alerts.apps.RestockAlertsConfig",
     "widget_tweaks",
 ]
 
@@ -283,3 +284,21 @@ CLOUDINARY_API_KEY = os.environ.get('CLOUDINARY_API_KEY', '')
 CLOUDINARY_API_SECRET = os.environ.get('CLOUDINARY_API_SECRET', '')
 CLOUDINARY_FOLDER = os.environ.get('CLOUDINARY_FOLDER', 'product_images')
 CLOUDINARY_AUTO_SYNC = os.environ.get('CLOUDINARY_AUTO_SYNC', '') in {'1', 'true', 'True', 'yes', 'on'}
+
+# Per-capacity restock alerts; disabled until a provider is configured.
+RESTOCK_NOTIFICATIONS_ENABLED = os.environ.get('RESTOCK_NOTIFICATIONS_ENABLED','') in {'1','true','True','yes','on'}
+RESTOCK_PROVIDER = os.environ.get('RESTOCK_PROVIDER', 'smtp').strip().lower()
+RESTOCK_MESSAGING_FLOW_READY = os.environ.get('RESTOCK_MESSAGING_FLOW_READY', '') in {'1','true','True','yes','on'}
+RESTOCK_MESSAGING_API_VERSION = os.environ.get('RESTOCK_MESSAGING_API_VERSION', '2026-10')
+RESTOCK_BACKGROUND = os.environ.get('RESTOCK_BACKGROUND','1') not in {'0','false','False','off'}
+RESTOCK_ALLOWED_ORIGINS = [value.strip() for value in os.environ.get('RESTOCK_ALLOWED_ORIGINS','https://www.scentory.pt,https://scentory.pt').split(',') if value.strip()]
+RESTOCK_PUBLIC_URL = os.environ.get('RESTOCK_PUBLIC_URL','https://scentory.eu.pythonanywhere.com/api/restock/')
+EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND','django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = os.environ.get('EMAIL_HOST','')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT','587'))
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER','')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD','')
+EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS','1') in {'1','true','True','yes','on'}
+EMAIL_USE_SSL = os.environ.get('EMAIL_USE_SSL','0') in {'1','true','True','yes','on'}
+EMAIL_TIMEOUT = 15
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL','Scentory <info@scentory.pt>')

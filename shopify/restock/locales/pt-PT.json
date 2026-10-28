@@ -1,0 +1,23 @@
+{
+  "scentory_restock": {
+    "button": "Avisar-me quando voltar",
+    "title": "Receba um aviso por email",
+    "intro": "Escolha a capacidade e confirme o seu email. Avisamos quando esta opção voltar a estar disponível.",
+    "capacity": "Capacidade",
+    "email": "O seu email",
+    "submit": "Pedir aviso",
+    "sending": "A enviar…",
+    "success": "Pedido recebido. Se ainda não confirmou este aviso, procure o email de confirmação na sua caixa de entrada.",
+    "failure": "Não foi possível enviar o pedido. Tente novamente dentro de instantes.",
+    "unavailable": "Os avisos de reposição ainda não estão disponíveis. Tente novamente mais tarde.",
+    "available": "Esta capacidade já está disponível. Atualize a página para comprar.",
+    "limited": "Recebemos vários pedidos. Tente novamente mais tarde.",
+    "close": "Fechar",
+    "privacy_note": "Usamos o seu email para este aviso. Pode cancelá-lo a qualquer momento.",
+    "privacy_link": "Política de privacidade",
+    "marketing_consent": "Aceito receber emails de marketing da Scentory, incluindo avisos de reposição. Posso cancelar a qualquer momento.",
+    "messaging_intro": "Escolha a capacidade e indique o seu email. Avisamos quando esta opção voltar a estar disponível.",
+    "messaging_success": "Pedido registado. Receberá um email quando esta capacidade voltar a estar disponível.",
+    "messaging_privacy": "A sua preferência de email fica guardada na Shopify. Pode cancelar este aviso ou os emails de marketing a qualquer momento."
+  }
+}
