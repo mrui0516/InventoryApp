@@ -1,8 +1,8 @@
 # 项目状态文档（Status）
 
-> 快照时间：2026-07-16。记录当前代码、数据、测试、环境与版本控制的实际状态，便于评估"现在能不能上线/部署/迭代"。配合 [PRD.md](./PRD.md)（功能与验收标准）与 [ARCHITECTURE.md](./ARCHITECTURE.md)（技术架构）一起阅读。
+> 快照时间：2026-10-28。记录现在线上运行的是什么、测试与环境状态、已知风险。配合 [PRD.md](./PRD.md)（功能与验收标准）与 [ARCHITECTURE.md](./ARCHITECTURE.md)（技术架构）一起阅读。
 >
-> 第 7 节只记"发生了什么"，一条一行；具体改了哪些函数、跑了多少测试请查 `git log`。
+> 第 6 节只记"发生了什么"，一条一行；具体改了哪些函数请查 `git log`。
 
 ---
 
@@ -10,119 +10,82 @@
 
 | 维度 | 状态 | 说明 |
 |---|---|---|
-| 功能完整度 | ✅ 已覆盖 PRD 全部 20 个模块 | 正在生产使用中（真实业务数据） |
-| 自动化测试 | ✅ 816/816 通过 | `python manage.py test stock` |
-| 数据库迁移 | ✅ 无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
-| 版本控制 | ✅ 已推送 GitHub，与 origin/master 同步 | 见第 4 节 |
-| 本地虚拟环境 | ⚠ `.venv` 不完整/未使用 | 见第 3 节 |
-| 生产可用性 | ⚠ 仍是开发配置 | `DEBUG=True`、`SECRET_KEY` 硬编码（见第 6 节） |
-| 数据备份 | ❌ 无 | `db.sqlite3` + `media/`（79MB）无任何备份机制 |
+| 线上运行 | ✅ PythonAnywhere 欧盟区 | `https://scentory.eu.pythonanywhere.com`，两家店（Khan Perfume、Scentory）日常收银、入库都在线上；线上 `db.sqlite3` 是唯一准数据 |
+| 自动化测试 | ✅ 870 个全部通过 | `python manage.py test stock`，在干净导出上跑 |
+| 数据库迁移 | ✅ 最新 `0065_error_log`，无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
+| 生产配置 | ✅ `DEBUG=False`，密钥只在服务器 `.env` | `settings.py` 的 `if not DEBUG` 块：强制 HTTPS、安全 Cookie、HSTS、防点击劫持 |
+| 数据备份 | ✅ 每日快照 + 本机拉取 | PA 定时任务 `backup_db --keep 30`，本机 `scripts/pull_backup_from_pa.py` 拉到 U 盘；Settings → Tools 可手动下载。见 [BACKUP.md](./BACKUP.md) |
+| 错误日志 | ✅ Settings → Audit → Errors | 500 崩溃、安全警告、Cloudinary/Shopify 警告写入 `ErrorLog` 与 PA 错误日志 |
+| 版本控制 | ✅ GitHub 私有仓库 | `mrui0516/InventoryApp`，`master` 推送即发布（PA 上 `git pull`） |
+| 密钥轮换 | ⚠ 待确认 | 见第 4 节第 1 条 |
 
 ---
 
-## 2. 当前数据规模
+## 2. 运行环境
 
-（来自 `db.sqlite3` 实时查询，2026-08-23）
-
-| 实体 | 数量 |
-|---|---|
-| Product（产品） | 238（全部为香水；169 条旧配件已清空，等待重新录入） |
-| Purchase（采购批次） | 641 |
-| InboundOrder（进货订单） | 213 |
-| SaleOrder（销售订单） | 1,905 |
-| Sale（销售行项目） | 4,541 |
-| Customer（客户） | 35 |
-| Supplier（供应商） | 16 |
-| ARInvoice（应收发票） | 4 |
-| DailySalesSummary（每日汇总） | 332 |
-| Store（店铺） | 2 |
-| 用户账号 | 4（其中 2 个超级管理员、2 个 staff） |
-
-数据量处于"小型门店"规模，当前架构（含 `sale_profit_map_for_sale_ids` 的全量 FIFO 重放）尚未出现性能问题，但应作为未来扩容前的基线参考。
-
----
-
-## 3. 运行环境状态 ⚠
-
-项目实际有**三个** Python 环境，容易混淆：
-
-| 环境 | 路径 | 状态 | 用途 |
-|---|---|---|---|
-| 便携版 Python | `F:\APP\python-3.13.5\` | ✅ 依赖齐全 | **服务器实际用的就是它**（`start.bat` → `runserver.py`） |
-| 系统 Python | `C:\Users\maoru\AppData\Local\Programs\Python\Python313\` | ✅ 依赖齐全 | 跑测试 / management command |
-| 项目内 `.venv/` | `.\.venv\` | ❌ **只有 Pillow/openpyxl，没有 Django** | 无法运行项目，别用 |
-
-- `.venv` 处于"半初始化"状态，`activate` 后跑 `manage.py` 会直接 `ModuleNotFoundError: No module named 'django'`。
-- 建议二选一：① `.venv\Scripts\pip install -r requirements.txt` 补齐；② 直接删掉 `.venv` 以免误导（已在 `.gitignore`，不影响仓库）。
-- 便携版 Python 装依赖用 `F:\APP\install_deps.bat`（读 `InventoryApp\requirements.txt`，单一来源，不会漂移）。
-
----
-
-## 4. 版本控制状态
-
-- 远程：`origin = https://github.com/mrui0516/InventoryApp.git`，本地分支 `master` 跟踪 `origin/master`。
-- **已推送到 GitHub**（2026-07-16，密钥扫描确认 `.env`/Cloudinary 密钥从未入库后推送），`master` 与 `origin/master` 同步 → 代码已有异地副本。
-- `.gitignore` 已正确排除 `db.sqlite3`、`media/`、`.venv/`、`.env`、临时文件等。
-- `.env`（Cloudinary 密钥）不入库，仅存在于本地/U 盘。
-
----
-
-## 5. 测试与质量状态
-
-- `python manage.py test stock` → **178 个测试全部通过**（耗时约 132s）。
-- `python manage.py check` → 无系统检查问题。
-- `python manage.py makemigrations --check --dry-run` → 无待生成迁移，模型与迁移文件一致。
-- 迁移历史：33 个迁移（`0001_initial` ~ `0033_saleorder_affects_stock`），体现了从早期"扁平 Sale 表"到"SaleOrder + Sale 行项目"、品牌/系列结构化、AR 模块、考勤、打印配置、库存调整审计、销售目标、多店铺等逐步演进的过程。
-- 外部集成（Shopify / Cloudinary）的测试**全部 mock**，不发真实网络请求。
-
----
-
-## 6. 已知风险与技术债
-
-| 项 | 现状 | 风险等级 |
+| 环境 | 位置 | 用途 |
 |---|---|---|
-| `SECRET_KEY` 已轮换、改从 `.env` 读；旧 key 仍在 git 历史 | 新 key 不入库、旧 key 已弃用失效；**仓库已转 private**（2026-07-16）。旧 key 仍在历史但已无价值 | 低 |
-| `db.sqlite3` + `media/`（79MB）本地已有每日备份，但无异地副本 | 本机失火/被偷则本地备份同亡（代码已推 GitHub，数据未上云） | 中 |
-| Cloudinary API Secret 明文存于 `.env`（U 盘上） | U 盘丢失/被盗即泄露；建议轮换 | 中 |
-| `.venv` 不完整（见第 3 节） | 新环境/新协作者按 `.venv` 操作会直接失败 | 中 |
-| `sale_profit_map_for_sale_ids` 全量 FIFO 重放 | 当前 4,166 条销售记录下可接受，规模增长后需关注 | 低（中长期） |
+| 线上 | PythonAnywhere EU，用户 `scentory`，代码 `/home/scentory/InventoryApp`，virtualenv `/home/scentory/.virtualenvs/inventory` | 正式使用。更新步骤：`git pull` → `pip install -r requirements.txt` → `migrate` → `collectstatic --noinput` → Web 页 **Reload**（迁移一定在 Reload 之前） |
+| 本机 | `F:\APP\InventoryApp`，系统 Python 3.13 | 开发与跑测试；本机 `db.sqlite3` 是旧副本，**不要在本机录业务数据** |
+
+- 只改模板时 `collectstatic` 可省；改了 CSS/JS 必须跑，否则线上还是旧样式（`{% static_v %}` 会自动换版本号，浏览器不再吃缓存）。
+- 首次部署与域名步骤见 [DEPLOY.md](./DEPLOY.md)。
+
+---
+
+## 3. 测试与质量
+
+- `python manage.py test stock` → **870 个测试全部通过**（约 9 分钟）；`python manage.py check` 无问题。
+- 外部集成（Shopify / Cloudinary）的测试全部 mock，不发真实网络请求。
+- 提交前在 `git archive HEAD` 的干净导出上跑全套：工作区里可能有别的进行中的改动，会让结果失真。
+
+---
+
+## 4. 已知风险与技术债
+
+| 项 | 现状 | 风险 |
+|---|---|---|
+| 密钥曾在对话中以明文出现 | `SECRET_KEY`、`SHOPIFY_ADMIN_TOKEN`、`CLOUDINARY_API_KEY/SECRET` 需在各自后台重新生成、只写进 PA 上的 `.env`，然后 Reload | 高，直到轮换 |
+| 收银与入库不记录操作人 | `SaleOrder`、`InboundOrder` 没有用户字段，Audit 只能看到修正、手动改库存和后台操作是谁做的 | 中 |
+| 取消待收货单、撤销收货不留记录 | 不进 Audit | 中 |
+| Chart.js 从 CDN 加载且未锁版本 | `cdn.jsdelivr.net/npm/chart.js` 会自动跟到新大版本，可能哪天图表突然坏掉 | 中 |
+| `views.py` 约 6,200 行 | 按 ARCHITECTURE 第 8 节路线图逐步拆分 | 低 |
+| 利润按 FIFO 全量重放 | 当前规模（约 2,000 张订单）没有性能问题，规模大了再看 | 低 |
+| SQLite 单文件 | 两家店的并发量足够；有每日快照 | 低 |
 
 **已审查并确认维持现状的事项**（不应在后续代码审查中重复提出）：
 
-- `ar_list_view`/`ar_detail_view` 仅使用 `@login_required`（不要求经理权限）：页面内全部 € 金额字段已通过模板 `{% if show_sensitive %}` 对非经理角色隐藏，不构成敏感数据泄露。（2026-06-12 复审确认）
+- `ar_list_view`/`ar_detail_view` 仅使用 `@login_required`：页面内全部金额字段已通过 `{% if show_sensitive %}` 对非经理隐藏。（2026-06-12 复审确认）
 
 **约定**：前端不加"功能介绍"类说明段落，只保留标题、字段标签、数据、告警与空状态提示。
 
 ---
 
-## 7. 变更记录
+## 5. 下一步
+
+1. 轮换第 4 节第 1 条的密钥。
+2. 收银、入库记录操作人（`SaleOrder.created_by`、`InboundOrder.created_by` / `received_by`），让 Audit 能回答"这单是谁卖的"。
+3. Chart.js 改为锁定版本（或放进 `static/`）。
+
+---
+
+## 6. 变更记录
 
 一条一行，最新在前。细节查 `git log`。
 
 - 2026-10-28: **Settings 加审计(Audit),分 6 个页面:Orders · Stock · Deliveries · Admin edits · Accounts · Errors。** 订单修正逐行前后、手动改库存、收货入库、Django 后台操作历史(LogEntry)、账号与最后登录 / 失败登录,以及新的错误日志:此前项目没有任何 LOGGING 配置,线上 500 崩溃和 Cloudinary / Shopify 警告无处可查;现在同时写 stderr 和数据库(ErrorLog,迁移 0065),同类合并计次,可标记已解决。原 "Order audit" 入口实为修正订单,改名 "Correct orders"。新增 12 个测试;侧栏测试补上 Fees / Audit / Deliveries。
 - 2026-10-28: **待收货订单加对货单。** 员工手机上核对到货用:只有产品图、名称、EAN、数量,不含供应商/发票/价格。经理从 Inbound 卡片的 Check list 进入,员工从侧栏 Deliveries 进入。新增 4 个测试。
 - 2026-10-28: **刷卡 1% 手续费从利润中扣除。** 老板决定:只从今天起、费率在 Settings → Fees 可改(默认 1%)、MB WAY 无手续费。订单成交时记下自己的手续费(迁移 0064),利润服务统一扣除,所有利润数字一致。新增 6 个测试。
-
 - 2026-10-28: **修:手机上出入库后关闭浏览器、再回来出现 Forbidden,刷新提示重新提交、产生两条记录。** 原因三条:Sell / Inbound 提交成功后直接渲染页面(没有重定向),刷新即重发;防重只是 8 秒的内存缓存(PythonAnywhere 多进程不共享,8 秒后也不拦);手机浏览器恢复旧页面时安全令牌已过期,Django 直接回 403。修:一次性提交令牌写入数据库(`FormSubmission`,迁移 0063),与记录同一事务;成功后重定向;两个页面不缓存;过期表单显示明确提示「什么都没记录」。新增 6 个测试,改写 6 个旧测试(成功后由 200 改为重定向 302)。
-
 - 2026-10-26: **补货铃铛规则调整(老板反馈)。** 铃铛关闭只在**卖完后**才让该行变灰并排到最后;还有库存的照常留在原位、外观不变。变灰的行不再把产品照片变黑白(分不清产品)。新增 1 个测试。
-
 - 2026-10-26: **新设计推广到全站 + 补货铃铛改版 + 手机端排查。** (1) 石色主题从 Dashboard 推广到所有页面:令牌移到 `:root`,23 个模板里写死的石板蓝/灰色值统一替换为石色,侧栏/底栏石黑,字体 Inter / Inter Tight 在 base.html 统一加载。按钮与选中态改用较深青蓝 #1677bd(白字可读),数据色保留亮青蓝。(2) 产品列表:铃铛移到每行最左;关闭后整行变灰并排到最后;入库(直接或确认收货)自动重新打开;在途信息移到库存数字下方。(3) 手机端 14 页逐一截图:修顶栏店铺下拉撑出屏幕 2px;产品列表、产品详情、客户详情三处信息过密/过长已压缩。新增/改写 4 个测试(旧"只在 Dashboard"测试按推广改写),还原检查:去掉入库恢复铃铛后两个测试转红。部署需 collectstatic。
-
 - 2026-10-26: **Inbound / Sell / Pedido 快速识别。** 粘贴发票或订单文字、或上传文字 PDF → 规则解析(不用 AI)→ 确认表 → 填入当前页面。用老板给的 8 行样本实测:8 行全部拆出,数量 × 单价 = 行总额全部对上,7 行自动匹配(6 个 EAN、1 个无 EAN 按名称),剩下 1 个 EAN 不在系统里,标红并给出候选;Inbound 填入后合计 €627.30 与发票一致。修了两处:发票末尾 "Total" 汇总行会被粘到最后一行(会把总额当成该行价格);只复制部分行(行号 6、7)时拆行失败。新增依赖 pypdf;新增 10 个测试。
-
 - 2026-10-26: **补货铃铛、在途、已删除产品、缩略图、Dashboard 新设计试用。** (1) 产品列表加补货铃铛(`Product.restock`,迁移 0062):关闭后不进低库存,产品和数据都保留。(2) 在未收货 Inbound 单里的产品显示「+N on the way」,也不进低库存。(3) 修:已删除产品剩余批次仍算在 Dashboard 库存/资金占用/滞销品里(用户看到已删的 diffuser),三处当前库存查询加了排除。(4) 修:低库存缩略图对未镜像到 Cloudinary 的产品是 404 空白,加了本地照片回退。(5) 参考设计(暖白 + 单一青蓝)先只用在 Dashboard,`.theme-stone` 局部令牌,待确认后推广。新增 6 个测试。部署需 migrate + collectstatic。
-
 - 2026-10-26: **手机版 Dashboard 重排。** 改前截图实测 4789px:筛选区 320px(五个按钮折两行)、月份 5 张数字卡竖排 793px、付款构成三张卡、库存卡与低库存卡重复、低库存在最底部。改后 2962px:一行月份/品类切换(改了即生效)、数字卡 2×2、低库存上移且只列 3 个、付款构成一条色条、库存/重点/积压折叠;顺序靠 CSS `order`(低库存卡因此移进 `.dash-page` 网格)。电脑端版式不变,仅删去重复行。新增 4 个测试。
-
 - 2026-10-25: **修:部署后新页面"没有 CSS"。** 不是文件没更新——线上 `/static/css/app.css` 与提交逐字节一致——而是 PythonAnywhere 的 /static/ 不带 Cache-Control,浏览器自行缓存旧 app.css 几个小时;新 HTML 已用新类名(`.ls-sum`、`.ch-card`),配上旧 CSS 就成了无样式。之前"Business 标签条没 CSS"很可能也是这个原因。修法:新模板标签 `{% static_v %}`,base.html 的 CSS/JS 链接带 `?v=<文件修改时间>`(优先取 collectstatic 后实际被服务的那份),文件一变 URL 就变,浏览器必须重新取;没变的文件照旧缓存。新增 1 个测试。
-
 - 2026-10-25: **手机体验 + 低库存提醒侧栏 + 零售/批发拆分。** (1) 新建客户:三处各自的对话框合成一个共用对话框,姓名 → 电话 → 类型(两个大按钮)→ NIF(可选),其余折叠;手机全屏。**NIF 改为可选(迁移 0061,留空存 NULL),电话必填且不能重复**(按后 9 位比较)。(2) 客户电话一律打开 WhatsApp(`wa.me`,9 位号码补 351)。(3) 手机底栏向下滚/输入/开对话框时收起,向上滚回来;吸底保存条随之贴底。(4) 低库存:Dashboard 原来近 2000px 的长块改成摘要卡;完整清单放进新的**提醒侧栏**(手机顶栏 🔔 / 电脑侧栏顶部,任何经理页面可开),分组 + 品牌筛选;计算抽到 `services/low_stock.py`,并**排除从未进货也从未卖过的目录条目**(以前算进"缺货")。(5) Dashboard 新增 Retail vs Revenda 卡(按客户类型,散客算零售)。另:手机顶栏加了铃铛后品牌名会折行、店铺选择被挤出屏幕,改为品牌名单行省略。新增 15 个测试,改写 8 个旧测试(新建客户需电话、对话框标记变了);旧文件放回后新测试都转红。部署需 migrate + collectstatic。
-
 - 2026-10-25: **Pedido 草稿 + 运费/费用入单 + 客户上次售价 + All stores 隐藏 Sell/Pedido。** 老板定位:Sell 是零售、Pedido 专为 Revenda。(1) 每次生成 Pedido PDF 存为本店草稿(`PedidoDraft`,迁移 0060),页面顶部列出,可 Editar(原样还原,再出 PDF 更新同一份)/ Vender(打开 Sell 装好购物车)/ Apagar;卖出后标记已售,带状态条件的 UPDATE 防同一草稿卖两次。Pedido 客户搜索只列 Revenda。(2) 新增 `SaleOrderCharge`:Sell 可加运费/费用(从草稿转来的运费和额外费用自动带上,报价折扣按比例摊进单价),Correct Order 可编辑;**口径按老板选择:不算销售额和利润,但计入实收**——Orders/Today 多一张 Shipping & fees 卡,付款比例以实收为分母,详情页/小票/A4 收据/报表 PDF 列出 货 → 费用 → 合计。订单详情页的 Payment split 改读订单级付款(原来按行累加,拆分付款显示不准)。(3) 选定客户后,新加入的行默认用他上次实际成交的单价(直接从销售记录读,不另存),Sell 行弹窗多一个 Last 价格选项,Pedido 行下方提示并可一键套用。(4) All stores 时侧栏不显示 Sell/Pedido、手机底栏 Sell 换成 Orders、Today 首屏按钮隐藏。顺手修:`popper.min.js` 末尾自首次提交起多了一行「解释」,每个页面都报 JS 错误,已删。经理默认处于 All stores,所以旧的 Pedido 测试需先选店(按新规则改写);新增 27 个测试,801 通过;改回旧付款函数 2 个转红、改回旧侧栏 1 个转红。改了 CSS/JS 静态文件,部署需 collectstatic + migrate。
-
 - 2026-10-24: **Correct Order 手机端优化 + 修好全站手机吸底保存条。** 改前截图:行项目表 7 列,手机上只看得到商品/数量/单价,折扣、支付、小计和 Edit/× 都在屏幕右侧外面;搜索结果标题被截成一行,相近商品分不清;Delete entire order 紧挨着 Save。改后(≤760px):每行两行(商品名 + 小计 / `数量 × 单价`、折扣、支付 + ×),**点整行打开编辑**;搜索结果标题两行;「总额 + Save + Cancel」吸在底部标签栏上方;Delete 移到最下面单独一行。电脑端不变。排查吸底条不吸时发现根因在 app.css:手机端 `.erp-content{overflow-x:hidden}` 让 `<main>` 成了不会滚动的滚动容器,**所有页面的 sticky 保存条在手机上都没生效**(Add/Edit Product 也是),改为 `overflow-x:clip`(保留 hidden 作旧浏览器回退);实测 Correct Order 与 Edit Product 的保存条都停在标签栏上方。新增 4 个测试;旧模板放回 3 个转红,旧 app.css 放回 1 个转红。774 通过。改 CSS,部署需 collectstatic。
-
 - 2026-10-24: **Order Correction Center 手机端照 Orders 版式重做。** 改前截图:整页在手机上**横向溢出**(卡片里 Bootstrap `.row` 的负外边距)、订单表仍是 7 列、客户名挤成三行、修正记录排在列表下面一长串。改后:一条查询栏;电脑每单一行紧凑行 + 右侧 Print;手机每单两行、**整行直接进修正表单**(老板选的,不经过详情层);修正记录宽屏在右栏、手机上折叠。顺手修了**日期分组合计只算当前页**的问题——一天跨两页时两页各显示一个部分数,现在是全天合计。标题衬线字体是 app.css 的既定设计(`--font-display`),保留;反而是 Orders / Customers 用的无衬线标题与之不一致,记为待统一。两个旧测试按新标记改写断言(按钮文字缩短、表头不再是 `<th>`),新增 4 个;旧模板放回 3 个转红,去掉全天合计 1 个转红。770 通过。改前改后都截图核对过。
 - 2026-10-16: **三份对外文件一个版式;Orders 指标卡;Customers 手机端照 Orders;Pedido 字体。** 把 Pedido PDF 的版式抽成 `services/doc_pdf.py`(页眉、客户区、深色表头表格、合计、指标卡),Pedido、**订单 A4 收据**、**销售报表**都用它。**收据**改为葡语 PDF(Print A4 在浏览器打开;旧 `?print=1&layout=a4` 跳转过去;POS 小票不变),付款按订单级拆分,**NIF 仅在校验位通过时才印**(库里大量 000000001 / 123123123 占位)。**Export PDF 重做**,与 Orders 页同一数据,顺带修掉旧报表五个数据问题:不按店铺过滤、"Avg Ticket" 实为 ÷ 件数、按行日期分组、付款按行统计、emoji 印成方块。**Orders** 汇总改为指标卡 + 付款比例色条,字号整体上调;**Customers** 手机端改为两行整行可点 + 全屏详情层,Status/Sort 收进 More filters;**Pedido** 去灰、重要信息深色加粗、删掉说明文字。**这次第一次真正看了页面**:装了 pypdfium2 和 Playwright(都在临时目录),把三份 PDF 渲染成图、在 390px / 1366px 下截了页面——测试全绿的情况下又找出 **9 个只有看了才知道的问题**:销售额卡里数字折行、付款表悬空、订单表时间列折成 "18:0 / 0"、表格比页眉线多出 4mm(reportlab 页框 6pt 内边距)、Pedido 的 13 位条码折行(**之前就有**)、手机上指标卡占满第一屏、订单详情层商品名被挤成窄列、客户行两行结构被 `table.cl td{display:block}` 的优先级盖掉、手机上 "More filters" 的展开按钮被后写的基础规则隐藏——全部修好并重新截图确认。**一个我自己的验证失误**:演示服务器用了 `--noreload`,Django 4.1+ 的模板缓存不会刷新,第一轮"修好后"的截图其实是旧页面;之后截图脚本先断言页面里有只有新代码才有的标记。一个旧测试守着"A4 打印返回 HTML",按新行为(跳到 PDF)改写。766 通过;四个数据修复各自放回旧实现都会转红。
 - 2026-10-16: **Orders 页整体改版(O1 + O2)**,经理页移到 `stock/orders_views.py`(`views.py` 少了约 500 行)。按外部审计,逐条核实后实施。**页面只剩五层**:标题与店铺 → Sales | Purchases | Analysis → 一条查询栏 → 一条汇总 → 记录。**默认近 7 天列表**;列表 / 日历改为显式切换(以前由网址有没有日期决定),日历格只放日期和当天金额,点一天打开那天的列表。**修了一个数据错误**:商品搜索以前先筛销售行再拼订单,一单 A €10 + B €20 搜 A 时列表显示 €10、打印 €30;现在返回整单、标出命中商品。搜索也认订单号(范围外会提示在哪天)和客户电话。**付款统计改用 Today 的 `order_tender_amounts`**,一行刷卡+现金会拆开,两页对得上。电脑是紧凑表格,手机每单两行;**详情层**是一个共享对话框,手机上全屏、页面不跳转,关闭后停在原位;每页 40 单,"Load more" 追加且日期标题不重复(标题带当天完整合计)。**Purchases 单独成视图,并写明"库存各店共享,采购不分店铺"**;图表、付款占比、Top Products、年度对比全部移进 **Analysis**,Chart.js 只在那里加载。**利润统一叫 Gross profit**(销售额 − FIFO 成本;同一个数以前一处叫 Gross、一处叫 Net),"Daily Money Flow" 改名 "Sales by day"。旧链接(`start_date/end_date`、`month`、`view=year`、`product_q`)全部照常可用。六个守着旧页面结构的测试按新结构改写、保留原意,新增 `OrdersPageTests`;五个关键行为(整单金额、Tender 口径、默认布局、跨页标题、范围外订单号)**逐个单独放回旧实现,各自对应的测试都转红**。748 通过。**没在真机上看过**,本地库未迁移、也没有浏览器工具。
@@ -136,137 +99,10 @@
 - 2026-09-10: **新增客户时就能定类型,并加了地址**(`Customer.address`,迁移 `0058_customer_address`)。**三个新增客户入口全部补齐**:收银台(`outbound`)、客户页(经理)、客户页(员工)——收银台是绝大多数客户被创建的地方,之前只有经理客户页能选类型,等于分类永远填不上。员工那个弹窗的请求体是**手写逐个 append 字段**的,光加输入框不加 append 就会静默丢掉,所以测试同时断言了 `body.append('kind'` 和 `body.append('address'`。地址是**多行自由文本**(葡萄牙地址整块写,`Rua X, nº 12, 2º Esq / 2700-123 Amadora`,而且 Revenda 的送货地址是要抄到单据上的,不用于检索),空值存 `''` 不存 `NULL`,模板不用防 null。编辑表单和客户详情页也都有。633 通过(三处分别撤销验证转红)。
 - 2026-09-09: **客户分成 Retail 和 Revenda**(`Customer.kind`,迁移 `0057_customer_kind`)。这是批发目录的第一步——将来只有 Revenda 客户会拿到登录账号。原来这个区分是打在姓名里的(「Kapaika Revenda」),迁移按词干 `revend` 回填(覆盖 Revenda / REVENDA / revendedor),**姓名一个字不改**,并在 migrate 时**逐条打印改到的姓名**——这条只在生产库上跑一次,得让人当场核对。**姓名里没写 Revenda 的转售客户一律留在 Retail**:按下单量猜会把真正的零售客户推到批发侧,由人在客户页改(界面已给)。客户页加了 **All / Retail / Revenda 三个页签带计数**,计数**在套用类型筛选之前**统计(否则切到 Revenda 时 Retail 会显示 0,页签就没用了),类型和搜索词互相保留并跟随分页;卡片和详情页带类型标记;编辑表单和快速新增弹窗都能选类型,收银台不传类型时仍落 Retail。**注意本地库比线上旧**:本地 45 个客户里只有 2 个名字含 revenda,老板在线上搜到 10 个(两店合计)——迁移是运行时匹配,数字以线上为准。626 通过(三处分别撤销验证转红)。
 - 2026-09-09: **修好「Sync all perfumes」——它以前一个产品都不会上传。** 用户在 Shopify 删掉一个产品后按这个按钮，什么都没发生：按钮跑的是 `sync_shopify_perfumes --apply`，**少了 `--create`**，命令里「不在 Shopify 上」的产品直接算作 `missing` 跳过——恰恰是这个按钮该做的事被跳过了。现在按 `--create` 跑，缺的香水**直接创建并上架（ACTIVE）**。同时把命令的查询集换成 `shopify_syncable(...)`，所以**关掉同步开关的分类不会被这个按钮发上去**。**创建出来的产品形状也对齐了店里已有的listing**：`Tamanho` 选项下 100ml/10ml/5ml 三个变体（SKU `<barcode>`、`-10ML`、`-5ML`）；数量沿用样品规则——100ml 是 **在库减 2**（最后两瓶是店里的样品），只要还有瓶子分装就各显示 10，全空才是 0（实测 LATTAFA QAHWA 在库 9 → 上架 7）；分装价按全瓶的 17.5% / 11.5% 取整到 5 分；SEO 标题 `… | Perfume Árabe`、描述用产品自己的文案收尾带店名和配送；成本只写在全瓶上。**另外修了两处和现有listing 不一致的地方**：vendor 从 `LATTAFA` 改成 `Lattafa`（vendor 驱动店里的品牌集合，大写会把同一个品牌拆成两个），productType 从 `Perfumes` 改成 `Perfume`。Inspired by 依然**不发去 Shopify**（商标考虑，有测试守着）。过程中犯的一个错已记进 memory：**用方法名当锚点往测试文件里插新测试**，同一个方法名在多个类里都有，两批新测试都落进了错的类——第一批（`test_employee_blocked` 锚点）照样通过，验证的却是另一个视图，等于没验证；第二批掉进 `PerfumeInfoTests`，那里没有 `_created_payload`，是**跑全量 615 条**才炸出来的。现在改成先定位类再插入，插完打印每个新方法所属的类。
-- 2026-08-27: **把已经写在描述里的香调自动搬进新字段**（`backfill_perfume_notes`）。描述里的写法有四种，全部支持：`Saída/Coração/Base`、`Notas de Cabeça/Corpo/Base`、`Notas de Topo/…`，以及厂商文案里的散文式（`as notas de saída são X; as notas de coração são Y`）。本地 238 个香水的实测：**全三段 154，部分 13，读不出 71**。三个刻意的克制：**(1) 散文不当香调**——`Notas de Topo: A abertura é marcada pela bergamota…` 是在讲香调而不是香调本身，把这一整段塞进三个词的字段比留空更糟，所以跳过并**列出名字**；**(2) 手工填过的不覆盖**（要覆盖用 `--overwrite`）；**(3) 描述本身不动**——只读不改。命令**会把读不出和只读到一半的产品逐个列出来**，这样还需要人工处理的是哪些一目了然。默认 dry-run。604 通过（撤掉散文防护验证转红）。**注意**：描述里原本的香调文字仍然在，所以合成描述里会出现两次；等确认字段没问题后，可以再单独写一个命令把描述里的那几行删掉——那是另一个改动，不该和这次混在一起。
-- 2026-08-27: **香调解析补齐实际用到的写法。** 读不出的 71 条查下来**不是语言问题**（解析器本来就是按葡文写的），而是两件事：**31 条根本没有描述**（样品瓶、空气清新剂之类，跳过是对的）；其余用的分隔写法我没覆盖——原来只认冒号，实际还有 **破折号**（`Notas de cabeça - Maçã`）、**完全没有分隔符**（`Notas de topo Bergamota, menta`）、**动词加冒号**（`As notas de topo são: Açafrão`）、**没有「de」**（`Notas Cabeça - gengibre`）、以及**值在下一行**（`Notas de cabeça (topo):` 换行后才是香调）。全部支持后：**全三段 154 → 169，读不出 71 → 57**（其中 31 条没描述）。另外**尾巴会被剪掉**：`Abacaxi e crème brûlée, proporcionando uma abertura doce` 现在只存 `Abacaxi e crème brûlée`。真正的散文（`Notas de Topo: A abertura do Afeef é marcada pela…`）仍然拒绝并列出来。611 通过。
-- 2026-08-27: **收银台搜索按销量排序、售罄不显示；导出的「只导有货」包含在途。** 收银台搜索结果原来按品牌名排序，卖得最好的那个被埋在十二条里——改为**销量高的在前**（用子查询而不是 join，否则文字筛选会把多笔销售的数量重复累加，已加测试）。**售罄的不再出现**，因为没货就没得卖。两个边界：**(1) 最后一件仍可在收银台卖出**——客户清单会留一件做样品，但店里可以把展示品卖掉，所以这里的门槛是「库存 > 0」而不是「可售 > 0」；**(2) 进货页仍然看得到售罄产品**（`?scope=stock`），没货才正是要进货的东西。导出的「只导有货」现在也**包含在途产品**（打印成 Brevemente em stock，是能答客户的真话，漏掉会白白丢单），复选框改名为「Only products with stock or on the way」。**修了自己引入的一个 bug**：库存过滤一开始也套在了 `product_id` 直接查询上，而订单更正是靠 id 重新加载已有行的——那些产品往往早就卖光了，会导致更正时整行消失；现在过滤只作用于文字搜索。586 通过（两个改动分别撤销验证转红）。
-- 2026-08-27: **香水信息重做 + 修复导出容量全是 100ml。** **(1) 容量 bug**：导出的名字接的是 `spec`，而 `spec` 曾被默认填成 "100ML"，所以 20ml 的瓶子印成 100ml（Asmotra 那批就是）。改为**容量取 `volume_ml`**，`spec` 只作回退；顺带发现 `customer_catalog_case()` 是纯 `.title()`，会把 `20ml` 变成 `20Ml`、`EDP` 变成 `Edp`，已还原这两类词。**(2) Product Name 可以留空**——很多香水就叫系列名，强制填导致有人把系列名再抄一遍（`Rayhaan Pharaoh Pharaoh` 的由来）；命名统一为 `title_parts()`：品牌 + 系列 + 名称(可空) + 浓度 + 容量，系列等于名称只说一次。**(3) 三段香调**（Notas de Topo / Coração / Base）改为**自由输入**，接在 Fragrance family 之后。**(4) Inspired by 改为自己输入**（`inspired_by_text`），原来 5 条 FK 记录由迁移 0056 复制进文本字段。**(5) 描述自动合成**：只写一段短描述，香型/香调/灵感由 `composed_description()` 自动接在后面，不用再复制粘贴——复制的那份字段一改就过期。**注意**：`Inspirado em` **仍然不上 Shopify 公开描述**（`include_inspiration=False`），这是之前就定下的（公开列别家品牌名有商标风险），本次已再次确认；app、产品页、批发 Excel/PDF 照常显示。这一点是被一条叫 `test_inspired_by_is_internal_and_never_sent_to_shopify` 的旧测试拦下来的，否则会在「整理描述字段」时顺手把它公开出去。575 通过（把 spec 优先的旧行为还原，验证 2 条转红）。
-- 2026-08-27: **修复客户看到价格变成日期 + PDF 下载一直转圈。** 两个问题**都不是 WhatsApp 的锅**（WhatsApp 原样传字节），都是客户端打开方式的问题。**(1) 价格显示成日期**：带货币文字的格式 `"EUR" #,##0.00` 会被写成**自定义格式**（numFmtId 164），解析不了自定义格式的看图器会回退到内置格式、落到 **id 14 = `m/d/yy`**——所以 9.00 显示成 `1/9/00`、47 显示成 `2/16/00`。改用**内置格式** `#,##0.00`（numFmtId 4，任何阅读器都认识），货币写进表头（`PVP (EUR)` / `Preço grossista (EUR)`）。顺带发现一个叫 `test_product_excel_uses_excel_safe_currency_number_format` 的旧测试**正好锁死了这个 bug**（名字写着 safe，内容要求的恰恰是不安全的那个），已反转。**(2) PDF 一直转圈**：reportlab 只缩放**画框**、嵌入的是**原图**，所以 238 个产品把整店原图塞进了一个 **267MB** 的文件、构建 **86 秒**，PA 上早就超时了。改为先用 PIL 缩到 220px 再嵌入（Excel 那条路一直是这么做的，是我写 PDF 时漏了）：**267MB → 2.3MB，86s → 7.3s**。557 通过。**验证教训**：第一次「撤销修复」只删了 `thumbnail()` 一行，测试照样通过——因为周围的 JPEG 重编码本身就压小了文件；必须还原**真正的原始实现**才验证得出来。测试图也从纯色改成随机噪点（纯色压缩后根本大不起来，断言等于空转），并对图片本身加了断言。
-- 2026-08-27: **新增「撤销收货」按钮。** 确认收货是一下点击，点错就凭空多一批库存，手工回滚要找批次、删批次、记得把待收货行放回去、再改状态——很容易只做对一半，而做对一半比不做更糟。供应商详情页每张已收货入库单旁边加 **Undo receipt**，把收货那一步整个反做：删 `Purchase` 批次（库存跟着退）→ 原样重建 `InboundPendingItem`（单子回到待收货、可重新确认）→ `status`/`received_at` 复位（同时退出供应商时效统计，因为本来就没到货）。**唯一硬规则：这批货一件都不能卖过**——卖掉一件它的成本就写进了那笔销售的 `cost_basis`，删批次会让那笔销售描述一批不存在的库存；所以只要有批次被动过就**整个拒绝**而不是做一半，页面显示 "Cannot undo" + tooltip 说明原因，并且**事务内再查一次**（页面开着的时候可能刚好卖掉）。批次**一条一条删**而不是 queryset 批量删——批量删不触发 per-row signal，而那正是通知 Shopify 和重算香水价格的地方。限经理。553 通过（把安全检查去掉验证 2 条转红）。
-- 2026-08-27: **「Brevemente em stock」从下一行改为下一列。** 低库存又在途的产品，原来在下面多加一行，现在改成同一行的**下一列**（表头 `A chegar`）——一个产品一行，「只剩两个」和「货在路上」横着读而不是竖着读，两个颜色都还在。**这一列只在真的有在途产品时才出现**，否则一直空着的列会占掉产品名的宽度。Excel 和 PDF 都改了（PDF 里可用性列因此从最后一列变成倒数第二列，上色的目标列跟着换）。538 通过（把这一列去掉验证转红）。
-- 2026-08-27: **折扣范围改为 60ml–120ml。** 原来是「≥ 100ml」，但 body spray 是 200ml 这种，按毫升卖不是按香味卖，同样减几欧会把利润减掉大半——所以**两端都要卡**：这不是「大瓶」，是「一瓶香水该有的容量」。现在 150/200/250ml 全部排除，80/90ml 纳入。浓度那一关保留，用来防 100ml 装的身体喷雾漏过去（容量已经挡掉 200ml 的）。实际影响：111 个产品参与折扣（80ml×2、90ml×3、100ml×104、105ml×2），排除掉 10–50ml 的小瓶、150–250ml 的喷雾，以及 **113 个没记录容量的**。534+ 通过（把上限改成 9999 验证转红）。
-- 2026-08-27: **导出折扣只作用于整瓶香水。** 折扣本来对所有产品生效，但 50ml 本身就便宜、同样减几欧会把利润减掉大半，身体喷雾同理。改为 `discount_applies()`：**香水分类 + 容量 ≥ 100ml + 不是身体喷雾**（250ml 的身体喷雾瓶子大，但不是一瓶香水）。**没记录容量的产品不打折**——多打折是悄悄少赚，少打折是看得见也容易补。**注意：238 个香水里有 113 个没有容量记录**，所以现在只有 111 个产品会参与折扣；要让其余的参与，把 `volume_ml` 填上即可。**PVP 永远不打折**（建议零售价不是批发价）。528+ 通过（把限制撤掉验证转红）。
-- 2026-08-27: **客户清单改成葡萄牙语 + PVP 加价 + 导出折扣框 + 在途单独一行。** 清单是发给葡萄牙客户的，Excel 和 PDF 内容**全部改成欧洲葡萄牙语**（app 界面仍是英文，那是给店里用的）：Foto / Produto / EAN / Categoria / **PVP** / Preco grossista / Disponibilidade，状态词也改（Disponivel / Stock reduzido / Brevemente em stock / Indisponivel）。**Retail Price → PVP，且比 app 零售价高 €2**（`PVP_UPLIFT` 常量，改一处全改）。导出对话框新增**折扣框**：填多少欧，导出的**批发价就减多少**（不低于 0），**每次导出单独填、不改动店里任何数据**，所以同一批产品可以给不同客户报不同价；支持 `2,50` 葡式写法，填错字不会导致导出失败。图例去掉「最后一件是展示样品」那句（客户不需要知道我们留了几件样品）。**低库存且有货在途的产品现在是两行**：本行 `Stock reduzido`（黄），紧接着下面一行 `Brevemente em stock`（蓝）——两件事都是真的，客户两件都想知道。Excel 和 PDF 共用同一套数字和规则。529 通过。
-- 2026-08-26: **修复「产品页手动同步到 Shopify」建出来的产品格式不对。** 创建路径只建**一个 `Default Title` 变体**、推**全部库存**、标题只读旧的 `spec` 字段——所以新产品没有 5ml/10ml 分装、库存没有减 2 瓶样品、容量丢失（容量早搬到 `volume_ml`，113 个香水的 `spec` 是空的）、系列和名称相同时写成 `Rayhaan Pharaoh Pharaoh`。分装和留样规则一直**只存在于更新路径**里。对照线上现有产品重建：选项名 **`Tamanho`**（不是 Default Title）、三个 SKU（`<条码>` / `-10ML` / `-5ML`）、库存走同一个 `_inventory_targets`（100ml = 库存−2，分装 = 有瓶就 10）、标签和 SEO 照抄现有格式（`… | Perfume Árabe`、`… | Scentory — envio para Portugal`）。**只有 100ml 香水建 3 个变体**（30ml 抽 2 瓶做样品会把库存吃光）。分装价按线上比例反推：10ml = 正装×17.5%、5ml = ×11.5%，四舍五入到 €0.05，误差 ≤ €0.30，**app 只写正装价，不覆盖分装价**；成本只写在正装上（分装套整瓶成本会显示成亏本）。标题现在读 `volume_ml`、补上浓度、系列等于名称时不重复。512 通过（把 `decanted` 改回 False 验证 6 条转红）。
-- 2026-08-26: **进出库自动同步 Shopify 库存（单向，app → Shopify）。** 这套 signal 其实早就写好了，只是 `SHOPIFY_INVENTORY_SYNC` 一直没打开；但直接打开会踩两个坑，先修掉了：**(1) 手动减少库存永远不会推**——`consume_stock_fifo`/`restore_stock_fifo` 用 `QuerySet.update()` 改 `remaining`（SQLite 上 `select_for_update` 是空操作，只能用条件 UPDATE），而 `.update()` **不触发任何 model signal**，所以「减少库存」的调整线上数量会一直停在旧值；现在挂在这两个函数里，也就是变动真正发生的地方。**(2) 收银台要等 Shopify**——`on_commit` 回调是**在请求线程里同步跑的**，一张 5 行的单子要等 15 个 API 调用才返回；改成事务内收集 + **按产品去重** + 提交后交给**后台线程**（`SHOPIFY_PUSH_BACKGROUND=0` 可回退内联）。Shopify 挂了不会让销售失败（推送永不抛错），推的是**绝对值**所以重复推无害，丢的推送由 `sync_shopify_inventory --apply` 兜底（建议每晚跑）。**刻意只推不拉**：Shopify 的订单由店里手动录入 app，双向同步得决定两边都改时听谁的，判断错就是悄悄丢库存。不上网店的分类和没条码的产品不推。494 通过（分别撤销两个修复验证转红）。
-- 2026-08-26: **货架上最后一件算样品，不计入可售。** 清单里把样品当作可卖，结果要么丢了展示样、要么让下单的客户失望。新增 `SAMPLE_RESERVE = 1`，可售数 = 库存 − 1，所有状态判断都基于可售数：**只剩 1 件 = 显示无货**（有在途则显示 In stock soon 蓝色）；2–3 件（可售 1–2）低库存黄；≥4 件（可售 ≥3）绿。导出的「只导出有库存的产品」也跟着改成按**可售数**过滤（`total_stock > SAMPLE_RESERVE`），否则会列出一行、旁边那列却写着 Currently unavailable，自相矛盾。Excel 图例补上「最后一件是展示样品，不计入库存」。**没有动 Shopify 的库存推送**——那会改变线上店实际能卖的数量，是另一个决定。483 通过（把 `SAMPLE_RESERVE` 改回 0 验证测试转红）。
-- 2026-08-26: **查清 WhatsApp 发出去没图片的原因 + 新增 PDF 导出 + 库存状态加「在途」蓝色。** 先验证了 Excel **文件本身没问题**：`xl/media/` 里图片字节都在、`oneCellAnchor` 的 `ext` 尺寸正确，所以自己下载能看到。真正原因是**打开方式**——照片是浮动图形，WhatsApp 的文档预览、Google Sheets、手机表格 App 导入 xlsx 时**会丢弃浮动图片**，改文件解决不了。所以加了 **PDF 导出**（`services/catalog_pdf.py`，reportlab 本来就在 requirements 里），PDF 里图片是页面的一部分，任何设备都能显示；导出框里 Excel / PDF 并排，筛选条件相同。**库存状态**：≥3 Available now 淡绿、1–2 Low stock 淡黄、0 且在途 **In stock soon 淡蓝**、0 且没在途 Currently unavailable 红。「在途」**不需要新字段**——`pending_receipt` 状态的进货单里的产品就是在途，app 早就在记，所以这个状态自己保持正确，不会有第二个人工维护的标记迟早失准；库存 1–2 时不显示蓝色（客户关心的是今天货架上有几个）。阈值按要求改成**少于 3 件算低库存**（原来是少于 4）。删掉了每个品牌第 2 行那句 `Sort: … | Images: yes`（对客户没意义），换成**颜色图例**并写明「低库存 = 少于 3 件」「在途一般 3–7 天」。Excel 和 PDF 共用同一套判断和颜色。479 通过。
-- 2026-08-26: **货架页改成 分类 → 类型 → 网格，并且改库存要先点 Edit。** 导航现在是两级：手机壳 / 钢化膜两个大类，各自下面是类型（Normal silicone / Clear TPU / MagSafe / 翻盖；Tempered glass / Hydrogel film），**类型标签上直接显示批发价**（`ShelfStyle.wholesale_price`，admin 里改；没有零售价——壳膜还不是产品、不走收银台）。网格**默认只读**，点 Edit 才能改，改动在浏览器里攒着、Save 时**一个请求一个事务**写完，Cancel 全部还原，带着未保存改动离开会有提醒——货架页会被拿在手上随手看，只读时误触不会改掉库存。原来的「点一下立即保存」接口换成 `shelf_save_states` 批量接口（单条坏数据跳过、不影响同批其他改动；坏 JSON 返回 400）。**撤销上一版的一个改动**：产品列表里配件**恢复显示照片和零售价/批发价**——那里本来就是给鼠标键盘这类有条码的电子产品登记用的，壳和膜根本不会出现在产品列表里。465 通过。
-- 2026-08-26: **货架图的列改成数据（可扩展到膜/其他材质）+ 预置 iPhone 全系 + 壳膜不再走 Add product。** 上一版把「颜色」写死成唯一的列，膜就没法用（膜按胶型和边型摆，不按颜色）。改成每个款式指定自己的**轴**：`ShelfAxis`（列的含义）+ `ShelfOption`（具体一列），`CaseStyle/ShelfColour/CaseStock` 相应改名为 `ShelfStyle/ShelfOption/ShelfStock`（迁移 0051 用 RenameModel，**保留了已播种的 10 个颜色**并挂到 Colour 轴）。加一种新货 = 加款式 + 选轴，不改代码；**手机型号全 app 共用**，录一次在所有款式的网格里都有。预置 iPhone 全系 39 个型号 + 29 个简称别名（`seed_phone_models`）。排序改为**先年份再型号数字**——只按名字的话 `iPhone X` 没有数字会掉到 16 后面，年份让它回到 8 和 11 之间；没年份的排最后（手工新加的会显眼而不是跑到头部），页面加型号默认填当年。`ShelfStyle.category` 把款式挂到目录分类，**新增产品页选中 Cases 时直接给出网格入口**，不再显示一张不该填的表单——壳和膜从来不是产品（无条码无价格）。**测试抓到一个 URL bug**：`shelf/style/<slug>/` 排在 `shelf/style/add/` 前面，`<slug>` 会匹配到 "add"，所有新建款式的请求都 404。460 通过。
-- 2026-08-26: **配件改用「货架状态图」，不再套用产品那一套。** 手机壳不数个数——店员要的是「有没有货」和「上方盒子里还有没有」。每个 **款式 × 型号 × 颜色** 只有一个状态：`OUT` / `DISPLAY`（货架上有且就这些）/ `EXTRA`（货架上有且上方还有）。点一下格子按 `OUT → DISPLAY → EXTRA → OUT` 循环，就是现实中发生的顺序，不填任何数字。数据上四件事分开存（`CaseStyle` / `DeviceModel` / `ShelfColour` / `CaseStock`），**不是** `"IP15 Pro: B(up), T"` 这种文字；行懒创建，没上过货的格子没有行。`state` 故意不做成两个 boolean，以后加数量/进货/出货/采购/销售时现有每行仍然有意义。排序用 `DeviceModel.sort_key`（数字补零），`iPhone 9` 排在 `iPhone 11` 前，**新加型号自动落到正确位置**；搜索边打边筛无需 Apply，筛空的品牌标题自动隐藏；型号列横向滚动时固定。通用型号**只写备注不同步状态**（按店里的决定），备注可搜索。**改状态任何登录用户都可以**（标缺货是站在货架前的人的活），加型号/颜色/款式限经理。产品列表选中配件分类时**不再显示照片**（一个黑壳的照片和另一个没区别），`form_kind` 沿分类树继承所以子分类也生效。`seed_shelf` 建 Normal silicone + 10 个颜色。文档见 `docs/SHELF_MAP.md`。442 通过。
-- 2026-08-25: **供应商详情页：按到货时间排序 + 统计卡片紧凑化。** 排序原来是 `-invoice_date`，而发票日期可以早于/晚于实际到货，所以**今天刚到的货被埋在下面**。改为按**货真正到的那天**排（`received_at`，未收货的用 `created_at`），列表日期也改显示到货日，发票日期不同时在副行标出，未收货的标 `awaiting receipt`。Scorecard 从 9 个大卡片（`minmax(180px)`、1rem padding、1.7rem 数字）压成一行一个的紧凑网格（`minmax(124px)`、.45rem padding、1rem 数字），并把原本单独一排的 4 个统计合并进来共 12 项；金额去掉小数（`floatformat:0`）；联系方式从一段加粗文字改成 chips；缩略图 48px→34px；手机端 `minmax(104px)` 再收紧。硬编码色值换成 `--app-*` token。410 通过（把排序改回旧逻辑验证测试转红）。
-- 2026-08-25: **修复供应商到货时效大量漏算。** 212 张已收货的入库单里**只有 16 张被统计**。根因有两个：(1) `InboundOrder.status` 的**默认值就是 `'received'`**，所以直接建的单 `received_at` 是 NULL —— 40 张这样的单永远算不了；(2) 服务层用 `received_at > created_at` **猜**"这行有没有真实数据"，把同天下单同天到货的单也悄悄丢掉。改为记录**事实**而不是猜：新增 `InboundOrder.placed_at`（下单时间），**两个时间戳都由 model 自己打**（`save()` 打 placed_at，新增 `mark_received()` 打 received_at），任何路径建单/收货都不会漏，包括 admin。统计规则变成「两个时间戳都在就算，缺一个就不算」。历史单没有 `placed_at` 的**永远不参与**（没有诚实的办法凭空造下单时间）；迁移 0049 只回填两种确定情况：**还没收货的暂定单**（这样它们落地时能算）和**原本已被统计的那 16 张**（否则现有平均值会全部消失——已验证回填前后 7 个供应商的平均值完全一致）。新增 `lead_time_report` 命令逐单打印 计入/跳过 + 跳过原因，用来查"为什么这单没算"；admin 里 `status`/`placed_at`/`received_at` 改为**可编辑**并加了时效列，**在这两个字段存在之前收的货可以手工补上真实日期**（只有店里知道，代码去猜不诚实）。407 通过。
-- 2026-08-23: **分类可自助新增 + 列表只显示三个顶级分类 + 修好选择器串台的 bug。** 列表页原本把 12 个分类（含配件子分类）全铺成 chips —— 改为**只显示顶级分类**，点一个会带出它下面所有子分类的产品（`category_with_descendants()` 逐层展开整棵树，带环检测）。新增产品页现在可以**自己加分类**：顶级行末的「+ New category」（选 form kind）和子分类行末的「+ New type」（**继承父分类的 form_kind 和 Shopify 开关**，所以 Accessories 下新建的自动是配件表单且不上网店）；同名会被拒绝并直接选中已有的那个，新分类当场插进按钮行和 select，不刷新页面。我预设的那 10 个子分类只是起始集，不是固定的。**修 bug**：来回切分类时 Accessories 会一直留着蓝框，且表单显示的字段跟高亮的分类对不上 —— 根因是我在每个点击处各自 toggle class，`is-open` 只在其中一个分支里清除。改成 `openParent` + `chosen` 两个状态 + 一个 `render()` 收口，并且**展开父分类不再等于选中它**（展开时表单收起，屏幕上的字段永远属于高亮那个分类）。393 通过。
-- 2026-08-23: **修复页面上的乱码 + 新增产品选择器就地展开 + 补齐配件分类。** 页面上那段乱码是我写的 bug：Django 的 `{# ... #}` **只支持单行**，我写了跨行注释，于是整段原样渲染到了页面上。三处已修，并加了 `TemplateHygieneTests` 扫描全部模板拦截复发（`manage.py check` 不编译模板，只有测试能发现）。选择器改为**全程不跳转**：分类按钮一直留在页面上，子分类就地向下展开，表单在下面展开，改分类一下即可（原来会隐藏选择器并滚动）。配件分类从 6 个扩到 **10 个**：Cases / Screen protectors / Cables / Chargers & plugs / Power banks / Audio / Mice & keyboards / Storage / Holders & mounts / Other electronics，共 20 个属性 67 个选项。壳型（普通胶壳/Fancy/MagSafe/翻盖/防摔/皮/…）是**属性选项**不是分类——加新壳型在 admin 加一个选项即可；膜的**胶型和边型都是 variant 属性**，全胶弧边和普通直边是两个独立库存行、各自价格。`--prune` 选项可清理改名后遗留的重复属性（**只删没有任何产品答过的**）。374 通过。
-- 2026-08-23: **新增产品页改为「先选分类、再按分类提问」。** 原来香水和配件挤在同一张 13 字段的表里。现在第一步用按钮选分类（顶级一排，有子分类的点开第二排），第二步表单只问该分类的问题：香水问性别/容量/浓度/香型，配件问适配（通用/机型/兼容组）+ 店铺自定义属性，配件不再显示颜色旧字段（颜色已经是自定义属性，否则问两遍）。判断依据是新增的 **`Category.form_kind`（数据）**，不是猜分类名——`edit_product` 原本用 `/perfum/i.test(分类名)`，新开一个「香水配件」分类就会误判；`form_kind` **沿父分类继承**，在 Accessories 下新建子分类自动就是配件表单。同时补上了第二步遗漏的：`universal_fit`/`device_models`/`compatibility_groups` **之前根本没进表单**，模型有字段但界面无法设置。`edit_product` 同步改造。校验失败重渲染时直接跳到第二步，不用重选分类。**测试抓到一个真 bug**：`seed_accessory_attributes` 创建分类时没设 `form_kind`，新店铺装完会拿到通用表单——已修。369 通过。
-- 2026-08-23: **店铺自定义属性（配件库存第三步）。** 壳的类型、膜的边型和胶型这类字段不可能每加一个就改一次 model —— 改成店铺自己在 admin 里定义：`CategoryAttribute`（字段定义）+ `AttributeOption`（可选项）+ `ProductAttributeValue`（**分列存储**，数字存数字列才能正确排序）。属性**沿分类树继承**，同 `code` 就近覆盖，`attributes_for_category()` 带环检测。`variant_attribute` 标出"会让两个东西成为不同库存行"的属性（颜色是，"软触感"不是），第 4 步矩阵录入直接读它。表单渲染全部分类的属性、只显示当前分类的，但 **save 只应用属于所选分类的**（藏起来的字段照样提交，残留值绝不能覆盖东西；改分类会清掉旧分类的答案）；**空答案不存行**——"没填"和"填了否"是两回事。产品详情页现在按分类分流：配件不再显示一排空的香水字段，改显示规格、适配机型和自定义属性。`seed_accessory_attributes` 播种 6 个分类 15 个属性 48 个选项，可重复运行且不覆盖手工修改（dry-run 计数原本会少报，已修）。**踩到的坑**：`{% render_field %}` 不接受带过滤器的属性值（`id=x|add:"_id"` → `add requires 2 arguments`），而 `manage.py check` 不编译模板，只有测试能发现。355 通过。
-- 2026-08-23: **配件适配层 + 配件不再上 Shopify。** 配件按"配什么"卖：`DeviceModel`（一台机型）、`DeviceAlias`（同一台机器的其它写法，**是数据不是代码**）、`CompatibilityGroup`（尺寸相同可共用配件的一组机型）。产品侧 `universal_fit` / `device_models` / `compatibility_groups` 三选项 OR 起来。收银台打 `15PM`、`iPhone 15 Pro Max`、`A2849` 都能找到对应的壳和膜；**通用商品故意不并入机型搜索**，否则每根线都会出现在每台手机下面。归一化只存机型名（店员不会打品牌），`resolve_device()` 额外尝试剥掉开头的品牌名。别名带 unique 约束——同一个简写不能指向两台机器。**Shopify 改为按分类开关**：`Category.sync_to_shopify`，迁移 0043 把非香水分类关掉；四个覆盖全部产品的 sync 命令和产品页的单品同步按钮都改走这个开关（原来单品按钮是硬编码判断分类名里有没有 'perfum'）。新机型上市 = admin 加一行，不改代码。314 通过（撤销品牌剥离后转红验证）。
-- 2026-08-23: **无条码商品可以入库了（配件库存第一步）。** 手机壳/钢化膜/数据线大多没有 EAN。没有把 `barcode` 改成可空——它是收银台、Cloudinary `public_id`、Shopify SKU 的身份键，全项目 122 处引用——而是**自己发号**：GS1 把 `20–29` 前缀留给店内自用，所以生成的是**合法 EAN-13**（前缀 `29` + 10 位流水 + 校验位），塞得进现有 13 位字段、扫得出来、能打标签，下游零改动。表单留空即发号，**编辑时留空不会清掉已有条码**，重复条码照旧报错。并发靠 unique 索引兜底（SQLite 上 `select_for_update()` 是空操作），撞号顺延。校验位算法用 GS1 公开样例做了测试。294 通过（撤销发号后转红验证）。
-- 2026-08-23: **清空 169 条从未使用的旧配件 + 按店铺配置可售分类。** 旧的手机配件/电子条目全部是零采购零销售零库存零图片，为配件库存重建让路，用新的 `purge_unused_products` 命令删除（默认 dry-run，拒绝任何带采购/销售/图片/调整/待收货记录的产品，`--category`/`--exclude-category` 限定范围）；删除后 4,541 条销售与 641 条采购**一条未动**，剩 238 条香水。新增 `Store.sellable_categories`（M2M→Category，**留空 = 全卖**）：Khan Perfume 仓库+门店卖全部，Scentory 纯香水店只卖 Perfumes（迁移 0040 按 `code='SHOP2'` 播种，已手工配置过的店铺不覆盖）。过滤统一走 `stores.py::scope_products_by_store()`，作用于产品列表与收银台的扫码/搜索。**进货是例外**：库存全公司共享，`inbound.html` 带 `?scope=stock` 拿到完整目录。改分类不用改代码，在 admin 勾选即可。284 通过（撤销过滤后 3 条转红验证）。
-- 2026-08-20: **修复「确认收货」只保存、不入库的 bug。** 点 Confirm receipt 显示「saved」、库存没进、订单仍在 Awaiting receipt。根因是我上次修 404 时加的**防重复提交**：它在表单自己的 submit 处理里把所有提交按钮 disable 了，而**被禁用的按钮不会被序列化** → `name="action" value="receive"` 根本没发给服务器 → 视图回落到默认的 'save'。改为用 `setTimeout` **延后**禁用，让浏览器先序列化再锁弹窗，防重复提交依然有效。回归测试断言 action 挂在按钮上（无 JS 也能提交）且禁用发生在 setTimeout 之后（比对时先剥掉注释——我第一版测试因为匹配到自己注释里的 setTimeout 而在 bug 复现时仍然通过）。已通过「撤销修复 → 测试 FAILED」验证。274 通过。
-- 2026-08-20: **香型改为平铺 chip + add_product 同样分组。** 香型选择器原本每个香型占一整行——我写的 CSS 针对 `ul/li`，但 Django 的 `CheckboxSelectMultiple` 渲染的是**每个选项一个 div**，规则根本没命中。改为针对真实结构，香型现在是自动换行的小胶囊。`add_product` 套用 `edit_product` 的同一套分组（Identity / Perfume / Variant / Pricing / Description，品牌与系列跟各自的“新建”输入框上下配对），香水隐藏 Variant 组、非香水隐藏 Perfume 组，随分类实时切换；隐藏组仍保留控件，值照常提交。测试扩展到新增页：两个页面每个字段都必须**只渲染一个控件**。273 通过。
-- 2026-08-20: **编辑产品页表单分组 + 香水不再显示颜色。** 原来是 13 个字段平铺一片。现按 Identity / Perfume / Variant / Pricing / Description **分组**，成对字段（品牌+新建品牌、系列+新建系列）改为上下叠放而不是各占一列。**香水隐藏 Variant 组**（颜色 + 自由文本 spec —— 尺寸已由 `volume_ml` 接管），非香水隐藏 Perfume 组；切换分类即时生效。隐藏只是显示层面：**所有控件照常渲染**，值仍会提交，不会被静默清空。改造中我一度把 Gender 只放进 Perfume 组，那样非香水保存时会被清空——已改为放在 Identity 且**只渲染一次**，并加测试断言每个字段只有一个控件、保存非香水后颜色与性别仍在。272 通过。
-- 2026-08-20: **香水变量设计（第 1+2 层）。** 先摸数据：238 款香水里**容量 69% 是空的**且大小写混乱、浓度完全没结构化（EDP 出现在 119 款的文字里，甚至有产品**名字就叫 EDP**）、香型和灵感来源只存在于葡语描述中、`color` 对香水 100% 为空。新增 `Concentration` / `FragranceFamily` / `Inspiration` 三张**可编辑分类表**（店里自己加值，不用改代码）+ Product 的 `volume_ml`(数字) / `concentration`(FK) / `fragrance_families`(M2M) / `inspired_by`(FK)，迁移 0038。`volume_ml` 填写后即为权威尺寸（`variant_label` 优先用它，配件仍回退 `spec`）。**灵感来源仅内部**：不同步 Shopify、不写进描述、详情页仅经理可见（公开他牌商标有法律风险）。新增 `backfill_perfume_attributes` 命令从既有文本回填：容量 125、浓度 127、香型 203、名称清理 28。灵感来源只回填 5 条——自由匹配抓 17 条里 12 条是营销修辞垃圾，改为**必须命中已知品牌白名单**，5 条全对，其余人工录入。表单/详情页已接入。第 3 层（用户自定义属性）待做。6 测试，270 通过。
-- 2026-08-20: **新增供应商时效（lead time）对比。** 数据本就存在（`InboundOrder.created_at` 下单 → `received_at` 收货），但原来详情页那个 `Avg Lead Time` 把**迁移 0023 回填的 156 条 `received_at == created_at`** 也算进去，全按 0 天平均，指标基本失真。新增 `services/lead_time.py`：只统计**真正等待过**的订单（`received_at > created_at`），提供 `supplier_lead_stats`(单个)、`lead_stats_by_supplier`(整页一次查询)、`recent_lead_times`(最近明细)，并把不足一天的时长显示成 `23h`/`16m` 而不是一律 `0.0d`。供应商**列表**新增 Lead time 列（均值 + 样本数，最快标绿、最慢标红，可横向对比），手机行也带上；**详情页**改为 均值/中位数/最快/最慢 + 最近 8 单的逐单时效。真实数据：7 家有时效记录，从 1m 到 6.0d。4 个测试，264 通过。
-- 2026-08-20: **修复进货确认收货后报 Not Found (404)。** `inbound_receive_view` 把 `status='pending_receipt'` 写进了 `get_object_or_404` 的查询里，所以**重复提交一次**（手机上双击、或浏览器重发 POST）时，第一次已把订单置为 received，第二次查不到 → 直接 404，尽管**库存其实已经正确入账**。改为先按 id 取单，再判断状态：已收货就带提示重定向回 Inbound；id 不存在仍然 404。另在收货弹窗加**防重复提交**（首次提交即禁用按钮并显示 Receiving…）。回归测试已验证：撤掉修复即以 `404 != 302` 失败。260 通过。
-- 2026-08-20: **销售记录页手机端收尾。** ① Inbound Purchases 的明细也从 **7 列表格**换成紧凑行——新增 `_purchase_order_item.html`(字段是 `cost_price`/`edit_url`，与销售 partial 不同故单独一份，但复用同一套 `.ord-*`)，同样**超过 3 条折叠**。② Monthly Breakdown 那张 7 列表套上 `compact-rows`，并把 **Sales 列提到第二位**(手机上第一格是行标题，月份+金额最该先看到)。③ **清掉与 `compact-rows` 打架的旧规则**：页面里还留着 `.item-table` 的老式手机卡片化(thead 隐藏 + 每格独占一行)，会覆盖共享写法——已删除，`.item-table` 现在只剩桌面端基础样式。259 通过。
-- 2026-08-20: **销售记录页订单区改用 /today 的紧凑写法 + 修图表溢出卡片的 bug。** ① 订单明细原本是**9 列表格**(图片/产品/条码/数量/单价/支付/小计/操作/利润)，每单展开后信息四散；因字段名与 /today 完全一致，直接**复用共享 partial** `_daily_order_item.html`(缩略图 | 品名 | ×数量·金额·支付)，**超过 3 条折叠**。为此把 `.ord-*` 一族从 daily_summary 的内联样式**移进 app.css**，两页从此共用一套（顺带推进 CSS 收敛）。② 订单摘要头原来是「Customer 标签 + 大号名字 + 单号徽章 + 时间」多行堆叠，压成一行(#单号 · 时间 · 客户名)。③ **修 bug：整年视图的月度图表溢出卡片** —— `.chart-box` 高 260px，而 app.css 用 `#yearBarChart{height:320px !important}` 强制画布 320px，画布比容器高 60px 直接漏到卡片外；用更高优先级让画布填满容器。259 通过。
-- 2026-08-20: **CSS 收敛第一轮。** 先出精确冲突报告（逐条比对内联规则与 app.css 的声明体），再动手：① 删除 **8 条与 app.css 逐字相同**的重复规则（outbound/inbound 的 `.operation-card-head`/`.operation-title`/`.summary-badge`/`.cart-product-*`）—— 零风险；② 删除 6 个页面对**核心元素的私自改写**：`add_product`/`edit_customer`/`edit_product`/`ar_detail` 把 `.btn` 圆角改成 .65rem/10px、`edit_customer` 给 `.btn-primary` 加光晕、`direct_purchase_edit`/`inbound_order_edit`/`sale_order_correction_center` 用 2rem+900+写死 hex 覆盖 `.page-title`、outbound 重复定义 `.pos-title`。这些页面现在继承统一外观。冲突选择器 **57 → 43**。余下多为有意的页面变体（chip/pill 尺寸、表头配色、打印标题），需逐页目视确认，留待后续。259 通过。
-- 2026-08-20: **CSS 统一性审计 + 约定文档。** 量化现状：共享 `app.css` 35.6KB/约180个类，但**页面内联 CSS 仍有 138KB 散在 30 个模板**；**125 个类名被多个模板重复定义**，其中 **20 个与 app.css 冲突**（内联写在 content 区块优先级更高 → 改 app.css 传不到那些页面，这是各页视觉漂移、改了不生效的根因）。结论：底座够用，新页面已可完全用共享类拼装，但旧页面不并入就无法继承改进。新增 **docs/UI_COMPONENTS.md**：四条硬标准、页面骨架、共享类速查表、`compact-rows` 手机表格统一做法、设计令牌清单、以及按内联体积排序的清理优先级；从 ARCHITECTURE.md 链接过去。旧页面并入属渐进任务，需逐页目视确认。
-- 2026-08-20: **Sales & Clients density — tranche 2 (section complete).** sales_records: 5 filler sub-lines dropped, KPI tiles compacted (label .9rem→.64rem caps, value 1.5→1.2rem, padding halved) and phones now show them **two-up instead of one giant card per row**; the day dialog had `max-width` but **no height cap**, so a busy day grew past the viewport — capped at 94vh with the body scrolling under a sticky header. customer_detail: 7 filler sub-lines dropped, same tile compaction, KPIs two-up on phones, delete dialog made centred + scrollable. The three employee variants had **zero** mobile CSS; rather than hand-rolling each, added a shared **`.compact-rows`** utility to app.css (first cell becomes the row title, the rest wrap as small labelled figures from `data-label`) and opted all three in — Customer/Order now leads the row instead of a timestamp. That utility is the house pattern for any future table on phones. 259 pass. app.css changed → collectstatic.
-- 2026-08-20: **Sales & Clients density audit — tranche 1.** Audit found: sales_records (1693 lines, 35% inline CSS, 11 KPI tiles, two separate Payment Mix blocks) and customer_detail (1212 lines, 40% inline CSS, 11 KPIs) are the worst; each big page carries its own copy of card/table CSS that app.css already defines, which is why the section drifts visually. Fixed this pass: ar_list carried `data-label` on every cell but the table never got the `mobile-card-table` class, so 9 columns just scrolled sideways on phones — it now renders one compact tappable row per IOU (customer, #id, date, status, balance/total) and its KPI tiles were slimmed. ar_detail did have a phone treatment but it was the tall stacked-card kind (one full-width line per field); converted to the compact row pattern used elsewhere. customer_search lost four filler explanation sub-lines and its KPI tiles were compacted (two-up on phones). sale_order_detail checked and left alone: it is a print receipt using max-width, so it shrinks rather than overflows. **Still to do: sales_records and customer_detail** (KPI consolidation, dedupe the two Payment Mix blocks, lift inline CSS into app.css) and the three employee variants. 259 pass.
-- 2026-08-20: **Signed-out pages no longer leak the app + supplier list tidied.** (1) login.html extends base.html, which rendered the full ERP shell to anonymous visitors — brand, sidebar and the nav structure (Dashboard, Operations/Outbound, Catalog/Products, Sales & Clients/Customers) were all visible before signing in. The top bar, sidebar, backdrop and footer are now gated on `user.is_authenticated`; a `body.anon` class gives the signed-out page a full-viewport centred layout on the dark brand background, and the login form was rebuilt (autocomplete hints, 16px inputs, safe-area padding). Verified: the login response contains none of the nav markup. (2) Supplier list was ragged because each country group rendered its own auto-sized table (columns never lined up between groups) and unbounded address/chips made rows uneven. Now `table-layout:fixed` with a shared colgroup, one clamped line per cell and a fixed row height, categories capped at 2 chips + '+N'; the two oversized stat cards fold into the header as pills and the filter row is compact. Phones get one compact tappable row per supplier instead of a 7-column table. 259 pass. app.css changed -> collectstatic on deploy.
-- 2026-08-17: **Deleting a product now archives it (books preserved) + decants drop to 10.** (1) Delete used to cascade the product away, and a superuser's `force_delete` also removed its purchase/sales rows and any order left empty — past revenue and profit changed retroactively. Product gains `archived_at`; deleting sets it and clears the photos. New default manager `ActiveProductManager` hides archived products from **every** catalogue query in one place (lists, autocomplete, scanning, exports, all Shopify sync commands), while `all_objects` (wired as `Meta.base_manager_name`) keeps `sale.product` resolving so order history and profit are untouched; product detail + order rebuild read through it. Migration 0037. Regression test asserts the product leaves the catalogue while purchases, sales, orders and the computed profit all survive. (2) Shopify `DECANT_AVAILABLE` 99 → **10**. 259 pass.
-- 2026-08-17: **Fix: syncing a stocked product pushed 0 to Shopify.** Switching a variant from untracked to tracked makes Shopify (re)initialise its inventory level at 0 — an untracked variant's reported `inventoryQuantity` was never a real level. The sync only wrote the quantity when the *reported* number differed from the target, so a variant whose reported number happened to match was flipped to tracked and then left stranded at 0 (the product-page Sync button hits this on a variant's first sync). A policy/tracking change now always forces the quantity write. Regression test verified to fail without the fix; the old decant test asserting `set_inventory_available` was NOT called encoded the buggy behaviour and was corrected. Also moved Today's Payment mix above the orders card (below the KPI strip) and made the payment rows sit side by side. 258 pass.
-- 2026-08-17: **Inbound contrast fix + receive dialog + Today page density** -- (1) **Bug: the inbound panels had no surface at all.** `.operation-card` was only ever defined inside outbound.html's inline <style>, so inbound used the same class names with no background/border and its form blended into the page. Promoted operation-card/-head/-title/-kicker and summary-badge into app.css, so both pages share one definition. (2) Awaiting receipt: wide scrolling table -> compact cards. (3) Receive dialog made scrollable (Confirm is always reachable) and much denser: three-up header fields with small labels, tighter line rows and 34px thumbs. (4) /today: dropped the payment doughnut (and with it the Chart.js CDN request) and moved Payment mix directly under the sales/orders card; KPI cards compacted (filler sub-lines removed, two-up on phones). 257 pass. NOTE: app.css changed -> run collectstatic on deploy.
-- 2026-08-17: **Filter slimmed / Today orders inlined / Inbound follows the outbound pattern** -- (1) Product filter cut to two rows: the heading and every field label are gone (each select names itself through its first option), leaving a category chip row plus one control row with search, the three selects, Apply and Reset. (2) /today: orders no longer hide behind a per-order dialog; each renders as a full inline card (number, time, store, customer, payments, profit, total) with its products listed underneath -- past three they fold into a 'N more' disclosure, mirroring the phone card pattern. Modals removed. (3) Inbound rebuilt on the outbound logic: the tall Step-3 side panel is replaced by a sticky checkout bar (supplier, pcs, warning count, total cost, confirm) with the lines table now full width, dead panel CSS removed, and camera scanning added -- tuned for receiving, the camera stays open and keeps adding products instead of closing after one scan. 257 pass.
-- 2026-08-17: **Product list desktop pass** -- category chips were clipped because they sat in one narrow toolbar column while forced equal-width and nowrap; they now get their own full-width row and size to their content (phones keep the equal-width single row). Desktop filter layout rearranged to categories on row 1, then search + brand/stock/sort on row 2 (>=1200px). The three counter cards were removed as a separate section and folded into the Product Table header as compact pills, on desktop and mobile alike. 257 pass.
-- 2026-08-17: **Product detail density + products become manager-owned** -- (1) Detail page: the Product Profile table repeated what the page header already showed (display name, barcode, category) and spread six values over a row-per-field table; replaced with a compact multi-column definition grid, dropped the duplicated fields and the explanatory sub-headings, and tightened hero/KPI/gallery spacing on phones (KPIs two-up, 3-up gallery). (2) **Employees are now view-only for products**: add_product and edit_product require manager access, and the Add Product button plus every Edit affordance are hidden from employees in the list. Tests that asserted the old employee add/edit rights were inverted. (3) Outbound line modal: the unit price is **editable again** (Retail/Wholesale still prefill it) -- reverting the earlier lock-to-discount-only decision at the owner's request. 257 pass.
-- 2026-08-17: **Product list mobile pass 3** -- filter actions no longer look identical: Apply is a full-width primary, 'More filters' an outline disclosure with an icon, Reset a plain link; dropped the equal-width flex that was squeezing and clipping the button labels, and category chips became rounded pills (smaller type so names like 'Accessories' fit). Page header slimmed on phones (smaller title, short 'Sync Shopify' / '+ Add' labels). With that space freed, product rows were enlarged: 52px thumb, larger name, and the barcode is back on the meta line alongside the sales figures. 257 pass.
-- 2026-08-17: **Product list mobile pass 2** -- category chips forced onto one row (equal widths, no wrap); the three counters compressed from stacked cards into one compact 3-up strip with shorter labels (Products / In stock / Units on page); wholesale price added back to the phone row as a muted 'Whs' line under retail; product name and specification (volume) split onto separate lines; filter block slimmed -- heading hidden on phones, smaller labels/inputs, and Brand/Stock/Sort moved behind a 'More filters' collapse on phones while staying inline on desktop via display:contents. 257 pass.
-- 2026-08-17: **Product list mobile density** -- each product used to render a ~280px stacked card (64px thumb block + four Sales/Retail/Wholesale/Stock tiles + View/Edit buttons), so barely two fitted on a phone screen. Rebuilt as a dense tappable list: one ~64px row per product (thumb / brand / model+name+spec / price + stock pill), the whole row links to the detail page and a pencil column links to edit -- roughly 4x more products per screen. Wholesale, barcode and category moved off the phone row (still on desktop + detail). Export panel folded into a collapsed <details> so it no longer pushes the list down, and the secondary filters sit two-up on phones. Desktop table unchanged. 257 pass.
-- 2026-08-17: **Outbound follow-ups** -- (1) Scanner read nothing even with a sharp barcode: removing the crop box while also asking for 1080p meant ZXing had to decode a full 1080p frame per pass, far too slow to ever land a read. Now a generous crop (92% x 60%) at 1280x720, more 1D formats (CODE_39/ITF), and any decoded value is looked up so an unknown code reports 'not found' instead of being silently dropped. Added a typed-barcode fallback inside the scanner. (2) Scanner dialog capped at 38vh video + scrollable so it fits the screen. (3) Customer block reduced to one compact row; all 'walk-in' explanation removed (shows a dash instead). (4) Replaced the meaningless 'line' wording everywhere with 'product'. (5) **Bug: the out-of-stock banner never disappeared** -- only the info toast had a timer, so a stale 'no stock' error stayed visible while later products scanned fine. All toasts now auto-dismiss and are cleared as soon as a good product is opened or added. All changes apply to desktop and mobile. 257 pass.
-- 2026-08-17: **Outbound: scanner accuracy + page/dialog redesign (desktop + mobile)** -- (1) Scanning failed because the qrbox crop threw away most of the frame and the video ran at default resolution; now it scans the FULL frame at 1920x1080 with continuous autofocus, uses the native BarcodeDetector where available, and adds a zoom slider (starting at 2x) plus a torch button. Small barcodes are read by zooming, not by moving closer -- phone lenses cannot focus under ~10cm, which is why getting close blurred. (2) The big 'Review & confirm' side panel is gone (its content is already in the confirm dialog); the cart is now full width and a compact **sticky checkout bar** (lines/pcs, warning count, total, confirm) sits above the fold on desktop and mobile, so selling never needs scrolling to the bottom. (3) The confirm dialog was rebuilt dense like the add-product modal -- total first, then a 3-up facts strip, payments, warnings and lines -- and is scrollable so the Confirm button is always reachable. Dead side-panel CSS removed. 257 pass.
-- 2026-08-17: **Outbound page: camera scanning + line-modal redesign** -- (1) barcode field gains a camera button; scanning uses the already-vendored html5-qrcode (EAN-13/8, UPC, CODE-128), lazy-loaded on first use so the ~370KB is not paid on every POS load; works on iOS Safari + Android (needs HTTPS). (2) The add-to-cart modal was taller than the screen; rebuilt as a dense one-screen layout (compact product header with thumb + brand/name/spec, and modal-dialog-scrollable so the Add button is always reachable). (3) Quantity is now 1-5 chips (plus a + chip for larger), capped/disabled by available stock. (4) The price is fixed once Retail/Wholesale is picked -- the editable price box is gone and only Discount adjusts it; a manual field appears only when the product has no saved price at all. (5) Payment methods shrank from three tall cards to one compact row. 257 pass.
-- 2026-08-17：**今日区细节修整**——删掉无意义的 "Today focus" 标签；收款方式从“宽度随金额伸缩的胶囊行”改为与 KPI 完全一致的**等宽磁贴**；修复订单明细**横向溢出屏幕**的根因(grid 子项 min-width:auto 导致长品名无法收缩)；明细行改为**品牌/型号·名称/规格分行换行展示**，并补上**每行支付方式**。不再需要横屏。⚠ 含 app.css 改动，PA 需 collectstatic。
-- 2026-08-17：**手机端 Dashboard(员工今日区)重做**——① Today operations 三个 KPI 从"每个占一整行的大卡"改成**紧凑三格条**(手机上金额格占满一行、Sold/Orders 并排),不用一直下滑。② Today sales orders 从"表格套表格 + 左右横滑"改成**扁平订单卡片列表**:每单一张卡(单号·时间·客户·件数·金额),点 Items 展开成**竖排明细行**(缩略图+品名 / ×数量·金额),完全不用横滑、无嵌套表。③ 收款方式改成紧凑胶囊行。④ 顶部 "Mobile access" 文字按钮改成**二维码小图标按钮**(点开弹窗看/扫大图),不再占一条。⚠ 含 app.css 改动,PA 需 collectstatic。——从"白底+灰图标"的素样式改成**与侧边栏同色系的深色导航条**(navy 渐变、顶部细描边+上投影);选中项用 **Material-3 风格高亮胶囊**(图标坐在蓝色圆角底上、文字转白加粗),点按有轻微缩放反馈。手机顶栏(深)+底栏(深)包住浅色内容,视觉统一。⚠ 改的是 app.css,PA 需 `collectstatic` 才生效。
-- 2026-08-17：**全局手机端优化（共享层）**——① 新增**底部标签栏**(手机 ≤767.98px):Home/Sell/Products/Sales + Menu(开侧边栏),SVG 图标、拇指可达、当前页高亮;侧边汉堡菜单保留放完整菜单。② **安全区适配**:顶栏 `env(safe-area-inset-top)`、底栏 `inset-bottom`,内容底部留出 `--tabbar-h` 不被遮挡;各页吸底保存条/悬浮按钮(sticky-actions/form-actions/back-top)自动抬到标签栏之上。③ **密度微调**(≤576):标题/关键数字/卡片内边距再收紧(在已有的 16px 输入防缩放、按钮 ≥44px 触控基础上)。全部改在 app.css + base.html,一次覆盖 38 页,未逐页改。
 
-- 2026-08-17：**手机出库页交互/CSS 优化**——① 购物车每行从"6 个满宽标签行"压成**紧凑卡片**:产品占第一行,第二行是一排带小标签的 chip(Qty/Unit/Disc/Pay/= 合计),编辑/删除单独一行右对齐。② 修掉手机端**错位的列标签**(旧的是 6 列表,加了 Disc/Pay 后变 7 列,标签全串位)。③ 底部**吸底确认按钮显示实时总额**("Review & confirm · €X.XX"),不用滚回去看金额。④ 标题/卡片/间距在手机上整体收紧,输入框保持 ≥16px 防 iOS 缩放,编辑/删除按钮保持 ≥40–44px 触控尺寸。纯 CSS + 一处 JS 文案,无逻辑改动。
+**2026-06 ~ 2026-08 里程碑**（逐条记录已精简，细节见 `git log`）：
 
-- 2026-08-17：**一批 UI/边界优化**——① 出库边界:经理选"全部店铺"时**禁止出库**(该聚合视图没有唯一归属店铺,否则销售会静默落到错误店铺),GET 显示提示条+禁用确认按钮、POST 服务端硬拦截;员工锁定本店不受影响。② Today 页订单改为**最近售出在前**(`-created_at`)。③ 产品列表页 Client/Shopify 两个导出框合并成**一个标签页切换**面板(省空间)。④ 产品列表 Category 下拉框改成**快速筛选按钮组**(All/Perfumes/Accessories/Shisha,共 3 个分类;隐藏域保存值,点按钮即时提交且不丢其它筛选)。⑤ Supplier 页由卡片改成**按国家分组的表格**(与产品列表一致的行式风格)。1 测试(出库拦截)。
-
-- 2026-08-16：**修复员工登录后看不到"今日销售"的回归**——删 Today operations 时把员工唯一能看今日销售的地方也删了(而 /today 页是 `@manager_required`,员工进不去)。现按**员工专属**恢复该区块(经理仍走干净仪表盘 + /today):今日售出件数/销售额/订单数、今日收款方式占比、今日订单明细。视图里这段**只在非经理时计算**(不跑利润重放,经理仪表盘不受影响)。顺带修好被这次删除弄红的回归测试(`test_dashboard_hides_sensitive_sections_for_regular_user` 断言 "Sales Today" 却已被删)。
-- 2026-08-16：**仪表盘再提速**——低库存那块(每次都跑的 sold 相关子查询)改为**按店铺+分类缓存 5 分钟**、且产品改成轻量 dict(不再缓存模型实例);月度/环比缓存 60s→**300s**(减少重算频率);低库存缩略图改用 **Cloudinary CDN 小图**(96px、边缘缓存,取不到回退本地)+ `loading=lazy`。256 通过。
-- 2026-08-16：**仪表盘提速 + 删除 "Today operations" 区块**(已有 /today 页)。① `sale_profit_map_for_sale_ids` 加**快速路径**:销售有 `cost_basis` 就直接算利润,全部有则**完全跳过整库 FIFO 重放**(回填后仪表盘/各页利润不再重算历史)。② 删掉仪表盘 Today operations(模板 + 视图里今日销售/进货/利润的未缓存重活),保留月度总览和低库存预警。移除一个过时测试。256 通过。
-- 2026-08-16：**修复利润用错批次成本的 bug(根因:事后 FIFO 重放因无留痕的库存改动而错位)**。改为**销售当下记录真实成本**:`consume_stock_fifo` 返回本次消耗的 FIFO 成本,存进新字段 `Sale.cost_basis`(迁移 0036);利润优先用 `cost_basis`,无则回退重放。新增 `backfill_sale_cost_basis` 命令给历史销售回填成本——用"实际每批消耗(qty−remaining)+ 销售按最新优先匹配"的**倒序 FIFO**,让近期销售锚定到真正来源的最新批次(例:近单从旧批 21.95 修正为新批 15.50)。3 测试,257 通过。
-- 2026-08-15：**修复分装"数量0仍可购买"的根因**——分装变体是 `tracked=False`+`policy=CONTINUE`,Shopify 当它无限有货。库存同步现在会把要动的变体强制成 `tracked=True`+`inventoryPolicy=DENY`(数量才生效),即使数量没变也修策略。另修 `all_variants_by_sku` 只取首个变体的 bug → 改 `variants(first:10)`,批量同步现在真正管理分装(之前只动 100ml)。client 加 `set_variant_stocked`;记录含 tracked/policy。1 测试。
-- 2026-08-15：**分装规则最终确定**——预留的 2 瓶=两店样品;100ml=max(N−2,0);**分装(5ml/10ml)只要有货(N≥1,样品可分装)就=99,完全没货(N=0)才=0**。(撤销当天早些时候"分装跟随100ml"的误改。)N=0 产品要真正变 0 需**完整跑一次**库存同步(之前中断过);若某"没货"产品同步后分装仍显示,是 app 在库≠0(库存数据要补正)。
-- 2026-08-15：分装库存规则改为**分装跟随 100ml**——100ml 有货(N>2)时 5ml/10ml=99,**100ml 为 0(N≤2)时分装也=0**(整个产品显示断货),不再在 N≤2 时把分装留 99。`_inventory_targets` 用 `full=max(N-2,0)`;新增测试证明产品页按钮路径(`find_variant_by_sku`)与批量算出的目标一致(无独立 bug,"变成 0"是该产品在库≤2)。2 测试。
-- 2026-08-15：`sync_shopify_perfumes` **提速**——已存在产品直接用 `all_variants_by_sku` 拿到的 GID,只推**有变化的库存 + 品牌合集**(不再逐个 `find_product_by_sku` / 每次重推 description);`--create` 才建缺失产品(避免误建 decant/mix)、`--full` 才重推描述。默认几十次调用、秒级。按钮走默认快速版。1 测试。
-- 2026-08-09：同步创建香水时 Shopify **标准分类设为 Eaux de Parfum**(`hb-3-2-8-3`,仅香水);批量 `sync_shopify_perfumes` 额外**把每个香水加入其品牌的手动合集**(智能合集按 vendor 自动归类,不动);client 加 `all_collections/collection_add_products`。2 测试。
-- 2026-08-09：客户产品清单 Excel 导出新增 **EAN 列**(在 Product 与 Category 之间,文本格式保留完整位数);**产品名后追加 Specification(容量)**。新增 **`backfill_perfume_spec`** 命令:给缺 Specification 的香水补 `100ml`(已有容量的不动;非香水不动;dry-run 默认)。3 测试。
-- 2026-08-09：新增 **`sync_shopify_storefront`**(每日 PA 定时任务,dry-run 默认)——① 断货隐藏:香水在库 N=0→产品设 DRAFT、N≥1→ACTIVE(N≤2 时 100ml 断货但分装在售,产品仍可见);② **Novidades** 合集设为最新 20 个香水(按 created_at);③ **O Mais Vendido do Mês** 合集(缺则创建)设为当月 app 销量前 5。client 加 `set_product_status/find_collection_by_title/create_collection/collection_product_ids/set_collection_products`,`all_variants_by_sku` 增 status。合集按标题匹配,主题区块由用户在 Shopify 手动接。**Back in stock(需 Product 加断货/补货状态字段)= Phase 2 待做**。2 测试,241 通过。
-- 2026-08-08：产品列表加 **"Sync all perfumes to Shopify" 批量按钮**(经理)——后台跑 `sync_shopify_perfumes --apply`(分离进程,避免 web 请求超时;日志 `logs/shopify_perfumes_sync.log`):对所有香水创建缺失/更新描述/推价格+分装库存。**产品描述按保存格式上传**(空行→段落、换行→`<br>`,不再合成一坨;创建和每次同步已有产品都应用)——`_shopify_description_html` + client `update_product_description`。库存分装规则已是 100ml=max(N−2,0)/分装 99·0,按 sku 识别整瓶变体(与 ml 标签无关)。5 测试,239 通过。
-- 2026-08-08：产品页(仅香水、经理)加 **"Sync to Shopify" 按钮**(`sync_product_to_shopify`)——一键把该产品推到 Shopify:没有则创建(ACTIVE,含变体/价/库存/图/SEO),然后按分装规则推价格+库存。可靠的手动替代实时信号,也用于新品上架。香水口径 = category 含 "perfum"。另加 `SHOPIFY_LOCATION_ID` 可配置库存地点(多地点时指定 Amadora)。4 测试,234 通过。
-- 2026-08-07：Shopify 库存同步改为**分装感知**——变体 SKU 约定 `条码/条码-10ML/条码-5ML`;整瓶在库 N 下:**100ml = max(N−2,0)**(预留 2 瓶给分装,≤2 断货)、**10ml/5ml = 99(N≥1)/0(N=0)**;无分装的产品 100ml=N。`_inventory_targets` + `DECANT_RESERVE=2`/`DECANT_AVAILABLE=99`;命令与实时(售出/进货/调整)都走这套。3 测试,230 通过。
-- 2026-08-07：新增 **Shopify 价格+库存同步(app 为准)**——`sync_shopify_inventory` 命令按 barcode=SKU 把 `default_price` 和在库(Σremaining)推到 Shopify(一次拉全部变体本地比对,dry-run 默认,支持 `--price-only/--inventory-only/--brand`);外加**实时**:`SHOPIFY_INVENTORY_SYNC=1` 时,售出/进货/库存变动在提交后把该产品在库推到 Shopify;**改价格也实时推价**(Product pre/post_save 检测 default_price 变化)。幂等、不阻断保存、默认关。client 加 `all_variants_by_sku/find_variant_by_sku/update_variant_price/set_inventory_available`,shopify_sync 加 `sync_product_price_inventory`,signals 加 Sale/Purchase 库存推送。5 测试,225 通过。
-- 2026-08-06：新增 **`sync_shopify_barcodes`** 命令——EAN 在 app 改过后,按**产品标题**(稳定键,标题没变)匹配 Shopify 产品,把当前条码写回 Shopify 变体的 SKU+barcode;一次性拉全部 Shopify 产品在本地匹配(dry-run 只几次 API),重复标题视为歧义跳过;默认 dry-run,`--apply` 才写。配套 client 加 `all_products_by_title` / `update_variant_barcode_sku`。Cloudinary 侧用现有 `sync_cloudinary_images --apply` 按新条码重传。4 测试。验证过 token(216 产品,标题零重复,标题匹配可靠)。
-- 2026-08-06：**已上线到 PythonAnywhere 欧盟区**(scentory.eu.pythonanywhere.com,Python 3.13,数据+图片已迁移,PA 为准数据源)。新增**备份体系**:`manage.py backup_db`(SQLite 在线备份 API,一致性快照+完整性校验+保留N份)供 PA 每日定时任务用;`scripts/pull_backup_from_pa.py`(纯标准库,PA API 拉最新快照到 U盘,含"错过即补跑",U盘没插则安全跳过)。docs/BACKUP.md 重写为云端模型;`backups/`+`scripts/.pa_backup.ini` 已 gitignore。另加**仪表盘一键下载按钮**(经理可见,`download_db_backup` 视图 → 一致性快照直接下载,可配合浏览器下载目录=U盘)。修复:requirements 缺 `qrcode`;STATICFILES_DIRS 空目录守卫。3 测试。下一步:Shopify 库存双向同步。
-- 2026-08-04：**上线准备(第一阶段:生产安全加固)**——`settings.py` 新增 `if not DEBUG` 生产块:`SECURE_PROXY_SSL_HEADER`、强制 HTTPS(可环境变量关、测试运行时自动跳过避免重定向)、安全+HttpOnly Cookie、HSTS(3600s 起步渐进)、防嗅探、`X_FRAME_OPTIONS=DENY`、12h 滑动会话自动登出。只在线上 `DEBUG=False` 生效,本地/测试不受影响(`check --deploy` 已验证,213 通过)。新增 **docs/DEPLOY.md**——PythonAnywhere 欧盟区分步上线手册(域名 `gestao.scentory.pt` 走 Amen CNAME、环境变量、WSGI、静态文件、备份 3-2-1)。下一阶段:django-axes 登录锁定 + 2FA。
-- 2026-07-31：产品详情页移除 **Stock Ledger · Full Path** 分区(已融合进 `/sales-history/` 专页,产品页仅保留"View full sales history"链接,不再重复);产品详情视图不再计算台账。213 通过。
-- 2026-07-31：产品销售历史专页 `/sales-history/` 将 **Sales Detail 与 Stock Ledger 融合成一条时间线**——销售明细(店铺/客户/单价/小计/支付/利润*)内联进 Stock Ledger 的销售行,配运行余额+对账横幅,便于一眼观察"卖了什么、库存怎么走";明细的独立表格移除。利润改为对全量流水一次性计算并复用。共享片段 `_stock_ledger.html` 新增 `ledger_detailed` 详细模式(产品详情页仍用精简模式)。213 通过。PRD F2.2.17。
-- 2026-07-28：新增**产品销售历史专页** `/sales-history/`（经理）——按产品名/条码搜索→选中后展示完整销售明细(时间/**店铺**/订单#/客户/数量/单价/小计/支付/利润*)+按店铺/按月汇总+KPI+复用的 Stock Ledger 完整流水;支持日期区间/店铺过滤。产品详情页 Sales History 精简为**仅最近 10 天**,其余通过"View full sales history →"跳转该专页(附旧单条数)。Stock Ledger 抽为共享片段 `_stock_ledger.html`。5 测试,213 通过。PRD F2.2.17。
-- 2026-07-28：产品详情新增 **Stock Ledger（完整库存流水，Layer 1 重建账）**——合并采购(+)/销售(−,尊重 `affects_stock`)/手动调整(±) 为一条时间线并算运行余额,与实际在库(Σremaining)对账;不符时红色横幅指出"X 件无法用已登记事件解释"(多为批次数量编辑/删除等未留痕的漏洞)。修正 total-stock 上调的双计(建批次+日志)。无迁移,只读;经理可见。5 测试,208 通过。往后记录"销售吃了哪个批次"的 StockMovement(Layer 2)为下一步。PRD F2.5.2.10。
-- 2026-07-28：销售记录页(经理)默认改为**本月销售日历**——月网格显示有销售的天(订单数+金额),点击弹窗看当日订单详情(含对应店铺,复用新片段 `_sales_order_entry.html`);顶部切月/年度视图/**按产品过滤整页**;年度趋势移到 `?view=year`,月柱点击进入该月日历;区间列表仅非日历模式渲染。KPI/图表沿用。新增 3 测试;更新 2 个旧测试(默认视图改变)。203 测试通过。PRD F2.2.16。
-- 2026-07-27：修复 Shopify 导出 CSV 的 `Product category` 列——原来写的是本地分类裸名 "Perfumes"，Shopify 标准分类法匹配不到 → 触发 ML 自动分类把香水误归到 Pet 节点。改为映射到全路径 `Health & Beauty > … > Perfumes & Colognes > Eaux de Parfum`（Google 列同理映射到 Perfume & Cologne）；`Type` 保持本地名不变。存量 203 个香水已通过 API 批量改为 Eaux de Parfum。200 测试通过。
-- 2026-07-23：产品性别分类上线——`Product.gender`（men/women/unisex，迁移 0035）+ 表单下拉 + Shopify 导出自动带 Homem/Mulher/Unissexo tag；存量 229 香水自动回填（男 47/女 45/中性 137）；Shopify 全部 227 产品打 tag、建 3 个性别智能 collection、主菜单加 Categorias 下拉（Homem/Mulher/Unissexo/Novidades）。199 测试通过。副本主题另新增：品牌走马灯、Top 5 月销区块（本地销量，可切线上）、Novidades 无限循环聚焦轮播、实体店版块、白色产品卡配色。
-- 2026-07-22：Shopify 全量香水同步——228 个有图香水全部上架（112 已有 + 116 新建，CSV 导入 + Cloudinary 图链），品牌 collection 全配齐（9 个手动填满 + 5 个新智能 vendor 规则 + Novidades）；主菜单/footer/Contactos/Revendedor 页重建（葡语）；副本主题 "Copy of Dawn" 按 auryaperfumes.com 结构重排（首页/产品页/分类页/品牌走马灯/淡黄黑配色），待预览发布。ARD AL ZAFRAN→ARD AL ZAAFARAN 品牌拼写合并、1Ooml 笔误修正（本地+Shopify）。
-- 2026-07-21：香水自动定价上线并合并（Perfumes 分类：批发=⌈当前 FIFO 成本+10⌉、零售=批发+12；成本变动自动重算；`price_locked` 经理锁价；价格对员工只读 server 端强制；`sync_perfume_prices` 回填实跑 4 更新）。195 测试通过。
-- 2026-07-16：员工界面收窄（可见页面 Dashboard/Outbound/Products/Sales/Customers；AR/进货/考勤/Today/Catalog 对员工整页 302 拦截）。Products 对员工开放查看/搜索/新增/**编辑**/下载客户 Excel（隐藏成本/供应商比价/销售历史；进货、删产品/图、Shopify 导出仍仅经理）。Sales/Customers 员工视图为单日订单/无分析的精简版（按订单号搜索直达详情；按客户查订单对账；每单 **View 弹窗 + Print 按钮**；订单详情按店铺隔离）。样式与经理页统一。登录/登出自动开关考勤班次（免手动打卡）。178 测试通过。
-- 2026-07-16：安全加固——`SECRET_KEY` 轮换并改从 `.env` 读（旧 key 弃用）、`DEBUG` 由 `.env` 控制（本机仍 True）、加 WhiteNoise + `STATIC_ROOT`（备将来 `DEBUG=False`）、`ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS` 可由环境扩展、加 `.env.example`。147/147 通过。仓库转 private 待手动操作。
-- 2026-07-16：上线本地每日备份（`Downloads\InventoryApp-Backups`，计划任务，含恢复步骤 [BACKUP.md](./BACKUP.md)）。
-- 2026-07-15：Shopify CSV 导出的图片两列改用 Cloudinary 公网 URL（此前输出局域网地址，Shopify 抓不到，一直是死链接）。新增 `services/cloudinary_urls.py`。
-- 2026-07-14：补录历史订单可选「不影响库存」（`SaleOrder.affects_stock`，迁移 0033）；此类单不扣库存、不参与 FIFO，利润按销售额 50% 估算。
-- 2026-07-13：订单修正支持改店铺（修下错店铺的单），订单与其全部明细行一并迁移，审计日志记 旧→新。
-- 2026-07-13：产品图自动镜像到 Cloudinary（`public_id`=条码，动态文件夹模式）；本地图改为按品牌分目录（迁移 0032）。
-- 2026-07-11：Shopify 缺品自动创建同步（`productSet` 一次调用建品，默认 DRAFT）。
-- 2026-07-11：Shopify 商品图同步（staged upload → `productCreateMedia`，按 barcode=SKU 匹配）。
-- 2026-07-04：代码清理（`/simplify`，4 个并行审查代理，行为不变）。
-- 2026-07-04：修复当日支付统计不反映拆分支付（改从订单级 `SaleOrderPayment` 读）。
-- 2026-07-04：修复订单修正页拆分支付重载即丢失的缺陷。
-- 2026-07-04：订单修正中心按日期分组 + All stores 时显示店铺列。
-- 2026-07-04：仪表盘多店铺营业额对比卡 + Today 订单店铺列。
-- 2026-07-04：仪表盘细节优化（移除 7 处重复眉标、内联色令牌化）。
-- 2026-07-04：全站通用 a11y + 一致性 sweep（12 个模板：去 emoji、`<h1>` 语义化、标签关联、主操作统一蓝）。
-- 2026-07-04：出货页 audit 跟进（a11y harden、移动端触控目标 44px）。
-- 2026-07-04：出货页 critique 跟进（去 Step 眉标、支付明细堆叠）。
-- 2026-07-04：出货/POS 页视觉重设计（"锐利、数据自信的仪器感"，仅视觉层，交互与数据契约不变）。
-- 2026-06-12：仪表盘内容调整——移除补货建议/策略洞察面板；新增当日支付方式统计与独立年度销售趋势页。
-- 2026-06-12：**模块化单体重构阶段 1**——`stock/models.py` 拆为 `stock/models/` 域分区包（保持单一 app / 单一迁移历史）。路线图见 ARCHITECTURE 第 8 节。
-- 2026-06-12：库存并发安全改造——新增 `services/stock_ops.py`（基于 `F()` 的条件 UPDATE 乐观并发，替代在 SQLite 上为 no-op 的 `select_for_update()`），冲突时 fail-fast。
-- 2026-06-12：新增 `StockAdjustmentLog` 库存调整审计（迁移 0024）；调整 API 权限统一为 `has_manager_access`。
-- 2026-06-12：多店铺 Phase 1（`Store`/`StoreProfile`，迁移 0028+0029 播种回填）→ 店铺管理页 → Phase 2 全量按店铺过滤 → 打印小票抬头按店铺（迁移 0030+0031）。
-- 2026-06-12：Sales Trend 合并进 Sales 记录页（概览→下钻）。
-- 2026-06-12：订单修正中心重写为与 POS 一致的购物车逻辑，修复"删除行不回滚库存"的缺陷。
-- 2026-06-12：收银（POS）重构——行项目弹窗、订单级拆分支付（`SaleOrderPayment`，迁移 0026）→ 改按行选择支付 → 再增行内拆分。
-- 2026-06-12：进货暂定→确认收货流程（`pending_receipt`，货到才产生库存）；确认收货改为弹窗。
-- 2026-06-12：供应商管理增强（记分卡、平均交货周期、联系人字段迁移 0027、按国家分组）；移除已无用的散单归集功能。
-- 2026-06-12：客户页可视化（月度消费柱/支付环形/Top Products/采购节奏）+ 日期范围筛选。
-- 2026-06-12：销售记录页区间可视化（每日资金流/支付环形/Top Products）。
-- 2026-06-12：新增当日汇总页 `/today/`（KPI、支付占比、订单表含详情弹窗、Top 产品、打印）。
-- 2026-06-12：仪表盘增强（MoM 同期对比、销售目标 `SalesTarget` 迁移 0025、性能优化与缓存）。
-- 2026-06-12：引入共享设计系统 `static/css/app.css`（收敛 27 个模板各自内联的 8 套漂移令牌）；后续 CSS 统一 Pass 1/2；表格溢出保护。
-- 2026-06-12：整体布局改为经典 ERP 左侧固定侧边栏（移动端离屏抽屉）。
-- 2026-06-12：目录页（对客）重设计为编辑式"香水索引"（瓷白 + 酒红 + 衬线，统一比例图块）。
-- 2026-06-12：全站移除"功能介绍"说明文字（约 50 处）+ 统一精简提示消息。
-- 2026-06-12：清理技术债（删死代码 469 行、一次性脚本、临时文件、未使用 import 与依赖）。
-- 2026-06-12：项目纳入 Git，产出 `docs/`（PRD / ARCHITECTURE / STATUS）。
-
----
-
-## 8. 建议的下一步（按优先级）
-
-1. ~~推送到远程~~ ✅ 已完成（2026-07-16）。~~数据备份~~ ✅ 本地每日备份已上线；仅剩**数据异地副本**（Downloads → Google Drive 同步）。
-3. **`SECRET_KEY` / `DEBUG` 收敛**：`settings.py` 已有 `.env` 加载器（见其顶部），把两者搬进 `.env` 即可；仓库是 public，旧 `SECRET_KEY` 必须换新。
-4. **轮换 Cloudinary API Secret**（明文存于 U 盘上的 `.env`）。
-5. **统一运行环境**：修复或删除 `.venv`，避免与便携版/系统 Python 三者混淆。
+- 2026-08：配件库存（无条码商品的内部条码、手机型号适配层、货架状态图、店铺自定义属性、先选分类再提问的新增产品）；香水信息重做（香调三层、性别、容量）；客户产品清单 Excel/PDF（葡语、PVP、在途）；撤销收货；供应商到货时效；删除产品改为归档；进出库自动同步 Shopify 库存（分装规则：100ml 留 2 瓶样品）；手机端全面压缩（底部标签栏、收银扫码、产品列表）。
+- 2026-08-06：**上线 PythonAnywhere 欧盟区**；此前 08-04 完成生产安全加固（`if not DEBUG` 块）。
+- 2026-07：香水自动定价（批发 = ⌈FIFO 成本 + 10⌉，零售 = 批发 + 12）；产品销售历史与库存流水；员工界面收窄（`@manager_required` 在视图层拦截）；`SECRET_KEY` 改从 `.env` 读、仓库转私有；产品图镜像到 Cloudinary；Shopify 建品、挂图、CSV 导出；补录订单可不影响库存；订单修正可改店铺。
+- 2026-06-12：纳入 Git；共享设计系统 `app.css` 与左侧固定侧栏；收银重构（订单级拆分支付）；进货暂定 → 确认收货；订单修正中心；多店铺；库存并发安全（`F()` 条件更新）与 `StockAdjustmentLog`；models 拆包。

@@ -2,7 +2,7 @@
 
 > 本文档基于现有代码库（Django 5.2.4 + SQLite）逆向整理，描述系统当前已实现的功能范围、业务规则与验收标准，作为后续维护、测试与迭代的基线参考。
 >
-> - 版本：v1.0（基线版本，对应 git 初始提交）
+> - 版本：随代码持续更新（最近 2026-10-28）；每个功能条目标注上线日期
 > - 适用范围：`stock` 应用全部功能模块
 > - 文档结构：第一部分为产品需求（PRD），第二部分为对应的验收标准（AC）
 
@@ -28,7 +28,8 @@
 - 报表：openpyxl（Excel）、reportlab（PDF）、qrcode（二维码）、csv（Shopify 导出）
 - 外部集成：Shopify Admin GraphQL（`requests`）、Cloudinary 图床（`cloudinary`），均由环境变量门控、默认关闭
 - 时区：`Europe/Lisbon`
-- 认证：Django 内建用户体系，登录页 `/login/`，登录后默认跳转 `/dashboard/`
+- 认证：Django 内建用户体系，登录页 `/login/`，登录后进 `home`（经理 → Today，员工 → 自己的 dashboard，见 F2.1.2）
+- 部署：PythonAnywhere 欧盟区（见 [DEPLOY.md](./DEPLOY.md)）
 
 ### 1.3 角色与权限模型
 
@@ -47,8 +48,8 @@
 #### 1.3.1 员工界面收窄（Employee interface restriction）
 员工登录后可见/可用的功能被收窄为一个精简子集，而非"完整页面隐藏字段"：
 
-- **可见页面**:Business(员工的 Today = `dashboard`,加 Orders = `sales_records`)、Sell(POS)、Products、Customers(2026-10-16 起按任务分组,见 F2.1.3)。侧边栏隐藏 Today（daily_summary）、Inbound、Attendance、Catalog View、Suppliers、IOU/AR、Admin 分组；对应视图也用 `@manager_required` 在视图层拦截（员工直接访问 URL 会被 302 到 dashboard），不仅仅是导航隐藏。
-- **Products 对员工开放查看/新增/编辑/导出**：员工可搜索浏览列表、看详情、新增并**编辑**产品（改字段 + 加图），并下载**面向顾客的产品 Excel**（图片/产品/分类/零售价/批发价/库存，无成本）。**仍仅经理**：进货（Inbound）、删除产品/图片、Shopify 导出。成本、"Suppliers & cost" 比价、批次成本、销售历史/指标继续对员工隐藏，仅展示零售/批发价。无审批/待确认工作流。
+- **可见页面**:Today(员工的 `dashboard`)、Orders(`sales_records`)、Sell(POS)、Products(只看)、Deliveries(在途进货的对货单,见 F2.3.3a)、Customers。Today(daily_summary)、Pedido、Catalog View、Shelf、IOU、Inbound、Suppliers 和整个 Settings 不在员工侧栏;对应视图也用 `@manager_required` / `@admin_required` 在视图层拦截(员工直接访问 URL 会被 302 回首页并看到原因),不仅仅是导航隐藏。
+- **Products 对员工只读**:员工可搜索浏览列表、看详情,并下载**面向顾客的产品 Excel**(不含成本);**新增、编辑、删除产品仅经理**(2026-08-17 起,`add_product_view` / `edit_product` 为 `@manager_required`)。
 - **Sales（销售，员工视图）**：单日订单列表（默认今天，可切换日期），展示时间/客户/件数/支付方式/金额，无图表、无年度总览、无采购数据，按登录用户所在店铺范围。新增**按订单号搜索**：输入订单号直接跳到该订单详情（`sale_order_detail`，与经理共用同一详情/小票页，员工只能开本店订单）。每个订单行提供 **View**（弹窗内联显示该单商品明细/合计，不含利润成本）+ **Print**（链到订单详情）两个按钮，供快速对账。经理登录仍看到完整的 `/sales-records/` 页面（含图表、年度趋势、采购对比）。
 - **Customers（客户，员工视图）**：无查询词时不展示任何客户列表（避免整表暴露）；输入姓名/电话/邮箱/NIF 关键字后仅展示匹配客户的姓名/电话/邮箱（不含消费统计/分析）。保留"新增客户"（沿用既有 AJAX 新增接口，弹窗内完成，无需离开搜索页）。点击某客户进入的详情页仅展示**该客户的订单列表**（日期/订单号/件数/支付方式/金额，每行 **View 弹窗 + Print 按钮**）用于对账，不含消费分析图表、AR 余额、时间线。经理仍看到完整的客户详情页（图表/AR/时间线等）。员工的 Sales/Customers 页样式与经理页一致（共享设计骨架）。
 - **自动考勤（Auto-attendance）**：员工不再需要手动打卡——登录时自动开一条考勤记录（若当天已有未下班记录则复用；若存在前一天未关闭的记录会先自动补下班），登出时自动关闭当前班次。经理/管理员账号登录登出不产生考勤记录。团队考勤汇总页（`/attendance/`）仅经理及以上可见。
@@ -678,12 +679,6 @@
 
 ---
 
-## 4. 已知技术债 / 后续建议（不在本期验收范围内）
+## 4. 已知技术债 / 后续建议
 
-以下问题在代码审查中被识别，记录于此供后续迭代规划，**不作为本基线版本的验收条款**：
-
-1. `settings.py` 中 `SECRET_KEY` 硬编码、`DEBUG=True`。仓库是 public，旧 key 视为已泄露需轮换；`settings.py` 已有 `.env` 加载器，搬进去即可。
-2. `db.sqlite3` 与 `media/`（79MB，产品图片）无自动备份；且本地领先远程 34 个提交，代码亦无异地副本。
-3. `sale_profit_map_for_sale_ids` 的全量 FIFO 重放在数据量持续增长后可能成为性能瓶颈，建议规划增量化或缓存方案。
-
-> 详细清单与优先级见 [TODO.md](./TODO.md)，状态层面摘要见 [STATUS.md](./STATUS.md) 第 6 节。
+不在验收范围内。当前清单与优先级只维护在一处：[STATUS.md](./STATUS.md) 第 4、5 节。

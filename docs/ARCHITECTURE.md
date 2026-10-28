@@ -14,13 +14,14 @@
 | 数据库 | SQLite（`db.sqlite3`，单文件） |
 | 前端 | Django Template + Bootstrap 5（本地静态资源，非 CDN）+ `django-widget-tweaks` |
 | 扫码 | `html5-qrcode.min.js`（浏览器端摄像头扫码） |
-| 图表 | Chart.js（本地静态资源；调色板经 `window.CHART_PALETTE` 读 CSS 令牌） |
+| 图表 | Chart.js（jsDelivr CDN，未锁定版本；调色板经 `window.CHART_PALETTE` 读 CSS 令牌） |
 | 报表/导出 | `openpyxl`（Excel）、`reportlab`（PDF）、`csv`（Shopify 导出）、`qrcode`（二维码生成） |
 | 图片处理 | `Pillow` |
 | 外部集成 | `requests`（Shopify Admin GraphQL）、`cloudinary`（图床镜像）；均由环境变量门控，默认关闭 |
 | 认证 | Django 内建 `django.contrib.auth`（User + Group "Managers"） |
 | 配置 | `settings.py` 顶部自带 `.env` 加载器（读 `BASE_DIR/.env`，真实环境变量优先），无 `python-dotenv` 依赖 |
-| 部署形态 | 单进程 `manage.py runserver` / WSGI；实际由 U 盘上的 `start.bat` → `runserver.py` 用便携版 Python 启动，无容器化 |
+| 部署形态 | **PythonAnywhere 欧盟区**（WSGI，用户 `scentory`，virtualenv `inventory`，代码 `/home/scentory/InventoryApp`），SQLite；静态文件 WhiteNoise + `collectstatic`（`{% static_v %}` 按文件修改时间加版本号）。本地开发 `manage.py runserver`。步骤见 [DEPLOY.md](./DEPLOY.md)、备份见 [BACKUP.md](./BACKUP.md) |
+| 日志 | `settings.LOGGING`：500 崩溃、`django.security` 警告与 `stock.*` 警告/错误同时写 stderr（PA 错误日志）和 `ErrorLog`（Settings → Audit → Errors，`stock/system_log.py`） |
 
 ---
 
@@ -28,87 +29,83 @@
 
 ```
 InventoryApp/
-├── manage.py                      # Django 管理入口
-├── requirements.txt                # 依赖清单
-├── db.sqlite3                      # SQLite 数据库（git 已忽略）
-├── docs/                            # 项目文档（PRD / 架构 / 状态）
+├── manage.py
+├── requirements.txt
+├── db.sqlite3                        # SQLite（git 已忽略；线上以 PythonAnywhere 上的为准）
+├── docs/                             # PRD / 架构 / 状态 / 部署 / 备份 / 专题说明
+├── scripts/pull_backup_from_pa.py    # 本机把 PA 每日快照拉到 U 盘（见 BACKUP.md）
 │
-├── inventory_system/                # Django 项目配置包
-│   ├── settings.py                  # 全局设置（DEBUG、时区、INSTALLED_APPS…）
-│   ├── urls.py                      # 根路由：'/' → dashboard，'/admin/'，其余 include('stock.urls')
-│   ├── wsgi.py / asgi.py
+├── inventory_system/                 # Django 项目配置包
+│   ├── settings.py                   # .env 加载、生产安全加固（if not DEBUG）、LOGGING、集成开关
+│   ├── urls.py                       # 根路由：'/admin/' 与 include('stock.urls')
+│   └── wsgi.py / asgi.py
 │
-├── stock/                            # 唯一的业务应用（“大单体 App”）
-│   ├── models/                       # 域分区模型包（模块化单体，仍为同一 app / 同一迁移历史）
-│   │   ├── __init__.py               # 重导出全部模型类（保证 from .models import X 不变）
-│   │   ├── core.py                   # PrintProfile
-│   │   ├── catalog.py                # Category, Brand, ProductSeries, Product, ProductImage
-│   │   ├── partners.py               # Supplier, Customer
-│   │   ├── inventory.py              # InboundOrder, InboundPendingItem, Purchase, StockAdjustmentLog
-│   │   ├── sales.py                  # SaleOrder, Sale, SaleOrderChangeLog, SaleOrderPayment, SaleOrderCharge, PedidoDraft
-│   │   ├── finance.py                # ARInvoice, ARItem, ARPayment
-│   │   ├── reporting.py              # DailySalesSummary, SalesTarget
-│   │   ├── hr.py                     # AttendanceRecord（原 attendance_models.py 迁入）
-│   │   └── system.py                 # ErrorLog（Settings → Audit → Errors；submissions.py 为 FormSubmission）
-│   ├── attendance_models.py          # 兼容 shim：从 models.hr 重导出 AttendanceRecord
-│   ├── views.py                       # 全部视图逻辑（约 4800 行，60+ 个视图函数）
-│   ├── forms.py                       # 全部表单与 FormSet（534 行）
-│   ├── admin.py                       # Django Admin 自定义（270 行）
-│   ├── urls.py                        # 路由表（60 条 path）
-│   ├── permissions.py                 # 角色判定 + 装饰器
-│   ├── system_log.py                  # 日志 handler:错误 / 警告写入 ErrorLog(同类合并计次);失败登录记录
-│   ├── shelf_views.py                 # 货架图页面（与产品目录无共用，单独拆出）
-│   ├── pedido_views.py                # 报价单页面（表单 → PDF + 本店草稿 PedidoDraft；草稿列表片段、删除）
-│   ├── orders_views.py                # 经理 Orders 页:Sales | Purchases | Analysis(整单搜索、Tender 口径付款、分页)
-│   ├── signals.py                     # Sale 信号→每日汇总重算；ProductImage 信号→镜像图片到 Cloudinary/Shopify（门控）
-│   ├── apps.py                        # AppConfig，ready() 中注册 signals
-│   ├── tests.py                       # 748 个测试用例
-│   │
-│   ├── services/                      # 业务逻辑层（从 views 中抽出的可复用逻辑）
-│   │   ├── dashboard.py               # 月度快照 + MoM 同期对比 + 销售目标 + 多店铺对比
-│   │   ├── profit.py                   # FIFO 利润重放：sale_profit_map_for_sale_ids
-│   │   ├── order_corrections.py        # 历史订单修正/审计核心逻辑
-│   │   ├── stock_ops.py                # FIFO 库存原子条件更新：consume_stock_fifo / restore_stock_fifo
-│   │   ├── summaries.py                # DailySalesSummary 重算逻辑
-│   │   ├── inventory.py                # build_inventory_snapshot（库存快照）
-│   │   ├── pedido.py                   # 报价单金额:折扣只打在货上,运费/额外费用在折扣后相加
-│   │   ├── doc_pdf.py                  # 对外文件的共用版式:页眉/客户区/深色表头表格/合计/指标卡(emoji 剔除)
-│   │   ├── pedido_pdf.py               # 报价单 PDF（欧洲葡语,用 doc_pdf）
-│   │   ├── pedido_drafts.py            # 草稿 → Sell 购物车:折扣按比例摊到单价、运费/费用转 charges
-│   │   ├── order_charges.py            # 运费/费用:charges_json 解析与保存;客户上次售价 last_prices()
-│   │   ├── contacts.py                 # 电话:同号判定(后 9 位)、WhatsApp 链接、customer_with_phone()
-│   │   ├── low_stock.py                # 低库存清单(Dashboard 摘要与提醒侧栏共用,缓存 5 分钟)
-│   │   ├── quick_import.py             # 快速识别:粘贴文字 / 文字 PDF(pypdf)→ 行(EAN、数量、价格、总额校验)→ 匹配产品
-│   │   ├── submissions.py              # 表单只记一次:一次性令牌在记录的同一事务里写入 FormSubmission
-│   │   ├── card_fees.py                # 刷卡手续费:成交时记在订单上,利润按行摊销扣除(BusinessSettings.card_fee_pct)
-│   │   ├── audit.py                    # Settings → Audit 6 个页面的数据:订单修正 / 手动改库存 / 收货 / 后台 LogEntry / 账号 / 错误
-│   │   ├── receipt_pdf.py              # 订单 A4 收据 PDF（欧洲葡语,用 doc_pdf;NIF 校验位通过才印）
-│   │   ├── sales_report_pdf.py         # Orders > Export PDF 销售报表（英文,用 doc_pdf;与页面同一数据）
-│   │   ├── shopify_client.py / shopify_sync.py       # Shopify Admin API：按 barcode=SKU 挂图/建品
-│   │   ├── cloudinary_client.py / cloudinary_sync.py # 产品主图镜像到 Cloudinary（public_id=条码, asset_folder=product_images/<品牌>）
-│   │   └── cloudinary_urls.py                        # 读取 Cloudinary 命名约定（public_id=条码），构造公开交付 URL；纯字符串拼接，不发网络请求、不读凭据；供 Shopify CSV 导出使用
-│   │
-│   ├── management/commands/
-│   │   ├── rebuild_dailysummary.py     # 正式 management command：重建每日汇总
-│   │   ├── import_notino_perfume_images.py  # 一次性图片导入脚本
-│   │   ├── sync_shopify_images.py / sync_shopify_products.py  # 同步图片/建品到 Shopify（默认 dry-run）
-│   │   └── sync_cloudinary_images.py   # 镜像产品主图到 Cloudinary（默认 dry-run）
-│   │
-│   ├── migrations/                     # 27 个迁移文件（0001 ~ 0027）
-│   ├── templates/stock/                # 26 个页面模板（base.html 为公共布局）
-│   ├── templatetags/
-│   │   ├── access_tags.py              # is_manager_user 过滤器
-│   │   └── math_extras.py              # mul / sum_list / map_attr 过滤器
-│   └── static/                         # Bootstrap 5 全量资源 + html5-qrcode + popper
-│
-├── static/                              # STATICFILES_DIRS 引用的项目级静态目录
-├── media/                                # 用户上传的产品图片（git 已忽略，约 79MB，按品牌分目录）
-└── .venv/                                # 本地虚拟环境（状态见 STATUS.md）
+└── stock/                            # 唯一的业务应用（模块化单体：一个 app、一条迁移历史）
+    ├── models/                       # 按域拆分，__init__ 重导出全部模型（from .models import X 不变）
+    │   ├── core.py                   # Store, StoreProfile, PrintProfile, BusinessSettings
+    │   ├── catalog.py                # Category, Brand, ProductSeries, Product, ProductImage, 香水属性
+    │   ├── attributes.py             # 分类自定义属性：CategoryAttribute, AttributeOption, ProductAttributeValue
+    │   ├── shelf.py                  # 货架图：ShelfAxis, ShelfOption, ShelfStyle, ShelfStock
+    │   ├── devices.py                # 配件适配：DeviceModel, DeviceAlias, CompatibilityGroup
+    │   ├── partners.py               # Supplier, Customer
+    │   ├── inventory.py              # InboundOrder, InboundPendingItem, Purchase, StockAdjustmentLog
+    │   ├── sales.py                  # SaleOrder, Sale, SaleOrderChangeLog, SaleOrderPayment, SaleOrderCharge, PedidoDraft
+    │   ├── finance.py                # ARInvoice, ARItem, ARPayment
+    │   ├── reporting.py              # DailySalesSummary, SalesTarget
+    │   ├── hr.py                     # AttendanceRecord
+    │   ├── submissions.py            # FormSubmission（表单只记一次）
+    │   └── system.py                 # ErrorLog（错误日志）
+    ├── views.py                      # 大部分页面视图（单文件，正按路线图逐步拆分）
+    ├── orders_views.py               # 经理 Orders 页：Sales | Purchases | Analysis
+    ├── pedido_views.py               # 报价单：表单 → PDF + 本店草稿 PedidoDraft
+    ├── shelf_views.py                # 货架图页面
+    ├── forms.py / admin.py / urls.py
+    ├── permissions.py                # 角色判定 + 装饰器（login / manager / admin）
+    ├── stores.py                     # 当前店铺（会话）与按店过滤
+    ├── context_processors.py
+    ├── system_log.py                 # 日志 handler：错误/警告写入 ErrorLog（同类合并计次）；失败登录记录
+    ├── signals.py                    # Sale → 每日汇总重算；Purchase → 香水定价；登录/登出 → 考勤；图片 → Cloudinary/Shopify（门控）
+    ├── apps.py                       # ready()：注册 signals 与失败登录记录
+    ├── tests.py                      # 全部测试（Django TestCase）
+    │
+    ├── services/                     # 业务逻辑（视图之外可复用、可单测的部分）
+    │   ├── profit.py                 # FIFO 利润重放 sale_profit_map_for_sale_ids（扣除刷卡手续费）
+    │   ├── stock_ops.py              # FIFO 库存原子条件更新：consume_stock_fifo / restore_stock_fifo
+    │   ├── stock_ledger.py           # 单品库存流水（入库 / 销售 / 手动调整合并成一条时间线，只读）
+    │   ├── inventory.py              # 库存快照
+    │   ├── low_stock.py              # 低库存清单（Dashboard 摘要与提醒侧栏共用，缓存 5 分钟）
+    │   ├── pricing.py                # 香水自动定价：按当前 FIFO 成本得出批发/零售价
+    │   ├── lead_time.py              # 供应商到货时效（下单 → 收货）
+    │   ├── inbound_rollback.py       # 撤销一次误收货
+    │   ├── barcodes.py               # 无条码商品的内部条码
+    │   ├── order_corrections.py      # 历史订单修正/删除 + SaleOrderChangeLog
+    │   ├── order_charges.py          # 运费/费用；客户上次售价 last_prices()
+    │   ├── card_fees.py              # 刷卡手续费：成交时记在订单上（BusinessSettings.card_fee_pct）
+    │   ├── submissions.py            # 一次性提交令牌：在记录的同一事务里写入 FormSubmission
+    │   ├── summaries.py              # DailySalesSummary 重算
+    │   ├── dashboard.py              # 月度快照、环比、销售目标、多店对比
+    │   ├── audit.py                  # Settings → Audit 6 个页面的数据
+    │   ├── quick_import.py           # 快速识别：粘贴文字 / 文字 PDF → 行 → 匹配产品
+    │   ├── note_parser.py            # 从已有描述里读出香调三层
+    │   ├── contacts.py               # 电话同号判定、WhatsApp 链接
+    │   ├── pedido.py / pedido_drafts.py / pedido_pdf.py   # 报价单金额、草稿 → Sell 购物车、PDF
+    │   ├── doc_pdf.py                # 对外 PDF 共用版式
+    │   ├── receipt_pdf.py / sales_report_pdf.py / catalog_pdf.py   # 收据、销售报表、客户产品清单 PDF
+    │   ├── shopify_client.py / shopify_sync.py / shopify_push.py   # Shopify：按 barcode=SKU 建品挂图、库存推送（门控）
+    │   └── cloudinary_client.py / cloudinary_sync.py / cloudinary_urls.py   # 产品主图镜像到 Cloudinary（门控）
+    │
+    ├── management/commands/          # 运维命令：backup_db、rebuild_dailysummary、Shopify/Cloudinary 同步
+    │                                 #（默认 dry-run，加 --apply 才写）、数据清理与回填脚本
+    ├── migrations/
+    ├── templates/stock/              # 页面模板，全部继承 base.html
+    ├── templatetags/                 # access_tags（角色）、contact_tags（WhatsApp）、math_extras、
+    │                                 # static_version（{% static_v %}）、submissions（{% submit_token %}）
+    └── static/                       # Bootstrap 5、html5-qrcode、app.css（设计令牌，见 UI_COMPONENTS.md）
 ```
 
 **架构特点**：这是一个**单 App（`stock`）的 Django 单体应用**，没有按业务域拆分成多个 Django app；分层主要靠 `views.py`（控制器+大部分业务逻辑）+ `services/`（部分抽出的纯逻辑函数）+ `models/`（数据与少量模型方法）+ `forms.py`（输入校验）实现。
 
-**模块化进展（Modular Monolith）**：项目正按域边界逐步重组为"模块化单体"——保留单一 `stock` app 与单一迁移历史，但内部按业务域（core / catalog / partners / inventory / sales / finance / reporting / hr）拆分代码包。第一阶段（models 拆包）已完成：原 `models.py` 拆为 `models/` 包，跨域外键统一改为字符串引用（`ForeignKey('Product')`）以消除子模块间的导入顺序耦合；`makemigrations --check --dry-run` 验证模型状态零变化、52/52 测试通过。后续阶段（views/forms/admin/urls/templates/tests 同步拆分）见第 8 节路线图。
+**模块化进展（Modular Monolith）**：保留单一 `stock` app 与单一迁移历史，内部按业务域拆分代码包。models 拆包已完成（跨域外键用字符串引用 `ForeignKey('Product')`）；Orders、Pedido、货架三块视图已拆到独立文件。其余阶段见第 8 节路线图。
 
 ---
 
@@ -117,11 +114,10 @@ InventoryApp/
 ```
 浏览器请求
   → inventory_system/urls.py
-      '/'            → redirect('dashboard')
       '/admin/...'   → Django Admin
       '/...'         → include('stock.urls')
-  → stock/urls.py  (70+ path，按功能分组：登录/仪表盘/进出库/产品/客户/供应商/
-                     团队/考勤/订单修正/打印/AR/库存调整API)
+  → stock/urls.py  (按功能分组：登录/首页/进出库/产品/客户/供应商/团队/考勤/
+                     订单修正/打印/IOU/Settings/Audit/JSON API)
   → stock/views.py 中对应视图函数
       - 权限装饰器：@login_required / @manager_required / @admin_required
       - 读取/写入 stock/models.py
@@ -608,27 +604,14 @@ Excel 和 PDF 用**同一套判断和同一组颜色**，两份文件不会互�
 
 ## 7. 测试架构
 
-唯一测试文件 `stock/tests.py`（约 3100 行），基于 Django `TestCase` + 测试数据库（SQLite），共 **147 个测试**、28 个测试类：
-
-| 领域 | 测试类 |
-|---|---|
-| 汇总/信号 | `SummaryRebuildTests` |
-| 出货与库存 | `WorkflowRegressionTests`（出货、CSRF、调整权限）、`InventoryAdjustmentSyncTests`、`InboundOutboundPageTests` |
-| 销售与客户 | `SalesRecordsViewTests`、`CustomerDetailViewTests` |
-| 仪表盘 | `DashboardViewTests`、`DashboardEnhancementTests`（MoM、销售目标进度） |
-| 产品 | `ProductArchitectureTests`（表单/品牌系列/Shopify CSV 导出）、`UploadPathTests` |
-| 订单修正 | `SaleOrderCorrectionTests`（创建/编辑/删除 + 库存联动 + 审计）、`CorrectionStoreChange{Service,View}Tests`、`AffectsStock{Model,Service,Profit,View}Tests` |
-| 多店铺 | `MultiStoreTests` |
-| 供应商/HR | `SupplierManagementTests`、`EmployeeManagementTests`、`AttendanceManagementTests` |
-| Shopify | `ShopifySyncTests`、`ShopifyCsvCloudinaryImageTests` |
-| Cloudinary | `Cloudinary{Client,Sync,Signal,Command,ImageUrl}Tests` |
+`stock/tests.py`（Django `TestCase` + SQLite 测试库），按功能一类一个 `TestCase`，类名说明它守护的行为（如 `RecordedOnceTests`、`CardFeeTests`、`AuditPageTests`）。运行：`python manage.py test stock`。测试总数与最近一次结果见 [STATUS.md](./STATUS.md)。
 
 约定：
 
-- 外部集成（Shopify / Cloudinary）**全部 mock**，测试不发真实网络请求、不读密钥。
-- 涉及 Cloudinary 的测试用 `@override_settings` 钉死 `CLOUDINARY_CLOUD_NAME`/`CLOUDINARY_AUTO_SYNC`，**不依赖本机 `.env`**（否则结果会因机器而异）。
-- 大量使用 `self.captureOnCommitCallbacks(execute=True)` 同步触发 `transaction.on_commit` 回调（验证信号驱动的汇总重算）。
-- 跑测试用**系统 Python**或便携版 Python，`.venv` 没装 Django（见 [STATUS.md](./STATUS.md) 第 3 节）。
+- 外部集成（Shopify / Cloudinary）**全部 mock**，测试不发真实网络请求、不读密钥；涉及它们的测试用 `@override_settings` 钉死开关，不依赖本机 `.env`。
+- 信号驱动的逻辑用 `self.captureOnCommitCallbacks(execute=True)` 同步触发 `transaction.on_commit` 回调。
+- 提交前在**干净导出**（`git archive HEAD`）上跑全套，避免工作区里未提交的改动让结果失真。
+- 修 bug 先写一个会失败的测试；改变行为的旧测试改断言、保留意图，并在提交说明里写明。
 
 ---
 
@@ -648,7 +631,7 @@ hr           — AttendanceRecord（→ core）
 reporting    — DailySalesSummary, dashboard.py, profit.py, signals.py（→ sales, inventory, finance, catalog）
 ```
 
-**分阶段实施**（每阶段独立提交，前置条件：52/52 测试通过 + `makemigrations --check --dry-run` 无变化）：
+**分阶段实施**（每阶段独立提交，前置条件：全部测试通过 + `makemigrations --check --dry-run` 无变化）：
 
 | 阶段 | 内容 | 风险 | 状态 |
 |---|---|---|---|

@@ -2,7 +2,9 @@
 
 把这套 Django 库存系统上线,让你和员工在**任意设备的浏览器**里登录使用。
 托管平台:**PythonAnywhere 欧盟区**(`eu.pythonanywhere.com`,法兰克福 / AWS 欧盟机房,GDPR 合规)。
-访问地址:`https://gestao.scentory.pt`(`scentory.pt` 子域名,域名在 **Amen** 管理)。
+当前访问地址:`https://scentory.eu.pythonanywhere.com`(PA 用户 `scentory`)。可选绑定 `https://gestao.scentory.pt`(`scentory.pt` 子域名,域名在 **Amen** 管理,见阶段 5)。
+
+> 已经上线后的**日常更新**只看下面「日常更新」一节;阶段 0–8 是第一次部署的步骤。
 
 > ⚠️ 一定注册 **`eu.pythonanywhere.com`**(欧盟区),不是 `www.pythonanywhere.com`(美国区)。有客户姓名等个人数据,GDPR 要求数据留在欧盟。
 
@@ -20,8 +22,8 @@ PythonAnywhere → **Consoles** → 开一个 **Bash** 控制台:
 ```bash
 git clone https://github.com/mrui0516/InventoryApp.git
 cd InventoryApp
-# 建虚拟环境（Python 3.11+，Django 5.2 需要 3.10 以上）
-mkvirtualenv --python=/usr/bin/python3.11 inventory
+# 建虚拟环境（线上用 Python 3.13；Django 5.2 至少要 3.10）
+mkvirtualenv --python=/usr/bin/python3.13 inventory
 pip install -r requirements.txt
 ```
 
@@ -69,7 +71,7 @@ PythonAnywhere → **Web** → **Add a new web app** → 选 **Manual configurat
   | `/media/`  | `/home/<你的用户名>/InventoryApp/media` |
 - 点 **Reload**。先用 `https://<你的用户名>.eu.pythonanywhere.com` 验证能打开、能登录。
 
-## 阶段 5 · 绑定 `gestao.scentory.pt`
+## 阶段 5 · 绑定 `gestao.scentory.pt`(可选)
 1. PythonAnywhere → **Web** → **Add a custom domain** 填 `gestao.scentory.pt`。PA 会给你一个 **CNAME 目标**(形如 `webapp-XXXX.eu.pythonanywhere.com`)。
 2. 去 **Amen → scentory.pt → Gestão de DNS**,**新增**一条(别改现有 www/@ 的 Shopify 记录):
    ```
@@ -84,19 +86,27 @@ PythonAnywhere → **Web** → **Add a new web app** → 选 **Manual configurat
 - 每个员工**独立账号**(禁止共用登录)。经理/员工权限分级用系统里已有的机制。
 - 员工离职时能**立即停用**其账号。
 
-## 阶段 7 · 备份（必做,平台再方便也省不掉）
-遵循 **3-2-1**:≥3 份、2 种介质、1 份异地。PythonAnywhere → **Tasks** 加一个每日定时任务:
-```bash
-# SQLite：直接拷一份带日期的副本
-cd /home/<你的用户名>/InventoryApp && cp db.sqlite3 backups/db-$(date +\%Y\%m\%d).sqlite3
-# （或 MySQL：mysqldump ... > backups/db-$(date +\%Y\%m\%d).sql）
-```
-再**定期把 `backups/` 下载一份到你本地**(离线保险 —— 这刚好满足"手里留一份数据"的需求,角色是备份而非主库)。可进一步加密后传到 Backblaze B2 / S3。
+## 阶段 7 · 备份（必做）
+每日快照用 `manage.py backup_db --keep 30`(PA 定时任务),再由本机脚本拉到 U 盘。完整步骤与恢复方法见 [BACKUP.md](./BACKUP.md)。
 
-## 阶段 8 · 认证加固（下一段代码,单独做）
-公网登录页面必须比现在更硬。这一段会改动登录流程,单独作为一次带测试的改动:
+## 阶段 8 · 认证加固（尚未做,单独做）
+失败登录已经能在 **Settings → Audit → Accounts** 看到(按用户名计次),但还不会锁定。下一步单独作为一次带测试的改动:
 - **django-axes**:登录失败次数限制 + 锁定,挡暴力破解。
 - **django-two-factor-auth**:至少管理员账号强制 **2FA**(手机验证码)。
+
+---
+
+## 日常更新(每次改动上线)
+PA → **Consoles** → Bash:
+```bash
+cd ~/InventoryApp
+git pull
+workon inventory
+pip install -r requirements.txt
+python manage.py migrate              # 有新迁移时必须在 Reload 之前
+python manage.py collectstatic --noinput   # 改了 CSS/JS 时必须;只改模板可省
+```
+然后 **Web** 页点 **Reload**。上线后看一眼 **Settings → Audit → Errors**,有新的红色错误就是这次改动带来的。
 
 ---
 
