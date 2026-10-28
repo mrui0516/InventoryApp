@@ -9465,18 +9465,19 @@ class RoundANavigationTests(TestCase):
                                  "Products", "Catalog View",
                                  "Shelf", "Customers", "IOU", "Inbound", "Suppliers",
                                  "Attendance", "Tools", "Team", "Stores", "Print Header",
-                                 "Order audit"])
+                                 "Fees", "Correct orders", "Audit"])
         for group in ("Sell", "Products", "Customers", "Purchasing", "Settings"):
             self.assertIn(f">{group}<", nav)
 
     def test_the_old_names_are_gone(self):
         links, _ = self._menu(self.admin)
-        for gone in ("Business", "Sales", "Outbound", "IOU / AR", "Order Control"):
+        for gone in ("Business", "Sales", "Outbound", "IOU / AR", "Order Control", "Order audit"):
             self.assertNotIn(gone, links)
 
     def test_an_employee_sees_only_their_four_jobs(self):
         links, nav = self._menu(self.employee)
-        self.assertEqual(links, ["Today", "Orders", "Sell", "Products", "Customers"])
+        # Deliveries: the check lists of orders on the way (2026-10-28)
+        self.assertEqual(links, ["Today", "Orders", "Sell", "Products", "Deliveries", "Customers"])
         self.assertNotIn("Purchasing", nav)
         self.assertNotIn("Settings", nav)
 
@@ -11158,3 +11159,67 @@ class InboundChecklistTests(TestCase):
         self.assertContains(response, reverse("inbound_checklist", args=[self.order.id]))
         back = self.client.get(reverse("inbound_checklist", args=[self.order.id]))
         self.assertContains(back, 'href="%s"' % reverse("inbound"))
+
+
+class AuditPageTests(TestCase):
+    """Settings -> Audit: order corrections with their before/after, stock
+    counts set by hand and deliveries received, newest first, admins only."""
+
+    def setUp(self):
+        from stock.models import StockAdjustmentLog
+        cache.clear()
+        self.admin = get_user_model().objects.create_superuser("aud_admin", password="pw123456")
+        cat = Category.objects.create(name="Aud Cat")
+        self.yara = Product.objects.create(name="Aud Yara", brand="Aud", barcode="6290000000101", category=cat)
+        before = {"total_amount": "50.00", "total_qty": 2, "customer_name": "Rui",
+                  "items": [{"product_id": self.yara.id, "product_name": "Aud Yara", "quantity": 2, "unit_price": "25.00"}]}
+        after = {"total_amount": "60.00", "total_qty": 3, "customer_name": "Rui",
+                 "items": [{"product_id": self.yara.id, "product_name": "Aud Yara", "quantity": 3, "unit_price": "20.00"},
+                           {"product_id": 999999, "product_name": "Aud Afeef", "quantity": 1, "unit_price": "0.00"}]}
+        SaleOrderChangeLog.objects.create(order_id_snapshot=4321, action="update", changed_by=self.admin,
+                                          reason="customer came back for one more", before_data=before, after_data=after)
+        SaleOrderChangeLog.objects.create(order_id_snapshot=4322, action="delete", changed_by=self.admin,
+                                          reason="test sale", before_data=before, after_data={})
+        StockAdjustmentLog.objects.create(user=self.admin, product=self.yara, adjustment_type="total_stock",
+                                          old_value=7, new_value=5)
+        supplier = Supplier.objects.create(name="Aud Supplier")
+        self.delivery = InboundOrder.objects.create(supplier=supplier, status="received", invoice_no="AUD-1",
+                                                    total_amount=Decimal("100"), received_at=timezone.now())
+        old = InboundOrder.objects.create(supplier=supplier, status="received", invoice_no="AUD-OLD",
+                                          total_amount=Decimal("1"))
+        InboundOrder.objects.filter(pk=old.pk).update(received_at=timezone.now() - timedelta(days=200))
+        self.client.force_login(self.admin)
+
+    def test_an_edit_shows_who_why_and_what_changed_line_by_line(self):
+        body = self.client.get(reverse("audit")).content.decode()
+        self.assertIn("Order #4321", body)
+        self.assertIn("customer came back for one more", body)
+        self.assertIn("Aud Yara: qty 2 \u2192 3, price 25.00 \u2192 20.00", body)
+        self.assertIn("+ Aud Afeef \u00d71 @ 0.00", body)
+        self.assertIn("\u20ac50.00 \u2192 \u20ac60.00", body)
+        self.assertIn("Deleted", body)
+
+    def test_stock_counts_and_deliveries_are_listed(self):
+        body = self.client.get(reverse("audit")).content.decode()
+        self.assertIn("7 \u2192 5 (-2)", body)
+        self.assertIn("Inbound #%d" % self.delivery.id, body)
+        self.assertNotIn("AUD-OLD", body)          # outside the 30 days
+        self.assertIn("AUD-OLD", self.client.get(reverse("audit"), {"period": "all"}).content.decode())
+
+    def test_a_tab_shows_one_kind_and_every_tab_keeps_its_count(self):
+        response = self.client.get(reverse("audit"), {"kind": "stock"})
+        body = response.content.decode()
+        self.assertIn("7 \u2192 5", body)
+        self.assertNotIn("Order #4321", body)
+        self.assertEqual(dict((k, n) for k, _, n in response.context["tabs"]),
+                         {"": 4, "orders": 2, "stock": 1, "deliveries": 1})
+
+    def test_search_finds_an_order_by_number(self):
+        body = self.client.get(reverse("audit"), {"q": "#4322"}).content.decode()
+        self.assertIn("Order #4322", body)
+        self.assertNotIn("Order #4321", body)
+
+    def test_only_admins_see_it(self):
+        employee = get_user_model().objects.create_user("aud_emp", password="pw123456")
+        self.client.force_login(employee)
+        self.assertEqual(self.client.get(reverse("audit")).status_code, 302)

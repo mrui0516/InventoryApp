@@ -2940,6 +2940,28 @@ def sale_order_detail_view(request, order_id):
 
 @login_required
 @admin_required
+def audit_view(request):
+    """Settings -> Audit: order corrections, hand-set stock counts, deliveries."""
+    from .services import audit
+    kind = request.GET.get('kind', '')
+    if kind not in dict(audit.KINDS):
+        kind = ''
+    period = request.GET.get('period', '30')
+    if period not in dict(audit.PERIODS):
+        period = '30'
+    query = (request.GET.get('q') or '').strip()
+    rows, counts = audit.feed(kind, period, query)
+    page_obj = Paginator(rows, 50).get_page(request.GET.get('page'))
+    return render(request, 'stock/audit.html', {
+        'page_obj': page_obj,
+        'kind': kind, 'period': period, 'query': query,
+        'tabs': [('', 'All', sum(counts.values()))] + [(k, label, counts[k]) for k, label in audit.KINDS],
+        'periods': audit.PERIODS,
+    })
+
+
+@login_required
+@admin_required
 def business_settings_view(request):
     """Settings for the whole business: the card fee rate."""
     from .models import BusinessSettings

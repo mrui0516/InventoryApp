@@ -69,7 +69,7 @@
   | Products | Products、Catalog View、Shelf | Products 全部;其余经理 |
   | Customers | Customers、IOU | Customers 全部;IOU 经理 |
   | Purchasing | Inbound、Suppliers | 经理 |
-  | Settings(默认折叠,身处其中某页时展开) | Attendance、Tools(经理);Team、Stores、Print Header、Order audit(超管) | 见左 |
+  | Settings(默认折叠,身处其中某页时展开) | Attendance、Tools(经理);Team、Stores、Print Header、Fees、Correct orders(原 Order audit)、Audit(超管) | 见左 |
 
   **所有 URL 和权限不变**。同一天曾试过把 Today / Orders / Dashboard 合成一个 "Business" 入口加页内标签条,老板看过后改回三个独立入口——三个平铺的菜单项更直接。
 - **F2.1.4 手机底部 5 个标签**:Today · Sell · Products · Customers · More(More 打开完整侧栏)。Today 标签只在 Today 页(员工:其 dashboard)亮起。
@@ -328,6 +328,7 @@
 - **F2.9.4** 所有修正操作仅限超级管理员（Admin）执行（`@admin_required` 或等价校验）。
 - **F2.9.5 修正时改店铺**：管理员在订单修正表单可选择本单归属店铺（仅活跃店铺），用于修复下错店铺的订单；保存后订单与其全部明细行改到所选店铺，审计日志记录 旧→新 店铺。库存不受影响，不涉及应收(AR)。
 - **F2.9.6 补录订单可不影响库存**：新增历史订单时可取消「Affects inventory」，该单只记销售额/支付、不扣库存（用于货已出、库存已对账的遗漏订单），利润按销售额 50% 估算，且不参与 FIFO 成本；默认勾选＝正常扣库存。
+- **F2.9.7 审计页(Settings → Audit,2026-10-28,仅超管)**:`/settings/audit/`(`audit`)一个按时间倒序、按天分组的记录流,合并三类事后改动:**订单修正**(`SaleOrderChangeLog`:补录 / 修改 / 删除,谁、原因、金额前后,修改时逐行列出 `数量 a → b`、`价格 a → b`、新增 `+`、删除 `−`,以及客户、店铺的变更;超过 3 行折叠)、**手动改库存**(`StockAdjustmentLog`:旧数 → 新数 (±差),谁)、**收货入库**(`InboundOrder.received_at`:供应商、发票、件数、金额)。下划线标签切换类别(All / Orders / Stock / Deliveries,各带数量),时间段 7 / 30(默认)/ 90 天 / All,搜索订单号、产品、供应商、用户;每页 50 条。服务 `services/audit.py`。**未记录**:正常收银与入库由谁操作(`SaleOrder`、`InboundOrder` 没有用户字段)、取消待收货单、回滚已收货单。
 
 ---
 

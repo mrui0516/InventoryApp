@@ -1,0 +1,114 @@
+{% extends 'stock/base.html' %}
+{% block title %}Audit{% endblock %}
+{% block content %}
+<style>
+  .aud-head{ display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; margin-bottom:.6rem; }
+  .aud-title{ font-size:1.35rem; font-weight:800; margin:0; color:var(--app-text); }
+  .aud-search{ display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; margin-left:auto; }
+  .aud-search input{ width:16rem; max-width:100%; }
+  .aud-periods{ display:inline-flex; border:1px solid var(--app-border); border-radius:999px; overflow:hidden; }
+  .aud-periods a{ padding:.3rem .7rem; font-size:.85rem; font-weight:700; color:var(--app-muted); text-decoration:none; }
+  .aud-periods a.on{ background:var(--app-text); color:#fff; }
+  /* kinds are filters: underlined tabs, not buttons */
+  .aud-tabs{ display:flex; gap:.95rem; border-bottom:1px solid var(--app-border); margin-bottom:.6rem;
+    overflow-x:auto; scrollbar-width:none; }
+  .aud-tabs a{ padding:.45rem 0; font-weight:700; font-size:.92rem; color:var(--app-muted); text-decoration:none;
+    border-bottom:2px solid transparent; margin-bottom:-1px; white-space:nowrap; }
+  .aud-tabs a.on{ color:var(--app-text); border-bottom-color:var(--app-accent); }
+  .aud-tabs .n{ font-weight:600; color:var(--app-muted); margin-left:.25rem; font-variant-numeric:tabular-nums; }
+  .aud-list{ background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius-sm); }
+  .aud-day{ padding:.4rem .75rem; font-size:.78rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase;
+    color:var(--app-muted); background:var(--app-bg, #f6f7f9); border-bottom:1px solid var(--app-border); }
+  .aud-row{ display:grid; grid-template-columns:3.2rem minmax(0,1fr) auto; gap:.2rem .75rem; align-items:baseline;
+    padding:.55rem .75rem; border-bottom:1px solid var(--app-border); }
+  .aud-row:last-child{ border-bottom:0; }
+  .aud-time{ font-variant-numeric:tabular-nums; color:var(--app-muted); font-size:.85rem; }
+  .aud-main{ min-width:0; }
+  .aud-line1{ display:flex; align-items:baseline; gap:.45rem; flex-wrap:wrap; }
+  .aud-tag{ font-size:.72rem; font-weight:800; padding:.08rem .45rem; border-radius:999px; white-space:nowrap; }
+  .aud-tag.info{ background:var(--app-accent-soft); color:var(--app-accent-ink, var(--app-accent)); }
+  .aud-tag.warn{ background:var(--app-warn-soft); color:var(--app-warn); }
+  .aud-tag.danger{ background:#fdecec; color:#b42318; }
+  .aud-tag.ok{ background:#e7f6ec; color:#1a7f3c; }
+  .aud-name{ font-weight:700; color:var(--app-text); text-decoration:none; overflow-wrap:anywhere; }
+  a.aud-name:hover{ text-decoration:underline; }
+  .aud-detail{ color:var(--app-primary, var(--app-text)); font-size:.88rem; font-variant-numeric:tabular-nums; }
+  .aud-reason{ font-size:.88rem; color:var(--app-text); margin-top:.15rem; }
+  .aud-reason::before{ content:"Reason: "; color:var(--app-muted); }
+  .aud-changes{ margin:.2rem 0 0; padding:0; list-style:none; font-size:.85rem; color:var(--app-muted); }
+  .aud-changes li{ overflow-wrap:anywhere; }
+  .aud-more summary{ font-size:.85rem; color:var(--app-accent); cursor:pointer; list-style:none; margin-top:.15rem; }
+  .aud-who{ font-size:.85rem; color:var(--app-muted); white-space:nowrap; text-align:right; }
+  .aud-empty{ padding:2rem 1rem; text-align:center; color:var(--app-muted); }
+  .aud-pages{ display:flex; justify-content:center; align-items:center; gap:.75rem; margin-top:.75rem; font-size:.9rem; }
+  @media (max-width:575.98px){
+    .aud-search{ margin-left:0; width:100%; }
+    .aud-search form{ flex:1 1 100%; }
+    .aud-search input{ width:100%; }
+    .aud-row{ grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"main time" "main who"; }
+    .aud-main{ grid-area:main; }
+    .aud-time{ grid-area:time; text-align:right; }
+    .aud-who{ grid-area:who; align-self:start; }
+  }
+</style>
+
+<div class="page-shell">
+  <div class="aud-head">
+    <h1 class="aud-title">Audit</h1>
+    <div class="aud-search">
+      <form method="get" class="d-flex gap-2">
+        {% if kind %}<input type="hidden" name="kind" value="{{ kind }}">{% endif %}
+        <input type="hidden" name="period" value="{{ period }}">
+        <input type="search" name="q" value="{{ query }}" class="form-control form-control-sm" placeholder="Order #, product, supplier, user" aria-label="Search">
+      </form>
+      <nav class="aud-periods" aria-label="Period">
+        {% for value, label in periods %}
+        <a class="{% if value == period %}on{% endif %}" href="?{% if kind %}kind={{ kind }}&amp;{% endif %}period={{ value }}{% if query %}&amp;q={{ query|urlencode }}{% endif %}">{{ label }}</a>
+        {% endfor %}
+      </nav>
+    </div>
+  </div>
+
+  <nav class="aud-tabs" aria-label="Kind">
+    {% for value, label, n in tabs %}
+    <a class="{% if value == kind %}on{% endif %}" href="?{% if value %}kind={{ value }}&amp;{% endif %}period={{ period }}{% if query %}&amp;q={{ query|urlencode }}{% endif %}">{{ label }}<span class="n">{{ n }}</span></a>
+    {% endfor %}
+  </nav>
+
+  <div class="aud-list">
+    {% for e in page_obj %}
+      {% ifchanged e.when|date:"Y-m-d" %}<div class="aud-day">{{ e.when|date:"D j M Y" }}</div>{% endifchanged %}
+      <div class="aud-row">
+        <div class="aud-time">{{ e.when|date:"H:i" }}</div>
+        <div class="aud-main">
+          <div class="aud-line1">
+            <span class="aud-tag {{ e.tone }}">{{ e.tag }}</span>
+            {% if e.link %}<a class="aud-name" href="{{ e.link }}">{{ e.title }}</a>{% else %}<span class="aud-name">{{ e.title }}</span>{% endif %}
+            <span class="aud-detail">{{ e.detail }}</span>
+          </div>
+          {% if e.reason %}<div class="aud-reason">{{ e.reason }}</div>{% endif %}
+          {% if e.changes %}
+            <ul class="aud-changes">{% for c in e.changes|slice:":3" %}<li>{{ c }}</li>{% endfor %}</ul>
+            {% if e.changes|length > 3 %}
+            <details class="aud-more"><summary>{{ e.changes|length|add:"-3" }} more</summary>
+              <ul class="aud-changes">{% for c in e.changes|slice:"3:" %}<li>{{ c }}</li>{% endfor %}</ul>
+            </details>
+            {% endif %}
+          {% endif %}
+        </div>
+        <div class="aud-who">{{ e.who|default:"" }}</div>
+      </div>
+    {% empty %}
+      <div class="aud-empty">Nothing in this period.</div>
+    {% endfor %}
+  </div>
+
+  {% if page_obj.paginator.num_pages > 1 %}
+  <nav class="aud-pages" aria-label="Pages">
+    {% if page_obj.has_previous %}<a href="?{% if kind %}kind={{ kind }}&amp;{% endif %}period={{ period }}{% if query %}&amp;q={{ query|urlencode }}{% endif %}&amp;page={{ page_obj.previous_page_number }}">&lsaquo; Newer</a>{% endif %}
+    <span>{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}<a href="?{% if kind %}kind={{ kind }}&amp;{% endif %}period={{ period }}{% if query %}&amp;q={{ query|urlencode }}{% endif %}&amp;page={{ page_obj.next_page_number }}">Older &rsaquo;</a>{% endif %}
+  </nav>
+  {% endif %}
+</div>
+{% endblock %}
