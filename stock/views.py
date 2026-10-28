@@ -657,6 +657,22 @@ def inbound_checklist_view(request, order_id):
     })
 
 
+def _back_to(request, default, *, avoid=()):
+    """Redirect to the page the form came from - ``next``, filled in by the
+    Back trail (base.html) with the exact list page, filters and search - or
+    to ``default``. ``avoid``: paths that no longer exist after this request
+    (the deleted record's own pages)."""
+    from urllib.parse import urlsplit
+    from django.utils.http import url_has_allowed_host_and_scheme
+    nxt = (request.POST.get('next') or '').strip()
+    if nxt and url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()},
+                                               require_https=request.is_secure()):
+        path = urlsplit(nxt).path
+        if not any(path.startswith(a) for a in avoid):
+            return redirect(nxt)
+    return redirect(default)
+
+
 def csrf_failure(request, reason=""):
     """A stale form (an old copy restored by a phone browser) was sent.
 
@@ -2530,7 +2546,7 @@ def delete_product_view(request, pk):
     note = (f' Its {sale_count} sales record{"s" if sale_count != 1 else ""} '
             f'and their profit are kept.') if sale_count else ''
     messages.success(request, f'Deleted "{product.display_name}".{note}')
-    return redirect('product_list')
+    return _back_to(request, 'product_list', avoid=(reverse('product_detail', args=[pk]),))
 
 
 @login_required
@@ -3390,6 +3406,7 @@ def _sale_order_correction_view(request, order=None):
         form = SaleOrderCorrectionForm(request.POST, instance=order)
 
         if order and 'delete_order' in request.POST:
+            order_pk = order.pk
             reason = (request.POST.get('reason') or '').strip()
             if not reason:
                 form.add_error('reason', 'Reason is required before deleting an order.')
@@ -3404,7 +3421,9 @@ def _sale_order_correction_view(request, order=None):
                     form.add_error(None, '; '.join(exc.messages))
                 else:
                     messages.success(request, f'Order #{order.id} deleted and stock restored.')
-                    return redirect('sale_order_correction_center')
+                    return _back_to(request, 'sale_order_correction_center',
+                                    avoid=(reverse('sale_order_detail', args=[order_pk]),
+                                           reverse('sale_order_correction_edit', args=[order_pk])))
         else:
             # Preserve the submitted cart so a validation error does not wipe the work.
             try:
@@ -3951,7 +3970,7 @@ def supplier_create_view(request):
         if form.is_valid():
             supplier = form.save()
             messages.success(request, f'Supplier "{supplier.name}" created.')
-            return redirect('supplier_list')
+            return _back_to(request, 'supplier_list')
     else:
         form = SupplierForm()
 
@@ -3972,7 +3991,7 @@ def supplier_edit_view(request, supplier_id):
         if form.is_valid():
             supplier = form.save()
             messages.success(request, f'Supplier "{supplier.name}" updated.')
-            return redirect('supplier_list')
+            return _back_to(request, 'supplier_list')
     else:
         form = SupplierForm(instance=supplier)
 
@@ -3991,7 +4010,7 @@ def supplier_delete_view(request, supplier_id):
     supplier_name = supplier.name
     supplier.delete()
     messages.success(request, f'Supplier "{supplier_name}" deleted. Past records were kept.')
-    return redirect('supplier_list')
+    return _back_to(request, 'supplier_list', avoid=(reverse('supplier_detail', args=[supplier_id]),))
 
 
 @login_required
@@ -5430,7 +5449,7 @@ def delete_customer(request, pk):
         if request.headers.get('x-requested-with') == 'XMLHttpRequest':
             return JsonResponse({'success': True, 'message': f'Customer "{name}" deleted.'})
         messages.success(request, f'Customer "{name}" deleted.')
-        return redirect('customer_search')
+        return _back_to(request, 'customer_search', avoid=(reverse('customer_detail', args=[pk]),))
 
 @login_required
 def products_autocomplete(request):

@@ -16,11 +16,11 @@
       <div>
         <h1>{% if is_create %}Add Supplier{% else %}Edit Supplier{% endif %}</h1>
       </div>
-      <a href="{% url 'supplier_list' %}" class="btn btn-outline-secondary">Back to suppliers</a>
+      <a href="{% url 'supplier_list' %}" class="btn btn-outline-secondary" data-nav-back>Cancel</a>
     </div>
   </section>
 
-  <form method="post" class="cardx p-4">
+  <form method="post" class="cardx p-4" data-return="back">
     {% csrf_token %}
     <div class="row g-3">
       <div class="col-md-6">
@@ -78,7 +78,7 @@
   </form>
 
   {% if not is_create %}
-    <form method="post" action="{% url 'supplier_delete' supplier.id %}"
+    <form method="post" action="{% url 'supplier_delete' supplier.id %}" data-return="back" data-return-skip="/suppliers/{{ supplier.id }}/"
           class="cardx p-4 d-flex justify-content-between align-items-center flex-wrap gap-2"
           onsubmit="return confirm('Delete {{ supplier.name|escapejs }}? Purchasing history stays but the supplier link is removed.');">
       {% csrf_token %}

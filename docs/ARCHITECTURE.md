@@ -600,6 +600,13 @@ Excel 和 PDF 用**同一套判断和同一组颜色**，两份文件不会互�
 - 模板自定义过滤器：`math_extras.py` 提供 `mul`/`sum_list`/`map_attr`，用于模板中做轻量聚合计算（避免在模板里写复杂表达式）。
 - **图表（Chart.js）**：可视化页面通过 CDN `chart.js` 渲染。视图把数据预聚合为纯 Python 列表（金额转 `float`），用 Django `{{ data|json_script:"id" }}` 安全嵌入页面，前端 `JSON.parse(...textContent)` 后 `new Chart(...)`。采用页面：`dashboard.html`（月度趋势）、`customer_detail.html`（月度消费 bar + 支付占比 doughnut）、`customer_search.html`（活跃度 doughnut）、`sales_records.html`（**合并了原 Sales Trend**：无区间时显示年度 12 月柱状图 + 月度明细表 + 支付占比；选定区间时显示每日 money in/out 柱 + 利润折线、支付 doughnut、Top Products 条）。含金额的图表受 `has_order_reconciliation_access`/`has_sales_sensitive_access`/`is_superuser` 等与页面金额一致的门控才输出数据与 `<canvas>`。
 
+### 6.2 返回键与导航轨迹（2026-10-28）
+
+- `base.html` 在内容区顶部渲染 `a.erp-back[data-nav-back]`，服务器端 `href` 为上级页面（`context_processors.nav_back` 按 `BACK_PARENTS` 反解，用当前 URL 的 kwargs），没有上级时 `hidden`。
+- 同文件的轨迹脚本（`sessionStorage['navTrail']`，最多 20 条 `{p 路径, u 路径+查询, t 标题, y 滚动}`）在 `pageshow` 时更新（bfcache 恢复也会触发）：已有同路径 → 截断到它并替换；`navReplace` → 替换最后一条；否则追加。菜单（`.erp-nav`、`.erp-tabbar`、品牌）点击设 `navReset`；`[data-nav-replace]` 链接设 `navReplace`；点 Back 设 `navBack`，到达后恢复记下的 `scrollY`。`pagehide` 记录当前滚动。
+- 任何 `[data-nav-back]` 元素（Back 条、表单页的 Cancel）都被指向轨迹的上一条。
+- `form[data-return="back"|"here"]`：脚本补一个隐藏 `next`（上一条，或当前页本身）；`data-return-skip` 列出要跳过的路径前缀（被删除记录的页面）。服务器用 `views._back_to(request, default, avoid=...)` 跳转：`url_has_allowed_host_and_scheme` 校验，`avoid` 里的路径不去。
+
 ---
 
 ## 7. 测试架构

@@ -1164,7 +1164,7 @@
   {% if show_sensitive %}
     <div class="modal fade" id="deleteCustomerModal" tabindex="-1" aria-hidden="true">
       <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
-        <form method="post" action="{% url 'delete_customer' customer.id %}" class="modal-content">
+        <form method="post" action="{% url 'delete_customer' customer.id %}" class="modal-content" data-return="back" data-return-skip="/customers/{{ customer.id }}/">
           {% csrf_token %}
           <div class="modal-header">
             <h5 class="modal-title text-danger">Confirm Deletion</h5>

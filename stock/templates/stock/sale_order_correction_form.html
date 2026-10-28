@@ -135,14 +135,14 @@
       <h1 class="corr-title">{% if is_create %}Add Missing Historical Order{% else %}Correct Order #{{ order.id }}{% endif %}</h1>
     </div>
     <div class="d-flex gap-2 flex-wrap">
-      <a class="btn btn-outline-secondary" href="{% url 'sale_order_correction_center' %}">Back to correction center</a>
+      <a class="btn btn-outline-secondary" href="{% url 'sale_order_correction_center' %}" data-nav-back>Cancel</a>
       {% if order %}<a class="btn btn-outline-dark" href="{% url 'sale_order_detail' order.id %}">Print</a>{% endif %}
     </div>
   </div>
 
   <div class="row g-4">
     <div class="col-xl-8">
-      <form method="post" id="correction-form" class="d-grid gap-4">
+      <form method="post" id="correction-form" class="d-grid gap-4"{% if order %} data-return="back" data-return-skip="/sale-orders/{{ order.id }}/ /sale-orders/manage/{{ order.id }}/"{% endif %}>
         {% csrf_token %}
         <input type="hidden" name="items_json" id="items_json">
         <input type="hidden" name="payments_json" id="payments_json">

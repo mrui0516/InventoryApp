@@ -247,7 +247,6 @@
       </div>
     </div>
     <div class="d-flex flex-wrap gap-2">
-      <a href="{% url 'product_list' %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="btn btn-outline-secondary">Back</a>
       {% if show_sensitive %}
         <a href="{% url 'edit_product' product.id %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="btn btn-primary">Edit product</a>
       {% endif %}

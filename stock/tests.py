@@ -6707,8 +6707,11 @@ class AddProductWizardTests(TestCase):
 
     def test_choosing_a_category_does_not_navigate_away(self):
         # The picker stays on the page and the form opens underneath it, so
-        # there is no jump and the choice can be changed with one tap.
+        # there is no jump and the choice can be changed with one tap. Only the
+        # page's own content counts: base.html's Back trail (after </main>)
+        # restores the scroll position when you come back to a page.
         html = self._html()
+        html = html[:html.index('</main>')]
         self.assertNotIn('window.scrollTo', html)
         self.assertNotIn('stepPick.hidden = true', html)
 
@@ -11311,3 +11314,83 @@ class ErrorLogTests(TestCase):
             except IntegrityError:
                 pass
             logging.getLogger("stock.signals").error("after a failed insert")   # must not raise
+
+
+class BackNavigationTests(TestCase):
+    """Every page has one Back bar. The browser fills it from the tab's trail
+    (base.html); the server gives the parent page for a tab without one, and
+    lands a save or a delete on the page the form came from (``next``)."""
+
+    def setUp(self):
+        cache.clear()
+        self.admin = get_user_model().objects.create_superuser("back_admin", password="pw123456")
+        self.client.force_login(self.admin)
+        cat = Category.objects.create(name="Back Cat")
+        self.product = Product.objects.create(name="Trail Oud", brand="Trail", barcode="6290000000777", category=cat)
+
+    def _back_href(self, url):
+        body = self.client.get(url).content.decode()
+        start = body.index('class="erp-back"')
+        tag = body[start:body.index(">", start)]
+        href = tag.split('href="', 1)[1].split('"', 1)[0]
+        return href, " hidden" in tag
+
+    def test_a_detail_page_falls_back_to_its_list(self):
+        self.assertEqual(self._back_href(reverse("product_detail", args=[self.product.id])),
+                         (reverse("product_list"), False))
+
+    def test_an_edit_page_falls_back_to_its_record(self):
+        self.assertEqual(self._back_href(reverse("edit_product", args=[self.product.id])),
+                         (reverse("product_detail", args=[self.product.id]), False))
+        customer = Customer.objects.create(name="Back Customer", phone="912000777")
+        self.assertEqual(self._back_href(reverse("edit_customer", args=[customer.id]))[0],
+                         reverse("customer_detail", args=[customer.id]))
+
+    def test_a_menu_page_has_no_fallback_until_the_trail_gives_one(self):
+        self.assertEqual(self._back_href(reverse("product_list")), ("", True))
+
+    def test_the_check_list_goes_back_to_inbound_or_deliveries_by_role(self):
+        supplier = Supplier.objects.create(name="Back Supplier")
+        order = InboundOrder.objects.create(supplier=supplier, status="pending_receipt", total_amount=Decimal("0"))
+        url = reverse("inbound_checklist", args=[order.id])
+        self.assertEqual(self._back_href(url)[0], reverse("inbound"))
+        employee = get_user_model().objects.create_user("back_emp", password="pw123456")
+        self.client.force_login(employee)
+        self.assertEqual(self._back_href(url)[0], reverse("inbound_checklists"))
+
+    def test_the_trail_script_is_on_every_signed_in_page(self):
+        self.assertContains(self.client.get(reverse("product_list")), "navTrail")
+        self.client.logout()
+        self.assertNotContains(self.client.get(reverse("login")), "navTrail")
+
+    def test_one_back_per_page(self):
+        body = self.client.get(reverse("product_detail", args=[self.product.id])).content.decode()
+        self.assertEqual(body.count(">Back<"), 1)
+        self.assertNotIn("history.back()", body)
+
+    def test_deleting_a_product_returns_to_the_list_page_it_came_from(self):
+        response = self.client.post(reverse("delete_product", args=[self.product.id]),
+                                    {"next": "/products/?page=3&q=oud"})
+        self.assertRedirects(response, "/products/?page=3&q=oud", fetch_redirect_response=False)
+
+    def test_a_delete_never_returns_to_the_deleted_record(self):
+        response = self.client.post(reverse("delete_product", args=[self.product.id]),
+                                    {"next": reverse("product_detail", args=[self.product.id])})
+        self.assertRedirects(response, reverse("product_list"), fetch_redirect_response=False)
+
+    def test_next_must_stay_on_this_site(self):
+        response = self.client.post(reverse("delete_product", args=[self.product.id]),
+                                    {"next": "https://evil.example/products/"})
+        self.assertRedirects(response, reverse("product_list"), fetch_redirect_response=False)
+
+    def test_saving_a_supplier_returns_to_the_page_it_came_from(self):
+        supplier = Supplier.objects.create(name="Back Supplier Two")
+        response = self.client.post(reverse("supplier_edit", args=[supplier.id]),
+                                    {"name": "Back Supplier Two", "next": "/suppliers/?page=2"})
+        self.assertRedirects(response, "/suppliers/?page=2", fetch_redirect_response=False)
+
+    def test_deleting_a_customer_returns_to_the_list_it_came_from(self):
+        customer = Customer.objects.create(name="Gone Customer", phone="912000778")
+        response = self.client.post(reverse("delete_customer", args=[customer.id]),
+                                    {"next": "/customers/?q=gone"})
+        self.assertRedirects(response, "/customers/?q=gone", fetch_redirect_response=False)

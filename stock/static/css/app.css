@@ -950,3 +950,18 @@ body.anon .erp-content{
 .theme-stone .ls-sum-tile.out{ background:#fef2f2; border-color:#fbd5d5; }
 .theme-stone .ls-inline{ border-color:var(--app-border); }
 .theme-stone .ls-row{ border-color:var(--app-border); }
+
+/* ---- Back bar (every page, base.html) ---------------------------------------
+   A quiet text link above the page title: it is navigation, not an action, so
+   it must not look like the page's buttons. */
+.erp-back-bar{ display:flex; min-height:0; }
+.erp-back{
+  display:inline-flex; align-items:center; gap:.3rem; min-height:36px; margin:-.35rem 0 .35rem -.2rem;
+  padding:.2rem .45rem .2rem .2rem; border-radius:var(--app-radius-xs, 6px);
+  color:var(--app-accent); font-weight:700; font-size:.92rem; text-decoration:none; max-width:100%;
+}
+.erp-back:hover{ background:var(--app-accent-soft); color:var(--app-accent); }
+.erp-back[hidden]{ display:none; }
+.erp-back-to{ color:var(--app-muted); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+.erp-back-to:not(:empty)::before{ content:"\00b7"; margin:0 .35rem 0 .1rem; }
+@media print{ .erp-back-bar{ display:none; } }

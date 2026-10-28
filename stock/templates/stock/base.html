@@ -165,6 +165,17 @@
     {% endif %}
 
     <main class="erp-content">
+      {% if user.is_authenticated %}
+      {# Back: the previous page of this tab, exactly as it was left (page,    #}
+      {# search, filters, scroll). The trail script below fills it in; the     #}
+      {# server's href is the parent page, for a tab that has no trail.        #}
+      <nav class="erp-back-bar" aria-label="Back">
+        <a class="erp-back" href="{{ nav_back_fallback }}" data-nav-back{% if not nav_back_fallback %} hidden{% endif %}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+          <span>Back</span><span class="erp-back-to"></span>
+        </a>
+      </nav>
+      {% endif %}
       {# Shown on every page, the home page included. It used to be hidden    #}
       {# there - and a page an employee may not open sends them home with the  #}
       {# reason as a message, so they bounced without ever seeing why.         #}
@@ -225,6 +236,95 @@
   {% endwith %}
 
   {% if user.is_authenticated %}
+  <script>
+    // Navigation trail of this tab (sessionStorage): every page visited, in
+    // order. Coming back to a page cuts the trail back to it; the same page
+    // with another query (page 3, a filter, a search) replaces itself rather
+    // than adding a step; a click in the menu starts a new trail. "Back" is
+    // the entry before the current one - its exact URL and scroll position.
+    (function () {
+      var KEY = 'navTrail', S;
+      try { S = window.sessionStorage; S.setItem('navProbe', '1'); } catch (e) { return; }
+      function read() { try { return JSON.parse(S.getItem(KEY)) || []; } catch (e) { return []; } }
+      function write(t) { S.setItem(KEY, JSON.stringify(t.slice(-20))); }
+      function take(k) { var v = S.getItem(k); S.removeItem(k); return v; }
+      var here = { p: location.pathname, u: location.pathname + location.search,
+                   t: document.title.trim(), y: 0 };
+
+      function visit() {
+        var t = read();
+        if (take('navReset')) t = [];
+        var replace = take('navReplace'), i = -1;
+        for (var k = t.length - 1; k >= 0; k--) { if (t[k].p === here.p) { i = k; break; } }
+        if (i >= 0) { if (t[i].u === here.u) here.y = t[i].y || 0; t = t.slice(0, i); }
+        else if (replace && t.length) { t.pop(); }
+        t.push(here);
+        write(t);
+        return t;
+      }
+      // the entry Back leads to; "skip" drops pages that will no longer exist
+      // (a product being deleted and its edit page)
+      function backEntry(t, skip) {
+        for (var k = t.length - 2; k >= 0; k--) {
+          var p = t[k].p, gone = (skip || []).some(function (s) { return s && p.indexOf(s) === 0; });
+          if (!gone) return t[k];
+        }
+        return null;
+      }
+
+      function wire(t) {
+        var back = backEntry(t);
+        document.querySelectorAll('[data-nav-back]').forEach(function (a) {
+          if (back) {
+            a.href = back.u;
+            a.hidden = false;
+            var to = a.querySelector('.erp-back-to');
+            if (to) to.textContent = back.t ? back.t : '';
+          }
+        });
+        // forms that should land where Back goes (data-return="back") or stay
+        // on this very list page (data-return="here") once the server is done
+        document.querySelectorAll('form[data-return]').forEach(function (f) {
+          var target = f.dataset.return === 'here' ? here
+            : backEntry(t, (f.dataset.returnSkip || '').split(' '));
+          var url = target ? target.u : (f.dataset.returnDefault || '');
+          var input = f.querySelector('input[name="next"]');
+          if (!url) { if (input && input.dataset.trail) input.remove(); return; }
+          if (!input) {
+            input = document.createElement('input');
+            input.type = 'hidden'; input.name = 'next'; input.dataset.trail = '1';
+            f.appendChild(input);
+          }
+          if (input.dataset.trail) input.value = url;
+        });
+      }
+
+      window.addEventListener('pageshow', function () {
+        var t = visit();
+        wire(t);
+        if (take('navBack') && here.y) window.scrollTo(0, here.y);
+      });
+      window.addEventListener('pagehide', function () {
+        var t = read();
+        for (var k = t.length - 1; k >= 0; k--) {
+          if (t[k].p === here.p) { t[k].y = Math.round(window.scrollY); break; }
+        }
+        write(t);
+      });
+      document.addEventListener('click', function (e) {
+        var a = e.target.closest('a');
+        if (!a || e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || a.target === '_blank') return;
+        if (a.hasAttribute('data-nav-back')) S.setItem('navBack', '1');
+        else if (a.closest('.erp-nav, .erp-tabbar') || a.matches('.erp-brand, .erp-topbar-brand')) S.setItem('navReset', '1');
+        else if (a.hasAttribute('data-nav-replace')) S.setItem('navReplace', '1');
+      });
+      document.addEventListener('submit', function (e) {
+        var f = e.target;
+        if (f.matches('form[data-return]')) S.setItem('navBack', '1');
+        if (f.matches('form[action$="/logout/"]')) S.removeItem(KEY);
+      });
+    })();
+  </script>
   <div class="modal fade" id="phoneQrModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-sm">
       <div class="modal-content">

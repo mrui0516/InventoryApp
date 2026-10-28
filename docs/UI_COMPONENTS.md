@@ -37,6 +37,7 @@
 {% endblock %}
 ```
 
+- **页面不要自己放 Back 按钮**：base.html 的 Back 条已在每页顶部（规则见 ARCHITECTURE 6.2）。表单页的 Cancel 加 `data-nav-back`；保存/删除后要回到来处的表单加 `data-return="back"`（列表页内联的表单用 `"here"`），删除表单再加 `data-return-skip="<被删记录的路径前缀>"`；视图用 `_back_to()` 跳转。
 - `page-shell` 纵向栅格容器 · `page-card` 卡片面板 · `pad` 内边距
 - `page-head` / `section-head` / `strip-head`：左标题右操作，自动换行
 - 标题：`page-title`（h1）、`section-head h2/h3`；小标签用 `kicker`、`toolbar-label`

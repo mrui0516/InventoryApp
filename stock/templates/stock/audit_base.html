@@ -68,7 +68,7 @@
 
   <nav class="aud-tabs" aria-label="Audit pages">
     {% for name, label in pages %}
-    <a class="{% if name == page %}on{% endif %}" href="{% url name %}"{% if name == page %} aria-current="page"{% endif %}>{{ label }}{% if name == 'audit_errors' and open_errors %}<span class="aud-badge">{{ open_errors }}</span>{% endif %}</a>
+    <a class="{% if name == page %}on{% endif %}" href="{% url name %}" data-nav-replace{% if name == page %} aria-current="page"{% endif %}>{{ label }}{% if name == 'audit_errors' and open_errors %}<span class="aud-badge">{{ open_errors }}</span>{% endif %}</a>
     {% endfor %}
   </nav>
 
