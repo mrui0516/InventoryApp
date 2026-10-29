@@ -52,7 +52,7 @@ from .models import (
     Category, SaleOrder, InboundOrder, InboundPendingItem, ARInvoice, ARItem,
     Brand, SaleOrderChangeLog, AttendanceRecord, PrintProfile,
     StockAdjustmentLog, SaleOrderPayment, Store, StoreProfile, search_devices,
-    PedidoDraft,
+    PedidoDraft, Concentration,
 )
 from .services import order_charges
 from .services import submissions
@@ -1224,6 +1224,7 @@ def product_list_view(request):
         stock_status=stock_status,
         sort_by=sort_by,
         store=active_store,
+        **product_list_extras(request),
     )
 
     products_qs = state['products_qs']
@@ -1266,7 +1267,16 @@ def product_list_view(request):
         'total_stock': total_stock,
         'filter_querystring': query_params.urlencode(),
         'active_filter_labels': active_filter_labels,
-        'filters_on': bool(selected_brand_id or stock_status) or sort_by != 'latest',
+        'filters_on': bool(selected_brand_id or stock_status or state['concentration'] or state['gender']) or sort_by != 'latest',
+        'perfume_type': state['perfume_type'],
+        'concentration': state['concentration'],
+        'gender': state['gender'],
+        'type_tabs': [{'value': value, 'label': {'body_spray': 'Body spray', 'coffret': 'Coffret'}.get(value, label),
+                       'n': state['type_counts'].get(value, 0)}
+                      for value, label in Product.PERFUME_TYPES if state['type_counts'].get(value)],
+        'type_total': sum(state['type_counts'].values()),
+        'concentrations': Concentration.objects.order_by('sort_order', 'name'),
+        'genders': [c for c in Product.GENDER_CHOICES if c[0]],
         'can_manage': has_manager_access(request.user),
         'show_sales_sensitive': show_sales_sensitive,
         'export_defaults': {
@@ -1304,7 +1314,18 @@ def category_with_descendants(category_id):
     return sorted(found)
 
 
-def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_category, selected_brand, stock_status, sort_by, store=None):
+def product_list_extras(request):
+    """The product list's newer filters, read the same way by the page and
+    both exports: type, concentration and who it is for."""
+    return {
+        'perfume_type': (request.GET.get('type') or '').strip(),
+        'concentration': (request.GET.get('conc') or '').strip(),
+        'gender': (request.GET.get('gender') or '').strip(),
+    }
+
+
+def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_category, selected_brand, stock_status, sort_by, store=None,
+                                    perfume_type='', concentration='', gender=''):
     recent_sales_start = timezone.now() - timedelta(days=30)
     stock_subquery = (
         Purchase.objects
@@ -1372,6 +1393,12 @@ def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_cat
     category_ids = category_with_descendants(selected_category)
     if category_ids:
         products_qs = products_qs.filter(category_id__in=category_ids)
+    if concentration.isdigit():
+        products_qs = products_qs.filter(concentration_id=int(concentration))
+    if gender in dict(Product.GENDER_CHOICES):
+        products_qs = products_qs.filter(gender=gender)
+    else:
+        gender = ''
 
     brand_options = (
         Brand.objects
@@ -1401,16 +1428,27 @@ def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_cat
     elif stock_status == 'out_of_stock':
         products_qs = products_qs.filter(total_stock__lte=0)
 
-    allowed_sort_options = {'latest', 'name_asc', 'stock_desc', 'price_desc', 'price_asc'}
+    # Counted before the type itself is applied, so every type tab shows its own number.
+    type_counts = dict(Product.objects.filter(id__in=products_qs.values('id'))
+                       .values_list('perfume_type').annotate(n=Count('id')).order_by())
+    if perfume_type in dict(Product.PERFUME_TYPES):
+        products_qs = products_qs.filter(perfume_type=perfume_type)
+    else:
+        perfume_type = ''
+
+    allowed_sort_options = {'latest', 'name_asc', 'name_desc', 'stock_desc', 'stock_asc', 'price_desc', 'price_asc'}
     if show_sales_sensitive:
-        allowed_sort_options.update({'sales_desc', 'recent_sales_desc'})
+        allowed_sort_options.update({'sales_desc', 'sales_asc', 'recent_sales_desc'})
     if sort_by not in allowed_sort_options:
         sort_by = 'latest'
 
     sort_options = {
         'latest': ['-id'],
         'name_asc': ['brand', 'model', 'name', 'id'],
+        'name_desc': ['-brand', '-model', '-name', '-id'],
         'stock_desc': ['-total_stock', 'brand', 'model', 'name'],
+        'stock_asc': ['total_stock', 'brand', 'model', 'name'],
+        'sales_asc': ['total_sold_qty', 'recent_sold_qty', 'brand', 'model', 'name'],
         'sales_desc': ['-total_sold_qty', '-recent_sold_qty', 'brand', 'model', 'name'],
         'recent_sales_desc': ['-recent_sold_qty', '-total_sold_qty', 'brand', 'model', 'name'],
         'price_desc': ['-default_price', 'brand', 'model', 'name'],
@@ -1465,6 +1503,10 @@ def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_cat
         'stock_status': stock_status,
         'sort_by': sort_by,
         'active_filter_labels': active_filter_labels,
+        'type_counts': type_counts,
+        'perfume_type': perfume_type,
+        'concentration': concentration,
+        'gender': gender,
     }
 
 
@@ -1498,6 +1540,7 @@ def export_product_list_excel(request):
         selected_brand=selected_brand,
         stock_status=stock_status,
         sort_by=sort_by,
+        **product_list_extras(request),
     )
     products_qs = state['products_qs']
     on_order_ids = product_ids_on_order()
@@ -1773,6 +1816,7 @@ def export_shopify_inventory_csv(request):
         selected_brand=selected_brand,
         stock_status=stock_status,
         sort_by=sort_by,
+        **product_list_extras(request),
     )
     products_qs = state['products_qs']
     if only_in_stock:
@@ -2591,6 +2635,8 @@ def dashboard_view(request):
         f"dash:snap:{month_context['month_value']}:{cache_scope}:"
         f"{int(show_profit)}:{month_context['period_end'].isoformat()}:store{store_cache_key}"
     )
+    # A finished month no longer changes (bar a correction): keep it for hours.
+    dashboard_ttl = 300 if month_context['period_end'] >= today else 6 * 3600
     monthly_overview = cache.get(snapshot_cache_key)
     if monthly_overview is None:
         monthly_overview = build_monthly_dashboard_snapshot(
@@ -2600,7 +2646,7 @@ def dashboard_view(request):
             show_profit=show_profit,
             store=store_scope,
         )
-        cache.set(snapshot_cache_key, monthly_overview, 300)
+        cache.set(snapshot_cache_key, monthly_overview, dashboard_ttl)
 
     current_headline = {
         'sales_amount': monthly_overview['month_sales_amount'],
@@ -2617,7 +2663,7 @@ def dashboard_view(request):
             show_profit=show_profit,
             store=store_scope,
         )
-        cache.set(comparison_cache_key, mom_comparison, 300)
+        cache.set(comparison_cache_key, mom_comparison, dashboard_ttl)
 
     target_progress = build_target_progress(
         month_context, monthly_overview['month_sales_amount'],
@@ -2706,13 +2752,8 @@ def dashboard_view(request):
                 'share_pct': (amount / total_sales_today * Decimal('100')) if total_sales_today else Decimal('0.00'),
             })
 
-    # Low stock: shared with the alerts panel (services/low_stock.py).
-    low_data = low_stock_data(selected_cat_ids_int)
-    low_stock_count = low_data['count']
-    out_of_stock_count = low_data['out']
-    low_stock_1_2_count = low_data['low12']
-    low_stock_3_4_count = low_data['low34']
-    low_stock_focus_products = low_data['focus']
+    # Low stock is not on this page (2026-10-29): it lives in the alerts panel
+    # behind the bell on every page, and computing it here doubled the load time.
 
     prod_for_totals = Product.objects.all()
     if selected_cat_ids_int:
@@ -2745,11 +2786,6 @@ def dashboard_view(request):
         'total_sales_today': total_sales_today,
         'today_payment_breakdown': today_payment_breakdown,
         'sale_orders_today': sale_orders_today,
-        'low_stock_focus_products': low_stock_focus_products,
-        'low_stock_count': low_stock_count,
-        'out_of_stock_count': out_of_stock_count,
-        'low_stock_1_2_count': low_stock_1_2_count,
-        'low_stock_3_4_count': low_stock_3_4_count,
         'total_products': total_products,
         'total_stock': total_stock,
         'isManger': isManger,

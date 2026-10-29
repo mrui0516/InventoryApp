@@ -843,11 +843,9 @@ body.anon .erp-content{
   .dash-page > .dash-mbar{ order:1; }
   .dash-page > .dash-sec-month{ order:2; }
   .dash-page > .dash-sec-channel{ order:3; }
-  .dash-page > .dash-sec-low{ order:4; }
+  .dash-page > .dash-sec-focus{ order:4; }   /* the lists you tap, before the chart */
   .dash-page > .dash-sec-stores{ order:5; }
   .dash-page > .dash-sec-trend{ order:6; }
-  .dash-page > .dash-sec-focus{ order:7; }
-  .dash-page > .dash-sec-capital{ order:8; }
   .d-md-grid{ display:none !important; }
 
   /* the month: one wide figure, then a 2x2 of small ones */
@@ -865,7 +863,6 @@ body.anon .erp-content{
   /* the month bar above already names the month */
   .dash-sec-month > .section-head h2{ display:none; }
   /* three is enough to act on; "View all" opens the panel with the rest */
-  .dash-sec-low .ls-inline li:nth-child(n+4){ display:none; }
   #salesBarChart{ height:200px !important; }
   .dash-sec-trend .chart-wrap{ padding:.5rem; }
   .dash-sec-trend .quick-tags .note-pill{ font-size:.82rem; }
@@ -1073,3 +1070,34 @@ a.sp-row:hover{ background:var(--app-surface-2); }
 .fopt.on{ border-color:var(--app-accent); background:var(--app-accent-soft); color:var(--app-accent-ink, var(--app-accent)); }
 .fopt.on::before{ content:"\2713"; font-weight:900; }
 .fopt .n{ color:var(--app-muted); font-weight:600; font-variant-numeric:tabular-nums; }
+
+/* ---- Dropdowns (every page, 2026-10-29) ------------------------------------
+   One look for every select: the app's font at a readable weight, a slim
+   chevron, room on the right so the text never runs under it, and the same
+   focus ring as text fields. The dark store pickers in the top bar and the
+   side menu keep their own look. */
+.theme-stone select.form-select,
+.theme-stone .erp-content select:not([multiple]):not([size]):not(.form-select),
+.theme-stone .offcanvas select:not([multiple]),
+.theme-stone .modal select:not([multiple]){
+  -webkit-appearance:none; appearance:none;
+  font-family:inherit; font-size:.95rem; font-weight:500; line-height:1.35; color:var(--app-text);
+  min-height:40px; padding:.42rem 2.3rem .42rem .75rem;
+  background-color:var(--app-surface);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2378716c' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right .75rem center; background-size:14px 14px;
+  border:1px solid var(--app-border-strong); border-radius:var(--app-radius-sm);
+  text-overflow:ellipsis; cursor:pointer;
+  transition:border-color .15s ease, box-shadow .15s ease;
+}
+.theme-stone select.form-select:hover,
+.theme-stone .erp-content select:not([multiple]):not([size]):hover{ border-color:#a8a29e; }
+.theme-stone select.form-select:focus,
+.theme-stone .erp-content select:not([multiple]):not([size]):focus,
+.theme-stone .offcanvas select:focus,
+.theme-stone .modal select:focus{ outline:none; border-color:var(--app-accent); box-shadow:0 0 0 3px rgba(59,166,241,.25); }
+.theme-stone select.form-select-sm{ min-height:34px; font-size:.88rem; padding:.28rem 2rem .28rem .6rem; background-position:right .6rem center; }
+.theme-stone select:disabled{ background-color:var(--app-surface-2); color:var(--app-muted); cursor:not-allowed; }
+.theme-stone select option{ font-weight:500; color:var(--app-text); }
+.theme-stone .erp-sidebar select.form-select{ min-height:34px; }
+

@@ -1,4 +1,5 @@
 {% extends 'stock/base.html' %}
+{% load filterbar %}
 {% block title %}Products{% endblock %}
 
 {% block content %}
@@ -29,6 +30,35 @@
     .filter-row .form-select{ flex:1 1 9rem; min-width:0; max-width:15rem; }
   }
   /* Export is occasional — keep it folded so it never pushes the list down */
+  .xp{ margin-top:.75rem; border-top:1px solid var(--app-border); padding-top:.5rem; }
+  .xp > summary{ list-style:none; cursor:pointer; display:flex; align-items:center; gap:.45rem; font-weight:700; color:var(--app-text); padding:.35rem 0; }
+  .xp > summary::-webkit-details-marker{ display:none; }
+  .xp > summary::after{ content:"\25BE"; margin-left:auto; color:var(--app-muted); }
+  .xp[open] > summary::after{ content:"\25B4"; }
+  .xp-sub{ font-weight:500; color:var(--app-muted); font-size:.85rem; }
+  .xp-body{ display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr); gap:.75rem; margin-top:.5rem; }
+  .xp-card{ border:1px solid var(--app-border); border-radius:var(--app-radius-sm); padding:.8rem .9rem; display:grid; gap:.6rem; align-content:start; }
+  .xp-card h3{ font-size:.75rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--app-muted); margin:0; }
+  .xp-row{ display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap; }
+  .xp-label{ font-size:.88rem; font-weight:600; color:var(--app-text); margin:0; }
+  .xp-seg{ display:inline-flex; border:1px solid var(--app-border-strong); border-radius:999px; overflow:hidden; }
+  .xp-seg label{ margin:0; cursor:pointer; }
+  .xp-seg input{ position:absolute; opacity:0; pointer-events:none; }
+  .xp-seg span{ display:block; padding:.3rem .8rem; font-size:.85rem; font-weight:700; color:var(--app-muted); }
+  .xp-seg input:checked + span{ background:var(--app-accent-soft); color:var(--app-accent-ink, var(--app-accent)); }
+  .xp-seg input:focus-visible + span{ outline:2px solid var(--app-accent); }
+  .xp-money{ display:inline-flex; align-items:center; border:1px solid var(--app-border-strong); border-radius:var(--app-radius-sm); overflow:hidden; }
+  .xp-money span{ padding:0 .55rem; color:var(--app-muted); background:var(--app-surface-2); align-self:stretch; display:flex; align-items:center; }
+  .xp-money input{ border:0; width:6.5rem; padding:.35rem .5rem; font-size:.9rem; }
+  .xp-check{ display:flex; align-items:center; gap:.5rem; font-size:.9rem; margin:0; cursor:pointer; }
+  .xp-check input{ width:1.05rem; height:1.05rem; }
+  .xp-actions{ display:flex; gap:.5rem; margin-top:.15rem; }
+  .xp-actions .btn{ min-width:6rem; }
+  @media (max-width:767.98px){ .xp-body{ grid-template-columns:minmax(0,1fr); } }
+  .th-sort{ color:inherit; text-decoration:none; white-space:nowrap; }
+  .th-sort span{ color:var(--app-muted); font-size:.85em; margin-left:.15rem; }
+  .th-sort:hover, .th-sort.on{ color:var(--app-accent-ink, var(--app-accent)); }
+  .th-sort.on span{ color:inherit; }
   .export-details > summary{ cursor:pointer; font-weight:700; color:var(--app-accent-ink); padding:.5rem .1rem; }
 
   @media (max-width:575.98px){
@@ -104,17 +134,19 @@
 
   <section class="page-card pad">
     {% include "stock/_fbar.html" with placeholder="Barcode, brand, model, name, spec or color" panel="fb-panel" on=filters_on %}
-    <nav class="ftabs" aria-label="Category">
-      <a class="{% if not selected_category %}on{% endif %}" href="{% querystring category=None page=None %}">All</a>
-      {% for c in categories %}<a class="{% if selected_category == c.id %}on{% endif %}" href="{% querystring category=c.id page=None %}">{{ c.name }}</a>{% endfor %}
+    <nav class="ftabs" aria-label="Type">
+      <a class="{% if not perfume_type %}on{% endif %}" href="{% querystring type=None page=None %}">All <span class="n">{{ type_total }}</span></a>
+      {% for t in type_tabs %}<a class="{% if perfume_type == t.value %}on{% endif %}" href="{% querystring type=t.value page=None %}">{{ t.label }} <span class="n">{{ t.n }}</span></a>{% endfor %}
     </nav>
-    {% if query or selected_brand or stock_status or sort_by != 'latest' %}
+    {% if query or filters_on %}
       <div class="fchips">
         {% if query %}<a class="fchip" href="{% querystring q=None page=None %}">&ldquo;{{ query }}&rdquo;<span aria-hidden="true">&times;</span></a>{% endif %}
         {% for b in brands %}{% if b.id == selected_brand %}<a class="fchip" href="{% querystring brand=None page=None %}">{{ b.name }}<span aria-hidden="true">&times;</span></a>{% endif %}{% endfor %}
+        {% for c in concentrations %}{% if c.id|stringformat:"s" == concentration %}<a class="fchip" href="{% querystring conc=None page=None %}">{{ c.short|default:c.name }}<span aria-hidden="true">&times;</span></a>{% endif %}{% endfor %}
+        {% for value, label in genders %}{% if value == gender %}<a class="fchip" href="{% querystring gender=None page=None %}">{{ label }}<span aria-hidden="true">&times;</span></a>{% endif %}{% endfor %}
         {% if stock_status %}<a class="fchip" href="{% querystring stock_status=None page=None %}">{% if stock_status == 'in_stock' %}In stock{% elif stock_status == 'low_stock' %}Low stock{% else %}Out of stock{% endif %}<span aria-hidden="true">&times;</span></a>{% endif %}
-        {% if sort_by != 'latest' %}<a class="fchip" href="{% querystring sort=None page=None %}">Sort: {% if sort_by == 'name_asc' %}Name A-Z{% elif sort_by == 'stock_desc' %}Stock high-low{% elif sort_by == 'price_desc' %}Price high-low{% elif sort_by == 'price_asc' %}Price low-high{% elif sort_by == 'sales_desc' %}Best selling{% else %}Best selling 30d{% endif %}<span aria-hidden="true">&times;</span></a>{% endif %}
-        <a class="fchip-clear" href="{% querystring q=None brand=None stock_status=None sort=None page=None %}">Clear all</a>
+        {% if sort_by != 'latest' %}<a class="fchip" href="{% querystring sort=None page=None %}">Sort: {% if sort_by == 'name_asc' %}Name A-Z{% elif sort_by == 'name_desc' %}Name Z-A{% elif sort_by == 'stock_desc' %}Stock high-low{% elif sort_by == 'stock_asc' %}Stock low-high{% elif sort_by == 'price_desc' %}Price high-low{% elif sort_by == 'price_asc' %}Price low-high{% elif sort_by == 'sales_desc' %}Best selling{% elif sort_by == 'sales_asc' %}Least sold{% else %}Best selling 30d{% endif %}<span aria-hidden="true">&times;</span></a>{% endif %}
+        <a class="fchip-clear" href="{% querystring q=None brand=None stock_status=None sort=None conc=None gender=None page=None %}">Clear all</a>
       </div>
     {% endif %}
     <template id="fb-panel">
@@ -126,6 +158,14 @@
             <a class="fopt{% if stock_status == 'in_stock' %} on{% endif %}" href="{% querystring stock_status='in_stock' page=None %}">In stock</a>
             <a class="fopt{% if stock_status == 'low_stock' %} on{% endif %}" href="{% querystring stock_status='low_stock' page=None %}">Low stock</a>
             <a class="fopt{% if stock_status == 'out_of_stock' %} on{% endif %}" href="{% querystring stock_status='out_of_stock' page=None %}">Out of stock</a>
+          </div></section>
+          <section><h6>Concentration</h6><div class="fopt-list">
+            <a class="fopt{% if not concentration %} on{% endif %}" href="{% querystring conc=None page=None %}">Any</a>
+            {% for c in concentrations %}<a class="fopt{% if c.id|stringformat:"s" == concentration %} on{% endif %}" href="{% querystring conc=c.id page=None %}">{{ c.short|default:c.name }}</a>{% endfor %}
+          </div></section>
+          <section><h6>For</h6><div class="fopt-list">
+            <a class="fopt{% if not gender %} on{% endif %}" href="{% querystring gender=None page=None %}">Anyone</a>
+            {% for value, label in genders %}<a class="fopt{% if value == gender %} on{% endif %}" href="{% querystring gender=value page=None %}">{{ label }}</a>{% endfor %}
           </div></section>
           <section><h6>Sort</h6><div class="fopt-list">
             <a class="fopt{% if sort_by == 'latest' %} on{% endif %}" href="{% querystring sort=None page=None %}">Latest added</a>
@@ -146,99 +186,48 @@
           </section>
         </div>
       </div>
-      <div data-part="foot"><a class="btn btn-outline-secondary" href="{% querystring q=None brand=None stock_status=None sort=None page=None %}">Clear all</a></div>
+      <div data-part="foot"><a class="btn btn-outline-secondary" href="{% querystring q=None brand=None stock_status=None sort=None conc=None gender=None page=None %}">Clear all</a></div>
     </template>
 
-    <details class="export-details">
-    <summary>Export</summary>
-    <div class="export-panel">
-      <ul class="nav nav-tabs" role="tablist">
-        <li class="nav-item" role="presentation">
-          <button class="nav-link active" id="exp-client-tab" data-bs-toggle="tab" data-bs-target="#exp-client" type="button" role="tab" aria-controls="exp-client" aria-selected="true">Export For Client</button>
-        </li>
-        {% if can_manage %}
-        <li class="nav-item" role="presentation">
-          <button class="nav-link" id="exp-shopify-tab" data-bs-toggle="tab" data-bs-target="#exp-shopify" type="button" role="tab" aria-controls="exp-shopify" aria-selected="false">Export For Shopify</button>
-        </li>
-        {% endif %}
-      </ul>
-      <div class="tab-content pt-3">
-        <div class="tab-pane fade show active" id="exp-client" role="tabpanel" aria-labelledby="exp-client-tab">
-          <form method="get" action="{% url 'export_product_list_excel' %}">
-            <input type="hidden" name="q" value="{{ query }}">
-            {% if selected_category %}<input type="hidden" name="category" value="{{ selected_category }}">{% endif %}
-            {% if selected_brand %}<input type="hidden" name="brand" value="{{ selected_brand }}">{% endif %}
-            {% if stock_status %}<input type="hidden" name="stock_status" value="{{ stock_status }}">{% endif %}
-            <input type="hidden" name="sort" value="{{ sort_by }}">
-
-            <div class="export-grid">
-              <div>
-                <label class="form-label fw-bold">Price In Export</label>
-                <select name="price_mode" class="form-select">
-                  <option value="retail" {% if export_defaults.price_mode == 'retail' %}selected{% endif %}>PVP only</option>
-                  <option value="wholesale">Wholesale only</option>
-                  <option value="both">PVP + wholesale</option>
-                </select>
-              </div>
-              <div>
-                <label class="form-label fw-bold" for="exportDiscount">Discount off wholesale</label>
-                <div class="input-group">
-                  <span class="input-group-text">&euro;</span>
-                  <input type="number" name="discount" id="exportDiscount" class="form-control"
-                         min="0" step="0.10" placeholder="0.00" inputmode="decimal">
-                </div>
-              </div>
-              <div style="grid-column:span 2">
-                <label class="form-label fw-bold">Extra Options</label>
-                <div class="check-row">
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" name="only_in_stock" id="onlyInStockExport" value="1" {% if export_defaults.only_in_stock %}checked{% endif %}>
-                    <label class="form-check-label" for="onlyInStockExport">Only products with stock or on the way</label>
-                  </div>
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" name="include_images" id="includeImagesExport" value="1" {% if export_defaults.include_images %}checked{% endif %}>
-                    <label class="form-check-label" for="includeImagesExport">Include product photos</label>
-                  </div>
-                </div>
-              </div>
-              <div class="d-flex align-items-end gap-2">
-                <button type="submit" class="btn btn-success flex-fill">Excel</button>
-                {# xlsx photos are floating drawings; phone viewers skip them #}
-                <button type="submit" name="format" value="pdf"
-                        class="btn btn-outline-danger flex-fill"
-                        title="Photos always show - use this for WhatsApp">PDF</button>
-              </div>
+    {# Export what the list shows now - every filter above goes with it. #}
+    <details class="xp">
+      <summary>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>
+        Export <span class="xp-sub">Excel &middot; PDF{% if can_manage %} &middot; Shopify{% endif %} &middot; the list as filtered</span>
+      </summary>
+      <div class="xp-body">
+        <form class="xp-card" method="get" action="{% url 'export_product_list_excel' %}">
+          {% keep_params "page" %}
+          <h3>For clients</h3>
+          <div class="xp-row">
+            <span class="xp-label">Prices</span>
+            <div class="xp-seg" role="radiogroup" aria-label="Prices">
+              <label><input type="radio" name="price_mode" value="retail"{% if export_defaults.price_mode == 'retail' %} checked{% endif %}><span>PVP</span></label>
+              <label><input type="radio" name="price_mode" value="wholesale"><span>Wholesale</span></label>
+              <label><input type="radio" name="price_mode" value="both"><span>Both</span></label>
             </div>
-          </form>
-        </div>
+          </div>
+          <div class="xp-row">
+            <label class="xp-label" for="exportDiscount">Discount off wholesale</label>
+            <div class="xp-money"><span>&euro;</span><input type="number" name="discount" id="exportDiscount" min="0" step="0.10" placeholder="0.00" inputmode="decimal"></div>
+          </div>
+          <label class="xp-check"><input type="checkbox" name="only_in_stock" value="1"{% if export_defaults.only_in_stock %} checked{% endif %}> Only with stock or on the way</label>
+          <label class="xp-check"><input type="checkbox" name="include_images" value="1"{% if export_defaults.include_images %} checked{% endif %}> Include photos</label>
+          <div class="xp-actions">
+            <button type="submit" class="btn btn-sm btn-success">Excel</button>
+            {# xlsx photos are floating drawings; phone viewers skip them #}
+            <button type="submit" name="format" value="pdf" class="btn btn-sm btn-outline-secondary" title="Photos always show - use this for WhatsApp">PDF</button>
+          </div>
+        </form>
         {% if can_manage %}
-        <div class="tab-pane fade" id="exp-shopify" role="tabpanel" aria-labelledby="exp-shopify-tab">
-          <form method="get" action="{% url 'export_shopify_inventory_csv' %}">
-            <input type="hidden" name="q" value="{{ query }}">
-            {% if selected_category %}<input type="hidden" name="category" value="{{ selected_category }}">{% endif %}
-            {% if selected_brand %}<input type="hidden" name="brand" value="{{ selected_brand }}">{% endif %}
-            {% if stock_status %}<input type="hidden" name="stock_status" value="{{ stock_status }}">{% endif %}
-            <input type="hidden" name="sort" value="{{ sort_by }}">
-
-            <div class="export-grid">
-              <div>
-                <label class="form-label fw-bold">Rows</label>
-                <div class="check-row">
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" name="only_in_stock" id="shopifyOnlyInStockExport" value="1" {% if shopify_export_defaults.only_in_stock %}checked{% endif %}>
-                    <label class="form-check-label" for="shopifyOnlyInStockExport">Only in stock</label>
-                  </div>
-                </div>
-              </div>
-              <div class="d-flex align-items-end">
-                <button type="submit" class="btn btn-dark w-100">Export Shopify Product CSV</button>
-              </div>
-            </div>
-          </form>
-        </div>
+        <form class="xp-card" method="get" action="{% url 'export_shopify_inventory_csv' %}">
+          {% keep_params "page" %}
+          <h3>For Shopify</h3>
+          <label class="xp-check"><input type="checkbox" name="only_in_stock" value="1"{% if shopify_export_defaults.only_in_stock %} checked{% endif %}> Only in stock</label>
+          <div class="xp-actions"><button type="submit" class="btn btn-sm btn-outline-secondary">Shopify product CSV</button></div>
+        </form>
         {% endif %}
       </div>
-    </div>
     </details>
   </section>
 
@@ -259,12 +248,12 @@
         <table class="table table-hover align-middle table-card mb-0">
           <thead>
             <tr>
-              <th>Product</th>
+              <th><a class="th-sort{% if sort_by == 'name_asc' or sort_by == 'name_desc' %} on{% endif %}" href="{% if sort_by == 'name_asc' %}{% querystring sort='name_desc' page=None %}{% else %}{% querystring sort='name_asc' page=None %}{% endif %}">Product <span aria-hidden="true">{% if sort_by == 'name_asc' %}&uarr;{% elif sort_by == 'name_desc' %}&darr;{% else %}&#8597;{% endif %}</span></a></th>
               {% if show_sales_sensitive %}
-                <th class="text-center">Sales</th>
+                <th class="text-center"><a class="th-sort{% if sort_by == 'sales_desc' or sort_by == 'sales_asc' %} on{% endif %}" href="{% if sort_by == 'sales_desc' %}{% querystring sort='sales_asc' page=None %}{% else %}{% querystring sort='sales_desc' page=None %}{% endif %}">Sales <span aria-hidden="true">{% if sort_by == 'sales_desc' %}&darr;{% elif sort_by == 'sales_asc' %}&uarr;{% else %}&#8597;{% endif %}</span></a></th>
               {% endif %}
-              <th class="text-end">Retail / Wholesale</th>
-              <th class="text-center">Stock</th>
+              <th class="text-end"><a class="th-sort{% if sort_by == 'price_desc' or sort_by == 'price_asc' %} on{% endif %}" href="{% if sort_by == 'price_desc' %}{% querystring sort='price_asc' page=None %}{% else %}{% querystring sort='price_desc' page=None %}{% endif %}">Retail / Wholesale <span aria-hidden="true">{% if sort_by == 'price_desc' %}&darr;{% elif sort_by == 'price_asc' %}&uarr;{% else %}&#8597;{% endif %}</span></a></th>
+              <th class="text-center"><a class="th-sort{% if sort_by == 'stock_desc' or sort_by == 'stock_asc' %} on{% endif %}" href="{% if sort_by == 'stock_desc' %}{% querystring sort='stock_asc' page=None %}{% else %}{% querystring sort='stock_desc' page=None %}{% endif %}">Stock <span aria-hidden="true">{% if sort_by == 'stock_desc' %}&darr;{% elif sort_by == 'stock_asc' %}&uarr;{% else %}&#8597;{% endif %}</span></a></th>
               <th style="min-width:170px">Actions</th>
             </tr>
           </thead>
@@ -289,17 +278,8 @@
                             <span class="metric-pill">Sold {{ product.total_sold_qty }}</span>
                           {% endif %}
                         </div>
-                        <a class="product-name mt-2 d-block text-reset text-decoration-none" href="{% url 'product_detail' product.id %}" data-panel="{% url 'product_panel' product.id %}">{{ product.display_name }}</a>
-                        <div class="product-meta">
-                          Barcode: {{ product.barcode }}
-                          {% if product.category %} - {{ product.category.name }}{% endif %}
-                        </div>
-                        {% if show_sales_sensitive %}
-                          <div class="product-meta">
-                            30d sales {{ product.recent_sold_qty }}
-                            {% if product.last_sold_at %} - last sold {{ product.last_sold_at|date:"Y-m-d" }}{% else %} - no sale yet{% endif %}
-                          </div>
-                        {% endif %}
+                        <a class="product-name mt-2 d-block text-reset text-decoration-none" href="{% url 'product_detail' product.id %}" data-panel="{% url 'product_panel' product.id %}">{{ product.list_name }}</a>
+                        <div class="product-meta">{{ product.barcode }}</div>
                       </div>
                     </div>
 
@@ -313,8 +293,7 @@
                         {% endif %}
                         <div class="pm-body">
                           <div class="pm-brand">{{ product.brand }}</div>
-                          <div class="pm-name">{% if product.model %}{{ product.model }} · {% endif %}{{ product.name }}</div>
-                          {% if product.variant_label %}<div class="pm-spec">{{ product.variant_label }}</div>{% endif %}
+                          <div class="pm-name">{{ product.list_name }}</div>
                           <div class="pm-sub">{{ product.barcode }}{% if show_sales_sensitive %} · Sold {{ product.total_sold_qty }} · 30d {{ product.recent_sold_qty }}{% endif %}</div>
                         </div>
                         <div class="pm-fig">

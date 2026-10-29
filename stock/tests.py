@@ -886,9 +886,10 @@ class DashboardViewTests(TestCase):
         self.assertContains(response, "Sales trend")
         self.assertContains(response, "Gross Profit")
         self.assertContains(response, "Purchase Spend")
-        self.assertContains(response, "Capital lock and slow movers")
-        self.assertContains(response, "Most capital locked stock")
+        # 2026-10-29: one tabbed card for the lists
+        self.assertContains(response, "Capital locked")
         self.assertContains(response, "Slow movers")
+        self.assertContains(response, "Sell-through")
         self.assertContains(response, "Oud Reserve")
 
     def test_catalog_page_renders(self):
@@ -1258,9 +1259,9 @@ class ProductArchitectureTests(TestCase):
         response = self.client.get(reverse("product_list"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Export For Shopify")
+        self.assertContains(response, "For Shopify")
         self.assertContains(response, reverse("export_shopify_inventory_csv"))
-        self.assertContains(response, "Export Shopify Product CSV")
+        self.assertContains(response, "Shopify product CSV")
         self.assertContains(response, "Only in stock")
 
     def test_shopify_export_matches_product_template_and_uses_current_stock(self):
@@ -9412,7 +9413,9 @@ class RoundANavigationTests(TestCase):
         self._as(self.admin)
         dashboard = self.client.get(reverse("dashboard")).content.decode()
         # Inventory joined the folds on 2026-10-26 (Dashboard phone layout).
-        self.assertEqual(dashboard.count('<details class="dash-fold" data-fold open>'), 3)
+        # 2026-10-29: the two list sections became tabs of one card.
+        self.assertEqual(dashboard.count('<details class="dash-fold" data-fold open>'), 1)
+        self.assertIn('id="dashLists"', dashboard)
 
     # -- Today ---------------------------------------------------------------
     def test_today_has_no_to_do_line(self):
@@ -10448,12 +10451,11 @@ class LowStockAlertsTests(TestCase):
         self.assertIn('id="alertsPanel"', html)
         self.assertIn('data-bs-target="#alertsPanel"', html)
 
-    def test_the_dashboard_keeps_a_summary(self):
+    def test_the_dashboard_leaves_low_stock_to_the_bell(self):
+        # 2026-10-29: the panel behind the bell is the one place for it
         html = self.client.get(reverse("dashboard") + f"?cat={self.out.category_id}").content.decode()
-        card = html[html.index('id="low-stock"'):]
-        self.assertIn('class="ls-sum"', card)
-        self.assertIn('data-ls-band="low12"', card)
-        self.assertNotIn('Brands to review', html)
+        self.assertNotIn('id="low-stock"', html)
+        self.assertIn('id="alertsPanel"', html)
 
 
 class ChannelSplitTests(TestCase):
@@ -10508,18 +10510,17 @@ class DashboardPhoneLayoutTests(TestCase):
         self.assertIn('name="cat"', bar)
 
     def test_every_section_carries_its_phone_order(self):
-        for cls in ("dash-sec-month", "dash-sec-low", "dash-sec-trend", "dash-sec-focus", "dash-sec-capital"):
+        for cls in ("dash-sec-month", "dash-sec-trend", "dash-sec-focus"):
             self.assertIn(cls, self.html, cls)
         with open('stock/static/css/app.css', encoding='utf-8') as fh:
             css = fh.read()
-        self.assertIn('.dash-page > .dash-sec-low{ order:4; }', css)
+        self.assertIn('.dash-page > .dash-sec-focus{ order:4; }', css)
 
-    def test_low_stock_sits_inside_the_page_grid(self):
+    def test_the_lists_sit_inside_the_page_grid(self):
         """CSS order only works on children of .dash-page."""
         page = self.html.index('<div class="dash-page')
-        low = self.html.index('id="low-stock"')
-        self.assertGreater(low, page)
-        self.assertNotIn('<span class="muted">Low-stock SKUs</span>', self.html)
+        self.assertGreater(self.html.index('id="dashLists"'), page)
+        self.assertNotIn('id="low-stock"', self.html)       # in the bell panel, not here (2026-10-29)
 
     def test_inventory_is_a_fold(self):
         inv = self.html.index('<h2>Inventory intelligence</h2>')
@@ -11399,6 +11400,9 @@ class PerfumeFormTests(TestCase):
         Product.objects.filter(pk=product.pk).update(perfume_type="perfume", concentration=edp)
         product.refresh_from_db()
         self.assertEqual(product.list_name, "Asad · EDP · 200ml")
+        Product.objects.filter(pk=product.pk).update(name="Asad EDP 200ml")
+        product.refresh_from_db()
+        self.assertEqual(product.list_name, "Asad EDP 200ml")      # nothing said twice
 
     def test_title_case_rules(self):
         from stock.services.names import title_case
@@ -11477,3 +11481,104 @@ class RemoveCategoriesCommandTests(TestCase):
         with self.assertRaises(CommandError):
             self._run("--name", "Accessories", "--apply")
         self.assertTrue(Category.objects.filter(pk=self.acc.pk).exists())
+
+
+class ProductListTypeTests(TestCase):
+    """Products (2026-10-29): type tabs with counts, concentration and gender
+    filters, headers that sort, and names without the brand."""
+
+    def setUp(self):
+        cache.clear()
+        from stock.models import Concentration
+        self.admin = get_user_model().objects.create_superuser("pl_admin", password="pw123456")
+        self.client.force_login(self.admin)
+        cat = Category.objects.create(name="Perfumes", form_kind="perfume")
+        self.edp = Concentration.objects.create(name="Eau de Parfum", short="EDP")
+        mk = lambda **kw: Product.objects.create(category=cat, brand="Lattafa", **kw)
+        self.asad = mk(name="Asad", model="Asad Line", barcode="6290000003001", volume_ml=100,
+                       concentration=self.edp, gender="men", default_price=Decimal("30"))
+        self.spray = mk(name="Asad", barcode="6290000003002", volume_ml=200, perfume_type="body_spray",
+                        gender="men", default_price=Decimal("8"))
+        self.mini = mk(name="Yara", barcode="6290000003003", volume_ml=10, perfume_type="mini",
+                       gender="women", default_price=Decimal("12"))
+        Purchase.objects.create(product=self.mini, quantity=9, remaining=9, cost_price=Decimal("3"))
+
+    def _ids(self, **params):
+        response = self.client.get(reverse("product_list"), params)
+        return [p.id for p in response.context["products"]], response
+
+    def test_type_tabs_count_and_filter(self):
+        ids, response = self._ids()
+        tabs = {t["value"]: t["n"] for t in response.context["type_tabs"]}
+        self.assertEqual(tabs, {"perfume": 1, "body_spray": 1, "mini": 1})
+        self.assertEqual(self._ids(type="body_spray")[0], [self.spray.id])
+
+    def test_concentration_and_gender_filters(self):
+        self.assertEqual(self._ids(conc=self.edp.id)[0], [self.asad.id])
+        self.assertEqual(sorted(self._ids(gender="men")[0]), sorted([self.asad.id, self.spray.id]))
+        response = self.client.get(reverse("product_list"), {"gender": "men"})
+        self.assertContains(response, 'class="fbar-btn on"')
+
+    def test_headers_sort_both_ways(self):
+        self.assertEqual(self._ids(sort="stock_desc")[0][0], self.mini.id)
+        self.assertEqual(self._ids(sort="stock_asc")[0][-1], self.mini.id)
+        self.assertEqual(self._ids(sort="price_asc")[0][0], self.spray.id)
+        body = self.client.get(reverse("product_list"), {"sort": "price_desc"}).content.decode()
+        self.assertIn("sort=price_asc", body)              # the header now offers the other way
+
+    def test_rows_name_line_name_type_size(self):
+        response = self.client.get(reverse("product_list"))
+        self.assertContains(response, "Asad Line Asad · EDP · 100ml")
+        self.assertContains(response, "Asad · Body spray · 200ml")
+
+    def test_the_export_takes_the_same_filters(self):
+        response = self.client.get(reverse("export_product_list_excel"), {"type": "mini"})
+        self.assertEqual(response.status_code, 200)
+
+
+class SlowMoversAndSellThroughTests(TestCase):
+    """Dashboard lists (2026-10-29): slow movers are the stock idle longest -
+    not what just arrived; sell-through is how fast a delivery hit low stock."""
+
+    def setUp(self):
+        self.cat = Category.objects.create(name="Perfumes", form_kind="perfume")
+        self.today = timezone.localdate()
+        self.now = timezone.now()
+
+    def _product(self, code, bought, days_ago, sold=()):
+        p = Product.objects.create(name=f"P{code}", brand="B", barcode=f"62900000040{code:02d}", category=self.cat)
+        batch = Purchase.objects.create(product=p, quantity=bought, remaining=bought - sum(q for _, q in sold),
+                                        cost_price=Decimal("10"))
+        Purchase.objects.filter(pk=batch.pk).update(date=self.now - timedelta(days=days_ago))
+        for sold_days_ago, qty in sold:
+            order = SaleOrder.objects.create()
+            SaleOrder.objects.filter(pk=order.pk).update(created_at=self.now - timedelta(days=sold_days_ago))
+            sale = Sale.objects.create(order=order, product=p, quantity=qty, unit_price=Decimal("20"), payment_method="cash")
+            Sale.objects.filter(pk=sale.pk).update(date=self.now - timedelta(days=sold_days_ago))
+        return p
+
+    def test_slow_movers_are_the_longest_idle_not_the_newest(self):
+        from stock.services.dashboard import build_monthly_dashboard_snapshot
+        never_old = self._product(1, 6, 200)
+        sold_long_ago = self._product(2, 6, 120, sold=[(80, 1)])
+        just_arrived = self._product(3, 6, 10)
+        sold_lately = self._product(4, 6, 150, sold=[(5, 1)])
+        snap = build_monthly_dashboard_snapshot(month_start=self.today.replace(day=1), period_end=self.today,
+                                                selected_category_ids=[], show_profit=True, store=None)
+        order = [row["product_id"] for row in snap["slow_movers"]]
+        self.assertEqual(order[:2], [never_old.id, sold_long_ago.id])
+        self.assertNotIn(just_arrived.id, order)
+        self.assertLess(order.index(sold_long_ago.id), order.index(sold_lately.id))
+        self.assertEqual(snap["slow_movers"][0]["idle_days"], 200)
+
+    def test_sell_through_counts_days_from_arrival_to_low_stock(self):
+        from stock.services.sell_through import sell_through
+        fast = self._product(5, 10, 20, sold=[(17, 6)])          # 10 -> 4 after 3 days
+        slow = self._product(6, 10, 30, sold=[(10, 7)])          # 10 -> 3 after 20 days
+        self._product(7, 10, 20, sold=[(15, 2)])                 # still 8: not there yet
+        self._product(8, 3, 20, sold=[(15, 1)])                  # arrived already low
+        rows = sell_through(self.today)
+        self.assertEqual([r["product_id"] for r in rows], [fast.id, slow.id])
+        self.assertAlmostEqual(rows[0]["days"], 3, delta=0.01)
+        self.assertEqual((rows[0]["stock_after_arrival"], rows[0]["sold"]), (10, 6))
+

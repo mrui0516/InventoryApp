@@ -438,7 +438,11 @@ class Product(models.Model):
         if self.model and self.name and self.model.strip().lower() == self.name.strip().lower():
             parts = [self.model]                      # "Milano 22 Milano 22" says it once
         head = " ".join(part for part in parts if part) or self.brand or self.barcode
-        return " · ".join(part for part in [head, self.type_label, self.variant_label] if part)
+        words = head.lower().split()
+        # "Lyric EDP" already says EDP, "Roll Oil 10ml" already says 10ml
+        extra = [part for part in [self.type_label, self.variant_label]
+                 if part and part.lower() not in words and part.lower() not in head.lower().replace(' ', '')]
+        return " · ".join([head] + extra)
 
     @property
     def display_name(self):

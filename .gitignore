@@ -33,3 +33,6 @@ tmp_*.xlsx
 tmp_*.txt
 *.tmp
 db.sqlite3.*
+
+# Django file cache (settings.CACHES)
+cache/

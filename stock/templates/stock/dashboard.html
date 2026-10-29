@@ -334,216 +334,141 @@
       </div>
     </div>
 
-    <div class="dash-card pad dash-sec-focus">
-      <details class="dash-fold" data-fold open>
-      <summary><div class="section-head">
-        <div>
-          <h2>Where to focus next</h2>
-        </div>
-      </div></summary>
-      <div class="strategy-grid">
-        <div class="dash-card pad h-100">
-          <div class="section-top"><div><h3>Fastest sellers</h3></div></div>
-            <div class="rank-list">
-              {% for row in month_fast_movers %}
-                <div class="rank-item product-rank">
-                  {% if row.image_url %}
-                    <button
-                      type="button"
-                      class="inline-product-thumb-wrap"
-                      data-product-preview-url="{{ row.image_url }}"
-                      data-product-preview-title="{{ row.display_name }}"
-                    >
-                      <img src="{{ row.image_url }}" alt="{{ row.display_name }}" class="inline-product-thumb">
-                    </button>
-                  {% else %}
-                    <div class="inline-product-thumb-empty">No img</div>
-                  {% endif %}
-                  <div>
-                    <div class="item-head"><span class="item-name"><a class="text-decoration-none text-dark" href="{% url 'product_detail' row.product_id %}">{{ row.display_name }}</a></span><span class="item-value">{{ row.qty }}</span></div>
-                    <div class="tiny mt-2">{{ row.sale_day_count }} selling day{{ row.sale_day_count|pluralize }} · {{ row.order_count }} orders · avg {{ row.avg_qty_per_day|floatformat:1 }} units/day</div>
-                    <div class="tiny">Revenue EUR {{ row.amount|floatformat:2 }}</div>
-                  </div>
-                </div>
-              {% empty %}
-                <div class="tiny">No fast-selling pattern yet for this period.</div>
-              {% endfor %}
-            </div>
-        </div>
-        <div class="dash-card pad h-100">
-          <div class="section-top"><div><h3>Top products</h3></div><a class="btn btn-sm btn-outline-secondary" href="{% url 'product_list' %}">All products</a></div>
-            <div class="rank-list">
-              {% for row in month_top_products %}
-                <div class="rank-item product-rank">
-                  {% if row.image_url %}
-                    <button
-                      type="button"
-                      class="inline-product-thumb-wrap"
-                      data-product-preview-url="{{ row.image_url }}"
-                      data-product-preview-title="{{ row.display_name }}"
-                    >
-                      <img src="{{ row.image_url }}" alt="{{ row.display_name }}" class="inline-product-thumb">
-                    </button>
-                  {% else %}
-                    <div class="inline-product-thumb-empty">No img</div>
-                  {% endif %}
-                  <div>
-                    <div class="item-head"><span class="item-name"><a class="text-decoration-none text-dark" href="{% url 'product_detail' row.product_id %}">{{ row.display_name }}</a></span><span class="item-value">EUR {{ row.amount|floatformat:2 }}</span></div>
-                    <div class="tiny mt-2">{{ row.qty }} units · {{ row.order_count }} orders · {{ row.share_pct|floatformat:1 }}% of sales</div>
-                    {% if show_profit %}<div class="tiny">Gross profit EUR {{ row.profit|floatformat:2 }}</div>{% endif %}
-                  </div>
-                </div>
-              {% empty %}
-                <div class="tiny">No product sales yet in this period.</div>
-              {% endfor %}
-            </div>
-        </div>
-        <div class="dash-card pad h-100">
-          <div class="section-top"><div><h3>Top customers</h3></div><a class="btn btn-sm btn-outline-secondary" href="{% url 'customer_search' %}">All customers</a></div>
-            <div class="rank-list">
-              {% for row in month_top_customers %}
-                <div class="rank-item">
-                  <div class="item-head"><span class="item-name"><a class="text-decoration-none text-dark" href="{% url 'customer_detail' row.customer_id %}">{{ row.name }}</a></span><span class="item-value">EUR {{ row.amount|floatformat:2 }}</span></div>
-                  <div class="tiny mt-2">{{ row.order_count }} orders · {{ row.qty }} items · {{ row.share_pct|floatformat:1 }}% of sales</div>
-                  {% if show_profit %}<div class="tiny">Gross profit EUR {{ row.profit|floatformat:2 }}</div>{% endif %}
-                </div>
-              {% empty %}
-                <div class="tiny">No customer-linked sales yet in this period.</div>
-              {% endfor %}
-              {% if month_walk_in_summary %}
-                <div class="rank-item" style="background:var(--app-accent-soft)">
-                  <div class="item-head"><span class="item-name">Walk-in / no customer</span><span class="item-value">EUR {{ month_walk_in_summary.amount|floatformat:2 }}</span></div>
-                  <div class="tiny mt-2">{{ month_walk_in_summary.order_count }} orders · {{ month_walk_in_summary.qty }} items</div>
-                </div>
-              {% endif %}
-            </div>
-        </div>
-      </div>
-          </details>
-    </div>
+    {# The lists that answer "what next": one card, one list at a time.        #}
+    {# Tabs switch on the page; the last one chosen is remembered per browser. #}
+    <div class="dash-card pad dash-sec-focus dl" id="dashLists">
+      <div class="section-head"><div><h2>Products &amp; customers</h2></div>
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'product_list' %}">All products</a></div>
+      <nav class="dl-tabs" role="tablist" aria-label="Lists">
+        <button type="button" role="tab" data-dl="sell" class="on" aria-selected="true">Sell-through</button>
+        <button type="button" role="tab" data-dl="top" aria-selected="false">Top products</button>
+        <button type="button" role="tab" data-dl="slow" aria-selected="false">Slow movers</button>
+        <button type="button" role="tab" data-dl="capital" aria-selected="false">Capital locked</button>
+        <button type="button" role="tab" data-dl="customers" aria-selected="false">Customers</button>
+      </nav>
 
-    <div class="dash-card pad dash-sec-capital">
-      <details class="dash-fold" data-fold open>
-      <summary><div class="section-head">
-        <div>
-          <h2>Capital lock and slow movers</h2>
-        </div>
-      </div></summary>
-      <div class="watch-grid">
-        <div class="dash-card pad h-100">
-          <div class="section-top"><div><h3>Most capital locked stock</h3></div></div>
-          <div class="rank-list">
-            {% for row in capital_locked_products %}
-              <div class="rank-item product-rank">
-                {% if row.image_url %}
-                  <button
-                    type="button"
-                    class="inline-product-thumb-wrap"
-                    data-product-preview-url="{{ row.image_url }}"
-                    data-product-preview-title="{{ row.display_name }}"
-                  >
-                    <img src="{{ row.image_url }}" alt="{{ row.display_name }}" class="inline-product-thumb">
-                  </button>
-                {% else %}
-                  <div class="inline-product-thumb-empty">No img</div>
-                {% endif %}
-                <div>
-                  <div class="item-head"><span class="item-name"><a class="text-decoration-none text-dark" href="{% url 'product_detail' row.product_id %}">{{ row.display_name }}</a></span><span class="item-value">EUR {{ row.stock_cost|floatformat:2 }}</span></div>
-                  <div class="tiny mt-2">{{ row.stock_qty }} units on hand · {{ row.stock_share_pct|floatformat:1 }}% of stock cost · sold {{ row.period_sales_qty }} this period</div>
-                  <div class="tiny">
-                    {% if row.last_sold_at %}
-                      Last sold {{ row.last_sold_at|date:"Y-m-d" }}
-                    {% else %}
-                      Never sold yet
-                    {% endif %}
-                  </div>
-                </div>
-              </div>
-            {% empty %}
-              <div class="tiny">No current stock to analyse.</div>
-            {% endfor %}
-          </div>
-        </div>
-
-        <div class="dash-card pad h-100">
-          <div class="section-top"><div><h3>Slow movers</h3></div></div>
-          <div class="rank-list">
-            {% for row in slow_movers %}
-              <div class="rank-item product-rank">
-                {% if row.image_url %}
-                  <button
-                    type="button"
-                    class="inline-product-thumb-wrap"
-                    data-product-preview-url="{{ row.image_url }}"
-                    data-product-preview-title="{{ row.display_name }}"
-                  >
-                    <img src="{{ row.image_url }}" alt="{{ row.display_name }}" class="inline-product-thumb">
-                  </button>
-                {% else %}
-                  <div class="inline-product-thumb-empty">No img</div>
-                {% endif %}
-                <div>
-                  <div class="item-head"><span class="item-name"><a class="text-decoration-none text-dark" href="{% url 'product_detail' row.product_id %}">{{ row.display_name }}</a></span><span class="item-value">{{ row.rolling_45d_qty }}</span></div>
-                  <div class="tiny mt-2">{{ row.stock_qty }} units on hand · stock cost EUR {{ row.stock_cost|floatformat:2 }}</div>
-                  <div class="tiny">
-                    {% if row.days_since_last_sale is not None %}
-                      Last sold {{ row.days_since_last_sale }} day{{ row.days_since_last_sale|pluralize }} ago
-                    {% else %}
-                      No sale history yet
-                    {% endif %}
-                  </div>
-                </div>
-              </div>
-            {% empty %}
-              <div class="tiny">No slow movers identified.</div>
-            {% endfor %}
-          </div>
-        </div>
+      <div class="dl-pane" data-dl-pane="sell" role="tabpanel">
+        <p class="dl-note">Deliveries of the last 90 days, fastest from arrival to low stock (under 5).</p>
+        {% for r in sell_through %}
+          <a class="dl-row" href="{% url 'product_detail' r.product_id %}" data-panel="{% url 'product_panel' r.product_id %}">
+            {% if r.image_url %}<img class="dl-img" src="{{ r.image_url }}" alt="" loading="lazy">{% else %}<span class="dl-img"></span>{% endif %}
+            <span class="dl-main"><span class="dl-brand">{{ r.brand }}</span><span class="dl-name">{{ r.name }}</span>
+              <span class="dl-meta">arrived {{ r.arrived_at|date:"d M" }} &middot; {{ r.stock_after_arrival }} on the shelf &middot; {{ r.sold }} sold</span></span>
+            <span class="dl-fig good">{% if r.days < 1 %}&lt; 1 day{% else %}{{ r.days|floatformat:0 }} day{{ r.days|floatformat:0|pluralize }}{% endif %}</span>
+          </a>
+        {% empty %}
+          <p class="dl-empty">Nothing delivered in the last 90 days has reached low stock yet.</p>
+        {% endfor %}
       </div>
 
-          </details>
-    </div>
-  {% endif %}
+      <div class="dl-pane" data-dl-pane="top" role="tabpanel" hidden>
+        {% for row in month_top_products %}
+          <a class="dl-row" href="{% url 'product_detail' row.product_id %}" data-panel="{% url 'product_panel' row.product_id %}">
+            {% if row.image_url %}<img class="dl-img" src="{{ row.image_url }}" alt="" loading="lazy">{% else %}<span class="dl-img"></span>{% endif %}
+            <span class="dl-main"><span class="dl-name">{{ row.display_name }}</span>
+              <span class="dl-meta">{{ row.qty }} sold &middot; {{ row.order_count }} order{{ row.order_count|pluralize }} &middot; {{ row.share_pct|floatformat:0 }}% of sales{% if show_profit %} &middot; profit &euro;{{ row.profit|floatformat:2 }}{% endif %}</span></span>
+            <span class="dl-fig">&euro;{{ row.amount|floatformat:2 }}</span>
+          </a>
+        {% empty %}
+          <p class="dl-empty">No sales in this period.</p>
+        {% endfor %}
+      </div>
 
-{% if isManger %}
-    {# A summary only: the whole list lives in the alerts panel (the bell),  #}
-    {# which every page can open. Each total opens the panel on its band.     #}
-    <div class="dash-card pad dash-sec-low" id="low-stock">
-      <div class="section-head">
-        <div><h2>Low stock</h2></div>
-        {% if low_stock_count %}
-          <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="offcanvas"
-                  data-bs-target="#alertsPanel" data-ls-band="out">View all {{ low_stock_count }}</button>
+      <div class="dl-pane" data-dl-pane="slow" role="tabpanel" hidden>
+        <p class="dl-note">Longest without a sale, counted from the last sale or the arrival of the oldest stock left. Stock that arrived in the last 30 days is not listed.</p>
+        {% for row in slow_movers %}
+          <a class="dl-row" href="{% url 'product_detail' row.product_id %}" data-panel="{% url 'product_panel' row.product_id %}">
+            {% if row.image_url %}<img class="dl-img" src="{{ row.image_url }}" alt="" loading="lazy">{% else %}<span class="dl-img"></span>{% endif %}
+            <span class="dl-main"><span class="dl-name">{{ row.display_name }}</span>
+              <span class="dl-meta">{{ row.stock_qty }} in stock{% if show_profit %} &middot; &euro;{{ row.stock_cost|floatformat:0 }} cost{% endif %} &middot; {% if row.last_sold_at %}last sold {{ row.last_sold_at|date:"d M Y" }}{% else %}never sold{% endif %}</span></span>
+            <span class="dl-fig bad">{{ row.idle_days }} day{{ row.idle_days|pluralize }}</span>
+          </a>
+        {% empty %}
+          <p class="dl-empty">Nothing has been sitting unsold.</p>
+        {% endfor %}
+      </div>
+
+      <div class="dl-pane" data-dl-pane="capital" role="tabpanel" hidden>
+        {% for row in capital_locked_products %}
+          <a class="dl-row" href="{% url 'product_detail' row.product_id %}" data-panel="{% url 'product_panel' row.product_id %}">
+            {% if row.image_url %}<img class="dl-img" src="{{ row.image_url }}" alt="" loading="lazy">{% else %}<span class="dl-img"></span>{% endif %}
+            <span class="dl-main"><span class="dl-name">{{ row.display_name }}</span>
+              <span class="dl-meta">{{ row.stock_qty }} in stock &middot; {{ row.stock_share_pct|floatformat:1 }}% of stock cost &middot; {{ row.period_sales_qty }} sold this period</span></span>
+            <span class="dl-fig">&euro;{{ row.stock_cost|floatformat:0 }}</span>
+          </a>
+        {% empty %}
+          <p class="dl-empty">No stock to analyse.</p>
+        {% endfor %}
+      </div>
+
+      <div class="dl-pane" data-dl-pane="customers" role="tabpanel" hidden>
+        {% for row in month_top_customers %}
+          <a class="dl-row" href="{% url 'customer_detail' row.customer_id %}" data-panel="{% url 'customer_panel' row.customer_id %}">
+            <span class="dl-img dl-av">{{ row.name|slice:":2"|upper }}</span>
+            <span class="dl-main"><span class="dl-name">{{ row.name }}</span>
+              <span class="dl-meta">{{ row.order_count }} order{{ row.order_count|pluralize }} &middot; {{ row.qty }} items &middot; {{ row.share_pct|floatformat:0 }}% of sales</span></span>
+            <span class="dl-fig">&euro;{{ row.amount|floatformat:2 }}</span>
+          </a>
+        {% empty %}
+          <p class="dl-empty">No customer-linked sales in this period.</p>
+        {% endfor %}
+        {% if month_walk_in_summary %}
+          <div class="dl-row dl-walkin">
+            <span class="dl-img dl-av">&mdash;</span>
+            <span class="dl-main"><span class="dl-name">Walk-in / no customer</span>
+              <span class="dl-meta">{{ month_walk_in_summary.order_count }} orders &middot; {{ month_walk_in_summary.qty }} items</span></span>
+            <span class="dl-fig">&euro;{{ month_walk_in_summary.amount|floatformat:2 }}</span>
+          </div>
         {% endif %}
       </div>
-      {% if low_stock_count %}
-        <div class="ls-sum">
-          <button type="button" class="ls-sum-tile out" data-bs-toggle="offcanvas" data-bs-target="#alertsPanel" data-ls-band="out">
-            <span class="k">Out</span><span class="v">{{ out_of_stock_count }}</span></button>
-          <button type="button" class="ls-sum-tile low12" data-bs-toggle="offcanvas" data-bs-target="#alertsPanel" data-ls-band="low12">
-            <span class="k">1–2 left</span><span class="v">{{ low_stock_1_2_count }}</span></button>
-          <button type="button" class="ls-sum-tile low34" data-bs-toggle="offcanvas" data-bs-target="#alertsPanel" data-ls-band="low34">
-            <span class="k">3–4 left</span><span class="v">{{ low_stock_3_4_count }}</span></button>
-        </div>
-        <div class="ls-sub">Most urgent</div>
-        <ul class="ls-list ls-inline">
-          {% for p in low_stock_focus_products %}
-            <li>
-              <a class="ls-row" href="{% url 'product_detail' p.id %}">
-                {% if p.image_url %}<img class="ls-img" src="{{ p.image_url }}" alt="" loading="lazy"{% if p.image_fallback and p.image_fallback != p.image_url %} data-fallback="{{ p.image_fallback }}" onerror="if(this.dataset.fallback){this.src=this.dataset.fallback;this.removeAttribute('data-fallback');}else{this.style.visibility='hidden';}"{% endif %}>{% else %}<span class="ls-img" aria-hidden="true"></span>{% endif %}
-                <span class="ls-main">
-                  <span class="ls-name">{{ p.display_name }}</span>
-                  <span class="ls-meta">{{ p.brand }} · sold {{ p.sold }}</span>
-                </span>
-                <span class="ls-stock {{ p.band }}">{% if p.stock == 0 %}Out{% else %}{{ p.stock }} left{% endif %}</span>
-              </a>
-            </li>
-          {% endfor %}
-        </ul>
-      {% else %}
-        <div class="tiny">No low-stock products right now.</div>
-      {% endif %}
     </div>
+    <style>
+      .dl .section-head{ margin-bottom:.4rem; }
+      .dl-tabs{ display:flex; gap:1.15rem; overflow-x:auto; scrollbar-width:none; border-bottom:1px solid var(--app-border); margin-bottom:.35rem; }
+      .dl-tabs::-webkit-scrollbar{ display:none; }
+      .dl-tabs button{ border:0; background:none; padding:.5rem 0; font-weight:700; font-size:.92rem; color:var(--app-muted);
+        border-bottom:2px solid transparent; margin-bottom:-1px; white-space:nowrap; }
+      .dl-tabs button:hover{ color:var(--app-text); }
+      .dl-tabs button.on{ color:var(--app-text); border-bottom-color:var(--app-accent); }
+      .dl-note{ font-size:.85rem; color:var(--app-muted); margin:.35rem 0 .2rem; }
+      .dl-row{ display:grid; grid-template-columns:44px minmax(0,1fr) auto; gap:.75rem; align-items:center; padding:.55rem .1rem;
+        border-top:1px solid var(--app-border); color:var(--app-text); text-decoration:none; }
+      .dl-pane > .dl-row:first-child, .dl-note + .dl-row{ border-top:0; }
+      a.dl-row:hover{ background:var(--app-surface-2); }
+      .dl-img{ width:44px; height:44px; border-radius:var(--app-radius-sm); object-fit:contain; background:#fff; border:1px solid var(--app-border); display:block; }
+      .dl-av{ display:flex; align-items:center; justify-content:center; font-weight:800; font-size:.8rem; color:var(--app-primary); background:var(--app-surface-2); }
+      .dl-main{ min-width:0; display:grid; gap:.05rem; }
+      .dl-brand{ font-size:.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--app-muted); }
+      .dl-name{ font-weight:700; font-size:.95rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .dl-meta{ font-size:.85rem; color:var(--app-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .dl-fig{ font-weight:800; font-variant-numeric:tabular-nums; white-space:nowrap; text-align:right; }
+      .dl-fig.good{ color:#1a7f3c; }
+      .dl-fig.bad{ color:#b42318; }
+      .dl-empty{ color:var(--app-muted); padding:.75rem .1rem; margin:0; }
+      .dl-walkin{ background:var(--app-accent-soft); border-radius:var(--app-radius-sm); }
+      @media (max-width:575.98px){ .dl-meta{ white-space:normal; } }
+    </style>
+    <script>
+      (function () {
+        var root = document.getElementById('dashLists');
+        if (!root) return;
+        var KEY = 'dash-list-tab';
+        function show(name) {
+          root.querySelectorAll('[data-dl]').forEach(function (b) {
+            var on = b.dataset.dl === name;
+            b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false');
+          });
+          root.querySelectorAll('[data-dl-pane]').forEach(function (p) { p.hidden = p.dataset.dlPane !== name; });
+        }
+        root.querySelectorAll('[data-dl]').forEach(function (b) {
+          b.addEventListener('click', function () {
+            show(b.dataset.dl);
+            try { localStorage.setItem(KEY, b.dataset.dl); } catch (e) {}
+          });
+        });
+        try { var saved = localStorage.getItem(KEY); if (saved && root.querySelector('[data-dl="' + saved + '"]')) show(saved); } catch (e) {}
+      })();
+    </script>
   {% endif %}
 
   {% if employee_daily_only %}

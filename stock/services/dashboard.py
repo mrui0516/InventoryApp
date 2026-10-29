@@ -9,6 +9,10 @@ from django.utils import timezone
 
 from ..models import ARInvoice, ARPayment, Purchase, Sale, SalesTarget
 from .profit import sale_profit_map_for_sale_ids
+from .sell_through import sell_through
+
+# Stock that arrived less than this many days ago is not a slow mover yet.
+SLOW_MOVER_GRACE_DAYS = 30
 
 _LINE_TOTAL_EXPR = ExpressionWrapper(
     F("unit_price") * F("quantity"),
@@ -689,8 +693,11 @@ def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_
                 "stock_qty": 0,
                 "stock_cost": Decimal("0.00"),
                 "batch_count": 0,
+                "in_stock_since": row.date,
             },
         )
+        if row.date and (bucket["in_stock_since"] is None or row.date < bucket["in_stock_since"]):
+            bucket["in_stock_since"] = row.date        # the oldest batch still on the shelf
         bucket["stock_qty"] += row.remaining or 0
         bucket["stock_cost"] += (row.cost_price or Decimal("0.00")) * Decimal(row.remaining or 0)
         bucket["batch_count"] += 1
@@ -742,6 +749,14 @@ def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_
             if current_stock_cost else Decimal("0.00")
         )
 
+        # Idle: days since the later of the last sale and the arrival of the
+        # oldest batch still on the shelf. Old stock that stopped selling
+        # comes first; stock that only just arrived has not had its chance.
+        since = bucket["in_stock_since"]
+        since_date = timezone.localtime(since).date() if since else None
+        sold_date = timezone.localtime(last_sold_at).date() if last_sold_at else None
+        idle_from = max(d for d in (since_date, sold_date) if d) if (since_date or sold_date) else None
+        idle_days = (period_end - idle_from).days if idle_from else None
         row = {
             **bucket,
             "period_sales_qty": period_qty,
@@ -749,24 +764,20 @@ def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_
             "last_sold_at": last_sold_at,
             "days_since_last_sale": days_since_last_sale,
             "stock_share_pct": stock_share_pct,
+            "idle_days": idle_days,
+            "in_stock_days": (period_end - since_date).days if since_date else None,
         }
         capital_locked_products.append(row)
-        slow_movers.append(row)
+        if since_date and (period_end - since_date).days >= SLOW_MOVER_GRACE_DAYS and idle_days is not None:
+            slow_movers.append(row)
 
     capital_locked_products.sort(
         key=lambda item: (-item["stock_cost"], item["rolling_45d_qty"], item["display_name"].lower())
     )
     capital_locked_products = capital_locked_products[:6]
 
-    slow_movers.sort(
-        key=lambda item: (
-            item["rolling_45d_qty"],
-            -(item["days_since_last_sale"] if item["days_since_last_sale"] is not None else 999999),
-            -item["stock_cost"],
-            item["display_name"].lower(),
-        )
-    )
-    slow_movers = slow_movers[:6]
+    slow_movers.sort(key=lambda item: (-item["idle_days"], -item["stock_cost"], item["display_name"].lower()))
+    slow_movers = slow_movers[:8]
 
     perfume_inventory_rows = list(
         Purchase.objects
@@ -862,6 +873,7 @@ def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_
         "capital_locked_products": capital_locked_products,
         "slow_movers": slow_movers,
         "month_fast_movers": fast_movers,
+        "sell_through": sell_through(period_end, selected_category_ids or ()),
         "best_sales_day": best_sales_day,
         "chart_data": chart_data,
     }

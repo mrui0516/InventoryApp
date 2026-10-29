@@ -75,6 +75,20 @@ CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.environ.get('CSRF_TRUSTED_ORIGINS'
 # had expired, nothing was recorded" page instead of a bare "Forbidden".
 CSRF_FAILURE_VIEW = 'stock.views.csrf_failure'
 
+# One cache shared by every server process (PythonAnywhere runs several): the
+# Dashboard snapshot built by one is there for the next request whichever
+# process answers it, and clearing the low stock list reaches them all. Tests
+# keep the in-memory cache.
+if not TESTING:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+            'LOCATION': str(BASE_DIR / 'cache'),
+            'TIMEOUT': 300,
+            'OPTIONS': {'MAX_ENTRIES': 2000},
+        }
+    }
+
 # Crashes, security warnings and the app's own warnings go to stderr (the
 # host's error log) and to the database, where Settings -> Audit -> Errors
 # shows them (stock/system_log.py). 404s and other 4xx are not recorded.

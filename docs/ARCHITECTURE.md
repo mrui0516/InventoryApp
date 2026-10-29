@@ -86,6 +86,7 @@ InventoryApp/
     │   ├── dashboard.py              # 月度快照、环比、销售目标、多店对比
     │   ├── audit.py                  # Settings → Audit 6 个页面的数据
     │   ├── names.py                  # 品牌 / 系列 / 名称的统一写法（每词首字母大写，缩写与代码保留）
+    │   ├── sell_through.py           # 看板 Sell-through：近 90 天到货 → 跌破低库存线用了几天
     │   ├── quick_import.py           # 快速识别：粘贴文字 / 文字 PDF → 行 → 匹配产品
     │   ├── note_parser.py            # 从已有描述里读出香调三层
     │   ├── contacts.py               # 电话同号判定、WhatsApp 链接
