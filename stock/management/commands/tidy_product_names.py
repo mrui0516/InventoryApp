@@ -110,7 +110,7 @@ class Command(BaseCommand):
     def _products(self, out):
         renamed = typed = 0
         out('== Products')
-        for product in Product.all_objects.select_related('brand_master', 'series_master').order_by('id'):
+        for product in Product.all_objects.select_related('brand_master', 'series_master', 'category').order_by('id'):
             changes = {}
             brand = product.brand_master.name if product.brand_master_id else title_case(product.brand)
             model = product.series_master.name if product.series_master_id else title_case(product.model)
@@ -124,7 +124,10 @@ class Command(BaseCommand):
                     setattr(product, field, value)
                 out(f'  #{product.id}: {before}  ->  {product.display_name}')
                 renamed += 1
-            if product.perfume_type == Product.PERFUME:
+            # Only perfumes get a type: "Mini cable" or "Keyboard set" are not perfumes.
+            is_perfume = (product.archived_at is None and product.category_id
+                          and product.category.form_kind == 'perfume')
+            if product.perfume_type == Product.PERFUME and is_perfume:
                 kind = guess_type(product)
                 if kind:
                     changes['perfume_type'] = kind

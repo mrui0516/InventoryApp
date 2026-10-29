@@ -10,6 +10,8 @@ written in mixed case (iPhone, McLaren).
 import re
 
 KEEP_UPPER = {'EDP', 'EDT', 'EDC', 'XL', 'XXL', 'UAE', 'USA', 'UK', 'EU', 'VIP', 'LED',
+              'CDN', 'YSL', 'DKNY', 'CK', 'MFK', 'BR',            # perfume houses and lines
+              'USB', 'HDMI', 'TV', 'BT', 'LCD', 'AUX', 'PC', 'DVD', 'UV', 'SPF',
               'II', 'III', 'IV', 'VII', 'VIII', 'IX', 'XI', 'XII', 'XIII', 'XIV', 'XV', 'XX'}
 VOLUME = re.compile(r'^(\d+(?:[.,]\d+)?)(ml|cl|l|g|kg|oz)$', re.IGNORECASE)
 SEPARATORS = re.compile(r"([\s/\-+&(),.]+)")

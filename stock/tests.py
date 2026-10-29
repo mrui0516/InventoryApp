@@ -11410,6 +11410,7 @@ class PerfumeFormTests(TestCase):
             "CLUB DE NUIT": "Club De Nuit", "CREAM/BODY MIST": "Cream/Body Mist", "L'HOMME": "L'Homme",
             "Second Song EDP": "Second Song EDP", "ROLL OIL 10ML": "Roll Oil 10ml", "B6108": "B6108",
             "ART OF ARABIA II": "Art Of Arabia II", "iPhone 15 Pro": "iPhone 15 Pro", "  two   spaces ": "Two Spaces",
+            "CDN URBAN MAN ELIXIR": "CDN Urban Man Elixir", "BR 540": "BR 540",
         }
         for raw, expected in cases.items():
             self.assertEqual(title_case(raw), expected, raw)
@@ -11444,6 +11445,14 @@ class TidyProductNamesCommandTests(TestCase):
         self.assertIn("Dry run", out)
         self.p1.refresh_from_db()
         self.assertEqual(self.p1.brand, "LATTAFA")
+
+    def test_types_are_only_guessed_for_perfumes(self):
+        acc = Category.objects.create(name="Accessories", form_kind="accessory")
+        cable = Product.objects.create(name="USB MINI CABLE", brand="China", barcode="6290000001009", category=acc)
+        self._run("--apply")
+        cable.refresh_from_db()
+        self.assertEqual(cable.perfume_type, "perfume")          # untouched
+        self.assertEqual(cable.name, "USB Mini Cable")
 
     def test_apply_merges_capitalises_and_types(self):
         from stock.models import Brand
@@ -11481,6 +11490,19 @@ class RemoveCategoriesCommandTests(TestCase):
         with self.assertRaises(CommandError):
             self._run("--name", "Accessories", "--apply")
         self.assertTrue(Category.objects.filter(pk=self.acc.pk).exists())
+
+    def test_archive_products_archives_them_and_keeps_their_sales(self):
+        case = Product.objects.create(name="Case", brand="X", barcode="6290000002002", category=self.cases)
+        order = SaleOrder.objects.create()
+        Sale.objects.create(order=order, product=case, quantity=1, unit_price=Decimal("5"), payment_method="cash")
+        out = self._run("--name", "Accessories", "--archive-products")
+        self.assertIn("1 ever sold", out)
+        self.assertIsNone(Product.all_objects.get(pk=case.pk).archived_at)          # dry run
+        self._run("--name", "Accessories", "--archive-products", "--apply")
+        case = Product.all_objects.get(pk=case.pk)
+        self.assertIsNotNone(case.archived_at)
+        self.assertIsNone(case.category_id)
+        self.assertEqual(Sale.objects.filter(product=case).count(), 1)
 
 
 class ProductListTypeTests(TestCase):
