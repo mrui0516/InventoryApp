@@ -85,6 +85,7 @@ InventoryApp/
     │   ├── summaries.py              # DailySalesSummary 重算
     │   ├── dashboard.py              # 月度快照、环比、销售目标、多店对比
     │   ├── audit.py                  # Settings → Audit 6 个页面的数据
+    │   ├── names.py                  # 品牌 / 系列 / 名称的统一写法（每词首字母大写，缩写与代码保留）
     │   ├── quick_import.py           # 快速识别：粘贴文字 / 文字 PDF → 行 → 匹配产品
     │   ├── note_parser.py            # 从已有描述里读出香调三层
     │   ├── contacts.py               # 电话同号判定、WhatsApp 链接
@@ -95,6 +96,7 @@ InventoryApp/
     │   └── cloudinary_client.py / cloudinary_sync.py / cloudinary_urls.py   # 产品主图镜像到 Cloudinary（门控）
     │
     ├── management/commands/          # 运维命令：backup_db、rebuild_dailysummary、Shopify/Cloudinary 同步
+    │                                 # tidy_product_names（统一大小写、合并同名品牌）、remove_categories（删除停用分类）：默认预览，--apply 执行
     │                                 #（默认 dry-run，加 --apply 才写）、数据清理与回填脚本
     ├── migrations/
     ├── templates/stock/              # 页面模板，全部继承 base.html

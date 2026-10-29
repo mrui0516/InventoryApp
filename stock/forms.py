@@ -7,6 +7,7 @@ from django.forms import inlineformset_factory
 from django.utils import timezone
 
 from .services.barcodes import assign_internal_barcode
+from .services.names import title_case
 from .models import (
     ARInvoice,
     ARItem,
@@ -31,9 +32,9 @@ class BarcodeForm(forms.Form):
 
 
 class ProductForm(forms.ModelForm):
-    barcode = forms.CharField(
-        required=False, max_length=13, label='Barcode',
-        help_text='Leave blank for goods with no barcode - one is generated.')
+    # Every product the shop sells has an EAN on the box (2026-10-29: only
+    # perfumes remain); a new product cannot be saved without one.
+    barcode = forms.CharField(required=False, max_length=13, label='Barcode')
     brand_master = forms.ModelChoiceField(
         queryset=Brand.objects.none(),
         required=False,
@@ -65,6 +66,7 @@ class ProductForm(forms.ModelForm):
             'compatibility_groups',
             'volume_ml',
             'concentration',
+            'perfume_type',
             'fragrance_families',
             'notes_top',
             'notes_heart',
@@ -80,6 +82,7 @@ class ProductForm(forms.ModelForm):
             'device_models': forms.SelectMultiple(attrs={'size': 8}),
             'compatibility_groups': forms.SelectMultiple(attrs={'size': 5}),
             'concentration': forms.Select(attrs={'class': 'form-select'}),
+            'perfume_type': forms.Select(attrs={'class': 'form-select'}),
             # a perfume usually sits in several families
             'fragrance_families': forms.CheckboxSelectMultiple(),
             'volume_ml': forms.NumberInput(attrs={
@@ -106,6 +109,9 @@ class ProductForm(forms.ModelForm):
         self.fields['volume_ml'].label = 'Volume (ml)'
         self.fields['concentration'].label = 'Concentration'
         self.fields['concentration'].empty_label = 'Not set'
+        # Left out (an older form, a script): an ordinary perfume.
+        self.fields['perfume_type'].required = False
+        self.fields['gender'].choices = [('', 'Not set')] + [c for c in self.fields['gender'].choices if c[0]]
         self.fields['fragrance_families'].label = 'Fragrance family'
         def parse_pk(value):
             if value in (None, ''):
@@ -262,28 +268,35 @@ class ProductForm(forms.ModelForm):
          .delete())
 
     def clean_barcode(self):
-        # Cases, screen protectors and cables usually have no EAN printed on
-        # them. Leaving the field blank is normal, not an error: save() mints
-        # an internal one. Editing a product keeps whatever it already has.
+        # Editing keeps the barcode a product already has (older goods may
+        # carry an internal one); a new product needs the EAN from the box.
         barcode = (self.cleaned_data.get('barcode') or '').strip()
         if barcode:
             return barcode
         if self.instance.pk and self.instance.barcode:
             return self.instance.barcode
-        return ''
+        raise forms.ValidationError('Scan or type the barcode.')
+
+    def clean_perfume_type(self):
+        return self.cleaned_data.get('perfume_type') or Product.PERFUME
+
+    def clean_name(self):
+        return title_case(self.cleaned_data.get('name') or '')
 
     def clean(self):
         cleaned = super().clean()
         brand = cleaned.get('brand_master')
-        new_brand_name = (cleaned.get('new_brand_name') or '').strip()
+        new_brand_name = title_case(cleaned.get('new_brand_name') or '')
         series = cleaned.get('series_master')
-        new_series_name = (cleaned.get('new_series_name') or '').strip()
+        new_series_name = title_case(cleaned.get('new_series_name') or '')
 
         if not brand and not new_brand_name:
             self.add_error('brand_master', 'Select an existing brand or add a new brand.')
 
         if new_brand_name:
-            brand, _created = Brand.objects.get_or_create(name=new_brand_name)
+            # "LATTAFA" typed again is the brand already there, not a new one
+            brand = (Brand.objects.filter(name__iexact=new_brand_name).first()
+                     or Brand.objects.create(name=new_brand_name))
 
         if series and brand and series.brand_id != brand.id:
             self.add_error('series_master', 'Selected series / model does not belong to the chosen brand.')
@@ -292,10 +305,8 @@ class ProductForm(forms.ModelForm):
             if not brand:
                 self.add_error('series_master', 'Choose a brand before adding a new series / model.')
             else:
-                series, _created = ProductSeries.objects.get_or_create(
-                    brand=brand,
-                    name=new_series_name,
-                )
+                series = (ProductSeries.objects.filter(brand=brand, name__iexact=new_series_name).first()
+                          or ProductSeries.objects.create(brand=brand, name=new_series_name))
 
         cleaned['resolved_brand_master'] = brand
         cleaned['resolved_series_master'] = series

@@ -206,6 +206,18 @@ class Product(models.Model):
     volume_ml = models.PositiveIntegerField(null=True, blank=True, db_index=True)
     concentration = models.ForeignKey('Concentration', on_delete=models.SET_NULL,
                                       null=True, blank=True, related_name='products')
+    # What kind of fragrance product (2026-10-29): a bottle of perfume, or one
+    # of the other things the perfume shelf carries. Filters and names use it.
+    PERFUME, BODY_SPRAY, AIR_FRESHENER, COFFRET, MINI = 'perfume', 'body_spray', 'air_freshener', 'coffret', 'mini'
+    PERFUME_TYPES = [
+        (PERFUME, 'Perfume'),
+        (BODY_SPRAY, 'Body spray / Deo'),
+        (AIR_FRESHENER, 'Air freshener'),
+        (COFFRET, 'Coffret (gift set)'),
+        (MINI, 'Mini'),
+    ]
+    perfume_type = models.CharField(max_length=16, choices=PERFUME_TYPES, default=PERFUME, db_index=True,
+                                    verbose_name='Type')
     fragrance_families = models.ManyToManyField('FragranceFamily', blank=True, related_name='products')
     inspired_by = models.ForeignKey('Inspiration', on_delete=models.SET_NULL,
                                     null=True, blank=True, related_name='products')
@@ -407,6 +419,26 @@ class Product(models.Model):
     def variant_label(self):
         size = f'{self.volume_ml}ml' if self.volume_ml else self.spec
         return " ".join([part for part in [size, self.color] if part])
+
+    @property
+    def type_label(self):
+        """The kind in a few letters: a perfume's concentration (EDP), otherwise
+        the type (Body spray, Coffret ...)."""
+        if self.perfume_type and self.perfume_type != self.PERFUME:
+            return {self.BODY_SPRAY: 'Body spray', self.AIR_FRESHENER: 'Air freshener',
+                    self.COFFRET: 'Coffret', self.MINI: 'Mini'}.get(self.perfume_type, '')
+        concentration = self.concentration
+        return (concentration.short or concentration.name) if concentration else ''
+
+    @property
+    def list_name(self):
+        """Name for lists that already show the brand: model and name, then
+        the kind and the size - ``Club De Nuit Iconic · EDP · 105ml``."""
+        parts = [self.model, self.name]
+        if self.model and self.name and self.model.strip().lower() == self.name.strip().lower():
+            parts = [self.model]                      # "Milano 22 Milano 22" says it once
+        head = " ".join(part for part in parts if part) or self.brand or self.barcode
+        return " · ".join(part for part in [head, self.type_label, self.variant_label] if part)
 
     @property
     def display_name(self):

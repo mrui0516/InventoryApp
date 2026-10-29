@@ -1,0 +1,273 @@
+{% load widget_tweaks access_tags %}
+{# The perfume form, shared by Add and Edit (2026-10-29). Lives inside the page's  #}
+{# <form id="product-form">; ``images`` (Edit only) are the photos it already has.  #}
+<style>
+  .pf{ display:grid; gap:1rem; grid-template-columns:minmax(0,1fr) 19rem; align-items:start; }
+  .pf-main{ display:grid; gap:1rem; min-width:0; }
+  .pf-card{ background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius); padding:1rem; }
+  .pf-card h2{ font-size:.78rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--app-muted); margin:0 0 .75rem; }
+  .pf-grid{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem 1rem; }
+  .pf-grid .wide{ grid-column:1 / -1; }
+  .pf-field label{ display:flex; justify-content:space-between; align-items:baseline; gap:.5rem;
+    font-size:.85rem; font-weight:700; color:var(--app-text); margin-bottom:.3rem; }
+  .pf-field label .opt{ font-weight:500; color:var(--app-muted); font-size:.8rem; }
+  .pf-field label .req{ color:var(--app-danger); }
+  .pf-field .form-control,.pf-field .form-select{ min-height:42px; font-size:.95rem; }
+  .pf-barcode .form-control{ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:1.1rem; letter-spacing:.04em; }
+  .pf-new{ border:0; background:none; padding:0; color:var(--app-accent); font-size:.8rem; font-weight:700; }
+  .pf-alt{ margin-top:.4rem; }
+  .pf-alt[hidden]{ display:none; }
+  .pf-err{ color:var(--app-danger); font-size:.85rem; margin-top:.25rem; }
+  .pf-field.has-error .form-control,.pf-field.has-error .form-select{ border-color:var(--app-danger); }
+  .fam-picker ul,.fam-picker > div{ display:flex; flex-wrap:wrap; gap:.4rem; padding:0; margin:0; list-style:none; }
+  .fam-picker label{ display:inline-flex; align-items:center; gap:.35rem; min-height:36px; padding:.25rem .75rem; margin:0;
+    border:1px solid var(--app-border-strong); border-radius:999px; font-weight:600; font-size:.88rem; cursor:pointer; background:var(--app-surface); }
+  .fam-picker input{ position:absolute; opacity:0; pointer-events:none; }
+  .fam-picker label:has(input:checked){ border-color:var(--app-accent); background:var(--app-accent-soft); color:var(--app-accent-ink, var(--app-accent)); }
+  .fam-picker label:has(input:focus-visible){ outline:2px solid var(--app-accent); }
+  .pf-lock{ display:flex; align-items:center; gap:.5rem; font-size:.9rem; margin-top:.25rem; }
+  .pf-side{ position:sticky; top:1rem; display:grid; gap:1rem; }
+  .pf-preview .brand{ display:inline-block; font-size:.72rem; font-weight:800; padding:.12rem .55rem; border-radius:999px;
+    background:var(--app-surface-2); color:var(--app-primary); margin-bottom:.35rem; }
+  .pf-preview .name{ font-weight:800; font-size:1.05rem; color:var(--app-text); line-height:1.3; overflow-wrap:anywhere; }
+  .pf-preview .code{ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:var(--app-muted); font-size:.85rem; margin-top:.25rem; }
+  .pf-photos{ display:grid; grid-template-columns:repeat(auto-fill,minmax(76px,1fr)); gap:.5rem; margin-top:.6rem; }
+  .pf-photo{ position:relative; aspect-ratio:1; border:1px solid var(--app-border); border-radius:var(--app-radius-sm); overflow:hidden; background:#fff; }
+  .pf-photo img{ width:100%; height:100%; object-fit:contain; }
+  .pf-photo button{ position:absolute; top:3px; right:3px; width:26px; height:26px; border-radius:50%; border:0;
+    background:rgba(17,17,17,.7); color:#fff; font-size:1rem; line-height:1; }
+  .pf-drop{ display:flex; align-items:center; justify-content:center; gap:.4rem; min-height:76px; border:1.5px dashed var(--app-border-strong);
+    border-radius:var(--app-radius-sm); color:var(--app-primary); font-weight:700; font-size:.9rem; cursor:pointer; text-align:center; padding:.5rem; }
+  .pf-drop input{ display:none; }
+  .pf-bar{ position:sticky; bottom:calc(var(--tabbar-live, 0px) + .5rem); z-index:5; display:flex; gap:.5rem; align-items:center;
+    background:var(--app-surface); border:1px solid var(--app-border-strong); border-radius:var(--app-radius); padding:.6rem .75rem;
+    box-shadow:0 8px 24px rgba(16,24,40,.12); grid-column:1 / -1; transition:bottom .22s ease; }
+  .pf-bar .btn{ min-height:42px; }
+  .pf-bar .btn-primary{ min-width:9rem; }
+  @media (max-width:991.98px){
+    .pf{ grid-template-columns:minmax(0,1fr); }
+    .pf-side{ position:static; }
+  }
+  @media (max-width:575.98px){
+    .pf-grid{ grid-template-columns:minmax(0,1fr); }
+    .pf-card{ padding:.85rem; }
+    .pf-bar .btn{ flex:1 1 0; }
+  }
+</style>
+
+{{ form.category.as_hidden }}
+{{ form.spec.as_hidden }}
+{{ form.color.as_hidden }}
+{% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+
+<div class="pf">
+  <div class="pf-main">
+    <section class="pf-card">
+      <h2>Product</h2>
+      <div class="pf-grid">
+        <div class="pf-field pf-barcode wide{% if form.barcode.errors %} has-error{% endif %}">
+          <label for="{{ form.barcode.id_for_label }}">Barcode <span class="req" aria-hidden="true">required</span></label>
+          {% render_field form.barcode class="form-control" inputmode="numeric" pattern="[0-9]{8,13}" maxlength="13" placeholder="Scan or type the EAN" autocomplete="off" required="required" %}
+          {% for e in form.barcode.errors %}<div class="pf-err">{{ e }}</div>{% endfor %}
+        </div>
+        <div class="pf-field{% if form.brand_master.errors %} has-error{% endif %}">
+          <label for="{{ form.brand_master.id_for_label }}">Brand <button type="button" class="pf-new" data-alt="brand">+ New brand</button></label>
+          {% render_field form.brand_master class="form-select" %}
+          <div class="pf-alt" data-alt-for="brand"{% if not form.new_brand_name.value %} hidden{% endif %}>
+            {% render_field form.new_brand_name class="form-control" placeholder="New brand name" %}
+          </div>
+          {% for e in form.brand_master.errors %}<div class="pf-err">{{ e }}</div>{% endfor %}
+        </div>
+        <div class="pf-field{% if form.series_master.errors %} has-error{% endif %}">
+          <label for="{{ form.series_master.id_for_label }}">Line / model <button type="button" class="pf-new" data-alt="series">+ New</button></label>
+          {% render_field form.series_master class="form-select" %}
+          <div class="pf-alt" data-alt-for="series"{% if not form.new_series_name.value %} hidden{% endif %}>
+            {% render_field form.new_series_name class="form-control" placeholder="New line, e.g. Club De Nuit" %}
+          </div>
+          {% for e in form.series_master.errors %}<div class="pf-err">{{ e }}</div>{% endfor %}
+        </div>
+        <div class="pf-field wide">
+          <label for="{{ form.name.id_for_label }}">Name <span class="opt">optional</span></label>
+          {% render_field form.name class="form-control" placeholder="e.g. Iconic, Intense Man" %}
+        </div>
+        <div class="pf-field">
+          <label for="{{ form.perfume_type.id_for_label }}">Type</label>
+          {% render_field form.perfume_type class="form-select" %}
+        </div>
+        <div class="pf-field">
+          <label for="{{ form.concentration.id_for_label }}">Concentration</label>
+          {% render_field form.concentration class="form-select" %}
+        </div>
+        <div class="pf-field{% if form.volume_ml.errors %} has-error{% endif %}">
+          <label for="{{ form.volume_ml.id_for_label }}">Volume <span class="opt">ml</span></label>
+          {% render_field form.volume_ml class="form-control" inputmode="numeric" placeholder="100" %}
+          {% for e in form.volume_ml.errors %}<div class="pf-err">{{ e }}</div>{% endfor %}
+        </div>
+        <div class="pf-field">
+          <label for="{{ form.gender.id_for_label }}">For</label>
+          {% render_field form.gender class="form-select" %}
+        </div>
+      </div>
+    </section>
+
+    <section class="pf-card">
+      <h2>Price</h2>
+      <div class="pf-grid">
+        <div class="pf-field{% if form.default_price.errors %} has-error{% endif %}">
+          <label for="{{ form.default_price.id_for_label }}">Retail <span class="opt">&euro;</span></label>
+          {% render_field form.default_price class="form-control js-money" type="text" inputmode="decimal" placeholder="0.00" %}
+          {% for e in form.default_price.errors %}<div class="pf-err">{{ e }}</div>{% endfor %}
+        </div>
+        <div class="pf-field{% if form.wholesale_price.errors %} has-error{% endif %}">
+          <label for="{{ form.wholesale_price.id_for_label }}">Wholesale <span class="opt">&euro;</span></label>
+          {% render_field form.wholesale_price class="form-control js-money" type="text" inputmode="decimal" placeholder="0.00" %}
+          {% for e in form.wholesale_price.errors %}<div class="pf-err">{{ e }}</div>{% endfor %}
+        </div>
+        {% if 'price_locked' in form.fields %}
+        <label class="pf-lock wide"><input type="checkbox" class="form-check-input mt-0" name="price_locked" {% if form.price_locked.value %}checked{% endif %}> Keep these prices (no automatic repricing on the next delivery)</label>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="pf-card">
+      <h2>Scent</h2>
+      <div class="pf-grid">
+        <div class="pf-field wide">
+          <label>Fragrance family <span class="opt">any that apply</span></label>
+          <div class="fam-picker">{{ form.fragrance_families }}</div>
+        </div>
+        <div class="pf-field"><label for="{{ form.notes_top.id_for_label }}">Top notes</label>{% render_field form.notes_top class="form-control" placeholder="Bergamota, Maçã Verde" %}</div>
+        <div class="pf-field"><label for="{{ form.notes_heart.id_for_label }}">Heart notes</label>{% render_field form.notes_heart class="form-control" placeholder="Jasmim, Canela" %}</div>
+        <div class="pf-field"><label for="{{ form.notes_base.id_for_label }}">Base notes</label>{% render_field form.notes_base class="form-control" placeholder="Baunilha, Âmbar" %}</div>
+        <div class="pf-field"><label for="{{ form.inspired_by_text.id_for_label }}">Inspired by</label>{% render_field form.inspired_by_text class="form-control" placeholder="e.g. Baccarat Rouge 540" %}</div>
+        <div class="pf-field wide"><label for="{{ form.description.id_for_label }}">Description <span class="opt">optional</span></label>{% render_field form.description class="form-control" rows="3" %}</div>
+      </div>
+    </section>
+  </div>
+
+  <aside class="pf-side">
+    <section class="pf-card pf-preview" aria-live="polite">
+      <h2>In the product list</h2>
+      <span class="brand" id="pfBrand">{{ product.brand|default:"Brand" }}</span>
+      <div class="name" id="pfName">{{ product.list_name|default:"Line · Name · Type · Size" }}</div>
+      <div class="code" id="pfCode">{{ product.barcode|default:"" }}</div>
+    </section>
+    <section class="pf-card">
+      <h2>Photos</h2>
+      <label class="pf-drop">
+        <input id="image-input" type="file" name="images" multiple accept="image/*">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        Add photos
+      </label>
+      <div class="pf-photos" id="pfPhotos">
+        {% for img in images %}
+          <div class="pf-photo" data-image-id="{{ img.id }}">
+            <img src="{{ img.image.url }}" alt="">
+            {% if user|is_manager_user %}<button type="button" data-del-img="{% url 'delete_product_image' img.id %}" aria-label="Delete photo">&times;</button>{% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+  </aside>
+</div>
+
+{{ brand_catalog_json|json_script:"pfBrandCatalog" }}
+{{ brand_series_map_json|json_script:"pfSeriesMap" }}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const form = document.getElementById('product-form');
+  const brandCatalog = JSON.parse(JSON.parse(document.getElementById('pfBrandCatalog').textContent) || '[]');
+  const seriesMap = JSON.parse(JSON.parse(document.getElementById('pfSeriesMap').textContent) || '{}');
+  const $ = (name) => form.querySelector(`[name="${name}"]`);
+  const category = $('category'), brand = $('brand_master'), series = $('series_master');
+  const newBrand = $('new_brand_name'), newSeries = $('new_series_name');
+
+  // Only perfume brands, plus the one this product already has.
+  function fillBrands() {
+    const current = brand.value;
+    const list = brandCatalog.filter((b) => !category.value || b.category_ids.includes(String(category.value)) || String(b.id) === current);
+    brand.innerHTML = '<option value="">Select brand</option>' +
+      list.map((b) => `<option value="${b.id}"${String(b.id) === current ? ' selected' : ''}></option>`).join('');
+    [...brand.options].slice(1).forEach((o, i) => { o.textContent = list[i].name; });
+  }
+  function fillSeries() {
+    const current = series.value || series.dataset.current || '';
+    const list = seriesMap[brand.value] || [];
+    series.innerHTML = '<option value="">No line</option>';
+    list.forEach((s) => {
+      const o = document.createElement('option');
+      o.value = s.id; o.textContent = s.name; o.selected = String(s.id) === String(current);
+      series.appendChild(o);
+    });
+  }
+  series.dataset.current = series.value;
+  fillBrands(); fillSeries();
+  brand.addEventListener('change', () => { series.dataset.current = ''; fillSeries(); preview(); });
+
+  form.querySelectorAll('[data-alt]').forEach((btn) => btn.addEventListener('click', () => {
+    const box = form.querySelector(`[data-alt-for="${btn.dataset.alt}"]`);
+    box.hidden = !box.hidden;
+    if (!box.hidden) box.querySelector('input').focus(); else box.querySelector('input').value = '';
+    preview();
+  }));
+
+  // What the row in Products will read: line + name, type, size.
+  const label = (sel) => (sel.value ? sel.options[sel.selectedIndex].textContent.trim() : '');
+  // the same capitals the server will write (services/names.py, simplified)
+  const titled = (t) => t.trim().replace(/\s+/g, ' ').split(' ').map((w) =>
+    /\d/.test(w) || /^(EDP|EDT|EDC|II|III|IV)$/i.test(w) || (/[A-Z]/.test(w.slice(1)) && /[a-z]/.test(w)) ? w
+      : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+  function preview() {
+    const conc = $('concentration'), type = $('perfume_type');
+    const brandName = titled(newBrand.value || '') || label(brand);
+    const head = [titled(newSeries.value || '') || label(series), titled($('name').value || '')].filter(Boolean).join(' ');
+    const kind = type.value && type.value !== 'perfume' ? label(type).replace(/ \(.*\)| \/ Deo/, '') : (conc.value ? (label(conc).match(/EDP|EDT|EDC|Extrait|Attar|Mist/) || [label(conc)])[0] : '');
+    const size = $('volume_ml').value ? `${$('volume_ml').value}ml` : '';
+    document.getElementById('pfBrand').textContent = brandName || 'Brand';
+    document.getElementById('pfName').textContent = [head, kind, size].filter(Boolean).join(' · ') || 'Line · Name · Type · Size';
+    document.getElementById('pfCode').textContent = $('barcode').value;
+  }
+  form.addEventListener('input', preview);
+  form.addEventListener('change', preview);
+  preview();
+
+  $('barcode').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 13); });
+  form.querySelectorAll('.js-money').forEach((input) => {
+    input.addEventListener('input', () => { input.value = input.value.replace(/[^\d.,]/g, ''); });
+    input.addEventListener('blur', () => {
+      const v = parseFloat(String(input.value).replace(',', '.'));
+      input.value = Number.isFinite(v) && v >= 0 ? v.toFixed(2) : '';
+    });
+  });
+
+  // New photos: previews with a remove button, before anything is uploaded.
+  const fileInput = document.getElementById('image-input'), photos = document.getElementById('pfPhotos');
+  function showNew() {
+    photos.querySelectorAll('.is-new').forEach((n) => n.remove());
+    [...fileInput.files].forEach((file, idx) => {
+      if (!file.type.startsWith('image/')) return;
+      const tile = document.createElement('div');
+      tile.className = 'pf-photo is-new';
+      tile.innerHTML = `<img src="${URL.createObjectURL(file)}" alt=""><button type="button" aria-label="Remove">&times;</button>`;
+      tile.querySelector('button').addEventListener('click', () => {
+        const dt = new DataTransfer();
+        [...fileInput.files].forEach((f, i) => { if (i !== idx) dt.items.add(f); });
+        fileInput.files = dt.files; showNew();
+      });
+      photos.appendChild(tile);
+    });
+  }
+  fileInput.addEventListener('change', showNew);
+
+  // A photo already saved is deleted straight away (no form inside a form).
+  photos.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-del-img]');
+    if (!btn || !confirm('Delete this photo?')) return;
+    const body = new FormData();
+    body.append('csrfmiddlewaretoken', $('csrfmiddlewaretoken').value);
+    const r = await fetch(btn.dataset.delImg, { method: 'POST', body, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+    const data = await r.json().catch(() => ({}));
+    if (data.success) btn.closest('.pf-photo').remove(); else alert('Could not delete the photo.');
+  });
+});
+</script>

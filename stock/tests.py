@@ -4097,9 +4097,11 @@ class ProductFormAttributeTests(TestCase):
         self.bowl = CategoryAttribute.objects.create(
             category=self.perfumes, name="Bottle", code="bottle", data_type="text")
 
+    _ean = iter(range(5600000000001, 5600000009999))
+
     def _data(self, **overrides):
         data = {
-            'barcode': '',
+            'barcode': str(next(self._ean)),
             'category': self.accessories.id,
             'brand_master': self.brand.id,
             'name': 'Clear TPU case',
@@ -4208,15 +4210,6 @@ class AttributeUiTests(TestCase):
         user = get_user_model().objects.create_superuser(
             username="mgr", password="pw123456", email="m@x.com")
         self.client.force_login(user)
-
-    def test_add_product_page_renders_the_attribute_fields(self):
-        html = self.client.get(reverse('add_product')).content.decode()
-        self.assertIn(f'attr_{self.colour.pk}', html)
-        self.assertIn(f'data-attr-for="{self.accessories.pk}"', html)
-
-    def test_edit_product_page_preselects_the_saved_answer(self):
-        html = self.client.get(reverse('edit_product', args=[self.case.pk])).content.decode()
-        self.assertIn(f'value="{self.black.pk}" selected', html)
 
     def test_product_detail_shows_attributes_and_fitment(self):
         html = self.client.get(reverse('product_detail', args=[self.case.pk])).content.decode()
@@ -6163,11 +6156,6 @@ class AddProductDefersToShelfTests(TestCase):
         self.style.save(update_fields=['is_active'])
         self.assertNotIn(str(self.cases.pk), self._targets())
 
-    def test_the_page_renders_the_shelf_panel(self):
-        html = self.client.get(reverse('add_product')).content.decode()
-        self.assertIn('id="shelf-redirect"', html)
-        self.assertIn('Tracked on the shelf', html)
-
     def test_adding_a_handset_is_the_only_thing_needed(self):
         # No product, no barcode, no price - just the model, then colours.
         from stock.models import DeviceModel, Product
@@ -6662,24 +6650,6 @@ class AddProductWizardTests(TestCase):
     def _html(self):
         return self.client.get(reverse('add_product')).content.decode()
 
-    # -- step 1 ------------------------------------------------------------
-    def test_the_page_opens_on_the_category_picker(self):
-        html = self._html()
-        self.assertIn('id="step-pick"', html)
-        self.assertIn('id="step-form"', html)
-        self.assertIn('What are you adding?', html)
-
-    def test_top_level_categories_are_offered_as_buttons(self):
-        html = self._html()
-        for name in ["Accessories", "Perfumes"]:
-            self.assertIn(f'>{name}</span>', html)
-
-    def test_a_category_with_subcategories_offers_them(self):
-        html = self._html()
-        self.assertIn(f'data-children-of="{self.accessories.pk}"', html)
-        self.assertIn('>Cases</span>', html)
-        self.assertIn('Other accessories', html)
-
     def test_the_picker_knows_each_category_form_kind(self):
         import json
         response = self.client.get(reverse('add_product'))
@@ -6693,20 +6663,6 @@ class AddProductWizardTests(TestCase):
         response = self.client.get(reverse('add_product'))
         kinds = json.loads(response.context['category_kind_json'])
         self.assertEqual(kinds[str(child.pk)], "accessory")
-
-    def test_every_kind_of_accessory_the_shop_sells_has_a_category(self):
-        html = self._html()
-        for name in ["Cases", "Screen protectors", "Cables", "Chargers &amp; plugs",
-                     "Power banks", "Audio", "Mice &amp; keyboards", "Storage",
-                     "Holders &amp; mounts"]:
-            self.assertIn(f'>{name}</span>', html, name)
-
-    def test_the_page_offers_adding_a_category_and_a_subcategory(self):
-        html = self._html()
-        self.assertIn('data-new-parent=""', html)                     # top level
-        self.assertIn(f'data-new-parent="{self.accessories.pk}"', html)  # subcategory
-        self.assertIn('+ New category', html)
-        self.assertIn('+ New type', html)
 
     def test_choosing_a_category_does_not_navigate_away(self):
         # The picker stays on the page and the form opens underneath it, so
@@ -6733,43 +6689,10 @@ class AddProductWizardTests(TestCase):
             attribute = CategoryAttribute.objects.get(code=code)
             self.assertTrue(attribute.variant_attribute, code)
 
-    # -- step 2 shape ------------------------------------------------------
-    def test_perfume_and_accessory_groups_are_both_present_but_tagged(self):
-        html = self._html()
-        self.assertIn('data-kind="perfume"', html)
-        self.assertIn('data-kind="accessory"', html)
-        self.assertIn('data-kind="general accessory"', html)
-
-    def test_the_fitment_group_is_rendered(self):
-        html = self._html()
-        self.assertIn('universal_fit', html)
-        self.assertIn('device_models', html)
-        self.assertIn('compatibility_groups', html)
-
     def test_the_category_select_is_still_submitted(self):
         # The buttons drive it, but it must stay in the DOM for validation.
         self.assertIn('name="category"', self._html())
 
-    def test_colour_is_asked_once_for_accessories(self):
-        # Accessories answer colour through the Colour attribute, so the
-        # legacy field is scoped to general categories.
-        html = self._html()
-        self.assertIn('<div class="col-md-6" data-kind="general">', html)
-
-    def test_an_accessory_does_not_get_perfume_questions(self):
-        html = self._html()
-        # Anchor on the fieldset - the picker button carries the same
-        # data-kind attribute and appears earlier in the page.
-        start = html.index('<fieldset class="fgroup" data-kind="perfume">')
-        perfume_block = html[start:html.index('</fieldset>', start)]
-        for field in ['volume_ml', 'concentration', 'gender']:
-            self.assertIn(field, perfume_block)
-
-        identity = html[html.index('<legend>Identity</legend>'):]
-        identity = identity[:identity.index('</fieldset>')]
-        self.assertNotIn('gender', identity)
-
-    # -- saving ------------------------------------------------------------
     def _post(self, **overrides):
         data = {
             'barcode': '',
@@ -6780,28 +6703,6 @@ class AddProductWizardTests(TestCase):
         }
         data.update(overrides)
         return self.client.post(reverse('add_product'), data)
-
-    def test_an_accessory_saves_with_its_fitment(self):
-        from stock.models import DeviceModel
-        apple = Brand.objects.create(name="Apple")
-        device = DeviceModel.objects.create(brand=apple, name="iPhone 15 Pro Max")
-        response = self._post(device_models=[device.pk])
-        self.assertEqual(response.status_code, 302)
-        product = Product.objects.get(name="Clear TPU")
-        self.assertTrue(product.fits(device))
-        self.assertTrue(product.barcode_is_internal)
-
-    def test_a_universal_accessory_saves(self):
-        response = self._post(name="USB-C cable", universal_fit='on')
-        self.assertEqual(response.status_code, 302)
-        self.assertTrue(Product.objects.get(name="USB-C cable").universal_fit)
-
-    def test_gender_sits_in_the_perfume_group_and_does_not_break_accessories(self):
-        # Gender is only asked of perfume now; an accessory posting without it
-        # must still save. (Rendering it *only* in a hidden group once cleared
-        # it on non-perfumes - hence this test.)
-        response = self._post()
-        self.assertEqual(response.status_code, 302)
 
     def test_a_perfume_keeps_the_gender_it_was_given(self):
         response = self.client.post(reverse('add_product'), {
@@ -7176,23 +7077,6 @@ class ProductFormBlankBarcodeTests(TestCase):
         data.update(overrides)
         return data
 
-    def test_a_blank_barcode_is_accepted_and_filled_in(self):
-        form = ProductForm(data=self._data())
-        self.assertTrue(form.is_valid(), form.errors.as_json())
-        product = form.save()
-        self.assertTrue(product.barcode)
-        self.assertTrue(product.barcode_is_internal)
-        self.assertEqual(len(product.barcode), 13)
-
-    def test_two_blank_barcode_products_do_not_collide(self):
-        first = ProductForm(data=self._data(name="Case A"))
-        self.assertTrue(first.is_valid(), first.errors.as_json())
-        one = first.save()
-        second = ProductForm(data=self._data(name="Case B"))
-        self.assertTrue(second.is_valid(), second.errors.as_json())
-        two = second.save()
-        self.assertNotEqual(one.barcode, two.barcode)
-
     def test_a_supplied_barcode_is_kept_verbatim(self):
         form = ProductForm(data=self._data(barcode='5901234123457'))
         self.assertTrue(form.is_valid(), form.errors.as_json())
@@ -7393,32 +7277,6 @@ class ProductEditFormGroupingTests(TestCase):
         self.accessories = Category.objects.create(name="Accessories")
         get_user_model().objects.create_superuser("grp_mgr", password="pw123456")
         self.client.login(username="grp_mgr", password="pw123456")
-
-    def test_every_field_is_rendered_once(self):
-        p = Product.objects.create(name="Khamrah", barcode="9200000000001", brand="Lattafa",
-                                   category=self.perfumes, default_price=Decimal("30"))
-        import re
-        html = self.client.get(reverse("edit_product", args=[p.pk])).content.decode()
-        for field in ['color', 'spec', 'gender', 'volume_ml', 'concentration',
-                      'inspired_by_text', 'notes_top', 'notes_heart', 'notes_base']:
-            # count real widgets only - the page's JS also mentions these names
-            widgets = re.findall(r'<(?:input|select|textarea)[^>]*name="%s"' % field, html)
-            self.assertEqual(len(widgets), 1, f'{field}: {len(widgets)} widgets')
-        # Groups are tagged with the category kinds they belong to.
-        self.assertIn('data-kind="perfume"', html)
-        self.assertIn('data-kind="general accessory"', html)
-
-    def test_add_form_is_grouped_and_renders_each_field_once(self):
-        import re
-        html = self.client.get(reverse("add_product")).content.decode()
-        for field in ['color', 'spec', 'gender', 'volume_ml', 'concentration',
-                      'inspired_by_text', 'notes_top', 'notes_heart', 'notes_base']:
-            widgets = re.findall(r'<(?:input|select|textarea)[^>]*name="%s"' % field, html)
-            self.assertEqual(len(widgets), 1, f'{field}: {len(widgets)} widgets')
-        # Groups are tagged with the category kinds they belong to.
-        self.assertIn('data-kind="perfume"', html)
-        self.assertIn('data-kind="general accessory"', html)
-        self.assertIn("fam-picker", html)
 
     def test_saving_a_non_perfume_keeps_gender_and_colour(self):
         p = Product.objects.create(name="Case", barcode="9200000000002", brand="Anker",
@@ -11482,3 +11340,140 @@ class SidePanelTests(TestCase):
         orders = self.client.get(reverse("sales_records")).content.decode()
         self.assertIn('data-layer="ol-', orders)
         self.assertNotIn('id="opLayer"', orders)
+
+
+class PerfumeFormTests(TestCase):
+    """Adding a product is adding a perfume (2026-10-29): the barcode is
+    required, the name is not, names are written one way and the type is kept."""
+
+    def setUp(self):
+        cache.clear()
+        self.admin = get_user_model().objects.create_superuser("pf_admin", password="pw123456")
+        self.client.force_login(self.admin)
+        from stock.models import Brand
+        self.perfumes = Category.objects.create(name="Perfumes", form_kind="perfume")
+        self.brand = Brand.objects.create(name="Lattafa")
+        self.brand.categories.add(self.perfumes)
+
+    def _post(self, **fields):
+        data = {"category": self.perfumes.id, "barcode": "6291108730000", "brand_master": self.brand.id,
+                "name": "", "perfume_type": "perfume", "default_price": "40", "wholesale_price": "28"}
+        data.update(fields)
+        return self.client.post(reverse("add_product"), data)
+
+    def test_the_page_is_the_perfume_form(self):
+        body = self.client.get(reverse("add_product")).content.decode()
+        self.assertIn('name="barcode"', body)
+        self.assertIn('name="perfume_type"', body)
+        self.assertIn(f'name="category" value="{self.perfumes.id}"', body)
+        self.assertNotIn('id="step-pick"', body)
+
+    def test_a_barcode_is_required_and_a_name_is_not(self):
+        response = self._post(barcode="")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Scan or type the barcode.")
+        self.assertFalse(Product.objects.exists())
+        response = self._post()
+        product = Product.objects.get()
+        self.assertRedirects(response, reverse("product_detail", args=[product.id]), fetch_redirect_response=False)
+        self.assertEqual(product.name, "")
+
+    def test_names_are_written_one_way_and_brands_matched_whatever_the_case(self):
+        from stock.models import Brand, ProductSeries
+        self._post(brand_master="", new_brand_name="LATTAFA", new_series_name="CLUB DE NUIT",
+                   name="INTENSE MAN EDP", volume_ml="105")
+        product = Product.objects.get()
+        self.assertEqual(Brand.objects.count(), 1)            # "LATTAFA" is the brand already there
+        self.assertEqual(product.brand, "Lattafa")
+        self.assertEqual(product.model, "Club De Nuit")
+        self.assertEqual(ProductSeries.objects.get().name, "Club De Nuit")
+        self.assertEqual(product.name, "Intense Man EDP")
+
+    def test_the_type_is_kept_and_named_in_lists(self):
+        from stock.models import Concentration
+        self._post(perfume_type="body_spray", name="Asad", volume_ml="200")
+        product = Product.objects.get()
+        self.assertEqual(product.perfume_type, "body_spray")
+        self.assertEqual(product.list_name, "Asad · Body spray · 200ml")
+        edp = Concentration.objects.create(name="Eau de Parfum", short="EDP")
+        Product.objects.filter(pk=product.pk).update(perfume_type="perfume", concentration=edp)
+        product.refresh_from_db()
+        self.assertEqual(product.list_name, "Asad · EDP · 200ml")
+
+    def test_title_case_rules(self):
+        from stock.services.names import title_case
+        cases = {
+            "CLUB DE NUIT": "Club De Nuit", "CREAM/BODY MIST": "Cream/Body Mist", "L'HOMME": "L'Homme",
+            "Second Song EDP": "Second Song EDP", "ROLL OIL 10ML": "Roll Oil 10ml", "B6108": "B6108",
+            "ART OF ARABIA II": "Art Of Arabia II", "iPhone 15 Pro": "iPhone 15 Pro", "  two   spaces ": "Two Spaces",
+        }
+        for raw, expected in cases.items():
+            self.assertEqual(title_case(raw), expected, raw)
+
+
+class TidyProductNamesCommandTests(TestCase):
+    """manage.py tidy_product_names: a dry run changes nothing; --apply
+    rewrites names, merges brands that become the same and sets obvious types."""
+
+    def setUp(self):
+        from stock.models import Brand, ProductSeries
+        cat = Category.objects.create(name="Perfumes", form_kind="perfume")
+        self.upper = Brand.objects.create(name="LATTAFA")
+        self.title = Brand.objects.create(name="Lattafa")
+        series = ProductSeries.objects.create(brand=self.upper, name="MIX")
+        self.p1 = Product.objects.create(name="BODY SPRAY", brand="LATTAFA", brand_master=self.upper,
+                                         series_master=series, model="MIX", barcode="6290000001001", category=cat)
+        self.p2 = Product.objects.create(name="ASAD", brand="Lattafa", brand_master=self.title,
+                                         barcode="6290000001002", category=cat)
+        self.p3 = Product.objects.create(name="ASAD", brand="Lattafa", brand_master=self.title,
+                                         barcode="6290000001003", category=cat)
+
+    def _run(self, *args):
+        from io import StringIO
+        from django.core.management import call_command
+        out = StringIO()
+        call_command("tidy_product_names", *args, stdout=out)
+        return out.getvalue()
+
+    def test_a_dry_run_changes_nothing(self):
+        out = self._run()
+        self.assertIn("Dry run", out)
+        self.p1.refresh_from_db()
+        self.assertEqual(self.p1.brand, "LATTAFA")
+
+    def test_apply_merges_capitalises_and_types(self):
+        from stock.models import Brand
+        self._run("--apply")
+        self.assertEqual(list(Brand.objects.values_list("name", flat=True)), ["Lattafa"])
+        self.p1.refresh_from_db()
+        self.assertEqual(self.p1.brand_master_id, self.title.id)          # merged into the bigger one
+        self.assertEqual((self.p1.brand, self.p1.model, self.p1.name), ("Lattafa", "Mix", "Body Spray"))
+        self.assertEqual(self.p1.perfume_type, "body_spray")
+        self.assertIn("products renamed 0", self._run())                  # nothing left to do
+
+
+class RemoveCategoriesCommandTests(TestCase):
+    def _run(self, *args):
+        from io import StringIO
+        from django.core.management import call_command
+        out = StringIO()
+        call_command("remove_categories", *args, stdout=out)
+        return out.getvalue()
+
+    def setUp(self):
+        self.acc = Category.objects.create(name="Accessories", form_kind="accessory")
+        self.cases = Category.objects.create(name="Cases", parent=self.acc)
+        self.perfumes = Category.objects.create(name="Perfumes", form_kind="perfume")
+
+    def test_dry_run_then_apply_deletes_the_category_and_its_children(self):
+        self.assertIn("Dry run", self._run("--name", "Accessories"))
+        self.assertEqual(Category.objects.count(), 3)
+        self._run("--name", "Accessories", "--apply")
+        self.assertEqual(list(Category.objects.values_list("name", flat=True)), ["Perfumes"])
+
+    def test_it_refuses_while_an_active_product_is_in_it(self):
+        from django.core.management.base import CommandError
+        Product.objects.create(name="Case", brand="X", barcode="6290000002001", category=self.cases)
+        with self.assertRaises(CommandError):
+            self._run("--name", "Accessories", "--apply")
+        self.assertTrue(Category.objects.filter(pk=self.acc.pk).exists())

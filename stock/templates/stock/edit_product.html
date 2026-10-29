@@ -1,764 +1,126 @@
 {% extends 'stock/base.html' %}
-{% load widget_tweaks %}
 {% load access_tags %}
-{% block title %}Edit Product{% endblock %}
-
+{% block title %}Edit {{ product.list_name }}{% endblock %}
 {% block content %}
 <style>
-  .opt{font-weight:600;font-size:.68rem;color:var(--app-muted);text-transform:uppercase;letter-spacing:.04em}
-  :root{
-    --ds-border: rgba(0,0,0,.08);
-    --ds-card:#fff;
-    --ds-text:#1f2937;
-    --ds-muted:#6b7280;
-    --ds-accent:var(--app-accent);
-    --ds-radius:.9rem;
-  }
-  h2{ font-weight:800; letter-spacing:.2px; color:var(--ds-text); }
-  .muted{ color:var(--ds-muted); }
-  .ds-card{
-    border:1px solid var(--ds-border);
-    border-radius: var(--ds-radius);
-    background: var(--ds-card);
-    box-shadow: 0 2px 10px rgba(0,0,0,.04);
-  }
-  .form-label{ font-weight:700; color:var(--ds-text); }
-  .form-control, .form-select, textarea{
-    border-radius:.65rem; border:1px solid var(--ds-border);
-  }
-  .form-control:focus, .form-select:focus, textarea:focus{
-    border-color: color-mix(in oklab, var(--ds-accent) 55%, #7aa2ff 45%);
-    box-shadow: 0 0 0 .2rem rgba(59,166,241,.14);
-  }
-  .preview-card{
-    border:1px solid var(--ds-border);
-    border-radius:.9rem;
-    background:linear-gradient(180deg,#f8fbff,#fff);
-    padding:1rem 1.05rem;
-  }
-  .preview-label{
-    color:var(--ds-muted);
-    font-size:.82rem;
-    text-transform:uppercase;
-    font-weight:800;
-    letter-spacing:.04em;
-  }
-  .preview-title{
-    margin-top:.5rem;
-    font-size:1.25rem;
-    font-weight:800;
-    color:var(--ds-text);
-    line-height:1.3;
-  }
-  .preview-meta{
-    margin-top:.65rem;
-    display:flex;
-    flex-wrap:wrap;
-    gap:.45rem;
-  }
-  .meta-chip{
-    display:inline-flex;
-    align-items:center;
-    padding:.26rem .6rem;
-    border-radius:999px;
-    border:1px solid var(--ds-border);
-    background:#fff;
-    color:var(--ds-text);
-    font-weight:700;
-    font-size:.82rem;
-  }
-  .img-grid{
-    display:grid;
-    gap:.8rem;
-    grid-template-columns: repeat(4, minmax(0,1fr));
-  }
-  .img-item{
-    position:relative;
-    border:1px solid var(--ds-border);
-    border-radius:.7rem;
-    overflow:hidden;
-    background:#fafafa;
-  }
-  .img-item img{
-    width:100%;
-    height:200px;
-    object-fit:cover;
-    display:block;
-    cursor:zoom-in;
-  }
-  .img-item .del-form{
-    position:absolute;
-    left:.5rem;
-    right:.5rem;
-    bottom:.5rem;
-    z-index:2;
-  }
-  .preview-grid{
-    display:grid; gap:.6rem; grid-template-columns: repeat(6, 1fr);
-  }
-  .preview{
-    position:relative; border:1px solid var(--ds-border); border-radius:.6rem; overflow:hidden;
-    aspect-ratio:1/1; background:#f5f5f4;
-  }
-  .preview img{ width:100%; height:100%; object-fit:cover; display:block; }
-  .preview .rm{
-    position:absolute; top:.35rem; right:.35rem; border:none; border-radius:.5rem;
-    background:rgba(0,0,0,.55); color:#fff; width:28px; height:28px; line-height:28px; text-align:center; cursor:pointer;
-  }
-  .danger-zone{
-    border:1px solid #f1c7c7;
-    border-radius:.95rem;
-    background:linear-gradient(180deg,#fff8f8,#fff2f2);
-    padding:1rem 1.05rem;
-  }
-  .danger-title{
-    margin:0;
-    color:#8f1d1d;
-    font-size:1.05rem;
-    font-weight:900;
-  }
-  .danger-copy{
-    color:#7a3131;
-    margin:.45rem 0 0;
-  }
-  .danger-note{
-    margin:.7rem 0 0;
-    font-size:.92rem;
-    color:#6b3b3b;
-  }
-  @media (max-width: 992px){
-    .img-grid{ grid-template-columns: repeat(3, minmax(0,1fr)); }
-  }
-  @media (max-width: 576px){
-    .img-grid{ grid-template-columns: repeat(2, minmax(0,1fr)); }
-    .preview-grid{ grid-template-columns: repeat(3, 1fr); }
-    .sticky-actions{
-      position: sticky; bottom:.5rem; z-index:5; display:flex; gap:.6rem; background:transparent; padding-top:.5rem;
-    }
-    .sticky-actions .btn{ flex:1 1 auto; }
-  }
-  /* Django renders CheckboxSelectMultiple as a div per choice, so without this
-     each family took a whole row. Lay them out as wrapping chips instead. */
-  .fam-picker > div{display:flex;flex-wrap:wrap;gap:.3rem}
-  .fam-picker > div > div{margin:0}
-  .fam-picker label{display:inline-flex;align-items:center;gap:.3rem;font-size:.78rem;
-    padding:.2rem .55rem;border:1px solid var(--app-border);border-radius:999px;
-    background:var(--app-surface-2);cursor:pointer;white-space:nowrap;line-height:1.3}
-  .fam-picker label:hover{border-color:var(--app-accent-line);background:var(--app-accent-soft)}
-  .fam-picker input{margin:0}
-  /* grouped form: related fields under one heading instead of a flat wall */
-  .form-groups{display:grid;gap:.75rem}
-  .fgroup{border:1px solid var(--app-border);border-radius:var(--app-radius);padding:.7rem .85rem;margin:0;min-width:0}
-  .fgroup > legend{float:none;width:auto;padding:0 .35rem;margin:0 0 .35rem -.35rem;
-    font-size:.68rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--app-muted)}
-  .fgroup .form-label{font-size:.72rem;font-weight:700;color:var(--app-muted);margin-bottom:.15rem}
-  .fgroup[hidden]{display:none}
-  .fgroup[data-kind][hidden]{display:none}
-  [data-fit-specific][hidden]{display:none}
-  .vflag{display:inline-block;margin-left:.25rem;padding:0 .25rem;border-radius:3px;
-    background:var(--app-accent-soft);color:var(--app-accent-ink);font-size:.6rem;font-weight:800}
-  [data-attr-for][hidden]{display:none}
-
-  @media (max-width:575.98px){ .fgroup{padding:.6rem .65rem} }
+  .ep-extra{ display:grid; gap:1rem; margin-top:1rem; }
+  .ep-card{ background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius); padding:1rem; }
+  .ep-card h2{ font-size:.78rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--app-muted); margin:0 0 .6rem; }
+  .ep-stock-total{ font-size:.92rem; margin-bottom:.5rem; }
+  .ep-batch{ display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:.2rem .9rem; align-items:center;
+    padding:.5rem 0; border-top:1px solid var(--app-border); font-size:.9rem; }
+  .ep-batch:first-of-type{ border-top:0; }
+  .ep-batch .when{ font-variant-numeric:tabular-nums; }
+  .ep-batch .sub{ color:var(--app-muted); font-size:.82rem; }
+  .ep-batch .left{ font-weight:800; font-variant-numeric:tabular-nums; text-align:right; }
+  .ep-danger{ border-color:#f1c7c7; background:#fff8f8; display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; }
+  .ep-danger p{ margin:0; color:#7a3131; font-size:.9rem; max-width:40rem; }
 </style>
 
-<h1 class="pos-title mb-3">Edit product: <span class="muted">{{ product.display_name }}</span></h1>
-
-{% if images %}
-  <h5 class="mb-2">Existing Images</h5>
-  <div class="img-grid mb-4">
-    {% for img in images %}
-      <div class="img-item" data-image-id="{{ img.id }}">
-        <img src="{{ img.image.url }}" alt="" class="js-zoom" data-src="{{ img.image.url }}">
-        {% if user|is_manager_user %}
-        <div class="del-form">
-          <form method="post" action="{% url 'delete_product_image' img.id %}" class="js-del-img" onsubmit="return confirm('Delete this image?');">
-            {% csrf_token %}
-            <button type="submit" class="btn btn-sm btn-danger w-100">Delete</button>
-          </form>
-        </div>
-        {% endif %}
-      </div>
-    {% endfor %}
-  </div>
-{% endif %}
-
-<form id="edit-product-form" method="post" enctype="multipart/form-data" class="card p-4 shadow-sm border ds-card mb-4">
+<form id="product-form" method="post" enctype="multipart/form-data" novalidate>
   {% csrf_token %}
-
-  <div class="row g-3">
-    <div class="col-lg-8">
-      <div class="form-groups">
-
-        <fieldset class="fgroup">
-          <legend>Identity</legend>
-          <div class="row g-2">
-            <div class="col-md-6">
-              <label class="form-label">Barcode <span class="opt">optional</span></label>
-              {% render_field form.barcode class="form-control" inputmode="numeric" pattern="[0-9]{0,13}" maxlength="13" placeholder="Blank = generated" %}
-            </div>
-            <div class="col-md-6">
-              <label class="form-label">Category</label>
-              {% render_field form.category class="form-select" %}
-            </div>
-            <div class="col-md-6">
-              <label class="form-label">Brand</label>
-              {% render_field form.brand_master class="form-select" %}
-              {% render_field form.new_brand_name class="form-control mt-1" placeholder="Or add a new brand" %}
-            </div>
-            <div class="col-md-6">
-              <label class="form-label">Series / Model</label>
-              {% render_field form.series_master class="form-select" %}
-              {% render_field form.new_series_name class="form-control mt-1" placeholder="Or add a new series" %}
-            </div>
-            <div class="col-md-8">
-              <label class="form-label">Product Name</label>
-              {% render_field form.name class="form-control" placeholder="e.g. Khamrah / Clear Case" %}
-            </div>
-            <div class="col-md-4">
-              <label class="form-label">Gender</label>
-              {% render_field form.gender class="form-select" %}
-            </div>
-          </div>
-        </fieldset>
-
-        <fieldset class="fgroup" data-kind="perfume">
-          <legend>Perfume</legend>
-          <div class="row g-2">
-            <div class="col-md-6">
-              <label class="form-label">Volume (ml)</label>
-              {% render_field form.volume_ml class="form-control" %}
-            </div>
-            <div class="col-md-6">
-              <label class="form-label">Concentration</label>
-              {% render_field form.concentration class="form-select" %}
-            </div>
-            <div class="col-12">
-              <label class="form-label">Fragrance family</label>
-              <div class="fam-picker">{{ form.fragrance_families }}</div>
-            </div>
-            <div class="col-md-4">
-              <label class="form-label">Notas de Topo</label>
-              {% render_field form.notes_top class="form-control" placeholder="Bergamota, Ma&ccedil;&atilde; Verde" %}
-            </div>
-            <div class="col-md-4">
-              <label class="form-label">Notas de Cora&ccedil;&atilde;o</label>
-              {% render_field form.notes_heart class="form-control" placeholder="Jasmim, Canela" %}
-            </div>
-            <div class="col-md-4">
-              <label class="form-label">Notas de Base</label>
-              {% render_field form.notes_base class="form-control" placeholder="Baunilha, &Acirc;mbar" %}
-            </div>
-            <div class="col-12">
-              <label class="form-label">Inspired by</label>
-              {% render_field form.inspired_by_text class="form-control" placeholder="e.g. Baccarat Rouge 540" %}
-            </div>
-          </div>
-        </fieldset>
-
-        <fieldset class="fgroup" data-kind="general accessory">
-          <legend>Variant</legend>
-          <div class="row g-2">
-            <div class="col-md-6">
-              <label class="form-label">Specification</label>
-              {% render_field form.spec class="form-control" placeholder="e.g. 20W" %}
-            </div>
-            {# colour for accessories comes from their Colour attribute #}
-            <div class="col-md-6" data-kind="general">
-              <label class="form-label">Color</label>
-              {% render_field form.color class="form-control" placeholder="Optional" %}
-            </div>
-          </div>
-        </fieldset>
-
-        {% if form.attribute_fields %}
-
-        <fieldset class="fgroup" data-kind="accessory">
-          <legend>Fits</legend>
-          <div class="row g-2">
-            <div class="col-12">
-              <div class="form-check">
-                {% render_field form.universal_fit class="form-check-input" id="universal_fit_box" %}
-                <label class="form-check-label" for="universal_fit_box">Fits every device</label>
-              </div>
-            </div>
-            <div class="col-md-6" data-fit-specific>
-              <label class="form-label">Models</label>
-              {% render_field form.device_models class="form-select" %}
-            </div>
-            <div class="col-md-6" data-fit-specific>
-              <label class="form-label">Compatibility groups</label>
-              {% render_field form.compatibility_groups class="form-select" %}
-            </div>
-          </div>
-        </fieldset>
-
-        <fieldset class="fgroup" data-attr-group>
-          <legend>Specs</legend>
-          <div class="row g-2">
-            {% for row in form.attribute_fields %}
-              <div class="col-md-4 col-6" data-attr-for="{{ row.category_id }}">
-                <label class="form-label" for="{{ row.field.id_for_label }}">
-                  {{ row.attribute.name }}{% if row.attribute.unit %} ({{ row.attribute.unit }}){% endif %}
-                  {% if row.attribute.variant_attribute %}<span class="vflag" title="Separate stock row">V</span>{% endif %}
-                </label>
-                {% if row.attribute.data_type == 'choice' or row.attribute.data_type == 'boolean' %}
-                  {% render_field row.field class="form-select" %}
-                {% else %}
-                  {% render_field row.field class="form-control" %}
-                {% endif %}
-              </div>
-            {% endfor %}
-          </div>
-        </fieldset>
-        {% endif %}
-
-        <fieldset class="fgroup">
-          <legend>Pricing</legend>
-          <div class="row g-2">
-            <div class="col-md-6">
-              <label class="form-label">Retail Price (&euro;)</label>
-              {% render_field form.default_price class="form-control js-money" type="text" inputmode="decimal" step="0.01" placeholder="0.00" %}
-            </div>
-            <div class="col-md-6">
-              <label class="form-label">Wholesale Price (&euro;)</label>
-              {% render_field form.wholesale_price class="form-control js-money" type="text" inputmode="decimal" step="0.01" placeholder="0.00" %}
-            </div>
-            {% if user|is_manager_user %}
-            <div class="col-12 form-check ms-1">
-              <input type="checkbox" class="form-check-input" id="price_locked" name="price_locked" {% if form.price_locked.value %}checked{% endif %}>
-              <label class="form-check-label" for="price_locked">Lock price (don't auto-update from cost)</label>
-            </div>
-            {% endif %}
-          </div>
-        </fieldset>
-
-        <fieldset class="fgroup">
-          <legend>Description</legend>
-          {% render_field form.description class="form-control" rows="3" placeholder="Short description (optional)" %}
-        </fieldset>
-
-      </div>
-    </div>
-
-    <div class="col-lg-4">
-      <div class="preview-card">
-        <div class="preview-label">Display Preview</div>
-        <div class="preview-title" id="product-name-preview">{{ product.display_name }}</div>
-        <div class="preview-meta" id="product-meta-preview"></div>
-      </div>
-    </div>
-
-    <div class="col-12">
-      <label class="form-label">Upload Product Images</label>
-      <input id="image-input" type="file" name="images" multiple class="form-control" accept="image/*">
-      <div class="form-text muted mb-2">You can select multiple images. JPG/PNG/WebP recommended.</div>
-      <div id="preview-grid" class="preview-grid"></div>
-    </div>
-
-    {% if request.user.is_superuser %}
-      <div class="col-12 mt-4 pt-3 border-top">
-        <h5 class="mb-3">Stock Management (Admin Only)</h5>
-        <div class="alert alert-info small mb-3">
-          <strong>Current Total Stock:</strong> <span id="current-stock-display">{{ total_stock }}</span> units
-        </div>
-        <div class="table-responsive small">
-          <table class="table table-sm table-hover mb-0">
-            <thead class="table-light">
-              <tr>
-                <th>Date</th>
-                <th style="width:70px;">Qty</th>
-                <th style="width:80px;">Remaining</th>
-                <th style="width:100px;">Cost</th>
-                <th style="width:140px;">Supplier</th>
-                <th style="width:120px;">Action</th>
-              </tr>
-            </thead>
-            <tbody id="stock-batch-list">
-              {% for p in purchases %}
-                <tr data-purchase-id="{{ p.id }}">
-                  <td>{{ p.date|date:"Y-m-d H:i" }}</td>
-                  <td>{{ p.quantity }}</td>
-                  <td><span class="remain-value">{{ p.remaining }}</span></td>
-                  <td>€{{ p.cost_price|floatformat:2 }}</td>
-                  <td>{% if p.supplier %}{{ p.supplier.name }}{% else %}<span class="muted">—</span>{% endif %}</td>
-                  <td>
-                    <button type="button" class="btn btn-sm btn-outline-warning edit-remain-btn" data-purchase-id="{{ p.id }}" data-old="{{ p.remaining }}">Edit</button>
-                  </td>
-                </tr>
-              {% empty %}
-                <tr><td colspan="6" class="text-center text-muted py-2">No purchase records.</td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    {% endif %}
+  <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
+    <h1 class="pos-title mb-0">Edit perfume</h1>
   </div>
-
-  <div class="mt-3 d-flex gap-2 sticky-actions">
-    <button type="submit" class="btn btn-primary">Save Changes</button>
-    <a href="{% url 'product_detail' product.id %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="btn btn-secondary" data-nav-back>Cancel</a>
+  {% include "stock/_product_fields.html" %}
+  <div class="pf-bar mt-3">
+    <button type="submit" class="btn btn-primary">Save changes</button>
+    <a href="{% url 'product_detail' product.id %}" class="btn btn-outline-secondary" data-nav-back>Cancel</a>
   </div>
 </form>
 
-{% if user|is_manager_user %}
-<section class="danger-zone mb-4">
-  <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
-    <div>
-      <h3 class="danger-title">Delete Product</h3>
-      <p class="danger-note mb-0">
-        Removes this product from the catalogue, search and Shopify sync. Its
-        {{ sale_count }} sales record{{ sale_count|pluralize }} and
-        {{ purchase_count }} purchase record{{ purchase_count|pluralize }} stay,
-        so past sales and profit do not change. Photos are removed.
-      </p>
-    </div>
+<div class="ep-extra">
+  {% if request.user.is_superuser %}
+    <section class="ep-card" aria-label="Stock batches">
+      <h2>Stock batches</h2>
+      <div class="ep-stock-total"><b id="current-stock-display">{{ total_stock }}</b> in stock</div>
+      <div id="stock-batch-list">
+        {% for p in purchases %}
+          <div class="ep-batch" data-purchase-id="{{ p.id }}">
+            <div><span class="when">{{ p.date|date:"Y-m-d" }}</span>
+              <div class="sub">{{ p.quantity }} bought &middot; &euro;{{ p.cost_price|floatformat:2 }}{% if p.supplier %} &middot; {{ p.supplier.name }}{% endif %}</div></div>
+            <div class="left"><span class="remain-value">{{ p.remaining }}</span> left</div>
+            <button type="button" class="btn btn-sm btn-outline-secondary edit-remain-btn" data-purchase-id="{{ p.id }}" data-old="{{ p.remaining }}">Correct</button>
+          </div>
+        {% empty %}
+          <p class="text-muted mb-0">No purchase records.</p>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
 
-    <form method="post" action="{% url 'delete_product' product.id %}" data-return="back" data-return-skip="/products/{{ product.id }}/" onsubmit="return confirm('Delete this product? It disappears from the catalogue, but its sales history and profit are kept.');">
-      {% csrf_token %}
-      <input type="hidden" name="return_querystring" value="{{ request.GET.urlencode }}">
-      <button type="submit" class="btn btn-danger">Delete Product</button>
-    </form>
-  </div>
-</section>
-{% endif %}
+  {% if user|is_manager_user %}
+    <section class="ep-card ep-danger" aria-label="Delete product">
+      <p>Delete removes it from the catalogue, search and Shopify. Its {{ sale_count }} sale{{ sale_count|pluralize }} and {{ purchase_count }} purchase{{ purchase_count|pluralize }} stay, so past profit does not change.</p>
+      <form method="post" action="{% url 'delete_product' product.id %}" data-return="back" data-return-skip="/products/{{ product.id }}/" onsubmit="return confirm('Delete this product? It disappears from the catalogue, but its sales history and profit are kept.');">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-outline-danger">Delete product</button>
+      </form>
+    </section>
+  {% endif %}
+</div>
 
 {% if request.user.is_superuser %}
   <div class="modal fade" id="editRemainModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
       <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title">Edit Stock Remaining</h5>
+          <h5 class="modal-title">Correct remaining stock</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
-          <div class="mb-3">
-            <label for="new-remain-input" class="form-label">New Remaining Quantity</label>
-            <input type="number" id="new-remain-input" class="form-control" min="0" max="100000" placeholder="0">
-            <div class="alert alert-info small mt-2">
-              <strong>Old Value:</strong> <span id="old-remain-display">—</span>
-            </div>
-          </div>
+          <label for="new-remain-input" class="form-label">Remaining in this batch</label>
+          <input type="number" id="new-remain-input" class="form-control" min="0" max="100000" inputmode="numeric">
+          <div class="form-text">Was <span id="old-remain-display">&mdash;</span>. Recorded in Audit &rarr; Stock.</div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
           <button type="button" class="btn btn-primary" id="save-remain-btn">Save</button>
         </div>
       </div>
     </div>
   </div>
-{% endif %}
+  <script>
+  document.addEventListener('DOMContentLoaded', () => {
+    let currentEditPurchaseId = null;
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('editRemainModal'));
+    const newRemainInput = document.getElementById('new-remain-input');
+    const oldRemainDisplay = document.getElementById('old-remain-display');
+    const csrf = () => document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
 
-<div class="modal fade" id="productImgModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered modal-lg">
-    <div class="modal-content" style="background:#000;">
-      <button type="button" class="btn-close btn-close-white ms-auto m-2" data-bs-dismiss="modal" aria-label="Close"></button>
-      <img id="productZoomImg" src="" alt="" style="width:100%; height:auto; display:block; border-radius:.4rem;">
-    </div>
-  </div>
-</div>
-
-<script>
-document.addEventListener('DOMContentLoaded', () => {
-  const brandCatalog = JSON.parse('{{ brand_catalog_json|escapejs }}');
-  const brandMap = JSON.parse('{{ brand_series_map_json|escapejs }}');
-  const form = document.getElementById('edit-product-form');
-  const categorySelect = form.querySelector('[name="category"]');
-  const brandSelect = form.querySelector('[name="brand_master"]');
-  const newBrandInput = form.querySelector('[name="new_brand_name"]');
-  const seriesSelect = form.querySelector('[name="series_master"]');
-  const newSeriesInput = form.querySelector('[name="new_series_name"]');
-  const nameInput = form.querySelector('[name="name"]');
-  const specInput = form.querySelector('[name="spec"]');
-  const colorInput = form.querySelector('[name="color"]');
-  const previewTitle = document.getElementById('product-name-preview');
-  const previewMeta = document.getElementById('product-meta-preview');
-
-  function parseMoney(value) {
-    const normalized = String(value || '').replace(',', '.');
-    const parsed = parseFloat(normalized);
-    return Number.isFinite(parsed) ? parsed : NaN;
-  }
-
-  function formatMoneyInputs() {
-    form.querySelectorAll('.js-money').forEach((input) => {
-      input.addEventListener('input', () => {
-        input.value = input.value.replace(/[^\d.,]/g, '');
-      });
-      input.addEventListener('blur', () => {
-        const parsed = parseMoney(input.value);
-        input.value = Number.isFinite(parsed) && parsed >= 0 ? parsed.toFixed(2) : '';
+    document.querySelectorAll('.edit-remain-btn').forEach((button) => {
+      button.addEventListener('click', () => {
+        currentEditPurchaseId = parseInt(button.dataset.purchaseId, 10);
+        oldRemainDisplay.textContent = button.dataset.old;
+        newRemainInput.value = button.dataset.old;
+        modal.show();
       });
     });
-  }
 
-  function syncBrandOptions() {
-    const selectedCategoryId = categorySelect.value;
-    const currentValue = brandSelect.dataset.currentValue || brandSelect.value;
-    let options = brandCatalog;
-    if (selectedCategoryId) {
-      options = brandCatalog.filter((brand) => brand.category_ids.includes(String(selectedCategoryId)));
-      const selectedBrand = brandCatalog.find((brand) => String(brand.id) === String(currentValue));
-      if (selectedBrand && !options.some((brand) => String(brand.id) === String(selectedBrand.id))) {
-        options = [selectedBrand, ...options];
-      }
-    }
-
-    brandSelect.innerHTML = '<option value="">Select brand</option>';
-    options.forEach((option) => {
-      const node = document.createElement('option');
-      node.value = option.id;
-      node.textContent = option.name;
-      if (String(option.id) === String(currentValue)) {
-        node.selected = true;
-      }
-      brandSelect.appendChild(node);
-    });
-    brandSelect.dataset.currentValue = brandSelect.value;
-  }
-
-  function syncSeriesOptions() {
-    const selectedBrandId = brandSelect.value;
-    const options = brandMap[selectedBrandId] || [];
-    const currentValue = seriesSelect.dataset.currentValue || seriesSelect.value;
-    seriesSelect.innerHTML = '<option value="">Select series / model</option>';
-    options.forEach((option) => {
-      const node = document.createElement('option');
-      node.value = option.id;
-      node.textContent = option.name;
-      if (String(option.id) === String(currentValue)) {
-        node.selected = true;
-      }
-      seriesSelect.appendChild(node);
-    });
-    seriesSelect.dataset.currentValue = seriesSelect.value;
-  }
-
-  function selectedLabel(selectEl) {
-    return selectEl.options[selectEl.selectedIndex]?.textContent?.trim() || '';
-  }
-
-  function refreshPreview() {
-    const brandName = (newBrandInput.value || '').trim() || selectedLabel(brandSelect);
-    const seriesName = (newSeriesInput.value || '').trim() || selectedLabel(seriesSelect);
-    const name = (nameInput.value || '').trim();
-    const spec = (specInput.value || '').trim();
-    const color = (colorInput.value || '').trim();
-
-    const core = [brandName, seriesName, name].filter(Boolean).join(' - ');
-    const tail = [spec, color].filter(Boolean).join(' ');
-    previewTitle.textContent = (core + (tail ? ' ' + tail : '')).trim() || 'Brand - Series - Product Name';
-
-    previewMeta.innerHTML = '';
-    [spec, color].filter(Boolean).forEach((value) => {
-      const chip = document.createElement('span');
-      chip.className = 'meta-chip';
-      chip.textContent = value;
-      previewMeta.appendChild(chip);
-    });
-  }
-
-  (function setupImagePreview() {
-    const input = document.getElementById('image-input');
-    const grid = document.getElementById('preview-grid');
-
-    function render(files) {
-      grid.innerHTML = '';
-      Array.from(files).forEach((file, idx) => {
-        if (!file.type.startsWith('image/')) return;
-        const url = URL.createObjectURL(file);
-        const item = document.createElement('div');
-        item.className = 'preview';
-        item.innerHTML = `<img src="${url}" alt=""><button type="button" class="rm" title="Remove">×</button>`;
-        item.querySelector('.rm').addEventListener('click', () => {
-          const dt = new DataTransfer();
-          Array.from(input.files).forEach((f, i) => { if (i !== idx) dt.items.add(f); });
-          input.files = dt.files;
-          render(input.files);
-        });
-        grid.appendChild(item);
-      });
-    }
-
-    input.addEventListener('change', () => render(input.files));
-  })();
-
-  document.addEventListener('click', (e) => {
-    const image = e.target.closest('.js-zoom');
-    if (!image) return;
-    document.getElementById('productZoomImg').src = image.dataset.src || image.src;
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('productImgModal')).show();
-  });
-
-  brandSelect.dataset.currentValue = brandSelect.value;
-  seriesSelect.dataset.currentValue = seriesSelect.value;
-
-  // Perfumes have no colour and no free-text spec (volume drives the size), and
-  // non-perfumes have no concentration or fragrance family. Hidden groups keep
-  // their inputs in the DOM, so values are still submitted and nothing is lost.
-  // Which questions a category asks is Category.form_kind - data, not a
-  // guess at its name. Hidden groups keep their inputs, so values still
-  // submit and nothing is silently cleared.
-  const kindByCategory = JSON.parse('{{ category_kind_json|escapejs }}');
-  function applyCategoryKind() {
-    const kind = kindByCategory[String(categorySelect.value)] || 'general';
-    form.querySelectorAll('[data-kind]').forEach((el) => {
-      el.hidden = !el.dataset.kind.split(' ').includes(kind);
-    });
-  }
-  applyCategoryKind();
-
-  // Every category's shop-defined attributes are rendered; only the selected
-  // category's are shown. Hidden ones stay in the DOM and are still submitted,
-  // but the form applies only the ones belonging to the chosen category, so a
-  // leftover value can never overwrite anything.
-  function applyAttributeFields() {
-    const chosen = categorySelect.value;
-    let anyShown = false;
-    form.querySelectorAll('[data-attr-for]').forEach((el) => {
-      const mine = el.dataset.attrFor === chosen;
-      el.hidden = !mine;
-      if (mine) { anyShown = true; }
-    });
-    const group = form.querySelector('[data-attr-group]');
-    if (group) { group.hidden = !anyShown; }
-  }
-  applyAttributeFields();
-
-  const universalBox = document.getElementById('universal_fit_box');
-  function applyUniversal() {
-    form.querySelectorAll('[data-fit-specific]').forEach((el) => {
-      el.hidden = universalBox.checked;
-    });
-  }
-  if (universalBox) {
-    applyUniversal();
-    universalBox.addEventListener('change', applyUniversal);
-  }
-
-  categorySelect.addEventListener('change', () => {
-    applyCategoryKind();
-    applyAttributeFields();
-    const previousBrand = brandSelect.value;
-    const previousSeries = seriesSelect.value;
-    brandSelect.dataset.currentValue = previousBrand;
-    seriesSelect.dataset.currentValue = previousSeries;
-    syncBrandOptions();
-    if (brandSelect.value !== previousBrand) {
-      seriesSelect.dataset.currentValue = '';
-    }
-    syncSeriesOptions();
-    refreshPreview();
-  });
-
-  brandSelect.addEventListener('change', () => {
-    brandSelect.dataset.currentValue = brandSelect.value;
-    seriesSelect.dataset.currentValue = '';
-    syncSeriesOptions();
-    refreshPreview();
-  });
-  [newBrandInput, seriesSelect, newSeriesInput, nameInput, specInput, colorInput].forEach((input) => {
-    input.addEventListener('input', refreshPreview);
-    input.addEventListener('change', refreshPreview);
-  });
-
-  form.querySelector('[name="barcode"]').addEventListener('input', (e) => {
-    e.target.value = e.target.value.replace(/\D/g, '').slice(0, 13);
-  });
-
-  formatMoneyInputs();
-  syncBrandOptions();
-  syncSeriesOptions();
-  refreshPreview();
-
-  document.addEventListener('submit', async (e) => {
-    const deleteForm = e.target.closest('form.js-del-img');
-    if (!deleteForm) return;
-    e.preventDefault();
-    try {
-      const response = await fetch(deleteForm.action, {
+    document.getElementById('save-remain-btn').addEventListener('click', async () => {
+      const newValue = parseInt(newRemainInput.value, 10);
+      if (!Number.isFinite(newValue) || newValue < 0) { alert('Please enter a valid number.'); return; }
+      const response = await fetch('/api/adjust_purchase_stock/', {
         method: 'POST',
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        body: new FormData(deleteForm),
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+        body: JSON.stringify({ purchase_id: currentEditPurchaseId, new_remaining: newValue }),
       });
       const data = await response.json();
-      if (data.success) {
-        deleteForm.closest('.img-item')?.remove();
-      } else {
-        deleteForm.submit();
+      if (!data.success) { alert(data.error || 'Could not update stock.'); return; }
+      const row = document.querySelector(`.ep-batch[data-purchase-id="${currentEditPurchaseId}"]`);
+      if (row) {
+        row.querySelector('.remain-value').textContent = newValue;
+        row.querySelector('.edit-remain-btn').dataset.old = newValue;
       }
-    } catch (error) {
-      deleteForm.submit();
-    }
+      let total = data.inventory_snapshot?.product_total_stock;
+      if (!Number.isFinite(total)) {
+        total = 0;
+        document.querySelectorAll('#stock-batch-list .remain-value').forEach((n) => { total += parseInt(n.textContent, 10) || 0; });
+      }
+      document.getElementById('current-stock-display').textContent = total;
+      modal.hide();
+    });
   });
-
-  {% if request.user.is_superuser %}
-    (function setupStockEditor() {
-      let currentEditPurchaseId = null;
-      const modalEl = document.getElementById('editRemainModal');
-      const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-      const newRemainInput = document.getElementById('new-remain-input');
-      const oldRemainDisplay = document.getElementById('old-remain-display');
-
-      function csrfToken() {
-        return document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
-      }
-
-      document.querySelectorAll('.edit-remain-btn').forEach((button) => {
-        button.addEventListener('click', () => {
-          currentEditPurchaseId = parseInt(button.dataset.purchaseId, 10);
-          const oldValue = parseInt(button.dataset.old, 10);
-          oldRemainDisplay.textContent = oldValue;
-          newRemainInput.value = oldValue;
-          modal.show();
-        });
-      });
-
-      document.getElementById('save-remain-btn').addEventListener('click', async () => {
-        const newValue = parseInt(newRemainInput.value, 10);
-        if (!Number.isFinite(newValue) || newValue < 0) {
-          alert('Please enter a valid number.');
-          return;
-        }
-
-        const response = await fetch('/api/adjust_purchase_stock/', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': csrfToken(),
-          },
-          body: JSON.stringify({
-            purchase_id: currentEditPurchaseId,
-            new_remaining: newValue,
-          }),
-        });
-        const data = await response.json();
-        if (!data.success) {
-          alert(data.error || 'Could not update stock.');
-          return;
-        }
-
-        const row = document.querySelector(`tr[data-purchase-id="${currentEditPurchaseId}"]`);
-        if (row) {
-          row.querySelector('.remain-value').textContent = newValue;
-          row.querySelector('.edit-remain-btn').dataset.old = newValue;
-        }
-
-        const total = data.inventory_snapshot?.product_total_stock;
-        if (Number.isFinite(total)) {
-          document.getElementById('current-stock-display').textContent = total;
-        } else {
-          let fallbackTotal = 0;
-          document.querySelectorAll('#stock-batch-list .remain-value').forEach((node) => {
-            fallbackTotal += parseInt(node.textContent, 10) || 0;
-          });
-          document.getElementById('current-stock-display').textContent = fallbackTotal;
-        }
-        modal.hide();
-      });
-    })();
-  {% endif %}
-});
-</script>
+  </script>
+{% endif %}
 {% endblock %}

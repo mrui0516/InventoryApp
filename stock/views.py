@@ -2022,7 +2022,10 @@ def add_product_view(request):
                 ProductImage.objects.create(product=product, image=img)
             return redirect('product_detail', pk=product.pk)
     else:
-        form = ProductForm(can_edit_prices=has_manager_access(request.user))
+        # Perfumes are all the shop adds now (2026-10-29); the form opens on it.
+        perfume = Category.objects.filter(parent__isnull=True, form_kind=PERFUME).order_by('id').first()
+        form = ProductForm(initial={'category': perfume.id if perfume else None},
+                           can_edit_prices=has_manager_access(request.user))
     return render(request, 'stock/add_product.html', {
         'form': form,
         'category_groups': build_category_picker(),

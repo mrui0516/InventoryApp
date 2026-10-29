@@ -253,6 +253,13 @@
 
 ---
 
+- **F2.5.x 只录香水(2026-10-29)**:Accessories 与 Shisha 两个分类(含 Accessories 下 10 个子类)停用并删除(`manage.py remove_categories --name Accessories --name Shisha`,默认只预览;分类下还有在售产品时拒绝删除;已归档产品保留历史、分类置空;分类属性随之删除,店铺 / 供应商 / 品牌 / 货架样式的关联解除)。新增产品页即香水表单,不再先选分类:
+  - **条形码必填**(扫码或输入 EAN,8–13 位数字);编辑时保留原条码(旧的内部条码照旧有效)。**名称可空**。
+  - **类型**(新字段 `Product.perfume_type`,迁移 0066):Perfume(默认)/ Body spray(Deo)/ Air freshener / Coffret(礼盒)/ Mini。
+  - 分组:Product(条码、品牌 + 新品牌、系列 / 型号 + 新系列、名称、类型、浓度、容量、适用性别)· Price(零售、批发、锁定价格)· Scent(香调家族、前中后调、灵感来源、描述);右侧"产品列表里会显示成"预览与照片(上传前可预览、移除;已有照片点 × 直接删除);底部常驻保存栏。新增与编辑共用一份(`_product_fields.html`)。编辑页另有:库存批次(超管修正剩余)与删除。
+  - **大小写统一**:品牌、系列、名称每个词首字母大写(`services/names.py`:EDP / EDT / II 等缩写保持大写,含数字的代码不动,容量写作 100ml,iPhone 这类本来就大小写混合的词照写)。新增 / 编辑时自动转换;新品牌、新系列与已有的不分大小写匹配(再输入 LATTAFA 就是已有的 Lattafa)。已有数据用 `manage.py tidy_product_names` 一次转换(默认只预览;转换后同名的品牌合并到产品最多的那个,系列同理;顺带按名称识别 Body spray / Air freshener / Coffret / Mini;按查询更新,不触发 Shopify / Cloudinary 信号,店铺标题在下次同步时跟上)。
+  - 列表里的名称(`Product.list_name`):系列 + 名称(相同时只写一次)· 类型(香水写浓度如 EDP)· 容量,品牌单独显示。
+
 ### 模块 2.6 — 客户管理
 
 入口：`/customers/`、`/customers/<id>/`、`/customers/<id>/edit/`、`/customers/delete/<pk>/`
