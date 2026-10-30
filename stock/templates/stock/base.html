@@ -170,7 +170,7 @@
       {# search, filters, scroll). The trail script below fills it in; the     #}
       {# server's href is the parent page, for a tab that has no trail.        #}
       <nav class="erp-back-bar" aria-label="Back">
-        <a class="erp-back" href="{{ nav_back_fallback }}" data-nav-back{% if not nav_back_fallback %} hidden{% endif %}>
+        <a class="erp-back" href="{{ nav_back_fallback }}" data-nav-back{% if nav_back_parent %} data-back-parent="{{ nav_back_parent }}" data-back-anchor="{{ nav_back_anchor }}"{% endif %}{% if not nav_back_fallback %} hidden{% endif %}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
           <span>Back</span><span class="erp-back-to"></span>
         </a>
@@ -280,7 +280,7 @@
         var opener = e.target.closest('[data-panel], [data-layer]');
         if (!opener || e.metaKey || e.ctrlKey || e.shiftKey || e.button > 0) return;
         // a link or button inside a clickable row keeps its own job
-        var inner = e.target.closest('a, button');
+        var inner = e.target.closest('a, button, input, select, label, .js-zoom');
         if (inner && inner !== opener && opener.contains(inner)) return;
         e.preventDefault();
         if (opener.dataset.layer) {
@@ -330,15 +330,27 @@
         return null;
       }
 
+      // A page with a parent (a record, an edit page) goes up to it: to the
+      // parent as this tab last saw it if it is in the trail, else to the
+      // server's link (the list opened on the page holding this record).
+      function parentEntry(t, path) {
+        for (var k = t.length - 2; k >= 0; k--) { if (t[k].p === path) return t[k]; }
+        return null;
+      }
       function wire(t) {
         var back = backEntry(t);
         document.querySelectorAll('[data-nav-back]').forEach(function (a) {
-          if (back) {
-            a.href = back.u;
-            a.hidden = false;
-            var to = a.querySelector('.erp-back-to');
-            if (to) to.textContent = back.t ? back.t : '';
+          var to = a.querySelector('.erp-back-to'), target = back;
+          if (a.dataset.backParent) {
+            target = parentEntry(t, a.dataset.backParent);
+            if (!target) return;                          // keep the server's link
+            a.href = target.u.split('#')[0] + (a.dataset.backAnchor ? '#' + a.dataset.backAnchor : '');
+          } else if (target) {
+            a.href = target.u;
           }
+          if (!target) return;
+          a.hidden = false;
+          if (to) to.textContent = target.t ? target.t : '';
         });
         // forms that should land where Back goes (data-return="back") or stay
         // on this very list page (data-return="here") once the server is done
@@ -357,10 +369,26 @@
         });
       }
 
+      // #p-12 and the like: show that row - the copy that is on screen (phone
+      // and desktop rows are separate) - in the middle, briefly lit.
+      function focusRow() {
+        var id = decodeURIComponent(location.hash.slice(1));
+        if (!id) return false;
+        var rows = document.querySelectorAll('[data-focus="' + id.replace(/"/g, '') + '"]');
+        for (var i = 0; i < rows.length; i++) {
+          if (rows[i].offsetParent !== null) {
+            rows[i].scrollIntoView({ block: 'center' });
+            rows[i].classList.add('is-focus');
+            return true;
+          }
+        }
+        return false;
+      }
       window.addEventListener('pageshow', function () {
         var t = visit();
         wire(t);
-        if (take('navBack') && here.y) window.scrollTo(0, here.y);
+        var restoring = take('navBack');
+        if (!focusRow() && restoring && here.y) window.scrollTo(0, here.y);
       });
       window.addEventListener('pagehide', function () {
         var t = read();

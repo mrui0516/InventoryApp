@@ -265,7 +265,7 @@
         </thead>
         <tbody>
           {% for customer in customers %}
-            <tr data-panel="{% url 'customer_panel' customer.id %}">
+            <tr data-panel="{% url 'customer_panel' customer.id %}" data-focus="c-{{ customer.id }}">
               <td class="cl-cell-who">
                 <div class="cl-who">
                   <span class="cl-av" data-t="{{ customer.avatar_tint }}" aria-hidden="true">{{ customer.initials }}</span>

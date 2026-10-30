@@ -607,7 +607,7 @@ Excel 和 PDF 用**同一套判断和同一组颜色**，两份文件不会互�
 
 - `base.html` 在内容区顶部渲染 `a.erp-back[data-nav-back]`，服务器端 `href` 为上级页面（`context_processors.nav_back` 按 `BACK_PARENTS` 反解，用当前 URL 的 kwargs），没有上级时 `hidden`。
 - 同文件的轨迹脚本（`sessionStorage['navTrail']`，最多 20 条 `{p 路径, u 路径+查询, t 标题, y 滚动}`）在 `pageshow` 时更新（bfcache 恢复也会触发）：已有同路径 → 截断到它并替换；`navReplace` → 替换最后一条；否则追加。菜单（`.erp-nav`、`.erp-tabbar`、品牌）点击设 `navReset`；`[data-nav-replace]` 链接设 `navReplace`；点 Back 设 `navBack`，到达后恢复记下的 `scrollY`。`pagehide` 记录当前滚动。
-- 任何 `[data-nav-back]` 元素（Back 条、表单页的 Cancel）都被指向轨迹的上一条。
+- 任何 `[data-nav-back]` 元素（Back 条、表单页的 Cancel）都被指向轨迹的上一条；但 Back 条带 `data-back-parent`（`context_processors.BACK_PARENTS` 定义的上级路径）时改为：轨迹里有这个上级就用它（加 `#锚点`），否则保留服务器给的地址（列表 + `?focus=<id>#<前缀>-<id>`）。列表视图用 `views.page_with_focus()` 打开包含该记录的那一页；行上的 `data-focus` 由 `focusRow()` 找到屏幕上可见的那一份，滚到中间并加 `.is-focus` 高亮。
 - `form[data-return="back"|"here"]`：脚本补一个隐藏 `next`（上一条，或当前页本身）；`data-return-skip` 列出要跳过的路径前缀（被删除记录的页面）。服务器用 `views._back_to(request, default, avoid=...)` 跳转：`url_has_allowed_host_and_scheme` 校验，`avoid` 里的路径不去。
 
 ### 6.3 侧边详情面板（2026-10-28）

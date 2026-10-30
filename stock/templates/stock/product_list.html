@@ -262,7 +262,7 @@
               {% for product in products %}
                 {# Bell off AND sold out: greyed and listed last. With the bell off but #}
                 {# stock still on the shelf, the row stays where it is and looks normal. #}
-                <tr class="{% if not product.restock and product.total_stock <= 0 %}is-muted{% endif %}" data-stock="{{ product.total_stock }}">
+                <tr class="{% if not product.restock and product.total_stock <= 0 %}is-muted{% endif %}" data-stock="{{ product.total_stock }}" data-focus="p-{{ product.id }}" data-panel="{% url 'product_panel' product.id %}">
                   <td>
                     <div class="product-block{% if can_manage %} has-bell{% endif %} d-none d-sm-grid">
                       {% if can_manage %}<button type="button" class="restock-bell{% if not product.restock %} is-off{% endif %}" data-url="{% url 'toggle_restock' product.id %}" aria-pressed="{% if product.restock %}true{% else %}false{% endif %}" title="{% if product.restock %}Restock on - shows in low stock{% else %}Restock off - hidden from low stock{% endif %}" aria-label="Restock for {{ product.display_name }}"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path class="bell-slash" d="M3 3l18 18"/></svg></button>{% endif %}
@@ -343,7 +343,7 @@
                   </td>
                   <td class="d-none d-sm-table-cell">
                     <div class="actions">
-                      <a href="{% url 'product_detail' product.id %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="btn btn-sm btn-outline-primary" data-panel="{% url 'product_panel' product.id %}">View</a>
+                      <a href="{% url 'product_detail' product.id %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="btn btn-sm btn-outline-primary">View</a>
                       {% if can_manage %}<a href="{% url 'edit_product' product.id %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="btn btn-sm btn-outline-secondary">Edit</a>{% endif %}
                     </div>
                   </td>

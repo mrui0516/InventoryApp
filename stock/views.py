@@ -657,6 +657,17 @@ def inbound_checklist_view(request, order_id):
     })
 
 
+def page_with_focus(request, queryset, per_page):
+    """The page to show: the one holding ``?focus=<id>`` (Back from a record
+    lands on its row), else ``?page``."""
+    focus = (request.GET.get('focus') or '').strip()
+    if focus.isdigit() and not request.GET.get('page'):
+        ids = list(queryset.values_list('id', flat=True))
+        if int(focus) in ids:
+            return ids.index(int(focus)) // per_page + 1
+    return request.GET.get('page')
+
+
 def _back_to(request, default, *, avoid=()):
     """Redirect to the page the form came from - ``next``, filled in by the
     Back trail (base.html) with the exact list page, filters and search - or
@@ -1239,8 +1250,7 @@ def product_list_view(request):
     in_stock_types = products_qs.filter(total_stock__gt=0).count()
 
     paginator = Paginator(products_qs, 10)
-    page_number = request.GET.get('page')
-    page_obj = paginator.get_page(page_number)
+    page_obj = paginator.get_page(page_with_focus(request, products_qs, 10))
 
     from .services.low_stock import in_transit_quantities
     transit = in_transit_quantities(p.id for p in page_obj)
@@ -2104,6 +2114,11 @@ def product_detail_view(request, pk):
     full_sales_url = f"{reverse('product_sales_history')}?product={product.id}"
 
     total_stock = sum(p.remaining for p in purchases if p.remaining > 0)
+    from .services.low_stock import in_transit_quantities
+    in_transit = in_transit_quantities([product.id]).get(product.id, 0)
+    sold_total = product.sale_set.aggregate(q=Sum('quantity'))['q'] or 0
+    sold_30d = (product.sale_set.filter(date__gte=timezone.now() - timedelta(days=30))
+                .aggregate(q=Sum('quantity'))['q'] or 0)
     fifo_purchase = product.purchase_set.filter(remaining__gt=0).order_by('date').first()
     fifo_price = fifo_purchase.cost_price if fifo_purchase else None
 
@@ -2154,6 +2169,9 @@ def product_detail_view(request, pk):
         'sales_older_count': sales_older_count,
         'full_sales_url': full_sales_url,
         'total_stock': total_stock,
+        'in_transit': in_transit,
+        'sold_total': sold_total,
+        'sold_30d': sold_30d,
         'fifo_price': fifo_price,
         'supplier_costs': supplier_costs,
         'cheapest_supplier_id': cheapest_supplier_id,
@@ -5067,7 +5085,7 @@ def customer_search_view(request):
             sort_arrow[key] = ''
 
     paginator = Paginator(customers_qs, 40)
-    page_obj = paginator.get_page(request.GET.get('page'))
+    page_obj = paginator.get_page(page_with_focus(request, customers_qs, 40))
     customers = []
     for customer in page_obj.object_list:
         balance_due = customer.balance_due or Decimal('0.00')

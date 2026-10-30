@@ -1,512 +1,257 @@
 {% extends 'stock/base.html' %}
 {% load math_extras %}
-{% block title %}{{ product.display_name }}{% endblock %}
-
+{% block title %}{{ product.list_name }}{% endblock %}
 {% block content %}
 <style>
-  /* Neutrals/shadow inherited from app.css; keep page-local aliases */
-  .product-detail-page{
-    --page-bg:var(--app-bg);
-    --card-bg:var(--app-surface);
-    --accent:var(--app-accent);
-    --accent-soft:var(--app-accent-soft);
-  }
-  .product-detail-page .hero{
-    display:flex;
-    justify-content:space-between;
-    gap:1rem;
-    align-items:flex-start;
-    flex-wrap:wrap;
-    margin-bottom:1.25rem;
-  }
-  .product-detail-page .eyebrow{
-    display:inline-flex;
-    align-items:center;
-    gap:.45rem;
-    padding:.3rem .7rem;
-    border-radius:999px;
-    background:#0c0a09;
-    color:#fff;
-    font-size:.78rem;
-    font-weight:700;
-    letter-spacing:.04em;
-    text-transform:uppercase;
-  }
-  .product-detail-page h1{
-    margin:.55rem 0 .25rem;
-    color:var(--text);
-    font-size:clamp(1.7rem, 2.3vw, 2.35rem);
-    font-weight:900;
-    line-height:1.06;
-  }
-  .product-detail-page .subline{
-    color:var(--muted);
-    font-size:1rem;
-    max-width:60rem;
-  }
-  .product-detail-page .card-shell{
-    background:var(--card-bg);
-    border:1px solid var(--border);
-    border-radius:1.15rem;
-    box-shadow:var(--shadow);
-  }
-  .product-detail-page .summary-grid{
-    display:grid;
-    grid-template-columns:repeat(4, minmax(0, 1fr));
-    gap:1rem;
-    margin-bottom:1rem;
-  }
-  .product-detail-page .summary-card{
-    padding:1rem 1.05rem;
-  }
-  .product-detail-page .summary-label{
-    color:var(--muted);
-    font-size:.86rem;
-    font-weight:700;
-    text-transform:uppercase;
-    letter-spacing:.05em;
-  }
-  .product-detail-page .summary-value{
-    color:var(--text);
-    font-size:1.55rem;
-    font-weight:900;
-    line-height:1.05;
-    margin-top:.42rem;
-  }
-  .product-detail-page .summary-note{
-    color:var(--muted);
-    font-size:.86rem;
-    margin-top:.3rem;
-  }
-  .product-detail-page .stock-badge{
-    display:inline-flex;
-    align-items:center;
-    gap:.35rem;
-    padding:.35rem .68rem;
-    border-radius:999px;
-    font-size:.85rem;
-    font-weight:800;
-  }
-  .product-detail-page .stock-ok{ background:#dcfce7; color:#166534; }
-  .product-detail-page .stock-low{ background:#fef3c7; color:#92400e; }
-  .product-detail-page .stock-out{ background:#fee2e2; color:#991b1b; }
-  .product-detail-page .gallery-grid{
-    display:grid;
-    grid-template-columns:repeat(auto-fill, minmax(155px, 1fr));
-    gap:.9rem;
-  }
-  .product-detail-page .gallery-item{
-    border:1px solid var(--border);
-    border-radius:1rem;
-    overflow:hidden;
-    background:#f5f5f4;
-  }
-  .product-detail-page .gallery-item img{
-    width:100%;
-    aspect-ratio:1 / 1;
-    object-fit:cover;
-    display:block;
-    cursor:zoom-in;
-  }
-  .product-detail-page .gallery-empty{
-    border:1px dashed var(--border);
-    border-radius:1rem;
-    background:#f5f5f4;
-    padding:2rem 1rem;
-    text-align:center;
-    color:var(--muted);
-    font-weight:600;
-  }
-  .product-detail-page .panel-head{
-    display:flex;
-    justify-content:space-between;
-    align-items:flex-start;
-    gap:1rem;
-    flex-wrap:wrap;
-    margin-bottom:1rem;
-  }
-  .product-detail-page .panel-head h2,
-  .product-detail-page .panel-head h3{
-    margin:0;
-    color:var(--text);
-    font-size:1.15rem;
-    font-weight:850;
-  }
-  .product-detail-page .panel-head p{
-    margin:.28rem 0 0;
-    color:var(--muted);
-  }
-  /* Profile fields as a compact multi-column definition grid — the old
-     full-width row-per-field table spread six values over ~450px. */
-  .product-detail-page .spec-grid{
-    display:grid;
-    grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));
-    gap:.1rem .9rem;
-    margin:0;
-  }
-  .product-detail-page .spec-grid > div{
-    padding:.45rem 0;
-    border-top:1px solid var(--border);
-    min-width:0;
-  }
-  .product-detail-page .spec-grid dt,
-  .product-detail-page .spec-desc dt{
-    color:var(--muted);
-    font-size:.68rem;
-    font-weight:800;
-    text-transform:uppercase;
-    letter-spacing:.05em;
-  }
-  .product-detail-page .spec-grid dd,
-  .product-detail-page .spec-desc dd{
-    margin:.12rem 0 0;
-    color:var(--text);
-    font-weight:600;
-    overflow-wrap:anywhere;
-  }
-  .product-detail-page .spec-desc{
-    margin-top:.7rem;
-    padding-top:.7rem;
-    border-top:1px solid var(--border);
-  }
-  .product-detail-page .pill-row{
-    display:flex;
-    flex-wrap:wrap;
-    gap:.5rem;
-  }
-  .product-detail-page .meta-pill{
-    display:inline-flex;
-    align-items:center;
-    padding:.35rem .75rem;
-    border-radius:999px;
-    background:#eef6ff;
-    color:#0f3768;
-    font-weight:700;
-    border:1px solid #cfe0f8;
-  }
-  .product-detail-page .table-shell{
-    overflow:auto;
-  }
-  .product-detail-page .table-shell table{
-    margin:0;
-  }
-  .product-detail-page .table-shell thead th{
-    position:sticky;
-    top:0;
-    z-index:1;
-    background:#f8fbff;
-  }
-  .product-detail-page .table-shell td,
-  .product-detail-page .table-shell th{
-    white-space:nowrap;
-  }
-  .product-detail-page .muted{
-    color:var(--muted);
-  }
-  @media (max-width: 991px){
-    .product-detail-page .summary-grid{
-      grid-template-columns:repeat(2, minmax(0, 1fr));
-    }
-  }
-  @media (max-width: 575px){
-    /* two-up KPIs and tighter cards instead of a long single column */
-    .product-detail-page .summary-grid{
-      grid-template-columns:repeat(2, minmax(0, 1fr));
-      gap:.5rem;
-      margin-bottom:.7rem;
-    }
-    .product-detail-page .summary-card{ padding:.55rem .65rem; }
-    .product-detail-page .summary-label{ font-size:.62rem; letter-spacing:.03em; }
-    .product-detail-page .summary-value{ font-size:1.1rem; margin-top:.2rem; }
-    .product-detail-page .hero{ margin-bottom:.8rem; }
-    .product-detail-page h1{ font-size:1.25rem; margin:.4rem 0 .2rem; }
-    .product-detail-page .subline{ font-size:.82rem; }
-    .product-detail-page .eyebrow{ padding:.22rem .55rem; font-size:.66rem; }
-    .product-detail-page .hero .btn{ padding:.4rem .65rem; font-size:.8rem; }
-    .product-detail-page .card-shell.p-4{ padding:.8rem !important; }
-    .product-detail-page .panel-head{ margin-bottom:.6rem; }
-    .product-detail-page .panel-head h2,
-    .product-detail-page .panel-head h3{ font-size:1rem; }
-    .product-detail-page .spec-grid{ grid-template-columns:repeat(2, minmax(0,1fr)); }
-    .product-detail-page .gallery-grid{ grid-template-columns:repeat(3, minmax(0,1fr)); gap:.45rem; }
-    .product-detail-page .row.g-4{ --bs-gutter-y:.7rem; }
-    .product-detail-page .card-shell.mb-4{ margin-bottom:.7rem !important; }
+  /* Product page (2026-10-30): who it is and what it costs at the top, then the
+     history as two-line rows that never cut a word off. */
+  .pdp{ display:grid; gap:1rem; grid-template-columns:minmax(0,1fr); }
+  .pdp-card{ background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius); padding:1rem; min-width:0; }
+  .pdp-card > h2{ font-size:.75rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--app-muted);
+    margin:0 0 .5rem; display:flex; justify-content:space-between; align-items:baseline; gap:.75rem; }
+  .pdp-card > h2 a{ text-transform:none; letter-spacing:0; font-size:.85rem; font-weight:700; }
+
+  .pdp-head{ display:grid; grid-template-columns:112px minmax(0,1fr) auto; gap:1rem; align-items:start; }
+  .pdp-photo{ width:112px; height:112px; border-radius:var(--app-radius-sm); border:1px solid var(--app-border); background:#fff;
+    object-fit:contain; cursor:zoom-in; display:block; }
+  .pdp-photo.empty{ display:flex; align-items:center; justify-content:center; color:var(--app-muted); font-size:.8rem; cursor:default; }
+  .pdp-brand{ display:inline-block; font-size:.72rem; font-weight:800; padding:.12rem .55rem; border-radius:999px;
+    background:var(--app-surface-2); color:var(--app-primary); }
+  .pdp-title{ font-size:1.35rem; font-weight:800; margin:.3rem 0 .2rem; color:var(--app-text); line-height:1.25; overflow-wrap:anywhere; }
+  .pdp-code{ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:var(--app-muted); font-size:.92rem; }
+  .pdp-tags{ display:flex; flex-wrap:wrap; gap:.35rem; margin-top:.5rem; }
+  .pdp-tags span{ font-size:.78rem; font-weight:700; padding:.12rem .55rem; border-radius:999px; border:1px solid var(--app-border-strong); color:var(--app-primary); }
+  .pdp-tags .archived{ border-color:#f1c7c7; color:#b42318; }
+  .pdp-actions{ display:flex; flex-direction:column; gap:.4rem; align-items:stretch; }
+  .pdp-actions form{ margin:0; }
+  .pdp-actions .btn{ width:100%; }
+
+  .pdp-bell{ display:inline-flex; align-items:center; gap:.45rem; min-height:36px; padding:.25rem .8rem .25rem .55rem; border-radius:999px;
+    border:1px solid var(--app-border-strong); background:var(--app-surface); color:var(--app-text); font-weight:700; font-size:.88rem; }
+  .pdp-bell .bell-slash{ display:none; }
+  .pdp-bell.is-off{ color:var(--app-muted); background:var(--app-surface-2); }
+  .pdp-bell.is-off .bell-slash{ display:inline; }
+  .pdp-bell .on-label{ display:inline; } .pdp-bell .off-label{ display:none; }
+  .pdp-bell.is-off .on-label{ display:none; } .pdp-bell.is-off .off-label{ display:inline; }
+
+  .pdp-kpis{ display:grid; grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr)); gap:.5rem; }
+  .pdp-kpis .sp-kpi b{ font-size:1.25rem; }
+
+  .pdp-cols{ display:grid; gap:1rem; grid-template-columns:minmax(0,1fr) 22rem; align-items:start; }
+  .pdp-side{ display:grid; gap:1rem; min-width:0; }
+
+  .pdp-row{ display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.15rem .9rem; align-items:baseline;
+    padding:.55rem 0; border-top:1px solid var(--app-border); }
+  .pdp-row:first-of-type{ border-top:0; }
+  .pdp-row .l1{ font-weight:700; color:var(--app-text); font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+  .pdp-row .l1 a{ color:inherit; }
+  .pdp-row .l2{ font-size:.86rem; color:var(--app-primary); overflow-wrap:anywhere; }
+  .pdp-row .fig{ text-align:right; font-weight:800; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .pdp-row .fig small{ display:block; font-weight:600; color:var(--app-muted); font-size:.8rem; }
+  .pdp-left{ display:inline-block; font-size:.78rem; font-weight:800; padding:.05rem .45rem; border-radius:999px; background:#e7f6ec; color:#1a7f3c; }
+  .pdp-left.low{ background:#fff7ed; color:#c2410c; }
+  .pdp-left.none{ background:var(--app-surface-2); color:var(--app-muted); }
+  .pdp-empty{ color:var(--app-muted); margin:0; padding:.4rem 0; }
+  .pdp-more{ font-size:.86rem; margin:.5rem 0 0; color:var(--app-muted); }
+
+  .pdp-kv{ margin:0; display:grid; }
+  .pdp-kv > div{ display:grid; grid-template-columns:7.5rem minmax(0,1fr); gap:.75rem; padding:.4rem 0; border-top:1px solid var(--app-border); font-size:.92rem; }
+  .pdp-kv > div:first-child{ border-top:0; }
+  .pdp-kv dt{ font-weight:600; color:var(--app-muted); }
+  .pdp-kv dd{ margin:0; color:var(--app-text); overflow-wrap:anywhere; }
+  .pdp-desc{ font-size:.9rem; color:var(--app-primary); margin-top:.6rem; line-height:1.5; }
+  .pdp-desc:not(.is-open){ display:-webkit-box; -webkit-line-clamp:5; -webkit-box-orient:vertical; overflow:hidden; }
+  .pdp-desc-more{ border:0; background:none; padding:.2rem 0; font-weight:700; color:var(--app-accent); font-size:.86rem; }
+  .pdp-gallery{ display:grid; grid-template-columns:repeat(auto-fill,minmax(72px,1fr)); gap:.5rem; }
+  .pdp-gallery img{ width:100%; aspect-ratio:1; object-fit:contain; background:#fff; border:1px solid var(--app-border); border-radius:var(--app-radius-sm); cursor:zoom-in; }
+
+  @media (max-width:991.98px){ .pdp-cols{ grid-template-columns:minmax(0,1fr); } }
+  @media (max-width:575.98px){
+    .pdp-head{ grid-template-columns:84px minmax(0,1fr); gap:.75rem; }
+    .pdp-photo{ width:84px; height:84px; }
+    .pdp-title{ font-size:1.12rem; }
+    .pdp-actions{ grid-column:1 / -1; flex-direction:row; flex-wrap:wrap; }
+    .pdp-actions .btn, .pdp-actions form{ flex:1 1 0; width:auto; }
+    .pdp-actions .btn{ white-space:nowrap; font-size:.88rem; padding:.3rem .5rem; }
+    .pdp-kpis{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .pdp-card{ padding:.85rem; }
   }
 </style>
 
-<div class="container-fluid product-detail-page">
-  <div class="hero">
-    <div>
-      <span class="eyebrow">{{ product.category.name|default:"Uncategorized" }}</span>
-      <h1>{{ product.display_name }}</h1>
-      <div class="subline">
-        Barcode {{ product.barcode }}
-        {% if product.variant_label %}
-          <span class="mx-2">·</span>{{ product.variant_label }}
-        {% endif %}
+<div class="pdp">
+  <section class="pdp-card pdp-head">
+    {% with first=product.images.all|first %}
+      {% if first %}<img class="pdp-photo js-product-zoom" src="{{ first.image.url }}" data-src="{{ first.image.url }}" alt="">{% else %}<div class="pdp-photo empty">No photo</div>{% endif %}
+    {% endwith %}
+    <div style="min-width:0;">
+      <span class="pdp-brand">{{ product.brand|default:"No brand" }}</span>
+      <h1 class="pdp-title">{{ product.list_name }}</h1>
+      <div class="pdp-code">{{ product.barcode }}</div>
+      <div class="pdp-tags">
+        {% if product.perfume_type != 'perfume' %}<span>{{ product.get_perfume_type_display }}</span>{% endif %}
+        {% if product.concentration %}<span>{{ product.concentration.name }}</span>{% endif %}
+        {% if product.volume_ml %}<span>{{ product.volume_ml }} ml</span>{% endif %}
+        {% if product.gender %}<span>{{ product.get_gender_display }}</span>{% endif %}
+        {% if product.archived_at %}<span class="archived">Deleted {{ product.archived_at|date:"Y-m-d" }}</span>{% endif %}
       </div>
-    </div>
-    <div class="d-flex flex-wrap gap-2">
       {% if show_sensitive %}
-        <a href="{% url 'edit_product' product.id %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="btn btn-primary">Edit product</a>
+        <div class="mt-2">
+          <button type="button" class="pdp-bell{% if not product.restock %} is-off{% endif %}" data-url="{% url 'toggle_restock' product.id %}"
+                  aria-pressed="{% if product.restock %}true{% else %}false{% endif %}">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path class="bell-slash" d="M3 3l18 18"/></svg>
+            <span class="on-label">Restocking</span><span class="off-label">Not restocking</span>
+          </button>
+        </div>
       {% endif %}
-      {% if show_sensitive and is_perfume %}
-        <form method="post" action="{% url 'sync_product_to_shopify' product.id %}" class="d-inline">
-          {% csrf_token %}
-          <button type="submit" class="btn btn-outline-primary">Sync to Shopify</button>
-        </form>
-      {% endif %}
-    </div>
-  </div>
-
-  <div class="summary-grid">
-    <div class="card-shell summary-card">
-      <div class="summary-label">Retail Price</div>
-      <div class="summary-value">
-        {% if product.default_price %}EUR {{ product.default_price|floatformat:2 }}{% else %}-{% endif %}
-      </div>
-    </div>
-    <div class="card-shell summary-card">
-      <div class="summary-label">Wholesale Price</div>
-      <div class="summary-value">
-        {% if product.wholesale_price %}EUR {{ product.wholesale_price|floatformat:2 }}{% else %}-{% endif %}
-      </div>
     </div>
     {% if show_sensitive %}
-      <div class="card-shell summary-card">
-        <div class="summary-label">Current FIFO Cost</div>
-        <div class="summary-value">
-          {% if fifo_price %}EUR {{ fifo_price|floatformat:2 }}{% else %}-{% endif %}
-        </div>
+      <div class="pdp-actions">
+        <a href="{% url 'edit_product' product.id %}" class="btn btn-sm btn-primary">Edit</a>
+        {% if is_perfume %}
+          <form method="post" action="{% url 'sync_product_to_shopify' product.id %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-outline-secondary"><span class="d-none d-sm-inline">Sync to </span>Shopify</button>
+          </form>
+        {% endif %}
+        <a href="{{ full_sales_url }}" class="btn btn-sm btn-outline-secondary">Full history</a>
       </div>
     {% endif %}
-    <div class="card-shell summary-card">
-      <div class="summary-label">Total Stock</div>
-      <div class="summary-value">
-        {% if total_stock > 5 %}
-          <span class="stock-badge stock-ok">{{ total_stock }} in stock</span>
-        {% elif total_stock > 0 %}
-          <span class="stock-badge stock-low">{{ total_stock }} low stock</span>
-        {% else %}
-          <span class="stock-badge stock-out">Out of stock</span>
-        {% endif %}
-      </div>
-    </div>
+  </section>
+
+  <div class="pdp-kpis">
+    <div class="sp-kpi{% if total_stock <= 0 %} neg{% elif total_stock < 5 %} warn{% endif %}"><span>In stock</span><b>{% if total_stock > 0 %}{{ total_stock }}{% else %}Out{% endif %}</b>{% if in_transit %}<small>+{{ in_transit }} on the way</small>{% endif %}</div>
+    <div class="sp-kpi"><span>Retail</span><b>{% if product.default_price %}&euro;{{ product.default_price|floatformat:2 }}{% else %}&mdash;{% endif %}</b></div>
+    <div class="sp-kpi"><span>Wholesale</span><b>{% if product.wholesale_price %}&euro;{{ product.wholesale_price|floatformat:2 }}{% else %}&mdash;{% endif %}</b></div>
+    {% if show_sensitive %}<div class="sp-kpi"><span>FIFO cost</span><b>{% if fifo_price %}&euro;{{ fifo_price|floatformat:2 }}{% else %}&mdash;{% endif %}</b>{% if product.price_locked %}<small>prices locked</small>{% endif %}</div>{% endif %}
+    {% if show_sales_sensitive %}<div class="sp-kpi"><span>Sold</span><b>{{ sold_30d }}</b><small>in 30 days &middot; {{ sold_total }} in all</small></div>{% endif %}
   </div>
 
-  <div class="row g-4">
-    <div class="col-xl-7">
-      <div class="card-shell p-4 mb-4">
-        <div class="panel-head">
-          <div>
-            <h2>Product Profile</h2>
-          </div>
-        </div>
-        {# Display name, barcode and category already head the page — not repeated here. #}
-        <dl class="spec-grid">
-          <div><dt>Brand</dt><dd>{{ product.brand|default:"-" }}</dd></div>
-          <div><dt>Series / Model</dt><dd>{{ product.model|default:"-" }}</dd></div>
-          <div><dt>Name</dt><dd>{{ product.name }}</dd></div>
+  <div class="pdp-cols">
+    <div class="pdp" style="gap:1rem;">
+      {% if show_sales_sensitive %}
+        <section class="pdp-card" aria-label="Sales history">
+          <h2>Sales &middot; last 10 days {% if full_sales_url %}<a href="{{ full_sales_url }}">All sales &rarr;</a>{% endif %}</h2>
+          {% for s in sales %}
+            <div class="pdp-row">
+              <div>
+                <div class="l1">{{ s.business_at|date:"d M Y H:i" }}{% if s.order_id %} &middot; <a href="{% url 'sale_order_detail' s.order_id %}">#{{ s.order_id }}</a>{% endif %}</div>
+                <div class="l2">{% if s.customer %}{{ s.customer.name }}{% elif s.order.customer %}{{ s.order.customer.name }}{% else %}Walk-in{% endif %}{% if s.order.store %} &middot; {{ s.order.store.name }}{% elif s.store %} &middot; {{ s.store.name }}{% endif %} &middot; {{ s.quantity }} &times; &euro;{{ s.unit_price|floatformat:2 }}</div>
+              </div>
+              <div class="fig">&euro;{{ s.unit_price|mul:s.quantity|floatformat:2 }}<small>{{ s.payment_method|default:""|capfirst }}</small></div>
+            </div>
+          {% empty %}
+            <p class="pdp-empty">No sales in the last 10 days.</p>
+          {% endfor %}
+          {% if sales_older_count %}<p class="pdp-more">{{ sales_older_count }} older sale{{ sales_older_count|pluralize }} &middot; <a href="{{ full_sales_url }}">see them all</a></p>{% endif %}
+        </section>
+      {% endif %}
+
+      {% if show_sensitive %}
+        <section class="pdp-card" aria-label="Purchase history">
+          <h2>Purchases</h2>
+          {% for p in purchases %}
+            <div class="pdp-row">
+              <div>
+                <div class="l1">{{ p.date|date:"d M Y" }} &middot; {{ p.quantity }} bought</div>
+                <div class="l2">{% if p.supplier %}<a href="{% url 'supplier_detail' p.supplier_id %}">{{ p.supplier.name }}</a>{% else %}No supplier linked{% endif %}
+                  &middot; <span class="pdp-left{% if p.remaining <= 0 %} none{% elif p.remaining < 5 %} low{% endif %}">{{ p.remaining }} left</span></div>
+              </div>
+              <div class="fig">&euro;{{ p.cost_price|floatformat:2 }}<small>each</small></div>
+            </div>
+          {% empty %}
+            <p class="pdp-empty">No purchases yet.</p>
+          {% endfor %}
+        </section>
+      {% endif %}
+    </div>
+
+    <aside class="pdp-side">
+      <section class="pdp-card" aria-label="Profile">
+        <h2>Profile</h2>
+        <dl class="pdp-kv">
+          {% if product.model %}<div><dt>Line</dt><dd>{{ product.model }}</dd></div>{% endif %}
+          {% if product.name %}<div><dt>Name</dt><dd>{{ product.name }}</dd></div>{% endif %}
           {% if is_perfume %}
-            <div><dt>Volume</dt><dd>{% if product.volume_ml %}{{ product.volume_ml }} ml{% else %}{{ product.spec|default:"-" }}{% endif %}</dd></div>
-            <div><dt>Concentration</dt><dd>{{ product.concentration|default:"-" }}</dd></div>
-            <div><dt>Fragrance family</dt><dd>{% for f in product.fragrance_families.all %}{{ f.name }}{% if not forloop.last %}, {% endif %}{% empty %}-{% endfor %}</dd></div>
-            {% if show_sensitive %}<div><dt>Inspired by</dt><dd>{{ product.inspired_by|default:"-" }}</dd></div>{% endif %}
+            <div><dt>Fragrance family</dt><dd>{% for f in product.fragrance_families.all %}{{ f.name }}{% if not forloop.last %}, {% endif %}{% empty %}&mdash;{% endfor %}</dd></div>
+            {% if product.notes_top %}<div><dt>Top notes</dt><dd>{{ product.notes_top }}</dd></div>{% endif %}
+            {% if product.notes_heart %}<div><dt>Heart notes</dt><dd>{{ product.notes_heart }}</dd></div>{% endif %}
+            {% if product.notes_base %}<div><dt>Base notes</dt><dd>{{ product.notes_base }}</dd></div>{% endif %}
+            {% if show_sensitive and product.inspired_by_text %}<div><dt>Inspired by</dt><dd>{{ product.inspired_by_text }}</dd></div>{% endif %}
           {% else %}
-            {% if product.spec %}<div><dt>Specification</dt><dd>{{ product.spec }}</dd></div>{% endif %}
+            {% if product.spec %}<div><dt>Spec</dt><dd>{{ product.spec }}</dd></div>{% endif %}
             {% if fitment_label %}<div><dt>Fits</dt><dd>{{ fitment_label }}</dd></div>{% endif %}
           {% endif %}
-          {% for name, value in attribute_rows %}
-            <div><dt>{{ name }}</dt><dd>{{ value }}</dd></div>
-          {% endfor %}
-          {% if product.color %}<div><dt>Color</dt><dd>{{ product.color }}</dd></div>{% endif %}
-          <div><dt>Created</dt><dd>{{ product.created_at|date:"Y-m-d" }}</dd></div>
+          {% for name, value in attribute_rows %}<div><dt>{{ name }}</dt><dd>{{ value }}</dd></div>{% endfor %}
+          {% if product.color %}<div><dt>Colour</dt><dd>{{ product.color }}</dd></div>{% endif %}
+          <div><dt>Added</dt><dd>{{ product.created_at|date:"Y-m-d" }}</dd></div>
         </dl>
         {% if product.description %}
-          <div class="spec-desc">
-            <dt>Description</dt>
-            <dd class="desc-text" id="descText">{{ product.description|linebreaksbr }}</dd>
-            {# On a phone a full perfume description was a screen and a half of #}
-            {# text before stock and sales; four lines, then the rest on request. #}
-            <button type="button" class="desc-more" id="descMore" hidden
-                    onclick="document.getElementById('descText').classList.toggle('is-open');this.textContent=this.textContent==='Show more'?'Show less':'Show more';">Show more</button>
-            <style>
-              .desc-more{ border:0; background:none; padding:.2rem 0; font-weight:700; color:var(--app-accent-ink); }
-              @media (max-width:575.98px){
-                .desc-text:not(.is-open){ display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; }
-              }
-            </style>
-            <script>
-              (function () {
-                var t = document.getElementById('descText'), b = document.getElementById('descMore');
-                if (t && b && window.matchMedia('(max-width:575.98px)').matches && t.scrollHeight > t.clientHeight + 4) b.hidden = false;
-              }());
-            </script>
-          </div>
+          <div class="pdp-desc" id="descText">{{ product.description|linebreaksbr }}</div>
+          <button type="button" class="pdp-desc-more" id="descMore" hidden
+                  onclick="var t=document.getElementById('descText');t.classList.toggle('is-open');this.textContent=t.classList.contains('is-open')?'Show less':'Show more';">Show more</button>
         {% endif %}
-      </div>
+      </section>
 
-      <div class="card-shell p-4">
-        <div class="panel-head">
-          <div>
-            <h2>Product Gallery</h2>
-          </div>
-        </div>
-        {% if product.images.all %}
-          <div class="gallery-grid">
-            {% for image in product.images.all %}
-              <div class="gallery-item">
-                <img src="{{ image.image.url }}" alt="{{ product.display_name }}" class="js-product-zoom" data-src="{{ image.image.url }}">
+      {% if show_sensitive and supplier_costs %}
+        <section class="pdp-card" aria-label="Suppliers and cost">
+          <h2>Suppliers &amp; cost</h2>
+          {% for s in supplier_costs %}
+            <div class="pdp-row">
+              <div>
+                <div class="l1">{% if s.supplier_id %}<a href="{% url 'supplier_detail' s.supplier_id %}">{{ s.name }}</a>{% else %}{{ s.name }}{% endif %}{% if s.supplier_id == cheapest_supplier_id %} <span class="pdp-left">Cheapest</span>{% endif %}</div>
+                <div class="l2">{{ s.batches }} batch{{ s.batches|pluralize:"es" }} &middot; {{ s.units }} units{% if s.min_cost is not None %} &middot; &euro;{{ s.min_cost|floatformat:2 }}&ndash;{{ s.max_cost|floatformat:2 }}{% endif %}</div>
               </div>
-            {% endfor %}
-          </div>
-        {% else %}
-          <div class="gallery-empty">No product photos yet.</div>
-        {% endif %}
-      </div>
-    </div>
-
-    <div class="col-xl-5">
-      {% if show_sensitive %}
-        {% if supplier_costs %}
-          <div class="card-shell p-4 mb-4">
-            <div class="panel-head"><div><h3>Suppliers &amp; cost</h3></div></div>
-            <div class="table-shell">
-              <table class="table table-sm align-middle">
-                <thead>
-                  <tr><th>Supplier</th><th>Last cost</th><th>Min / Avg / Max</th><th>Batches</th></tr>
-                </thead>
-                <tbody>
-                  {% for s in supplier_costs %}
-                    <tr>
-                      <td>
-                        {% if s.supplier_id %}<a class="text-decoration-none" href="{% url 'supplier_detail' s.supplier_id %}">{{ s.name }}</a>{% else %}<span class="muted">{{ s.name }}</span>{% endif %}
-                        {% if s.supplier_id == cheapest_supplier_id %}<span class="badge bg-success ms-1">Cheapest</span>{% endif %}
-                      </td>
-                      <td class="fw-bold">{% if s.last_cost is not None %}EUR {{ s.last_cost|floatformat:2 }}{% else %}-{% endif %}{% if s.last_date %}<div class="muted small">{{ s.last_date|date:"Y-m-d" }}</div>{% endif %}</td>
-                      <td class="small">{% if s.min_cost is not None %}EUR {{ s.min_cost|floatformat:2 }} / {{ s.avg_cost|floatformat:2 }} / {{ s.max_cost|floatformat:2 }}{% else %}-{% endif %}</td>
-                      <td>{{ s.batches }} · {{ s.units }}u</td>
-                    </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
+              <div class="fig">{% if s.last_cost is not None %}&euro;{{ s.last_cost|floatformat:2 }}{% else %}&mdash;{% endif %}<small>{% if s.last_date %}last {{ s.last_date|date:"d M Y" }}{% endif %}</small></div>
             </div>
-          </div>
-        {% endif %}
-
-        <div class="card-shell p-4 mb-4">
-          <div class="panel-head">
-            <div>
-              <h3>Purchase History</h3>
-            </div>
-          </div>
-          <div class="table-shell">
-            <table class="table table-sm align-middle">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Qty</th>
-                  <th>Remain</th>
-                  <th>Cost</th>
-                  <th>Supplier</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for p in purchases %}
-                  <tr>
-                    <td>{{ p.date|date:"Y-m-d H:i" }}</td>
-                    <td>{{ p.quantity }}</td>
-                    <td>
-                      {% if p.remaining > 0 %}
-                        <span class="stock-badge {% if p.remaining > 5 %}stock-ok{% else %}stock-low{% endif %}">{{ p.remaining }}</span>
-                      {% else %}
-                        <span class="muted">0</span>
-                      {% endif %}
-                    </td>
-                    <td>EUR {{ p.cost_price|floatformat:2 }}</td>
-                    <td>{% if p.supplier %}{{ p.supplier.name }}{% else %}<span class="muted">No supplier linked</span>{% endif %}</td>
-                  </tr>
-                {% empty %}
-                  <tr>
-                    <td colspan="5" class="text-center py-4 muted">No purchase history.</td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </div>
+          {% endfor %}
+        </section>
       {% endif %}
 
-      {% if show_sales_sensitive %}
-        <div class="card-shell p-4">
-          <div class="panel-head">
-            <div>
-              <h3>Sales History</h3>
-              {% if full_sales_url %}<p><a href="{{ full_sales_url }}">View full sales history &rarr;</a></p>{% endif %}
-            </div>
+      {% if product.images.all|length > 1 %}
+        <section class="pdp-card" aria-label="Photos">
+          <h2>Photos</h2>
+          <div class="pdp-gallery">
+            {% for image in product.images.all %}<img src="{{ image.image.url }}" data-src="{{ image.image.url }}" class="js-product-zoom" alt="" loading="lazy">{% endfor %}
           </div>
-          <div class="table-shell">
-            <table class="table table-sm align-middle">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Store</th>
-                  <th>Order</th>
-                  <th>Customer</th>
-                  <th>Qty</th>
-                  <th>Unit</th>
-                  <th>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for s in sales %}
-                  <tr>
-                    <td>{{ s.business_at|date:"Y-m-d H:i" }}</td>
-                    <td>{% if s.order.store %}{{ s.order.store.name }}{% elif s.store %}{{ s.store.name }}{% else %}<span class="muted">-</span>{% endif %}</td>
-                    <td>{% if s.order_id %}<a href="{% url 'sale_order_detail' s.order_id %}">#{{ s.order_id }}</a>{% else %}<span class="muted">Legacy</span>{% endif %}</td>
-                    <td>{% if s.customer %}{{ s.customer.name }}{% else %}<span class="muted">Walk-in</span>{% endif %}</td>
-                    <td>{{ s.quantity }}</td>
-                    <td>EUR {{ s.unit_price|floatformat:2 }}</td>
-                    <td>EUR {{ s.unit_price|mul:s.quantity|floatformat:2 }}</td>
-                  </tr>
-                {% empty %}
-                  <tr>
-                    <td colspan="7" class="text-center py-4 muted">No sales in the last 10 days.</td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-          {% if sales_older_count %}
-            <p class="muted small mt-2">{{ sales_older_count }} older sale{{ sales_older_count|pluralize }} not shown.
-              <a href="{{ full_sales_url }}">See the full sales history &amp; stock path &rarr;</a>
-            </p>
-          {% endif %}
-        </div>
+        </section>
       {% endif %}
-
-    </div>
+    </aside>
   </div>
 </div>
 
 <div class="modal fade" id="productImageModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-lg">
     <div class="modal-content border-0 bg-dark">
-      <img id="productImageModalTarget" class="img-fluid rounded" alt="{{ product.display_name }}" style="max-height:85vh; object-fit:contain;">
+      <img id="productImageModalTarget" class="img-fluid rounded" alt="" style="max-height:85vh; object-fit:contain;">
     </div>
   </div>
 </div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-  const modalEl = document.getElementById('productImageModal');
-  const modalTarget = document.getElementById('productImageModalTarget');
-  document.querySelectorAll('.js-product-zoom').forEach((img) => {
-    img.addEventListener('click', () => {
-      modalTarget.src = img.dataset.src || img.src;
-      modalTarget.alt = img.alt || '{{ product.display_name|escapejs }}';
+  var modalEl = document.getElementById('productImageModal'), target = document.getElementById('productImageModalTarget');
+  document.querySelectorAll('.js-product-zoom').forEach(function (img) {
+    img.addEventListener('click', function () {
+      target.src = img.dataset.src || img.src;
       bootstrap.Modal.getOrCreateInstance(modalEl).show();
     });
+  });
+  var t = document.getElementById('descText'), more = document.getElementById('descMore');
+  if (t && more && t.scrollHeight > t.clientHeight + 4) more.hidden = false;
+
+  // Restock bell: off = not buying this again for now, so it leaves low stock.
+  var bell = document.querySelector('.pdp-bell');
+  if (bell) bell.addEventListener('click', function () {
+    bell.disabled = true;
+    var token = (document.cookie.split('; ').find(function (c) { return c.indexOf('csrftoken=') === 0; }) || '').split('=')[1] || '';
+    fetch(bell.dataset.url, { method: 'POST', headers: { 'X-CSRFToken': token, 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+      .then(function (d) {
+        bell.classList.toggle('is-off', !d.restock);
+        bell.setAttribute('aria-pressed', d.restock ? 'true' : 'false');
+      })
+      .catch(function () { alert('Could not change the restock bell. Try again.'); })
+      .then(function () { bell.disabled = false; });
   });
 });
 </script>

@@ -7,7 +7,7 @@
       <span class="t">{{ row.day_totals.orders }} order{{ row.day_totals.orders|pluralize }} &middot; {{ row.day_totals.qty }} items{% if show_order_financials %} &middot; EUR {{ row.day_totals.amount|floatformat:2 }}{% endif %}</span>
     </div>
   {% endif %}
-  <div class="op-row{% if show_store_col %} with-store{% endif %}">
+  <div class="op-row{% if show_store_col %} with-store{% endif %}"{% if row.order_id %} data-focus="o-{{ row.order_id }}"{% endif %}>
     <button type="button" class="op-open" data-layer="ol-{{ row.key }}">
       <span class="c-time">{{ row.created_at|date:"H:i" }}</span>
       <span class="c-id">{% if row.order_id %}#{{ row.order_id }}{% else %}Legacy{% endif %}</span>

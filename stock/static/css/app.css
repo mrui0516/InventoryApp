@@ -1101,3 +1101,7 @@ a.sp-row:hover{ background:var(--app-surface-2); }
 .theme-stone select option{ font-weight:500; color:var(--app-text); }
 .theme-stone .erp-sidebar select.form-select{ min-height:34px; }
 
+/* The row Back landed on (base.html focusRow): lit for a moment. */
+@keyframes focus-flash{ 0%,40%{ background:var(--app-accent-soft); } 100%{ background:transparent; } }
+.is-focus, .is-focus > td{ animation:focus-flash 2.6s ease-out; }
+@media (prefers-reduced-motion:reduce){ .is-focus, .is-focus > td{ animation:none; background:var(--app-accent-soft); } }

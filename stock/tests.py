@@ -1143,8 +1143,9 @@ class ProductArchitectureTests(TestCase):
         response = self.client.get(reverse("product_detail", args=[product.id]))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Dior - Sauvage - EDP 100ml Blue")
-        self.assertContains(response, "Wholesale Price")
+        self.assertContains(response, "Dior")
+        self.assertContains(response, "Sauvage EDP")
+        self.assertContains(response, "<span>Wholesale</span>")
         self.assertContains(response, "100ml")
         self.assertContains(response, "Blue")
 
@@ -1167,9 +1168,11 @@ class ProductArchitectureTests(TestCase):
         response = self.client.get(reverse("product_detail", args=[product.id]))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Anker - USB-C - Cable")
-        self.assertContains(response, "Retail Price")
-        self.assertContains(response, "Wholesale Price")
+        # 2026-10-30 page: the brand in its own tag, the list name as title
+        self.assertContains(response, "Anker")
+        self.assertContains(response, "USB-C Cable")
+        self.assertContains(response, "<span>Retail</span>")
+        self.assertContains(response, "<span>Wholesale</span>")
         self.assertNotContains(response, "Suppliers &amp; cost")
         self.assertNotContains(response, "Sales History")
 
@@ -7705,7 +7708,7 @@ class ProductDetailRecentSalesTests(TestCase):
         self.assertEqual(len(resp.context["sales"]), 1)          # only the recent one
         self.assertEqual(resp.context["sales_older_count"], 1)   # the 40-day-old one hidden
         html = resp.content.decode("utf-8")
-        self.assertIn("View full sales history", html)
+        self.assertIn("All sales", html)                         # 2026-10-30 product page
         self.assertIn(reverse("product_sales_history"), html)
 
 
@@ -11204,9 +11207,10 @@ class BackNavigationTests(TestCase):
         href = tag.split('href="', 1)[1].split('"', 1)[0]
         return href, " hidden" in tag
 
-    def test_a_detail_page_falls_back_to_its_list(self):
-        self.assertEqual(self._back_href(reverse("product_detail", args=[self.product.id])),
-                         (reverse("product_list"), False))
+    def test_a_detail_page_falls_back_to_its_list_on_its_row(self):
+        pid = self.product.id
+        self.assertEqual(self._back_href(reverse("product_detail", args=[pid])),
+                         (f"{reverse('product_list')}?focus={pid}#p-{pid}", False))
 
     def test_an_edit_page_falls_back_to_its_record(self):
         self.assertEqual(self._back_href(reverse("edit_product", args=[self.product.id])),
@@ -11603,4 +11607,60 @@ class SlowMoversAndSellThroughTests(TestCase):
         self.assertEqual([r["product_id"] for r in rows], [fast.id, slow.id])
         self.assertAlmostEqual(rows[0]["days"], 3, delta=0.01)
         self.assertEqual((rows[0]["stock_after_arrival"], rows[0]["sold"]), (10, 6))
+
+
+class BackToTheRecordTests(TestCase):
+    """2026-10-30: Back from a record goes up to its list, opened on the page
+    that holds it and scrolled to its row - wherever the record was opened from."""
+
+    def setUp(self):
+        cache.clear()
+        self.admin = get_user_model().objects.create_superuser("bt_admin", password="pw123456")
+        self.client.force_login(self.admin)
+        cat = Category.objects.create(name="Perfumes", form_kind="perfume")
+        self.products = [Product.objects.create(name=f"BT {i}", brand="B", barcode=f"62900000050{i:02d}", category=cat)
+                         for i in range(25)]
+
+    def test_the_list_opens_on_the_page_holding_the_focused_product(self):
+        oldest = self.products[0]                      # newest first: the oldest is on page 3
+        response = self.client.get(reverse("product_list"), {"focus": oldest.id})
+        self.assertEqual(response.context["page_obj"].number, 3)
+        self.assertContains(response, f'data-focus="p-{oldest.id}"')
+
+    def test_customer_supplier_order_and_iou_records_go_back_to_their_lists(self):
+        customer = Customer.objects.create(name="Back Cust", phone="912000555")
+        supplier = Supplier.objects.create(name="Back Sup")
+        order = SaleOrder.objects.create(customer=customer)
+        day = timezone.localtime(order.created_at).date().isoformat()
+        cases = [
+            (reverse("customer_detail", args=[customer.id]), f"{reverse('customer_search')}?focus={customer.id}#c-{customer.id}"),
+            (reverse("supplier_detail", args=[supplier.id]), f"{reverse('supplier_list')}?focus={supplier.id}#s-{supplier.id}"),
+            (reverse("sale_order_detail", args=[order.id]), f"{reverse('sales_records')}?start_date={day}&end_date={day}#o-{order.id}"),
+        ]
+        for page, expected in cases:
+            body = self.client.get(page).content.decode()
+            tag = body[body.index('class="erp-back"'):]
+            tag = tag[:tag.index(">")]
+            self.assertIn(f'href="{expected}"'.replace("&", "&amp;"), tag, page)
+
+    def test_an_edit_page_goes_back_to_its_record(self):
+        p = self.products[3]
+        body = self.client.get(reverse("edit_product", args=[p.id])).content.decode()
+        self.assertIn(f'data-back-parent="{reverse("product_detail", args=[p.id])}"', body)
+
+    def test_view_opens_the_product_and_the_row_opens_the_panel(self):
+        body = self.client.get(reverse("product_list")).content.decode()
+        p = self.products[-1]
+        self.assertIn(f'data-focus="p-{p.id}" data-panel="{reverse("product_panel", args=[p.id])}"', body)
+        view = body[body.index(f'href="{reverse("product_detail", args=[p.id])}" class="btn btn-sm btn-outline-primary"'):]
+        self.assertNotIn("data-panel", view[:view.index(">View<")])
+
+    def test_the_product_page_has_the_bell_and_full_history_rows(self):
+        p = self.products[0]
+        body = self.client.get(reverse("product_detail", args=[p.id])).content.decode()
+        self.assertIn(reverse("toggle_restock", args=[p.id]), body)
+        self.assertIn('class="pdp-bell"', body)
+        self.client.post(reverse("toggle_restock", args=[p.id]))
+        body = self.client.get(reverse("product_detail", args=[p.id])).content.decode()
+        self.assertIn('class="pdp-bell is-off"', body)
 

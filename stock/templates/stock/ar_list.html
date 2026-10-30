@@ -121,7 +121,7 @@
       </thead>
       <tbody>
         {% for inv in invoices %}
-          <tr>
+          <tr data-focus="i-{{ inv.id }}">
             <td data-label="ID">#{{ inv.id }}</td>
             <td data-label="Customer">{{ inv.customer.name }}</td>
             <td data-label="Date">{{ inv.date|date:"Y-m-d" }}</td>
@@ -150,7 +150,7 @@
   </div>
   <div class="d-sm-none table-wrap">
     {% for inv in invoices %}
-      <div class="iou-item">
+      <div class="iou-item" data-focus="i-{{ inv.id }}">
         <a class="iou-main" href="{% url 'ar_detail' inv.id %}">
           <span class="iou-who">{{ inv.customer.name }}</span>
           <span class="iou-sub">
