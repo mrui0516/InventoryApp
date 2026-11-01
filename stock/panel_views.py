@@ -61,6 +61,7 @@ def customer_panel(request, customer_id):
 @login_required
 def product_panel(request, pk):
     from .services.low_stock import in_transit_quantities
+    from .services.store_stock import shop_split
     from .views import get_product_image_url
     product = get_object_or_404(Product.objects.select_related('category').prefetch_related('images'), pk=pk)
     show_sensitive = has_manager_access(request.user)
@@ -75,6 +76,7 @@ def product_panel(request, pk):
         'product': product,
         'image_url': get_product_image_url(product),
         'stock': stock,
+        'shop_split': shop_split([product.id]).get(product.id, []),
         'in_transit': in_transit_quantities([product.id]).get(product.id, 0),
         'show_sensitive': show_sensitive,
         'show_sales_sensitive': show_sales_sensitive,

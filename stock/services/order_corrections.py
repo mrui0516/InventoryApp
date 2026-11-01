@@ -66,22 +66,24 @@ def _summarise_quantities(line_items):
     return list(grouped.values())
 
 
-def _consume_current_stock(line_items):
+def _consume_current_stock(line_items, store=None, *, order=None, user=None, sample_products=()):
     for group in _summarise_quantities(line_items):
         product = group['product']
         quantity_needed = group['quantity']
         if quantity_needed <= 0:
             continue
-        consume_stock_fifo(product, quantity_needed)
+        consume_stock_fifo(product, quantity_needed, store, sample=product.id in sample_products,
+                           user=user, sale_order=order)
 
 
-def _restore_current_stock(line_items):
+def _restore_current_stock(line_items, store=None):
+    # back into the shop the order was sold from
     for group in _summarise_quantities(line_items):
         product = group['product']
         quantity_to_restore = group['quantity']
         if quantity_to_restore <= 0:
             continue
-        restore_stock_fifo(product, quantity_to_restore)
+        restore_stock_fifo(product, quantity_to_restore, store)
 
 
 def log_sale_order_change(*, order, order_id_snapshot, action, changed_by, reason, before_data, after_data):
@@ -118,6 +120,9 @@ def save_sale_order_correction(*, order, customer, note, order_datetime, line_it
         order.store if (order and order.store_id) else None
     )
 
+    # A correction does not know which line was the shop sample; a product
+    # sold as one keeps that flag, so the corrected order sells it the same way.
+    sample_products = set()
     if action == 'update':
         previous_line_items = [
             {
@@ -126,8 +131,9 @@ def save_sale_order_correction(*, order, customer, note, order_datetime, line_it
             }
             for item in order.items.select_related('product').order_by('id')
         ]
+        sample_products = set(order.items.filter(is_sample=True).values_list('product_id', flat=True))
         if effective_affects_stock:
-            _restore_current_stock(previous_line_items)
+            _restore_current_stock(previous_line_items, order.store)
 
     if order is None:
         order = SaleOrder.objects.create(customer=customer, note=note or '', store=target_store, affects_stock=effective_affects_stock)
@@ -148,7 +154,8 @@ def save_sale_order_correction(*, order, customer, note, order_datetime, line_it
         order.payments.all().delete()
 
     if effective_affects_stock:
-        _consume_current_stock(line_items)
+        _consume_current_stock(line_items, target_store, order=order, user=changed_by,
+                               sample_products=sample_products)
 
     created_sales = []
     for item in line_items:
@@ -160,6 +167,7 @@ def save_sale_order_correction(*, order, customer, note, order_datetime, line_it
             quantity=item['quantity'],
             unit_price=item['unit_price'],
             payment_method=item['payment_method'],
+            is_sample=item['product'].id in sample_products,
         )
         created_sale.date = order_datetime
         created_sales.append(created_sale)
@@ -203,7 +211,7 @@ def delete_sale_order_correction(*, order, changed_by, reason):
     ]
 
     if order.affects_stock:
-        _restore_current_stock(previous_line_items)
+        _restore_current_stock(previous_line_items, order.store)
     order.delete()
 
     log_sale_order_change(

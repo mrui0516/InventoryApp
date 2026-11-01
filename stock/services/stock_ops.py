@@ -29,8 +29,16 @@ class StockConflictError(ValidationError):
 
 
 @transaction.atomic
-def consume_stock_fifo(product, quantity):
+def consume_stock_fifo(product, quantity, store=None, *, sample=False, own_only=False, user=None,
+                       sale_order=None):
     """Decrement ``Purchase.remaining`` for ``product`` by ``quantity``, oldest batch first.
+
+    With ``store`` the units come out of that shop. A full-price sale leaves the
+    shop's opened sample alone and takes what the shop lacks from the other one
+    first (a transfer, owed at cost + markup); ``sample=True`` sells the shop's
+    own sample and never reaches into the other shop; ``own_only`` (a stock
+    correction) takes exactly what the shop holds. Without a store (no shops
+    set up) all batches are one pool.
 
     Returns the actual FIFO **cost** of the consumed units (Σ used × batch cost) so
     the caller can store it on the sale as its true cost basis.
@@ -42,9 +50,21 @@ def consume_stock_fifo(product, quantity):
     if quantity <= 0:
         return Decimal('0.00')
 
-    batches = list(
-        Purchase.objects.filter(product=product, remaining__gt=0).order_by('date', 'id')
-    )
+    if store is not None:
+        from .store_stock import bring_in_for_sale, store_units
+        if sample or own_only:
+            held = store_units(product, store)
+            if held < quantity:
+                raise ValidationError(
+                    f"{store.name} has no sample of {product.display_name} to sell." if sample else
+                    f"{store.name} has only {held} of {product.display_name}.")
+        else:
+            bring_in_for_sale(product, quantity, store, user=user, sale_order=sale_order)
+
+    batches = Purchase.objects.filter(product=product, remaining__gt=0)
+    if store is not None:
+        batches = batches.filter(store=store)
+    batches = list(batches.order_by('date', 'id'))
     available = sum(p.remaining for p in batches)
     if available < quantity:
         raise ValidationError(
@@ -83,10 +103,13 @@ def consume_stock_fifo(product, quantity):
 
 
 @transaction.atomic
-def restore_stock_fifo(product, quantity):
+def restore_stock_fifo(product, quantity, store=None):
     """Increment ``Purchase.remaining`` for ``product`` by ``quantity``, most recent batch first.
 
-    Never pushes a batch's ``remaining`` above its original ``quantity``.
+    Never pushes a batch's ``remaining`` above its original ``quantity``. With
+    ``store`` the units go back into that shop: its own batches first, then
+    room in the other shop's batches, moved over (the goods are back where
+    they were sold; a transfer already written for them stands).
 
     Raises:
         ValidationError: not enough total capacity across batches to restore ``quantity``.
@@ -95,7 +118,10 @@ def restore_stock_fifo(product, quantity):
     if quantity <= 0:
         return
 
-    batches = list(Purchase.objects.filter(product=product).order_by('-date', '-id'))
+    batches = list(Purchase.objects.filter(product=product).select_related('product').order_by('-date', '-id'))
+    if store is not None:
+        # the shop's own batches first; the rest are moved over once refilled
+        batches.sort(key=lambda b: b.store_id != store.pk)
 
     left = quantity
     for batch in batches:
@@ -112,6 +138,10 @@ def restore_stock_fifo(product, quantity):
             raise StockConflictError(
                 f"Stock for {product.display_name} changed during this operation. Please retry."
             )
+        if store is not None and batch.store_id != store.pk:
+            from .store_stock import _split
+            batch.refresh_from_db()
+            _split(batch, restored, store, None)
         left -= restored
 
     if left > 0:

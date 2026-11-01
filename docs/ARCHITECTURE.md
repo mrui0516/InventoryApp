@@ -51,6 +51,7 @@ InventoryApp/
     │   ├── reporting.py              # DailySalesSummary, SalesTarget
     │   ├── hr.py                     # AttendanceRecord
     │   ├── submissions.py            # FormSubmission（表单只记一次）
+    │   ├── transfers.py              # StockTransfer / StockTransferLine / StoreSettlement（两店之间的货与钱）
     │   └── system.py                 # ErrorLog（错误日志）
     ├── views.py                      # 大部分页面视图（单文件，正按路线图逐步拆分）
     ├── orders_views.py               # 经理 Orders 页：Sales | Purchases | Analysis
@@ -66,7 +67,8 @@ InventoryApp/
     │
     ├── services/                     # 业务逻辑（视图之外可复用、可单测的部分）
     │   ├── profit.py                 # FIFO 利润重放 sale_profit_map_for_sale_ids（扣除刷卡手续费）
-    │   ├── stock_ops.py              # FIFO 库存原子条件更新：consume_stock_fifo / restore_stock_fifo
+    │   ├── stock_ops.py              # FIFO 库存原子条件更新：consume_stock_fifo / restore_stock_fifo（按店）
+    │   ├── store_stock.py            # 按店库存：各店数量、拆批调货、收银自动调货、收货分配、两店余额与结账
     │   ├── stock_ledger.py           # 单品库存流水（入库 / 销售 / 手动调整合并成一条时间线，只读）
     │   ├── inventory.py              # 库存快照
     │   ├── low_stock.py              # 低库存清单（Dashboard 摘要与提醒侧栏共用，缓存 5 分钟）
@@ -266,7 +268,7 @@ has_admin_access(user)          → is_superuser only
 
 ### 5.9 多店铺（Multi-store）
 - **模型**：`Store`（core：`name`/`code`/`is_active`/`is_default`）+ `StoreProfile`（用户→home store 的 OneToOne）。`SaleOrder`/`Sale`/`ARInvoice` 新增可空 `store` FK（迁移 0028），迁移 0029 播种默认店铺（`code='MAIN'`）并回填全部历史销售/AR + 为所有已有用户建 `StoreProfile`。
-- **共享 vs 按店铺**：库存（`Purchase`/总库存）、入库（`InboundOrder`）、供应商、产品档案**全店共享**；销售、AR、员工、报表**按店铺**。客户档案全局共享（NIF 全局唯一），但"该店铺客户"由销售归属派生（决策：shared customers, per-store sales）。
+- **共享 vs 按店铺**：库存按店铺分开（2026-11-01，见 5.9c）；入库单（`InboundOrder`）、供应商、产品档案**全店共享**；销售、AR、员工、报表**按店铺**。客户档案全局共享（NIF 全局唯一），但"该店铺客户"由销售归属派生（决策：shared customers, per-store sales）。
 - **活动店铺解析**（`stock/stores.py`）：会话键 `active_store_id`。员工（非经理）**锁定**在 `StoreProfile.store`；经理/管理员可切换任意在营店铺或 **All stores**（聚合），未显式选择时**默认 All stores**。`resolve_active_store(request) -> (store|None, is_all)`；`store_for_new_sale(request)` 返回落账的具体店铺（All 时回退 home/默认店）；`scope_sales_by_store(qs, store, is_all)` 过滤（All 或 store 为 None 时不过滤）。
 - **注入**：`stock/context_processors.py::store_context` 向所有模板暴露 `active_store`/`active_store_is_all`/`store_can_switch`/`available_stores`（在 settings 注册）；`base.html` 侧栏渲染店铺切换下拉（经理）或只读店名（员工）。切换端点 `set_active_store`（`stores/switch/`，仅经理，写会话后回退来源页）。
 - **落账/过滤点**：出货 `outbound_view` 与订单修正 `save_sale_order_correction(store=...)` 写 `SaleOrder.store`+`Sale.store`（修正编辑时**保留原店铺**）；`ar_new_view` 写 `ARInvoice.store`。读侧按活动店铺过滤：销售记录 `record_view`（销售侧）、`ar_list_view`、员工列表 `employee_list_view`（按 `store_profile__store`），新建员工自动分配 `StoreProfile`。
@@ -274,6 +276,48 @@ has_admin_access(user)          → is_superuser only
 - **店铺管理页**（Admin）：`store_list_view`/`store_create_view`/`store_edit_view`/`store_delete_view`（`/stores/*`，`@admin_required`）+ `StoreForm`，模板 `store_list.html`/`store_form.html`，侧栏 Admin 分组入口。保存时强制"恰有一个默认店铺"；删除仅在店铺无销售/发票/员工且非默认时允许。`Store`/`StoreProfile` 亦注册进 Django Admin。
 - **打印小票抬头按店铺**：`PrintProfile` 加 `store` OneToOne（迁移 0030/0031：原单例抬头挂到默认店铺，其余店铺各建一份，从默认抬头 + 店名播种）。`PrintProfile.get_for_store(store)` 按店铺取/建；`get_solo()` 退化为默认店铺抬头。小票（`sale_order_detail`）用**该订单店铺**的抬头；抬头编辑页（`print_profile_edit_view`）编辑**当前活动店铺**的抬头（All stores 时编辑默认店铺）。
 - **仍待接入**：按分类的销售目标 `SalesTarget` 改为按店铺（模型变更；当前仪表盘目标进度用店铺销售额对比全局分类目标，为已知局限）；员工创建/编辑表单增加显式店铺选择（当前新建按活动/默认店铺自动分配）。
+
+### 5.9c 按店库存（2026-11-01）
+
+**每批货属于一家店**：`Purchase.store`（可空：新建时 `save()` 落到默认店；只有根本没有店铺时才为空）。
+迁移 0068 把现有批次全部归默认店，并给所有店铺打开 `Store.keeps_samples`。
+
+**调货 = 拆批**（`services/store_stock.move_units`）：源批次的 `quantity` 和 `remaining` 同时减去调走的件数，
+目标店新建一批：同产品、同供应商、同进货单、同成本、**同日期**（`date` 是 auto_now_add，创建后再 update 回原日期），
+`transfer_line` 指向这次调货。整批未动过的货直接改 `store`。
+这样所有批次的进货数量之和不变——进货金额、供应商统计、FIFO 利润回溯、库存流水、进货单回滚都不用改；
+唯一可见的差别是一张进货单在产品页 / 编辑页显示成按店分开的几行（编辑页的批次标了店名）。
+
+**加价只记在调货账上**：移过去的批次保留真实成本，所以公司总利润与哪家店卖出无关；
+`StockTransferLine.amount = cost_total + markup_per_unit × quantity`（期初调拨为 0）。
+`balances()` 把双向调货金额与 `StoreSettlement` 相抵，得出"谁欠谁多少"。
+
+**扣库存**（`consume_stock_fifo(product, qty, store, *, sample, own_only, user, sale_order)`）：
+- `store=None`：所有批次一个池（没有店铺时 / 旧调用）。
+- 正价销售：`bring_in_for_sale` 先确保本店有足够的**正价件数**——本店库存减去样品（`keeps_samples` 且有货时 1 件），
+  缺的从其它店的正价件数调过来（`StockTransfer.SALE`，同一订单同一方向复用一张调货单），再按本店批次先进先出扣。
+  其它店也只剩样品时报 "Only the shop samples are left … sell it as a sample"。
+- `sample=True`：只扣本店（不跨店调货），本店没有就报错。
+- `own_only=True`：修正库存用，只动本店，不调货。
+- **归还**（`restore_stock_fifo(product, qty, store)`）：先填本店批次的空位；不够时填别店批次的空位再拆过来（不记欠款，原调货照旧）。
+- 调用点：`outbound_view`（`active_store`）、`order_corrections`（归还用订单原店铺，扣用目标店铺；改单时原来按样品卖的产品继续按样品）、
+  `api_adjust_total_stock`（当前店铺，`own_only`）。
+
+**收货分配**：`InboundPendingItem.allocation`（`{"店铺id": 件数}` JSON）。`clean_allocation()` 清洗，
+`split_for_receipt()` 要求合计等于数量（只有一家店时全给它），`receive_batches()` 每家店建一批。
+直接入库（无供应商）在提交时校验；暂定单在"保存"时保存分配、在"确认收货"时校验，不合格则保存后拒绝收货。
+
+**收银台**：`till_stock(product, store)` → `stock`（本店可正价卖的件数 = 各店库存减各自样品之和）、
+`sample_here`、`shops`（每家店的数量和是否有样品）；`check_barcode`（`?scope=stock` 时给合计）和 Pedido 草稿行都用它。
+
+**列表与页面**：`shop_split(product_ids)` 给产品列表 / 侧栏 / 详情页的"Khan 3 · Scentory 2"（只有一家店时为空）。
+看板选了一家店时库存部分（库存总量、Capital locked、Slow movers、香水库存）只算这家店。
+
+**Shopify 不变**：推送的仍是两店合计（`shopify_sync._inventory_targets`，有分装的 100ml 款 = 合计 − `DECANT_RESERVE`(2)，
+正好是两家店各一瓶样品）。调货不改变合计，所以不推送。
+
+**期初**：`manage.py split_opening_stock --to Scentory --units 2 [--apply]`：每款从默认店给目标店 N 件（不足 N 件全给，
+已归档产品不动），一张 `OPENING` 调拨，不记欠款；第二次执行被拒绝。
 
 ### 5.8c 撤销收货（Inbound rollback）
 

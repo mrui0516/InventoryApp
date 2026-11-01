@@ -72,12 +72,18 @@
           </div>
 
           {{ pr.formset.management_form }}
+          {% if alloc_stores %}
+          <div class="alloc-all">Put everything in
+            {% for s in alloc_stores %}<button type="button" class="btn btn-sm btn-outline-secondary" data-alloc-all="{{ forloop.counter0 }}">{{ s.name }}</button>{% endfor %}
+          </div>
+          {% endif %}
           <div class="table-responsive">
-            <table class="table table-sm align-middle mb-0 rcv-table">
+            <table class="table table-sm align-middle mb-0 rcv-table" style="--cols:{{ alloc_stores|length|add:3 }}">
               <thead class="table-light">
                 <tr>
                   <th>Product</th>
                   <th class="text-center" style="width:82px">Qty</th>
+                  {% for s in alloc_stores %}<th class="text-center alloc-th" style="width:84px">{{ s.name }}</th>{% endfor %}
                   <th class="text-end" style="width:118px">Cost &euro;</th>
                   <th class="text-center" style="width:56px">Del</th>
                 </tr>
@@ -99,9 +105,10 @@
                         </div>
                       </div>
                     </td>
-                    <td>{{ line.form.quantity }}</td>
-                    <td>{{ line.form.cost_price }}</td>
-                    <td class="text-center">{{ line.form.DELETE }}</td>
+                    <td data-label="Qty">{{ line.form.quantity }}</td>
+                    {% for a in line.alloc %}<td data-label="{{ a.short }}"><input type="number" min="0" step="1" inputmode="numeric" class="alloc-in" name="alloc-{{ line.item.pk }}-{{ a.store.id }}" value="{{ a.value }}" aria-label="{{ a.store.name }}"></td>{% endfor %}
+                    <td data-label="Cost €">{{ line.form.cost_price }}</td>
+                    <td class="text-center rcv-del" data-label="Del">{{ line.form.DELETE }}</td>
                   </tr>
                 {% endfor %}
               </tbody>
@@ -121,6 +128,68 @@
 
 <script>
 (function () {
+  // Splitting a line between the shops. With two shops, typing one quantity
+  // fills the other with the rest of Qty. A row whose split does not add up
+  // is marked; receiving is refused until none is.
+  function rowQty(row) {
+    const q = row.querySelector('input[name$="-quantity"], input.qty');
+    return Number((q && q.value) || 0);
+  }
+  function mark(row) {
+    const ins = Array.from(row.querySelectorAll('.alloc-in'));
+    if (!ins.length) return true;
+    const sum = ins.reduce((t, i) => t + Number(i.value || 0), 0);
+    const ok = sum === rowQty(row);
+    const shown = row.dataset.allocSeen === '1' || ins.some((i) => i.value !== '');
+    ins.forEach((i) => i.classList.toggle('alloc-bad', !ok && shown));
+    return ok;
+  }
+  function fill(row, typed) {
+    const ins = Array.from(row.querySelectorAll('.alloc-in'));
+    if (ins.length === 2 && typed && typed.value !== '') {
+      const other = ins[0] === typed ? ins[1] : ins[0];
+      other.value = Math.max(rowQty(row) - Number(typed.value || 0), 0);
+    }
+    mark(row);
+  }
+  window.allocWire = function (row) {
+    row.querySelectorAll('.alloc-in').forEach((i) => i.addEventListener('input', () => {
+      row.dataset.allocLast = Array.from(row.querySelectorAll('.alloc-in')).indexOf(i);
+      fill(row, i);
+    }));
+    const q = row.querySelector('input[name$="-quantity"], input.qty');
+    if (q) q.addEventListener('input', () => {
+      const ins = row.querySelectorAll('.alloc-in');
+      fill(row, ins[Number(row.dataset.allocLast || 0)] || null);
+    });
+    mark(row);
+  };
+  window.allocReady = function (scope, quiet) {
+    let ok = true;
+    scope.querySelectorAll('tr').forEach((row) => {
+      if (!row.querySelector('.alloc-in')) return;
+      if (!quiet) row.dataset.allocSeen = '1';
+      if (!mark(row)) ok = false;
+    });
+    return ok;
+  };
+  // "Put everything in <shop>": each line's whole quantity to that shop
+  window.allocAll = function (scope, index) {
+    scope.querySelectorAll('tr').forEach((row) => {
+      const ins = row.querySelectorAll('.alloc-in');
+      if (!ins.length) return;
+      ins.forEach((i, n) => { i.value = n === index ? rowQty(row) : 0; });
+      row.dataset.allocLast = index;
+      mark(row);
+    });
+  };
+  document.querySelectorAll('.rcv-table tbody tr').forEach(window.allocWire);
+  document.querySelectorAll('.modal [data-alloc-all]').forEach((b) => b.addEventListener('click', () => {
+    window.allocAll(b.closest('.modal').querySelector('.rcv-table tbody'), Number(b.dataset.allocAll));
+  }));
+})();
+
+(function () {
   // Guard against a double submit, which used to 404 on an order the first
   // request had already received.
   //
@@ -130,7 +199,13 @@
   // succeed ("saved") while the order stayed pending. setTimeout lets the
   // browser build the payload first, then locks the dialog.
   document.querySelectorAll('form[action*="/receive/"]').forEach(function (f) {
-    f.addEventListener('submit', function () {
+    f.addEventListener('submit', function (e) {
+      // Receiving stocks the shops, so every line must be split first.
+      if (e.submitter && e.submitter.value === 'receive' && !window.allocReady(f)) {
+        e.preventDefault();
+        alert('Split every line between the shops before receiving: the shop quantities must add up to Qty.');
+        return;
+      }
       if (f.dataset.sent === '1') return;
       f.dataset.sent = '1';
       setTimeout(function () {
@@ -278,12 +353,18 @@
           </div>
         </div>
 
+        {% if alloc_stores %}
+        <div class="alloc-all" id="cartAllocAll">Put everything in
+          {% for s in alloc_stores %}<button type="button" class="btn btn-sm btn-outline-secondary" data-alloc-all="{{ forloop.counter0 }}">{{ s.name }}</button>{% endfor %}
+        </div>
+        {% endif %}
         <div class="table-responsive">
-          <table class="table table-sm align-middle" id="cart-table">
+          <table class="table table-sm align-middle" id="cart-table" style="--cols:{{ alloc_stores|length|add:3 }}">
             <thead class="table-light">
               <tr>
                 <th style="width: 40%">Product</th>
                 <th style="width: 110px">Qty</th>
+                {% for s in alloc_stores %}<th class="alloc-th" style="width: 92px">{{ s.name }}</th>{% endfor %}
                 <th style="width: 160px">Unit Cost €</th>
                 <th style="width: 140px">Subtotal €</th>
                 <th style="width: 60px"></th>
@@ -292,7 +373,7 @@
             <tbody></tbody>
             <tfoot>
               <tr>
-                <th colspan="3" class="text-end">Total:</th>
+                <th colspan="{{ alloc_stores|length|add:3 }}" class="text-end">Total:</th>
                 <th id="grand_total">€0.00</th>
                 <th></th>
               </tr>
@@ -385,7 +466,7 @@
   }
   /* Single column: the lines table gets the full width and the running totals
      live in the sticky bar, so confirming never needs a scroll to the end. */
-  .operation-layout{ display:grid; grid-template-columns:1fr; gap:1rem; align-items:start; }
+  .operation-layout{ display:grid; grid-template-columns:minmax(0,1fr); gap:1rem; align-items:start; }
   /* camera scanner — capped so the dialog never outgrows the screen */
   .camera-view{ width:100%; max-height:38vh; border-radius:var(--app-radius-sm); overflow:hidden; background:#1c1917; }
   .camera-view video{ width:100%!important; height:auto!important; max-height:38vh; object-fit:contain; display:block; margin:0 auto; }
@@ -417,6 +498,37 @@
   }
   .rcv-fields textarea{ min-height:2.2rem; }
   .rcv-table td,.rcv-table th{ padding:.35rem .45rem; }
+  .alloc-th{ font-size:.74rem; line-height:1.15; white-space:normal; }
+  /* Phone: a line is a card - the product across, then one row of fields
+     (qty, each shop, unit cost, subtotal), each with its label above. */
+  .alloc-all{ display:flex; flex-wrap:wrap; align-items:center; gap:.4rem; margin:0 0 .5rem; font-size:.88rem;
+    font-weight:600; color:var(--app-muted); }
+  @media (max-width:575.98px){
+    .rcv-table thead{ display:none; }
+    .rcv-table tbody tr{ display:grid; grid-template-columns:repeat(var(--cols, 3), minmax(0,1fr)); gap:.35rem .45rem;
+      padding:.55rem .1rem; border-bottom:1px solid var(--app-border); position:relative; }
+    .rcv-table tbody td{ display:block; padding:0 !important; border:0; min-width:0; }
+    .rcv-table tbody td:first-child{ grid-column:1 / -1; padding-right:2.6rem !important; }
+    .rcv-table tbody td[data-label]::before{ content:attr(data-label); display:block; font-size:.85rem; font-weight:700;
+      color:var(--app-muted); margin-bottom:.15rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .rcv-table tbody td input{ min-height:40px; }
+    .rcv-table tbody td.rcv-del{ position:absolute; top:.45rem; right:.2rem; text-align:center; }
+    .rcv-table tbody td.rcv-del::before{ margin-bottom:0; }
+    #cart-table thead{ display:none; }
+    #cart-table tbody tr{ display:grid; grid-template-columns:repeat(var(--cols, 3), minmax(0,1fr)); gap:.35rem .45rem;
+      padding:.6rem .4rem; border-bottom:1px solid var(--ds-border, #e7e5e4); position:relative; }
+    #cart-table tbody td{ display:block; padding:0 !important; border:0; min-width:0; }
+    #cart-table tbody td:first-child{ grid-column:1 / -1; padding-right:2.4rem !important; }
+    #cart-table tbody td[data-label]::before{ content:attr(data-label); display:block; font-size:.85rem; font-weight:700;
+      color:var(--app-muted); margin-bottom:.15rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    #cart-table tbody td .form-control{ padding:.35rem .4rem; min-height:40px; }
+    #cart-table tbody td.subtotal{ align-self:end; text-align:right; font-weight:700; padding-bottom:.5rem !important; }
+    #cart-table tbody td:last-child{ position:absolute; top:.5rem; right:.35rem; }
+    #cart-table tfoot tr{ display:flex; justify-content:flex-end; gap:.5rem; }
+    #cart-table tfoot th:empty{ display:none; }
+  }
+  .alloc-in.alloc-bad{ border-color:#dc2626 !important; background:#fef2f2; }
+  .rcv-table .alloc-in{ text-align:center; }
   .rcv-table .cart-product-thumb-wrap,.rcv-table .cart-product-thumb-empty{ width:34px; height:34px; }
   .rcv-table .cart-product{ grid-template-columns:34px minmax(0,1fr); gap:.5rem; }
   .rcv-table input{ width:100%; padding:.3rem .45rem; font-size:.9rem; border:1px solid var(--app-border); border-radius:var(--app-radius-xs); }
@@ -672,14 +784,14 @@
 
   @media (max-width: 1199.98px){
     .operation-layout{
-      grid-template-columns:1fr;
+      grid-template-columns:minmax(0,1fr);
     }
   }
 
   @media (max-width: 576px){
     .operation-layout,
     .review-modal-grid{
-      grid-template-columns:1fr;
+      grid-template-columns:minmax(0,1fr);
     }
   }
 </style>
@@ -718,6 +830,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const summaryTotalAmount = document.getElementById('summary-total-amount');
   const summaryLineCount = document.getElementById('summary-line-count');
   const summaryWarningBadge = document.getElementById('summary-warning-badge');
+  document.querySelectorAll('#cartAllocAll [data-alloc-all]').forEach((b) => b.addEventListener('click', () => {
+    window.allocAll(cartBody, Number(b.dataset.allocAll));
+    recalcAndSave();
+  }));
+  const allocStores = [{% for s in alloc_stores %}{id: {{ s.id }}, name: "{{ s.name|escapejs }}"}{% if not forloop.last %}, {% endif %}{% endfor %}];
 
   function hidePreview() {
     previewBox.classList.remove('show');
@@ -920,6 +1037,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (!supplierSelect.value) {
       warnings.push('No supplier selected — this inbound will be stocked immediately (not a pending order).');
+      if (allocStores.length && !window.allocReady(cartBody, true)) {
+        warnings.push('Split every line between the shops: the shop quantities must add up to Qty.');
+      }
     } else {
       warnings.push('Supplier order — this will be created as PENDING. Confirm receipt later to add stock.');
     }
@@ -993,10 +1113,13 @@ document.addEventListener('DOMContentLoaded', () => {
     submitBtn.disabled = !ok;
     const items = [];
     cartBody.querySelectorAll('tr').forEach(tr=>{
+      const alloc = {};
+      tr.querySelectorAll('.alloc-in').forEach((i) => { if (i.value !== '') alloc[i.dataset.store] = Number(i.value); });
       items.push({
         barcode: tr.dataset.barcode,
         qty: Number(tr.querySelector('.qty').value || 0),
-        cost_price: parseMoney(tr.querySelector('.cost').value) || 0
+        cost_price: parseMoney(tr.querySelector('.cost').value) || 0,
+        alloc: alloc
       });
     });
     itemsJson.value = JSON.stringify(items);
@@ -1034,9 +1157,10 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
         </div>
       </td>
-      <td><input type="number" min="1" class="form-control form-control-sm qty" value="1"></td>
-      <td><input type="text" class="form-control form-control-sm cost" placeholder="0.00" value="${lastCost!=null ? Number(lastCost).toFixed(2) : ''}"></td>
-      <td class="subtotal">€0.00</td>
+      <td data-label="Qty"><input type="number" min="1" class="form-control form-control-sm qty" value="1"></td>
+      ${allocStores.map((st) => `<td data-label="${escapeHtml(st.name.split(' ')[0])}"><input type="number" min="0" step="1" inputmode="numeric" class="form-control form-control-sm alloc-in" data-store="${st.id}" aria-label="${escapeHtml(st.name)}"></td>`).join('')}
+      <td data-label="Unit €"><input type="text" class="form-control form-control-sm cost" placeholder="0.00" value="${lastCost!=null ? Number(lastCost).toFixed(2) : ''}"></td>
+      <td class="subtotal" data-label="Subtotal">€0.00</td>
       <td><button type="button" class="btn btn-sm btn-outline-secondary remove" aria-label="Remove">&times;</button></td>
     `;
     cartBody.appendChild(tr);
@@ -1060,6 +1184,9 @@ document.addEventListener('DOMContentLoaded', () => {
       recalcAndSave();
     });
     tr.querySelector('.remove').addEventListener('click', ()=>{ tr.remove(); recalcAndSave(); });
+    window.allocWire(tr);
+    tr.querySelectorAll('.alloc-in').forEach((i) => i.addEventListener('input', recalcAndSave));
+    tr.querySelector('.qty').addEventListener('input', () => setTimeout(recalcAndSave, 0));
     tr.querySelector('.js-preview-product')?.addEventListener('click', () => {
       openPreviewModal(imageUrl, safeTitle);
     });
@@ -1311,6 +1438,10 @@ document.addEventListener('DOMContentLoaded', () => {
     submitBtn.disabled = true; submitBtn.textContent = 'Processing...';
   });
   confirmInboundBtn?.addEventListener('click', () => {
+    if (!supplierSelect.value && allocStores.length && !window.allocReady(cartBody)) {
+      alert('Split every line between the shops before stocking it: the shop quantities must add up to Qty.');
+      return;
+    }
     inboundForm.dataset.confirmed = '1';
     bootstrap.Modal.getOrCreateInstance(reviewModalEl).hide();
     inboundForm.requestSubmit();

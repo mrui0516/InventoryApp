@@ -7,12 +7,16 @@ from django.db import models
 
 
 class Store(models.Model):
-    """A physical shop. Inventory / inbound / suppliers are shared across all
-    stores; sales, employees, AR and reporting are scoped per store."""
+    """A physical shop. Each has its own stock (batches carry the store), and
+    its own sales, employees, AR and reporting; suppliers are shared."""
     name = models.CharField(max_length=120)
     code = models.CharField(max_length=20, unique=True)
     is_active = models.BooleanField(default=True)
     is_default = models.BooleanField(default=False)
+    # One opened bottle of every product stands on the counter as the sample
+    # (decants are poured from it). While the shop has a product, one of its
+    # bottles is that sample, so a full-price sale may take only the rest.
+    keeps_samples = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     # Which categories this store actually sells. Khan Perfume carries perfume
@@ -132,6 +136,10 @@ class BusinessSettings(models.Model):
     """
     card_fee_pct = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('1.00'),
                                        verbose_name='Card fee (%)')
+    # What a shop charges the other per unit on top of cost when goods move
+    # between them. Each transfer line keeps the markup it was made with.
+    transfer_markup = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal('3.00'),
+                                          verbose_name='Transfer markup (€ per unit)')
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):

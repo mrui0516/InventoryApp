@@ -21,6 +21,7 @@ from .reporting import DailySalesSummary, SalesTarget
 from .hr import AttendanceRecord
 from .submissions import FormSubmission
 from .system import ErrorLog
+from .transfers import StockTransfer, StockTransferLine, StoreSettlement
 
 __all__ = [
     # core
@@ -37,6 +38,8 @@ __all__ = [
     'SaleOrderCharge', 'PedidoDraft',
     # forms recorded once
     'FormSubmission', 'ErrorLog',
+    # stock between the shops
+    'StockTransfer', 'StockTransferLine', 'StoreSettlement',
     # finance
     'ARInvoice', 'ARItem', 'ARPayment',
     # reporting

@@ -8232,7 +8232,7 @@ class RoundANavigationTests(TestCase):
         links, nav = self._menu(self.admin, store=self.store_a)
         self.assertEqual(links, ["Today", "Dashboard", "Orders", "Sell", "Pedido",
                                  "Products", "Catalog View",
-                                 "Customers", "IOU", "Inbound", "Suppliers",
+                                 "Customers", "IOU", "Inbound", "Transfers", "Suppliers",
                                  "Attendance", "Tools", "Team", "Stores", "Print Header",
                                  "Fees", "Correct orders", "Audit"])
         for group in ("Sell", "Products", "Customers", "Purchasing", "Settings"):
@@ -9826,6 +9826,8 @@ class RecordedOnceTests(TestCase):
         from .stores import ACTIVE_STORE_SESSION_KEY
         self.admin = get_user_model().objects.create_superuser("ro_admin", password="pw123456")
         self.client.force_login(self.admin)
+        # the only shop: its stock is all there is (stock is per shop since 2026-11-01)
+        Store.objects.update(is_active=False)
         self.store = Store.objects.create(name="RO Store", code="ROS")
         session = self.client.session
         session[ACTIVE_STORE_SESSION_KEY] = self.store.id
@@ -9833,7 +9835,8 @@ class RecordedOnceTests(TestCase):
         cat = Category.objects.create(name="RO Cat")
         self.product = Product.objects.create(name="Once", brand="RO", barcode="9880000000001",
                                               category=cat, default_price=Decimal("10"))
-        Purchase.objects.create(product=self.product, quantity=10, remaining=10, cost_price=Decimal("4"))
+        Purchase.objects.create(product=self.product, quantity=10, remaining=10, cost_price=Decimal("4"),
+                                store=self.store)
 
     def _sell(self, token=None):
         data = {"items_json": json.dumps([{"barcode": self.product.barcode, "qty": 1, "price": "10.00", "payment": "cash"}]),

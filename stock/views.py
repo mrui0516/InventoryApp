@@ -595,6 +595,9 @@ def _pending_inbound_orders():
 def _build_pending_reviews():
     """For each pending order build the editable review form + formset rendered
     inside a per-order modal on the inbound page."""
+    from .services.store_stock import active_stores
+    shops = active_stores()
+    shops = shops if len(shops) > 1 else []
     reviews = []
     for order in _pending_inbound_orders():
         formset = InboundPendingFormSet(instance=order, prefix='lines')
@@ -603,7 +606,10 @@ def _build_pending_reviews():
             item = line_form.instance
             item.image_url = get_product_image_url(item.product) if item.pk else ''
             item.display_name = build_product_label(item.product) if item.pk else ''
-            lines.append({'form': line_form, 'item': item})
+            saved = item.allocation or {}
+            lines.append({'form': line_form, 'item': item,
+                          'alloc': [{'store': s, 'short': s.name.split()[0], 'value': saved.get(str(s.id), '')}
+                                    for s in shops]})
         reviews.append({
             'order': order,
             'form': InboundReceiveForm(instance=order),
@@ -727,10 +733,13 @@ def _refreshes_low_stock(view):
 @never_cache        # a reopened phone browser loads it fresh, not an old copy
 def inbound_view(request):
 
+    from .services.store_stock import active_stores
     today = timezone.localdate()
+    shops = active_stores()
     context = {
         'today': today,
         'pending_reviews': _build_pending_reviews(),
+        'alloc_stores': shops if len(shops) > 1 else [],
     }
 
     if request.method != 'POST':
@@ -797,11 +806,14 @@ def inbound_view(request):
 
                     product = Product.objects.get(barcode=barcode)
 
+                    # A split typed already is kept; it is checked on receipt.
+                    from .services.store_stock import clean_allocation
                     InboundPendingItem.objects.create(
                         inbound_order=order,
                         product=product,
                         quantity=qty,
                         cost_price=cost_price,
+                        allocation={str(k): v for k, v in clean_allocation(row.get('alloc'), shops).items()},
                     )
                     order_total += cost_price * qty
 
@@ -828,14 +840,11 @@ def inbound_view(request):
 
                     product = Product.objects.get(barcode=barcode)
 
-                    Purchase.objects.create(
-                        inbound_order=None,     # 关键：不归入入库单
-                        product=product,
-                        supplier=None,          # 普通入库不记录供应商
-                        quantity=qty,
-                        remaining=qty,
-                        cost_price=cost_price,
-                        date=timezone.now(),
+                    # Stocked now, so it is split between the shops now.
+                    from .services.store_stock import receive_batches, split_for_receipt
+                    receive_batches(
+                        product=product, quantity=qty, cost_price=cost_price,
+                        allocation=split_for_receipt(row.get('alloc'), qty, shops, product.display_name),
                     )
                     _bought_again(product)
                     order_total += cost_price * qty
@@ -927,18 +936,28 @@ def inbound_receive_view(request, order_id):
                 )
                 order.save(update_fields=['total_amount'])
 
+                # The split between the shops, as typed: kept on save, and
+                # it must add up before the goods are received.
+                from .services.store_stock import (active_stores, clean_allocation, receive_batches,
+                                                   split_for_receipt)
+                shops = active_stores()
+                try:
+                    for it in remaining_items:
+                        raw = {str(s.id): request.POST.get(f'alloc-{it.pk}-{s.id}', '') for s in shops}
+                        it.allocation = {str(k): v for k, v in clean_allocation(raw, shops).items()}
+                        it.save(update_fields=['allocation'])
+                    splits = ({it.pk: split_for_receipt(it.allocation, it.quantity, shops,
+                                                        build_product_label(it.product))
+                               for it in remaining_items} if action == 'receive' else {})
+                except ValueError as e:
+                    messages.error(request, f'Order #{order.id} not received. {e}')
+                    return redirect('inbound')
+
                 if action == 'receive':
                     now = timezone.now()
                     for it in remaining_items:
-                        Purchase.objects.create(
-                            inbound_order=order,
-                            product=it.product,
-                            supplier=order.supplier,
-                            quantity=it.quantity,
-                            remaining=it.quantity,
-                            cost_price=it.cost_price,
-                            date=now,
-                        )
+                        receive_batches(product=it.product, quantity=it.quantity, cost_price=it.cost_price,
+                                        allocation=splits[it.pk], supplier=order.supplier, inbound_order=order)
                         _bought_again(it.product)
                     order.mark_received(now)
                     order.pending_items.all().delete()
@@ -974,9 +993,11 @@ def _sell_draft(request, raw_id):
             .filter(id=int(raw_id), store=store, status=PedidoDraft.OPEN).first())
 
 
-def _sell_line_ctx(product):
+def _sell_line_ctx(product, store=None):
     """A product as the Sell cart knows it - the fields check_barcode returns."""
-    stock = product.purchase_set.filter(remaining__gt=0).aggregate(s=Sum('remaining'))['s'] or 0
+    from .services.store_stock import till_stock
+    shop_stock = till_stock(product, store)
+    stock = shop_stock['stock']
     last_purchase = product.purchase_set.order_by('-date').first()
     image_url = ''
     for image in product.images.all():
@@ -993,6 +1014,8 @@ def _sell_line_ctx(product):
         'pname': product.name,
         'spec': ' '.join(filter(None, [product.spec, product.color])),
         'stock': int(stock),
+        'sampleHere': shop_stock['sample_here'],
+        'shops': shop_stock['shops'],
         'retail': float(product.default_price) if product.default_price is not None else None,
         'wholesale': float(product.wholesale_price) if product.wholesale_price is not None else None,
         'lastCost': float(last_purchase.cost_price) if last_purchase else None,
@@ -1015,7 +1038,7 @@ def _pedido_cart(draft):
         'customer': ({'id': customer.id, 'label': str(customer)}
                      if customer else None),
         'customer_name': draft.customer_name,
-        'lines': [dict(_sell_line_ctx(line['product']), qty=line['quantity'],
+        'lines': [dict(_sell_line_ctx(line['product'], draft.store), qty=line['quantity'],
                        base=f"{line['unit_price']:.2f}", discount=f"{line['discount']:.2f}")
                   for line in payload['lines']],
         'charges': [{'label': c['label'], 'amount': f"{c['amount']:.2f}"} for c in payload['charges']],
@@ -1098,7 +1121,10 @@ def outbound_view(request):
             if not barcode or qty < 1 or price <= 0:
                 raise ValueError('Invalid product line.')
             line_payment = str(row.get('payment', '')).strip()  # 旧格式可选
-            parsed_items.append({'barcode': barcode, 'qty': qty, 'price': price, 'payment': line_payment})
+            # the shop's opened sample, sold at a price typed at the till
+            sample = row.get('sample') in (True, 1, '1', 'true')
+            parsed_items.append({'barcode': barcode, 'qty': qty, 'price': price, 'payment': line_payment,
+                                 'sample': sample})
             line_total = price * qty
             order_revenue += line_total
             order_qty += qty
@@ -1162,7 +1188,10 @@ def outbound_view(request):
 
                 # FIFO 扣减（原子条件更新；select_for_update 在 SQLite 上是 no-op，见 stock_ops）
                 # 返回本次消耗的真实成本，作为这笔销售的成本基准存下来。
-                line_cost = consume_stock_fifo(product, row['qty'])
+                # Out of this shop; what it lacks comes from the other shop
+                # (a transfer, owed at cost + markup).
+                line_cost = consume_stock_fifo(product, row['qty'], active_store, sample=row['sample'],
+                                               user=request.user, sale_order=order)
 
                 # 行支付方式：旧格式用行内值，新格式（订单级拆分）用主支付方式
                 line_method = row['payment'] if row['payment'] in valid_methods else primary_method
@@ -1175,6 +1204,7 @@ def outbound_view(request):
                     unit_price=row['price'],
                     cost_basis=line_cost,
                     payment_method=line_method,
+                    is_sample=row['sample'],
                     date=timezone.now(),
                 )
 
@@ -1254,8 +1284,11 @@ def product_list_view(request):
     page_obj = paginator.get_page(page_with_focus(request, products_qs, 10))
 
     from .services.low_stock import in_transit_quantities
+    from .services.store_stock import shop_split
     transit = in_transit_quantities(p.id for p in page_obj)
+    split = shop_split([p.id for p in page_obj])
     for p in page_obj:
+        p.shop_split = split.get(p.id, [])
         p.display_price = p.default_price
         p.primary_image_url = get_product_image_url(p)
         p.in_transit = transit.get(p.id, 0)
@@ -2137,8 +2170,10 @@ def product_detail_view(request, pk):
     is_perfume = bool(product.category and 'perfum' in (product.category.name or '').lower())
 
     category_name = (product.category.name if product.category else '').lower()
+    from .services.store_stock import shop_split
     return render(request, 'stock/product_detail.html', {
         'product': product,
+        'shop_split': shop_split([product.id]).get(product.id, []),
         # The perfume rows (volume, notes, family) mean nothing for other
         # goods; shown there they would all read "-".
         'is_perfume': 'perfum' in category_name,
@@ -2531,7 +2566,7 @@ def edit_product_view(request, pk):
         form = ProductForm(instance=product, can_edit_prices=has_manager_access(request.user))
 
     images = product.images.all()
-    purchases = product.purchase_set.all().order_by('-date')
+    purchases = product.purchase_set.select_related('store', 'supplier').order_by('-date')
     purchase_count = product.purchase_set.count()
     sale_count = product.sale_set.count()
     # total available stock (sum of remaining from all batches)
@@ -2856,8 +2891,12 @@ def check_barcode(request):
             request,
             Product.objects.select_related('brand_master', 'series_master').prefetch_related('images'))
         product = qs.get(barcode=barcode)
-        # 当前库存（可用不用于表单，仅供前端显示时参考；这里不必返回也可）
-        stock = product.purchase_set.filter(remaining__gt=0).aggregate(s=Sum('remaining'))['s'] or 0
+        # The till sells full-price units of both shops (each keeps its
+        # sample) and the sample of its own; inbound only needs the total.
+        from .services.store_stock import till_stock
+        active, _is_all = resolve_active_store(request)
+        shop_stock = till_stock(product, None if request.GET.get('scope') == 'stock' else active)
+        stock = shop_stock['stock']
         # 最近一次进价
         last_purchase = product.purchase_set.order_by('-date').first()
         last_cost = last_purchase.cost_price if last_purchase else None
@@ -2880,6 +2919,8 @@ def check_barcode(request):
             'spec': product.spec or '',
             'color': product.color or '',
             'stock': int(stock),
+            'sample_here': shop_stock['sample_here'],
+            'shops': shop_stock['shops'],
             'last_cost': float(last_cost) if last_cost is not None else None,
             'retail_price': float(product.default_price) if product.default_price is not None else None,
             'wholesale_price': float(product.wholesale_price) if product.wholesale_price is not None else None,
@@ -3117,12 +3158,14 @@ def audit_error_resolve(request, error_id):
 @login_required
 @admin_required
 def business_settings_view(request):
-    """Settings for the whole business: the card fee rate."""
+    """Settings for the whole business: the card fee rate and the markup one
+    shop charges the other per unit moved."""
     from .models import BusinessSettings
     settings_row = BusinessSettings.get()
     error = ''
     if request.method == 'POST':
         raw = (request.POST.get('card_fee_pct') or '').strip().replace(',', '.')
+        raw_markup = (request.POST.get('transfer_markup') or str(settings_row.transfer_markup)).strip().replace(',', '.')
         try:
             value = Decimal(raw)
             if value < 0 or value > 10:
@@ -3130,11 +3173,85 @@ def business_settings_view(request):
         except (InvalidOperation, ValueError):
             error = 'Enter a percentage between 0 and 10, e.g. 1 or 1.5.'
         else:
-            settings_row.card_fee_pct = value.quantize(Decimal('0.01'))
-            settings_row.save(update_fields=['card_fee_pct', 'updated_at'])
-            messages.success(request, f'Card fee set to {settings_row.card_fee_pct}% for new card sales.')
-            return redirect('business_settings')
+            try:
+                markup = Decimal(raw_markup)
+                if markup < 0 or markup > 1000:
+                    raise InvalidOperation
+            except (InvalidOperation, ValueError):
+                error = 'Enter the transfer markup in euro, e.g. 3.'
+            else:
+                settings_row.card_fee_pct = value.quantize(Decimal('0.01'))
+                settings_row.transfer_markup = markup.quantize(Decimal('0.01'))
+                settings_row.save(update_fields=['card_fee_pct', 'transfer_markup', 'updated_at'])
+                messages.success(request, f'Card fee {settings_row.card_fee_pct}%, transfer markup '
+                                          f'€{settings_row.transfer_markup} per unit.')
+                return redirect('business_settings')
     return render(request, 'stock/business_settings.html', {'settings_row': settings_row, 'error': error})
+
+
+@login_required
+@manager_required
+def stock_transfers_view(request):
+    """Goods between the shops: what they owe each other, settling it, moving
+    stock by hand, and the history of both."""
+    from .models import StockTransfer, StoreSettlement
+    from .services import store_stock
+    shops = store_stock.active_stores()
+    by_id = {s.id: s for s in shops}
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        try:
+            if action == 'move':
+                barcode = (request.POST.get('barcode') or '').strip()
+                product = Product.objects.filter(barcode=barcode).first()
+                if product is None:
+                    raise ValueError(f'No product with barcode {barcode or "(empty)"}.')
+                try:
+                    qty = int(request.POST.get('quantity') or 0)
+                    src_id, dst_id = (int(x) for x in (request.POST.get('direction') or '').split('-'))
+                except (TypeError, ValueError):
+                    raise ValueError('Choose a quantity and which way the goods go.')
+                src, dst = by_id.get(src_id), by_id.get(dst_id)
+                if src is None or dst is None:
+                    raise ValueError('Choose which way the goods go.')
+                line = store_stock.move_units(product, qty, src, dst, user=request.user,
+                                              note=(request.POST.get('note') or '').strip())
+                request.session['transfer_direction'] = f'{src.id}-{dst.id}'
+                held = store_stock.stock_by_store([product.id]).get(product.id, {})
+                messages.success(request, f'Moved {qty} x {product.display_name} to {dst.name} '
+                                          f'(owed €{line.amount:.2f}). Now: '
+                                          + ' · '.join(f'{s.name} {held.get(s.id, 0)}' for s in shops))
+            elif action == 'settle':
+                payer, payee = by_id.get(int(request.POST.get('payer') or 0)), by_id.get(int(request.POST.get('payee') or 0))
+                if payer is None or payee is None:
+                    raise ValueError('Choose the two shops.')
+                try:
+                    amount = Decimal((request.POST.get('amount') or '').replace(',', '.'))
+                except InvalidOperation:
+                    raise ValueError('Enter the amount paid.')
+                settled_on = parse_date(request.POST.get('settled_on') or '') or timezone.localdate()
+                store_stock.settle(payer, payee, amount.quantize(Decimal('0.01')), settled_on=settled_on,
+                                   user=request.user, note=(request.POST.get('note') or '').strip())
+                messages.success(request, f'{payer.name} paid {payee.name} €{amount:.2f}.')
+        except ValidationError as e:
+            messages.error(request, '; '.join(e.messages))
+        except ValueError as e:
+            messages.error(request, str(e))
+        return redirect('stock_transfers')
+
+    transfers = list(StockTransfer.objects.select_related('from_store', 'to_store', 'created_by')
+                     .prefetch_related('lines__product')[:100])
+    settlements = list(StoreSettlement.objects.select_related('payer', 'payee', 'created_by')[:60])
+    return render(request, 'stock/stock_transfers.html', {
+        'balances': store_stock.balances(),
+        'markup': store_stock.transfer_markup(),
+        'directions': [{'value': f'{a.id}-{b.id}', 'label': f'{a.name} → {b.name}'}
+                       for a in shops for b in shops if a.id != b.id],
+        'last_direction': request.session.get('transfer_direction', ''),
+        'transfers': transfers,
+        'settlements': settlements,
+        'today': timezone.localdate(),
+    })
 
 
 @login_required
@@ -6180,8 +6297,11 @@ def api_adjust_total_stock(request):
     POST JSON:
     {
       "product_id": 271,
-      "new_total_stock": 100
+      "new_total_stock": 100,
+      "store_id": 2          (optional: the active store, else the default)
     }
+
+    The total is the store's: stock is counted per shop.
     """
     if not has_manager_access(request.user):
         return JsonResponse({'success': False, 'error': 'Permission denied'}, status=403)
@@ -6195,9 +6315,14 @@ def api_adjust_total_stock(request):
             return JsonResponse({'success': False, 'error': 'Stock cannot be negative'})
 
         product = get_object_or_404(Product, pk=product_id)
+        store = Store.objects.filter(pk=data.get('store_id')).first() if data.get('store_id') else None
+        if store is None:
+            active, _is_all = resolve_active_store(request)
+            store = active or Store.get_default()
 
+        from .services.store_stock import store_units
         with transaction.atomic():
-            current_total = product.total_stock()
+            current_total = store_units(product, store) if store is not None else product.total_stock()
             difference = new_total - current_total
 
             if difference == 0:
@@ -6214,13 +6339,14 @@ def api_adjust_total_stock(request):
                     quantity=difference,
                     cost_price=Decimal('0.00'),
                     remaining=difference,
-                    inbound_order=None
+                    inbound_order=None,
+                    store=store,
                 )
                 message = f'Increased stock by {difference}'
             else:
                 # 复用 FIFO 原子条件扣减：SQLite 上 select_for_update 是 no-op，
                 # consume_stock_fifo 用条件 UPDATE 保证并发安全
-                consume_stock_fifo(product, abs(difference))
+                consume_stock_fifo(product, abs(difference), store, own_only=True)
                 message = f'Decreased stock by {abs(difference)}'
 
             from .services.pricing import sync_perfume_price

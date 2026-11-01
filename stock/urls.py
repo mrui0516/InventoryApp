@@ -29,6 +29,7 @@ urlpatterns = [
     path('inbound-orders/<int:order_id>/rollback/', views.inbound_order_rollback,
          name='inbound_order_rollback'),
     path('categories/create/', views.create_category, name='create_category'),
+    path('transfers/', views.stock_transfers_view, name='stock_transfers'),
     path('products/<int:pk>/', views.product_detail_view, name='product_detail'),
     path('sales-history/', views.product_sales_history_view, name='product_sales_history'),
     path('backup/download/', views.download_db_backup, name='download_db_backup'),

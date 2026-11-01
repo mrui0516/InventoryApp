@@ -1,0 +1,138 @@
+{% extends 'stock/base.html' %}
+{% block title %}Transfers{% endblock %}
+{% block content %}
+<div class="page-shell tr-page">
+  <div class="page-head"><h1 class="page-title">Transfers</h1></div>
+
+  {# what the shops owe each other, and paying it #}
+  <section class="page-card pad tr-balance" aria-label="Balance">
+    {% for b in balances %}
+      <form method="post" class="tr-owe">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="settle">
+        <input type="hidden" name="payer" value="{{ b.debtor.id }}">
+        <input type="hidden" name="payee" value="{{ b.creditor.id }}">
+        <div class="tr-owe-text"><b>{{ b.debtor.name }}</b> owes <b>{{ b.creditor.name }}</b>
+          <span class="tr-owe-amount">&euro;{{ b.amount|floatformat:2 }}</span></div>
+        <div class="tr-owe-pay">
+          <div class="input-group input-group-sm"><span class="input-group-text">&euro;</span>
+            <input type="text" inputmode="decimal" class="form-control" name="amount" value="{{ b.amount|floatformat:2 }}" aria-label="Amount paid"></div>
+          <input type="date" class="form-control form-control-sm" name="settled_on" value="{{ today|date:'Y-m-d' }}" aria-label="Paid on">
+          <button type="submit" class="btn btn-sm btn-primary">Settle</button>
+        </div>
+      </form>
+    {% empty %}
+      <div class="tr-even">The shops are square.</div>
+    {% endfor %}
+    <div class="tr-rate">Markup &euro;{{ markup|floatformat:2 }} per unit{% if user.is_superuser %} &middot; <a href="{% url 'business_settings' %}">change</a>{% endif %}</div>
+  </section>
+
+  {# moving goods by hand: scan, how many, which way #}
+  <section class="page-card pad" aria-label="New transfer">
+    <h2 class="tr-h">New transfer</h2>
+    <form method="post" class="tr-move" id="trMove">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="move">
+      <label class="tr-f tr-code"><span>Barcode</span>
+        <input type="text" class="form-control" name="barcode" inputmode="numeric" autocomplete="off" required autofocus></label>
+      <label class="tr-f tr-qty"><span>Qty</span>
+        <input type="number" class="form-control" name="quantity" min="1" step="1" value="1" required></label>
+      <label class="tr-f tr-dir"><span>From &rarr; to</span>
+        <select class="form-select" name="direction">
+          {% for d in directions %}<option value="{{ d.value }}"{% if d.value == last_direction %} selected{% endif %}>{{ d.label }}</option>{% endfor %}
+        </select></label>
+      <label class="tr-f tr-note"><span>Note</span>
+        <input type="text" class="form-control" name="note" maxlength="200"></label>
+      <button type="submit" class="btn btn-primary tr-go">Move</button>
+    </form>
+  </section>
+
+  <section class="page-card pad" aria-label="History">
+    <nav class="ftabs tr-tabs" role="tablist">
+      <button type="button" class="on" data-tr="moves" role="tab" aria-selected="true">Transfers <small>{{ transfers|length }}</small></button>
+      <button type="button" data-tr="paid" role="tab" aria-selected="false">Settlements <small>{{ settlements|length }}</small></button>
+    </nav>
+    <div data-tr-pane="moves">
+      {% for t in transfers %}
+        <div class="tr-row">
+          <div class="tr-when">{{ t.created_at|date:"d M" }}<small>{{ t.created_at|date:"H:i" }}</small></div>
+          <div class="tr-main">
+            <div class="tr-way">{{ t.from_store.name }} &rarr; {{ t.to_store.name }}
+              <span class="tr-tag {{ t.reason }}">{{ t.get_reason_display }}</span>
+              {% if t.sale_order_id %}<a href="{% url 'sale_order_detail' t.sale_order_id %}">#{{ t.sale_order_id }}</a>{% endif %}</div>
+            {# a long transfer (the opening split) shows three lines and folds the rest #}
+            {% with lines=t.lines.all %}
+            <div class="tr-lines">{% for l in lines %}{% if forloop.counter <= 3 or lines|length <= 4 %}{{ l.quantity }}&times; {{ l.product.list_name|default:l.product.display_name }}{% if not forloop.last %}, {% endif %}{% endif %}{% endfor %}{% if t.note %} &middot; {{ t.note }}{% endif %}{% if t.created_by %} &middot; {{ t.created_by.username }}{% endif %}
+              {% if lines|length > 4 %}<details class="tr-more"><summary>+{{ lines|length|add:"-3" }} more</summary>{% for l in lines %}{% if forloop.counter > 3 %}{{ l.quantity }}&times; {{ l.product.list_name|default:l.product.display_name }}{% if not forloop.last %}, {% endif %}{% endif %}{% endfor %}</details>{% endif %}</div>
+            {% endwith %}
+          </div>
+          <div class="tr-amt">{% if t.reason == 'opening' %}&mdash;{% else %}&euro;{{ t.amount|floatformat:2 }}{% endif %}</div>
+        </div>
+      {% empty %}
+        <p class="tr-empty">No transfers yet.</p>
+      {% endfor %}
+    </div>
+    <div data-tr-pane="paid" hidden>
+      {% for s in settlements %}
+        <div class="tr-row">
+          <div class="tr-when">{{ s.settled_on|date:"d M" }}<small>{{ s.settled_on|date:"Y" }}</small></div>
+          <div class="tr-main"><div class="tr-way">{{ s.payer.name }} paid {{ s.payee.name }}</div>
+            <div class="tr-lines">{% if s.note %}{{ s.note }} &middot; {% endif %}{% if s.created_by %}{{ s.created_by.username }}{% endif %}</div></div>
+          <div class="tr-amt">&euro;{{ s.amount|floatformat:2 }}</div>
+        </div>
+      {% empty %}
+        <p class="tr-empty">No settlements yet.</p>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+<style>
+  .tr-page{ max-width:56rem; }
+  .tr-h{ font-size:1.05rem; font-weight:700; margin:0 0 .6rem; }
+  .tr-owe{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.6rem 1rem;
+    padding:.2rem 0 .7rem; border-bottom:1px solid var(--app-border); margin-bottom:.6rem; }
+  .tr-owe-text{ font-size:1.02rem; }
+  .tr-owe-amount{ display:block; font-size:1.6rem; font-weight:800; font-variant-numeric:tabular-nums; margin-top:.1rem; }
+  .tr-owe-pay{ display:grid; grid-template-columns:8.5rem 9.5rem auto; gap:.4rem; align-items:center; }
+  .tr-even{ font-size:1.05rem; font-weight:700; color:#0f766e; padding:.2rem 0 .6rem; }
+  .tr-rate{ font-size:.85rem; color:var(--app-muted); }
+  .tr-move{ display:grid; grid-template-columns:minmax(0,1.4fr) 5.5rem minmax(0,1.6fr) minmax(0,1.2fr) auto; gap:.5rem; align-items:end; }
+  .tr-f{ display:grid; gap:.2rem; margin:0; min-width:0; }
+  .tr-f > span{ font-size:.78rem; font-weight:700; color:var(--app-muted); }
+  .tr-tabs{ margin:0 0 .3rem; }
+  .tr-tabs button{ border:0; background:none; padding:.45rem 0; font-weight:700; font-size:.92rem; color:var(--app-muted);
+    border-bottom:2px solid transparent; margin-bottom:-1px; white-space:nowrap; }
+  .tr-tabs button:hover{ color:var(--app-text); }
+  .tr-tabs button.on{ color:var(--app-text); border-bottom-color:var(--app-accent); }
+  .tr-tabs small{ font-size:.85rem; font-weight:600; color:var(--app-muted); margin-left:.15rem; }
+  .tr-more summary{ color:var(--app-accent); font-weight:700; cursor:pointer; margin-top:.15rem; }
+  .tr-more[open] summary{ margin-bottom:.2rem; }
+  .tr-row{ display:grid; grid-template-columns:3.4rem minmax(0,1fr) auto; gap:.75rem; align-items:center; padding:.6rem 0; border-top:1px solid var(--app-border); }
+  [data-tr-pane] > .tr-row:first-child{ border-top:0; }
+  .tr-when{ font-weight:700; font-variant-numeric:tabular-nums; line-height:1.15; }
+  .tr-when small{ display:block; font-weight:500; color:var(--app-muted); font-size:.8rem; }
+  .tr-way{ font-weight:700; display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; }
+  .tr-lines{ font-size:.88rem; color:var(--app-primary); overflow-wrap:anywhere; }
+  .tr-amt{ font-weight:800; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .tr-tag{ font-size:.72rem; font-weight:700; padding:.08rem .45rem; border-radius:999px; background:#e7e5e4; color:#44403c; }
+  .tr-tag.sale{ background:#e0f2fe; color:#0c5a8f; }
+  .tr-tag.opening{ background:#ecfdf5; color:#0f766e; }
+  .tr-empty{ color:var(--app-muted); margin:.5rem 0 0; }
+  @media (max-width:767.98px){
+    .tr-move{ grid-template-columns:minmax(0,1fr) 5rem; }
+    .tr-dir, .tr-note, .tr-go{ grid-column:1 / -1; }
+    .tr-owe-pay{ grid-template-columns:minmax(0,1fr) minmax(0,1fr); width:100%; }
+    .tr-owe-pay .btn{ grid-column:1 / -1; min-height:44px; }
+    .tr-go{ min-height:44px; }
+  }
+</style>
+<script>
+  (function () {
+    const tabs = document.querySelectorAll('[data-tr]');
+    tabs.forEach((b) => b.addEventListener('click', () => {
+      tabs.forEach((x) => { const on = x === b; x.classList.toggle('on', on); x.setAttribute('aria-selected', on ? 'true' : 'false'); });
+      document.querySelectorAll('[data-tr-pane]').forEach((p) => { p.hidden = p.dataset.trPane !== b.dataset.tr; });
+    }));
+  })();
+</script>
+{% endblock %}

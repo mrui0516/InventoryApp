@@ -49,6 +49,8 @@ class Sale(models.Model):  # 可保留表名不改
     # is exact (not re-derived afterward). Null on old rows / backfill / non-stock
     # sales — those fall back to the reconstructed cost.
     cost_basis = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    # The shop's opened sample, sold in store at a price typed at the till.
+    is_sample = models.BooleanField(default=False)
     payment_method = models.CharField(max_length=10, choices=PAYMENT_METHOD_CHOICES)
     date = models.DateTimeField(auto_now_add=True, db_index=True)
 

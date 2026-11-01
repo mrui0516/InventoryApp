@@ -10,7 +10,7 @@
   </div>
 
   <div class="sp-kpis{% if show_sensitive %} sp-kpis-2{% endif %}">
-    <div class="sp-kpi{% if stock <= 0 %} neg{% elif stock <= 5 %} warn{% endif %}"><span>In stock</span><b>{{ stock }}</b>{% if in_transit %}<small>+{{ in_transit }} on the way</small>{% endif %}</div>
+    <div class="sp-kpi{% if stock <= 0 %} neg{% elif stock <= 5 %} warn{% endif %}"><span>In stock</span><b>{{ stock }}</b>{% if shop_split %}<small>{% for s in shop_split %}{{ s.label }} {{ s.units }}{% if not forloop.last %} · {% endif %}{% endfor %}</small>{% endif %}{% if in_transit %}<small>+{{ in_transit }} on the way</small>{% endif %}</div>
     <div class="sp-kpi"><span>Retail</span><b>{% if product.default_price %}&euro;{{ product.default_price|floatformat:2 }}{% else %}&mdash;{% endif %}</b></div>
     <div class="sp-kpi"><span>Wholesale</span><b>{% if product.wholesale_price %}&euro;{{ product.wholesale_price|floatformat:2 }}{% else %}&mdash;{% endif %}</b></div>
     {% if show_sensitive %}<div class="sp-kpi"><span>FIFO cost</span><b>{% if fifo_cost is not None %}&euro;{{ fifo_cost|floatformat:2 }}{% else %}&mdash;{% endif %}</b></div>{% endif %}

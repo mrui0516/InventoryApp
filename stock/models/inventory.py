@@ -71,6 +71,9 @@ class InboundPendingItem(models.Model):
     product = models.ForeignKey('Product', on_delete=models.CASCADE, db_index=True)
     quantity = models.PositiveIntegerField(validators=[MinValueValidator(1)])
     cost_price = models.DecimalField(max_digits=10, decimal_places=2)
+    # How the line is split between the shops: {"<store id>": units}. Set
+    # before the goods are received; the receipt makes one batch per shop.
+    allocation = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -91,14 +94,28 @@ class Purchase(models.Model):
     cost_price = models.DecimalField(max_digits=10, decimal_places=2)
     date = models.DateTimeField(auto_now_add=True, db_index=True)
     remaining = models.PositiveIntegerField()
+    # The shop the batch is in. Left empty it lands in the default store; it
+    # stays empty only where no store exists at all.
+    store = models.ForeignKey('Store', on_delete=models.PROTECT, null=True, blank=True,
+                              related_name='batches', db_index=True)
+    # Set on a batch made by moving units from another shop's batch.
+    transfer_line = models.ForeignKey('StockTransferLine', on_delete=models.SET_NULL,
+                                      null=True, blank=True, related_name='batches')
 
     def __str__(self):
         return f"{self.product.name} - {self.quantity} - {self.date:%Y-%m-%d %H:%M}"
+
+    def save(self, *args, **kwargs):
+        if self.store_id is None and self._state.adding:
+            from .core import Store
+            self.store = Store.get_default()
+        super().save(*args, **kwargs)
 
     class Meta:
         indexes = [
             models.Index(fields=['product', 'date']),
             models.Index(fields=['product', 'remaining']),
+            models.Index(fields=['product', 'store', 'remaining']),
         ]
         constraints = [
             models.CheckConstraint(check=models.Q(remaining__gte=0), name='purchase_remaining_non_negative'),

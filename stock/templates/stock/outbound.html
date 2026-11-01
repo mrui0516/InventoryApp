@@ -237,6 +237,7 @@
             <button type="button" class="price-opt" data-kind="wholesale">Wholesale <span id="line-modal-wholesale">€0.00</span></button>
             {# What this customer paid last time; only shown when there is one. #}
             <button type="button" class="price-opt d-none" data-kind="last">Last <span id="line-modal-last">€0.00</span><small id="line-modal-last-date"></small></button>
+            <button type="button" class="price-opt d-none" data-kind="sample">Sample <span>type price</span><small>this shop's opened bottle</small></button>
           </div>
           <div class="lm-price">
             <label class="lm-sub-label" for="line-modal-base">Unit price</label>
@@ -516,6 +517,7 @@
   }
   .line-flag.warn{ background:var(--app-warn-soft); color:var(--app-warn); }
   .line-flag.danger{ background:var(--app-danger-soft); color:var(--app-danger); }
+  .line-flag.sample{ background:#e7e5e4; color:#292524; }
 
   /* 提示 */
   .alert{ border-radius:var(--app-radius-sm); border:1px solid var(--app-border); }
@@ -1183,12 +1185,13 @@ document.addEventListener('DOMContentLoaded', () => {
   function cartDiscount() { return cart.reduce((s, i) => s + (Number(i.discount) || 0) * (Number(i.qty) || 0), 0); }
   function cartQtyTotal() { return cart.reduce((s, i) => s + (Number(i.qty) || 0), 0); }
   function barcodeQtyTotal(barcode) {
-    return cart.filter(i => i.barcode === barcode).reduce((s, i) => s + (Number(i.qty) || 0), 0);
+    return cart.filter(i => i.barcode === barcode && !i.sample).reduce((s, i) => s + (Number(i.qty) || 0), 0);
   }
 
   function lineValid(item) {
     if (!((Number(item.qty) || 0) >= 1)) return false;
     if (lineFinalUnit(item) <= 0) return false;
+    if (item.sample) return item.sampleHere && Number(item.qty) === 1;
     // A scanned product always has stock; a quoted one may not.
     const stock = Number(item.stock) || 0;
     if (stock <= 0 || barcodeQtyTotal(item.barcode) > stock) return false;
@@ -1200,6 +1203,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const finalUnit = lineFinalUnit(item);
     const stock = Number(item.stock) || 0;
     const usedQty = barcodeQtyTotal(item.barcode);
+    if (item.sample) {
+      if (isFinite(Number(item.lastCost)) && finalUnit < Number(item.lastCost)) w.push({ text: 'Selling below cost', tone: 'danger' });
+      return w;
+    }
     if (stock <= 0) w.push({ text: 'No stock', tone: 'danger' });
     else if (usedQty > stock) w.push({ text: 'Exceeds available stock', tone: 'danger' });
     else if (stock > 0 && usedQty === stock) w.push({ text: 'Uses all remaining stock', tone: 'warn' });
@@ -1234,7 +1241,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="cart-product-main">
               <div class="fw-semibold">${escapeHtml(item.title)}</div>
               <div class="small text-muted">${escapeHtml(item.barcode)}</div>
-              <div class="line-flags">${flags}</div>
+              <div class="line-flags">${item.sample ? '<span class="line-flag sample">Sample</span>' : ''}${flags}</div>
             </div>
           </div>
         </td>
@@ -1335,7 +1342,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     itemsJson.value = JSON.stringify(cart.map(i => ({
       barcode: i.barcode, qty: i.qty, price: lineFinalUnit(i).toFixed(2),
-      discount: (Number(i.discount) || 0).toFixed(2), payment: linePrimaryMethod(i),
+      discount: (Number(i.discount) || 0).toFixed(2), payment: linePrimaryMethod(i), sample: !!i.sample,
     })));
     paymentsJson.value = JSON.stringify(METHODS.filter(m => payments[m] > 0).map(m => ({ method: m, amount: payments[m].toFixed(2) })));
     document.getElementById('charges_json').value = JSON.stringify(charges.map(c => ({
@@ -1454,6 +1461,8 @@ document.addEventListener('DOMContentLoaded', () => {
       pname: d.product_name || '',
       spec: [d.spec, d.color].filter(Boolean).join(' '),
       stock: Number(d.stock) || 0,
+      sampleHere: !!d.sample_here,
+      shops: d.shops || [],
       retail: (d.retail_price != null && d.retail_price !== '') ? Number(d.retail_price) : null,
       wholesale: (d.wholesale_price != null && d.wholesale_price !== '') ? Number(d.wholesale_price) : null,
       lastCost: (d.last_cost != null && d.last_cost !== '') ? Number(d.last_cost) : null,
@@ -1463,6 +1472,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function setPriceToggle(kind) {
     document.querySelectorAll('#line-modal-price-toggle .price-opt').forEach((b) => b.classList.toggle('active', b.dataset.kind === kind));
+  }
+  function modalKind() {
+    const on = document.querySelector('#line-modal-price-toggle .price-opt.active');
+    return on ? on.dataset.kind : 'retail';
   }
   function lineModalTotal() {
     const base = parseMoney(document.getElementById('line-modal-base').value) || 0;
@@ -1537,7 +1550,11 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('line-modal-name').textContent =
       [ctx.model, ctx.pname].filter(Boolean).join(' · ') || ctx.title;
     document.getElementById('line-modal-barcode').textContent = ctx.barcode + (ctx.spec ? ` · ${ctx.spec}` : '');
-    document.getElementById('line-modal-stock').textContent = `In stock ${ctx.stock}`;
+    // Each shop's count; this one first-person, its opened sample noted.
+    document.getElementById('line-modal-stock').textContent = (ctx.shops && ctx.shops.length)
+      ? ctx.shops.slice().sort((a, b) => b.here - a.here).map((s) => `${s.here ? 'Here' : s.name} ${s.units}${s.sample ? ' (1 sample)' : ''}`).join(' · ')
+      : `In stock ${ctx.stock}`;
+    document.querySelector('#line-modal-price-toggle .price-opt[data-kind="sample"]').classList.toggle('d-none', !ctx.sampleHere);
     const thumbWrap = document.getElementById('line-modal-thumb-wrap');
     const thumbImg = document.getElementById('line-modal-thumb');
     if (ctx.image_url) { thumbImg.src = ctx.image_url; thumbWrap.classList.remove('empty'); }
@@ -1563,10 +1580,13 @@ document.addEventListener('DOMContentLoaded', () => {
     setModalQty(item ? item.qty : 1);
     const near = (a, b) => a != null && b != null && Math.abs(Number(a) - Number(b)) < 0.001;
     let kind = 'retail';
-    if (item) kind = near(item.base, last) ? 'last' : (near(item.base, wholesale) ? 'wholesale' : 'retail');
+    if (item && item.sample) kind = 'sample';
+    else if (item) kind = near(item.base, last) ? 'last' : (near(item.base, wholesale) ? 'wholesale' : 'retail');
+    else if (!(Number(ctx.stock) > 0) && ctx.sampleHere) kind = 'sample';     // only the sample is left
     else if (last != null) kind = 'last';
     else if (retail == null && wholesale != null) kind = 'wholesale';
     setPriceToggle(kind);
+    if (kind === 'sample' && !item) { document.getElementById('line-modal-base').value = ''; setModalQty(1); }
     modalSplit = !!(item && item.isSplit);
     modalPayMethod = (item && !item.isSplit && METHODS.includes(item.payment)) ? item.payment : lastMethod;
     lineModalSplitToggle.checked = modalSplit;
@@ -1594,9 +1614,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!isFinite(base) || base <= 0) return fail('Enter a valid price.');
     if (disc < 0) return fail('Discount cannot be negative.');
     if (base - disc <= 0) return fail('Discount cannot be equal to or above the price.');
+    const sample = modalKind() === 'sample';
     const stock = Number(modalCtx.stock) || 0;
-    const otherQty = cart.filter(i => i.barcode === modalCtx.barcode && i.uid !== editingUid).reduce((s, i) => s + i.qty, 0);
-    if (stock > 0 && otherQty + qty > stock) return fail(`Only ${stock} in stock (${otherQty} already in cart).`);
+    const otherQty = cart.filter(i => i.barcode === modalCtx.barcode && i.uid !== editingUid && !i.sample).reduce((s, i) => s + i.qty, 0);
+    if (sample) {
+      if (qty !== 1) return fail('A sample is one bottle.');
+      if (cart.some(i => i.barcode === modalCtx.barcode && i.uid !== editingUid && i.sample)) return fail('The sample is already in the cart.');
+    } else if (!(stock > 0)) {
+      return fail('Only the shop samples are left: choose Sample.');
+    } else if (otherQty + qty > stock) {
+      return fail(`Only ${stock} in stock (${otherQty} already in cart).`);
+    }
 
     const lineTotal = Math.max(0, base - disc) * qty;
     let payment = modalPayMethod;
@@ -1611,12 +1639,13 @@ document.addEventListener('DOMContentLoaded', () => {
       payment = METHODS.filter(m => paymentSplit[m] > 0).sort((a, b) => paymentSplit[b] - paymentSplit[a])[0];
     }
 
-    const fields = { qty, base, discount: disc, payment, isSplit: modalSplit, paymentSplit };
+    const fields = { qty, base, discount: disc, payment, isSplit: modalSplit, paymentSplit, sample };
     if (editingUid) {
       Object.assign(cart.find(i => i.uid === editingUid), fields);
     } else {
       cart.push(Object.assign({
         uid: uidSeq++, barcode: modalCtx.barcode, title: modalCtx.title, stock: modalCtx.stock,
+        sampleHere: modalCtx.sampleHere, shops: modalCtx.shops,
         retail: modalCtx.retail, wholesale: modalCtx.wholesale, lastCost: modalCtx.lastCost,
         image_url: modalCtx.image_url,
       }, fields));
@@ -1642,6 +1671,15 @@ document.addEventListener('DOMContentLoaded', () => {
     b.addEventListener('click', () => {
       if (b.disabled) return;
       setPriceToggle(b.dataset.kind);
+      if (b.dataset.kind === 'sample') {
+        // the sample's price is typed each time
+        const input = document.getElementById('line-modal-base');
+        input.value = '';
+        setModalQty(1);
+        input.focus();
+        updateLineModalPreview();
+        return;
+      }
       const v = b.dataset.kind === 'wholesale' ? Number(modalCtx.wholesale)
         : b.dataset.kind === 'last' ? Number((lastPrices[modalCtx.barcode] || {}).price)
         : Number(modalCtx.retail);
@@ -1822,7 +1860,7 @@ document.addEventListener('DOMContentLoaded', () => {
       .then(r => r.json())
       .then(d => {
         if (!d.exists) { toastWarn(`Barcode ${escapeHtml(code)} not found.`); return; }
-        if (d.stock > 0) openLineModal(ctxFromCheck(d, code), null);
+        if (d.stock > 0 || d.sample_here) openLineModal(ctxFromCheck(d, code), null);
         else toastError(`${escapeHtml(d.name || code)} — no stock`);
       })
       .catch(() => toastError('Lookup failed. Check the connection.'));

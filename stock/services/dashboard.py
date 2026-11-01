@@ -717,6 +717,8 @@ def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_
     )
     if selected_category_ids:
         inventory_qs = inventory_qs.filter(product__category_id__in=selected_category_ids)
+    if store is not None:
+        inventory_qs = inventory_qs.filter(store=store)      # one shop picked: its own stock
     inventory_rows = list(inventory_qs)
     current_stock_units = sum((row.remaining or 0) for row in inventory_rows)
     current_stock_cost = sum(
@@ -823,9 +825,9 @@ def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_
     slow_movers = slow_movers[:8]
 
     perfume_inventory_rows = list(
-        Purchase.objects
-        .filter(remaining__gt=0, product__category__name__iexact="Perfumes",
-                product__archived_at__isnull=True)
+        _apply_store(Purchase.objects
+                     .filter(remaining__gt=0, product__category__name__iexact="Perfumes",
+                             product__archived_at__isnull=True), store)
         .select_related("product")
     )
     perfume_stock_units = sum((row.remaining or 0) for row in perfume_inventory_rows)

@@ -295,6 +295,7 @@
                           <div class="pm-brand">{{ product.brand }}</div>
                           <div class="pm-name">{{ product.list_name }}</div>
                           <div class="pm-sub">{{ product.barcode }}{% if show_sales_sensitive %} · Sold {{ product.total_sold_qty }} · 30d {{ product.recent_sold_qty }}{% endif %}</div>
+                          {% if product.shop_split %}<div class="pm-sub shop-split">{% for s in product.shop_split %}{{ s.label }} <b>{{ s.units }}</b>{% if not forloop.last %} · {% endif %}{% endfor %}</div>{% endif %}
                         </div>
                         <div class="pm-fig">
                           <span class="pm-price">{% if product.default_price %}€{{ product.default_price|floatformat:2 }}{% else %}&mdash;{% endif %}</span>
@@ -339,6 +340,7 @@
                         <span class="stock-pill zero">0</span>
                       {% endif %}
                     </div>
+                    {% if product.shop_split %}<div class="shop-split">{% for s in product.shop_split %}{{ s.label }} <b>{{ s.units }}</b>{% if not forloop.last %}<br>{% endif %}{% endfor %}</div>{% endif %}
                     {% if product.in_transit %}<span class="transit-pill" title="On an inbound order not received yet"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 4h13v11H1z"/><path d="M14 8h4l3 3v4h-7z"/><circle cx="5.5" cy="17.5" r="1.8"/><circle cx="17.5" cy="17.5" r="1.8"/></svg>+{{ product.in_transit }}<span class="tp-long"> on the way</span></span>{% endif %}
                   </td>
                   <td class="d-none d-sm-table-cell">
@@ -404,6 +406,9 @@
      colours, it is how the product is told apart */
   tr.is-muted > td{ background:var(--app-surface-2) !important; }
   tr.is-muted .product-name, tr.is-muted .pm-name, tr.is-muted .price-stack,
+  .shop-split{ font-size:.85rem; color:var(--app-muted); white-space:nowrap; line-height:1.35; margin-top:.2rem; }
+  .shop-split b{ color:var(--app-text); font-variant-numeric:tabular-nums; }
+  .pm-sub.shop-split{ margin-top:0; }
   tr.is-muted .stock-pill, tr.is-muted .sales-stack, tr.is-muted .brand-pill,
   tr.is-muted .product-meta, tr.is-muted .pm-sub, tr.is-muted .pm-fig{ opacity:.55; }
   .restock-bell{ display:inline-grid; place-items:center; width:32px; height:32px; padding:0; border-radius:999px;

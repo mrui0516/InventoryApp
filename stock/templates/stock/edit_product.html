@@ -38,7 +38,7 @@
         {% for p in purchases %}
           <div class="ep-batch" data-purchase-id="{{ p.id }}">
             <div><span class="when">{{ p.date|date:"Y-m-d" }}</span>
-              <div class="sub">{{ p.quantity }} bought &middot; &euro;{{ p.cost_price|floatformat:2 }}{% if p.supplier %} &middot; {{ p.supplier.name }}{% endif %}</div></div>
+              <div class="sub">{% if p.store %}<b>{{ p.store.name }}</b> &middot; {% endif %}{{ p.quantity }} bought &middot; &euro;{{ p.cost_price|floatformat:2 }}{% if p.supplier %} &middot; {{ p.supplier.name }}{% endif %}</div></div>
             <div class="left"><span class="remain-value">{{ p.remaining }}</span> left</div>
             <button type="button" class="btn btn-sm btn-outline-secondary edit-remain-btn" data-purchase-id="{{ p.id }}" data-old="{{ p.remaining }}">Correct</button>
           </div>
