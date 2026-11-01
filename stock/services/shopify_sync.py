@@ -62,13 +62,10 @@ DECANT_SUFFIXES = ('-10ML', '-5ML')
 # where every product carrying decants is a 100ml.
 DECANTABLE_VOLUME_ML = 100
 
-# Decant prices as a share of the full bottle, rounded to 5 cents. Taken from
-# the prices already on the storefront (10ml sits at 17-18%, 5ml at 11-12%) so
-# newly created products land beside the existing ones rather than looking
-# arbitrary. Shopify keeps whatever is set afterwards - the app only writes the
-# full-bottle price - so these are a sensible start, not a policy.
-DECANT_PRICE_RATIO = {'-10ML': Decimal('0.175'), '-5ML': Decimal('0.115')}
-DECANT_PRICE_STEP = Decimal('0.05')
+# Permanent storefront policy, also applied when an existing price is synced.
+DECANT_PRICE_RATIO = {'-10ML': Decimal('0.10'), '-5ML': Decimal('0.05')}
+DECANT_FIXED_FEE = {'-10ML': Decimal('0.00'), '-5ML': Decimal('0.50')}
+DECANT_PRICE_STEP = Decimal('0.01')
 
 # The storefront is Portuguese and its size option is called Tamanho; a new
 # product using a different option name would not sit with the others.
@@ -99,13 +96,13 @@ def is_decantable(product):
 
 
 def decant_price(full_price, suffix):
-    """A starting price for one decant size, rounded to the nearest 5 cents."""
+    """10ml = 10%; 5ml = 5% + EUR0.50, rounded half-up to cents."""
     if full_price is None:
         return Decimal('0.00')
     ratio = DECANT_PRICE_RATIO.get(suffix)
     if ratio is None:
         return Decimal('0.00')
-    raw = Decimal(full_price) * ratio
+    raw = Decimal(full_price) * ratio + DECANT_FIXED_FEE[suffix]
     steps = (raw / DECANT_PRICE_STEP).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
     return (steps * DECANT_PRICE_STEP).quantize(Decimal('0.01'))
 
@@ -140,7 +137,7 @@ def sync_product_price_inventory(product, client=None, *, do_price=True, do_inve
                                  dry_run=False, shop_variants=None, location_id=None):
     """Push the app's price and/or on-hand to Shopify (app authoritative).
 
-    Price goes to the 100ml variant (sku == barcode). Inventory is decant-aware:
+    Prices follow the full bottle and the two decant formulas. Inventory is decant-aware:
     100ml, 10ml and 5ml variants are set per the reserve rules above. Returns
     ``(code, detail)``.
 
@@ -171,6 +168,14 @@ def sync_product_price_inventory(product, client=None, *, do_price=True, do_inve
                 if Decimal(main['price']) != Decimal(app_price):
                     parts.append(f"price {main.get('price')}->{app_price}")
                     writes.append(('price', main['product_id'], main['variant_id'], app_price))
+                for suffix in DECANT_SUFFIXES:
+                    rec = shop_variants.get(barcode + suffix)
+                    if rec is None or rec.get('price') is None or rec['product_id'] != main['product_id']:
+                        continue
+                    target_price = _price_str(decant_price(product.default_price, suffix))
+                    if Decimal(rec['price']) != Decimal(target_price):
+                        parts.append(f"{suffix.lstrip('-').lower()} price {rec['price']}->{target_price}")
+                        writes.append(('price', rec['product_id'], rec['variant_id'], target_price))
 
         if do_inventory:
             try:
