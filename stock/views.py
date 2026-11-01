@@ -1286,7 +1286,8 @@ def product_list_view(request):
     from .services.low_stock import in_transit_quantities
     from .services.store_stock import shop_split
     transit = in_transit_quantities(p.id for p in page_obj)
-    split = shop_split([p.id for p in page_obj])
+    here, here_is_all = resolve_active_store(request)
+    split = shop_split([p.id for p in page_obj], here=None if here_is_all else here)
     for p in page_obj:
         p.shop_split = split.get(p.id, [])
         p.display_price = p.default_price
@@ -2111,6 +2112,8 @@ def product_detail_view(request, pk):
     )
 
     purchases = product.purchase_set.select_related('supplier').order_by('-date')
+    from .services.store_stock import merge_batches
+    purchase_lines = merge_batches(purchases)
 
     # Sales History on this page shows only the last 10 days; the rest lives on the
     # dedicated product sales-history page (linked via full_sales_url).
@@ -2177,7 +2180,7 @@ def product_detail_view(request, pk):
         # The perfume rows (volume, notes, family) mean nothing for other
         # goods; shown there they would all read "-".
         'is_perfume': 'perfum' in category_name,
-        'purchases': purchases,
+        'purchases': purchase_lines,
         'sales': sales,
         'sales_older_count': sales_older_count,
         'full_sales_url': full_sales_url,
@@ -3817,6 +3820,7 @@ def supplier_detail_view(request, supplier_id):
     product_ids = set()
     last_purchase_at = None
 
+    from .services.store_stock import merge_batches
     for order in inbound_orders_qs:
         if order.supplier_id == supplier.id:
             items = list(order.items.all())
@@ -3824,6 +3828,7 @@ def supplier_detail_view(request, supplier_id):
             items = [item for item in order.items.all() if item.supplier_id == supplier.id]
         if not items:
             continue
+        items = merge_batches(items)       # one line per product, each shop's part on it
 
         row_amount = Decimal('0.00')
         row_qty = 0
@@ -3880,15 +3885,17 @@ def supplier_detail_view(request, supplier_id):
 
     direct_groups = group_purchases_by_recorded_second(direct_purchases_qs)
 
+    from .orders_views import _direct_edit_links
     for group_key, items in direct_groups.items():
         group_key = comparable_recorded_at(group_key)
         row_amount = Decimal('0.00')
         row_qty = 0
+        items = merge_batches(items)
+        _direct_edit_links(items, next_url)
         for item in items:
             item.line_total = (item.cost_price or Decimal('0.00')) * item.quantity
             item.image_url = get_product_image_url(item.product)
             item.display_name = build_product_label(item.product)
-            item.edit_url = f"{reverse('direct_purchase_edit', args=[item.id])}?{urlencode({'next': next_url})}"
             row_amount += item.line_total
             row_qty += item.quantity
             product_ids.add(item.product_id)
@@ -4623,7 +4630,7 @@ def daily_summary_view(request):
         for s in stats_list[:8]
     ]
 
-    # Stock received that day (inventory is shared across stores).
+    # Stock received that day, both shops together.
     received_units = 0
     received_cost = Decimal('0.00')
     received_orders = 0

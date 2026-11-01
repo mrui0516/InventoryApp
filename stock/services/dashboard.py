@@ -10,6 +10,7 @@ from django.utils import timezone
 from ..models import ARInvoice, ARPayment, Purchase, Sale, SalesTarget
 from .profit import sale_profit_map_for_sale_ids
 from .sell_through import sell_through
+from .store_stock import transfer_margin, transfer_margins
 
 # Stock that arrived less than this many days ago is not a slow mover yet.
 SLOW_MOVER_GRACE_DAYS = 30
@@ -192,6 +193,9 @@ def compute_period_headline(month_start, period_end, selected_category_ids=None,
             (profit_map.get(sale_id, {}).get("profit", Decimal("0.00")) for sale_id in sale_ids),
             Decimal("0.00"),
         )
+        # one shop: plus / minus the markup on stock moved between the shops
+        profit += transfer_margin(store, month_start, period_end, category_ids=selected_category_ids,
+                                  channel=channel)
 
     return {
         "sales_amount": sales_amount,
@@ -346,6 +350,13 @@ def build_yearly_sales_overview(year, today, selected_category_ids=None, show_pr
         year_qty += row["quantity"]
         year_profit += line_profit
         year_order_keys.add(order_key)
+
+    if show_profit and store is not None:
+        for store_id, day, markup in transfer_margins(year_start, period_end,
+                                                      category_ids=selected_category_ids):
+            if store_id == store.pk:
+                months[day.month]["profit"] += markup
+                year_profit += markup
 
     peak = max((b["amount"] for b in months.values()), default=Decimal("0.00"))
     monthly_rows = []
@@ -527,6 +538,29 @@ def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_
             product_bucket["first_sold_at"] = business_at
         if business_at > product_bucket["last_sold_at"]:
             product_bucket["last_sold_at"] = business_at
+
+    # Each shop's profit counts the markup on stock moved between the shops:
+    # plus for the shop that let it go, minus for the one that took it. All
+    # shops together it cancels out.
+    month_transfer_margin = Decimal("0.00")
+    if show_profit:
+        def margins_by_store(rows):
+            out = defaultdict(Decimal)
+            for store_id, _day, markup in rows:
+                out[store_id] += markup
+            return out
+
+        picked = margins_by_store(transfer_margins(month_start, period_end, category_ids=selected_category_ids,
+                                                   channel=channel))
+        for store_id, bucket in store_buckets.items():
+            bucket["profit"] += picked.get(store_id, Decimal("0.00"))
+        if store is not None:
+            month_transfer_margin = picked.get(store.pk, Decimal("0.00"))
+            total_sales_profit += month_transfer_margin
+            for kind, bucket in channel_buckets.items():
+                bucket["profit"] += margins_by_store(transfer_margins(
+                    month_start, period_end, category_ids=selected_category_ids, channel=kind,
+                )).get(store.pk, Decimal("0.00"))
 
     total_order_count = len(order_keys)
     avg_ticket = (total_sales_amount / total_order_count) if total_order_count else Decimal("0.00")
@@ -891,6 +925,7 @@ def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_
         "month_sales_amount": total_sales_amount,
         "month_sales_qty": total_sales_qty,
         "month_sales_profit": total_sales_profit,
+        "month_transfer_margin": month_transfer_margin,
         "month_sales_cost": total_sales_amount - total_sales_profit,
         "month_order_count": total_order_count,
         "month_avg_ticket": avg_ticket,

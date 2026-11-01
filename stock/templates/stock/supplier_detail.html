@@ -222,7 +222,7 @@ The stock it added will be removed and the lines go back to awaiting receipt.');
                       {% endif %}
                       <div>
                         <a class="text-decoration-none fw-bold text-dark" href="{% url 'product_detail' item.product.id %}">{{ item.display_name }}</a>
-                        <div class="sub">{{ item.product.barcode }}</div>
+                        <div class="sub">{{ item.product.barcode }}{% for s in item.shops %} · {{ s.label }} <b>{{ s.quantity }}</b>{% endfor %}</div>
                       </div>
                     </div>
                   </td>
@@ -230,6 +230,9 @@ The stock it added will be removed and the lines go back to awaiting receipt.');
                   <td class="text-end">EUR {{ item.cost_price|floatformat:2 }}</td>
                   <td class="text-end fw-bold">EUR {{ item.line_total|floatformat:2 }}</td>
                   <td class="text-end">
+                    {% for link in item.edit_links %}
+                      <a href="{{ link.url }}" class="btn btn-sm btn-outline-secondary">Adjust {{ link.label }}</a>
+                    {% endfor %}
                     {% if item.edit_url %}
                       <a href="{{ item.edit_url }}" class="btn btn-sm btn-outline-secondary">Adjust</a>
                     {% else %}

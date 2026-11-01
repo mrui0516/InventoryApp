@@ -10,7 +10,9 @@
     <div class="ord-code">
       {% if item.product %}{{ item.product.barcode }}{% endif %}
       {% if item.edit_url %}<a href="{{ item.edit_url }}">Adjust</a>{% endif %}
+      {% for link in item.edit_links %}<a href="{{ link.url }}">Adjust {{ link.label }}</a>{% endfor %}
     </div>
+    {% if item.shops %}<div class="ord-shops">{% for s in item.shops %}{{ s.label }} <b>{{ s.quantity }}</b>{% if not forloop.last %} · {% endif %}{% endfor %}</div>{% endif %}
   </div>
   <div class="ord-fig">
     <span class="ord-qty">&times;{{ item.quantity }}</span>

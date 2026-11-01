@@ -8539,9 +8539,10 @@ class OrdersPageTests(TestCase):
         self.assertNotIn(reverse("sale_order_correction_edit", args=[order.id]), html)
 
     # -- purchases and analysis ----------------------------------------------
-    def test_purchases_say_they_are_shared_between_shops(self):
+    def test_purchases_no_longer_claim_stock_is_shared(self):
+        # 2026-11-01: stock is per shop; a delivery lists each shop's part
         response = self._get(view="purchases")
-        self.assertContains(response, "not split by store")
+        self.assertNotContains(response, "not split by store")
 
     def test_purchases_are_not_cut_down_by_the_active_store(self):
         store = Store.objects.create(name="Lisboa OP", code="OPL")

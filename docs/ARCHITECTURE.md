@@ -286,11 +286,21 @@ has_admin_access(user)          → is_superuser only
 目标店新建一批：同产品、同供应商、同进货单、同成本、**同日期**（`date` 是 auto_now_add，创建后再 update 回原日期），
 `transfer_line` 指向这次调货。整批未动过的货直接改 `store`。
 这样所有批次的进货数量之和不变——进货金额、供应商统计、FIFO 利润回溯、库存流水、进货单回滚都不用改；
-唯一可见的差别是一张进货单在产品页 / 编辑页显示成按店分开的几行（编辑页的批次标了店名）。
+列表里用 `merge_batches(batches)` 把同一进货单（直接入库：同一秒）、同产品、同供应商、同成本的批次合并成一行
+（第一批的副本，`quantity` / `remaining` 求和，`parts` 是原批次，`shops` 是各店的部分），
+Orders → Purchases（`orders_views.load_purchases`）、供应商页、产品详情页都用它；`receive_batches` 把同一行各店批次的 `date` 对齐，
+直接入库才合得上。直接入库合并后的 "Adjust" 由 `_direct_edit_links` 给每批一个链接。进货单编辑页和产品编辑页仍按批次（标了店名）。
 
 **加价只记在调货账上**：移过去的批次保留真实成本，所以公司总利润与哪家店卖出无关；
 `StockTransferLine.amount = cost_total + markup_per_unit × quantity`（期初调拨为 0）。
 `balances()` 把双向调货金额与 `StoreSettlement` 相抵，得出"谁欠谁多少"。
+
+**单店利润**：`transfer_margins(start, end, *, category_ids, channel)` 返回 `[(store_id, 日期, 金额)]`——
+每条调货行（期初除外）在调货当天给调出店 `+markup_per_unit × quantity`、给调入店同额的负数，合计为 0。
+`transfer_margin(store, …)` 是一家店的净额（`store=None` 为 0）。看板：`compute_period_headline`（环比）、
+`build_monthly_dashboard_snapshot`（选店时加进 `month_sales_profit` 与渠道卡片，`month_transfer_margin` 给毛利卡片；
+店铺对比每家店都加）、`build_yearly_sales_overview`（选店时按月加）。选了渠道时只算 `sale_order` 属于该渠道的调货。
+销售行自身的利润（`Sale.cost_basis`）仍是真实成本，产品排行等按产品的利润不含加价。
 
 **扣库存**（`consume_stock_fifo(product, qty, store, *, sample, own_only, user, sale_order)`）：
 - `store=None`：所有批次一个池（没有店铺时 / 旧调用）。
@@ -310,7 +320,8 @@ has_admin_access(user)          → is_superuser only
 **收银台**：`till_stock(product, store)` → `stock`（本店可正价卖的件数 = 各店库存减各自样品之和）、
 `sample_here`、`shops`（每家店的数量和是否有样品）；`check_barcode`（`?scope=stock` 时给合计）和 Pedido 草稿行都用它。
 
-**列表与页面**：`shop_split(product_ids)` 给产品列表 / 侧栏 / 详情页的"Khan 3 · Scentory 2"（只有一家店时为空）。
+**列表与页面**：`shop_split(product_ids, here=None)` 给每家店的 `name` / `label` / `initial` / `units` / `here`（只有一家店时为空）。
+产品列表用 `_stock_badge.html` 画成一个分段胶囊（首字母 + 件数，颜色按合计，`here` 加粗，0 标红）；侧栏 / 详情页显示"Khan 3 · Scentory 2"。
 看板选了一家店时库存部分（库存总量、Capital locked、Slow movers、香水库存）只算这家店。
 
 **Shopify 不变**：推送的仍是两店合计（`shopify_sync._inventory_targets`，有分装的 100ml 款 = 合计 − `DECANT_RESERVE`(2)，

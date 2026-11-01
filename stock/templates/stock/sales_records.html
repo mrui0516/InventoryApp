@@ -322,7 +322,6 @@
       <div class="op-kpi"><span class="k">Receipts</span><span class="v">{{ total_purchase_orders }}</span></div>
       <div class="op-kpi"><span class="k">Items</span><span class="v">{{ total_purchase_qty }}</span></div>
     </div>
-    <div class="op-scope">Stock is shared between the shops, so purchases are not split by store.</div>
     <div class="op-list">
       {% for group in purchases %}
         {% if group.opens_day %}

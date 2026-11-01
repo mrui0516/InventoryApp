@@ -7,12 +7,14 @@ date takes them in the other shop. Summed over all batches nothing changes - the
 same goods arrived on the same day at the same cost - so purchase totals,
 supplier figures, the FIFO profit replay and the stock ledger stay as they were.
 """
+import copy
 from collections import defaultdict
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import F, Sum
+from django.utils import timezone
 
 from ..models import (BusinessSettings, Purchase, StockTransfer, StockTransferLine,
                       Store, StoreSettlement)
@@ -32,15 +34,57 @@ def stock_by_store(product_ids):
     return out
 
 
-def shop_split(product_ids):
-    """``{product_id: [{'label', 'units'}]}`` for lists - each shop's count,
-    by the first word of its name; empty while there is only one shop."""
+def shop_split(product_ids, here=None):
+    """``{product_id: [{'id', 'name', 'label', 'initial', 'units', 'here'}]}``
+    for lists - each shop's count (``label``: the first word of its name;
+    ``here``: it is the shop ``here``); empty while there is only one shop."""
     shops = active_stores()
     if len(shops) < 2:
         return {}
     counts = stock_by_store(product_ids)
-    return {pid: [{'label': s.name.split()[0], 'units': counts.get(pid, {}).get(s.id, 0)} for s in shops]
+    return {pid: [{'id': s.id, 'name': s.name, 'label': s.name.split()[0], 'initial': s.name[:1].upper(),
+                   'units': counts.get(pid, {}).get(s.id, 0), 'here': here is not None and s.pk == here.pk}
+                  for s in shops]
             for pid in product_ids}
+
+
+def merge_batches(batches):
+    """One line per product and price for goods that came in together.
+
+    A received line is stored as one batch per shop, and a transfer splits a
+    batch again, but it was one purchase. Batches of the same delivery (or, for
+    a direct stock-in, of the same moment), product, supplier and cost become
+    one line: the first batch, carrying the summed ``quantity`` / ``remaining``
+    and ``parts`` (the batches). ``shops`` lists each shop's part
+    (``label``, ``quantity``, ``remaining``, ``batches``) when there are several."""
+    lines, by_key = [], {}
+    for batch in batches:
+        key = (batch.product_id, batch.inbound_order_id, batch.supplier_id, batch.cost_price,
+               None if batch.inbound_order_id else batch.date.replace(microsecond=0))
+        line = by_key.get(key)
+        if line is None:
+            line = by_key[key] = copy.copy(batch)
+            line.parts, line.quantity, line.remaining = [], 0, 0
+            lines.append(line)
+        line.parts.append(batch)
+        line.quantity += batch.quantity
+        line.remaining += batch.remaining
+    order = {s.id: n for n, s in enumerate(active_stores())}
+    names = dict(Store.objects.values_list('id', 'name'))
+    for line in lines:
+        line.shops = []
+        if len({b.store_id for b in line.parts}) < 2:
+            continue
+        shops = {}
+        for batch in line.parts:
+            shop = shops.setdefault(batch.store_id, {
+                'label': (names.get(batch.store_id) or 'No shop').split()[0],
+                'quantity': 0, 'remaining': 0, 'batches': []})
+            shop['quantity'] += batch.quantity
+            shop['remaining'] += batch.remaining
+            shop['batches'].append(batch)
+        line.shops = [shops[k] for k in sorted(shops, key=lambda k: (order.get(k, 99), k or 0))]
+    return lines
 
 
 def store_units(product, store):
@@ -236,7 +280,54 @@ def receive_batches(*, product, quantity, cost_price, allocation, supplier=None,
         made.append(Purchase.objects.create(
             product=product, supplier=supplier, inbound_order=inbound_order,
             quantity=quantity, remaining=quantity, cost_price=cost_price))
+    if len(made) > 1:
+        # one moment for the whole line, so lists show it as one purchase
+        Purchase.objects.filter(pk__in=[b.pk for b in made[1:]]).update(date=made[0].date)
+        for batch in made[1:]:
+            batch.date = made[0].date
     return made
+
+
+# --------------------------------------------------------- each shop's profit
+def transfer_margins(start, end, *, category_ids=(), channel=''):
+    """The markup on stock moved between the shops from ``start`` to ``end``
+    (dates), as ``[(store_id, day, amount)]``: plus for the shop that let the
+    stock go, minus for the shop that took it.
+
+    A transfer is a sale to the other shop at cost + markup, booked on its day.
+    The moved batches keep their real cost, so a shop's own sales profit is at
+    cost; adding these gives each shop's profit. Over all shops they cancel, so
+    the company's profit is unchanged. Opening stock carries no markup.
+
+    ``channel``: only transfers made for a sale of that channel (a manual
+    transfer belongs to no channel)."""
+    lines = (StockTransferLine.objects.exclude(transfer__reason=StockTransfer.OPENING)
+             .filter(transfer__created_at__date__gte=start, transfer__created_at__date__lte=end,
+                     markup_per_unit__gt=0))
+    if category_ids:
+        lines = lines.filter(product__category_id__in=list(category_ids))
+    if channel == 'revenda':
+        lines = lines.filter(transfer__sale_order__customer__kind='revenda')
+    elif channel == 'retail':
+        lines = (lines.filter(transfer__sale_order__isnull=False)
+                 .exclude(transfer__sale_order__customer__kind='revenda'))
+    out = []
+    for row in lines.values('transfer__from_store', 'transfer__to_store', 'transfer__created_at',
+                            'quantity', 'markup_per_unit'):
+        markup = row['markup_per_unit'] * row['quantity']
+        day = timezone.localtime(row['transfer__created_at']).date()
+        out.append((row['transfer__from_store'], day, markup))
+        out.append((row['transfer__to_store'], day, -markup))
+    return out
+
+
+def transfer_margin(store, start, end, *, category_ids=(), channel=''):
+    """One shop's net markup from transfers in the period (see transfer_margins)."""
+    if store is None:
+        return Decimal('0.00')
+    return sum((amount for store_id, _day, amount in
+                transfer_margins(start, end, category_ids=category_ids, channel=channel)
+                if store_id == store.pk), Decimal('0.00'))
 
 
 # --------------------------------------------------------------- the money

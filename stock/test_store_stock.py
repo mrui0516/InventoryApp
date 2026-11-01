@@ -174,3 +174,66 @@ class BalanceTests(ShopsMixin, TestCase):
     def test_a_settlement_must_have_an_amount(self):
         with self.assertRaises(ValidationError):
             store_stock.settle(self.scentory, self.khan, Decimal("0"), settled_on=timezone.localdate())
+
+
+class EachShopsProfitTests(ShopsMixin, TestCase):
+    """A transfer is a sale to the other shop at cost + markup (2026-11-01)."""
+
+    def test_the_markup_is_plus_for_one_shop_and_minus_for_the_other(self):
+        self.batch(self.khan, 5, cost="10")
+        store_stock.move_units(self.product, 2, self.khan, self.scentory)
+        today = timezone.localdate()
+        self.assertEqual(store_stock.transfer_margin(self.khan, today, today), Decimal("6.00"))
+        self.assertEqual(store_stock.transfer_margin(self.scentory, today, today), Decimal("-6.00"))
+        self.assertEqual(sum(a for _s, _d, a in store_stock.transfer_margins(today, today)), 0)
+        self.assertEqual(store_stock.transfer_margin(None, today, today), 0)
+
+    def test_the_opening_split_and_other_days_carry_nothing(self):
+        self.batch(self.khan, 5)
+        opening = StockTransfer.objects.create(from_store=self.khan, to_store=self.scentory,
+                                               reason=StockTransfer.OPENING)
+        store_stock.move_units(self.product, 2, self.khan, self.scentory, transfer=opening)
+        today = timezone.localdate()
+        self.assertEqual(store_stock.transfer_margins(today, today), [])
+        store_stock.move_units(self.product, 1, self.khan, self.scentory)
+        yesterday = today - timedelta(days=1)
+        self.assertEqual(store_stock.transfer_margins(yesterday, yesterday), [])
+
+    def test_a_channel_counts_only_transfers_made_for_its_sales(self):
+        self.batch(self.khan, 5)
+        store_stock.move_units(self.product, 1, self.khan, self.scentory)        # manual
+        today = timezone.localdate()
+        self.assertEqual(store_stock.transfer_margin(self.khan, today, today, channel="retail"), 0)
+        order = SaleOrder.objects.create(store=self.scentory)
+        store_stock.bring_in_for_sale(self.product, 2, self.scentory, sale_order=order)
+        self.assertEqual(store_stock.transfer_margin(self.khan, today, today, channel="retail"),
+                         Decimal("6.00"))       # its one bottle is the sample: 2 brought down
+        self.assertEqual(store_stock.transfer_margin(self.khan, today, today, channel="revenda"), 0)
+
+
+class MergeBatchesTests(ShopsMixin, TestCase):
+    def test_a_received_line_split_between_shops_is_one_line(self):
+        order = InboundOrder.objects.create(status="received")
+        store_stock.receive_batches(product=self.product, quantity=5, cost_price=Decimal("10"),
+                                    allocation={self.khan.id: 3, self.scentory.id: 2}, inbound_order=order)
+        store_stock.move_units(self.product, 1, self.khan, self.scentory)
+        lines = store_stock.merge_batches(order.items.all())
+        self.assertEqual(len(lines), 1)
+        line = lines[0]
+        self.assertEqual((line.quantity, line.remaining, len(line.parts)), (5, 5, 3))
+        self.assertEqual([(s["label"], s["quantity"]) for s in line.shops], [("Khan", 2), ("Scentory", 3)])
+
+    def test_a_direct_stock_in_split_between_shops_is_one_moment(self):
+        made = store_stock.receive_batches(product=self.product, quantity=3, cost_price=Decimal("10"),
+                                           allocation={self.khan.id: 2, self.scentory.id: 1})
+        dates = set(Purchase.objects.filter(pk__in=[b.pk for b in made]).values_list("date", flat=True))
+        self.assertEqual(len(dates), 1)
+        self.assertEqual(len(store_stock.merge_batches(Purchase.objects.all())), 1)
+
+    def test_different_prices_or_deliveries_stay_apart(self):
+        self.batch(self.khan, 2, cost="10", inbound_order=InboundOrder.objects.create())
+        self.batch(self.khan, 2, cost="12", inbound_order=InboundOrder.objects.get())
+        self.batch(self.scentory, 2, cost="10", inbound_order=InboundOrder.objects.create())
+        lines = store_stock.merge_batches(Purchase.objects.order_by("id"))
+        self.assertEqual(len(lines), 3)
+        self.assertTrue(all(line.shops == [] for line in lines))

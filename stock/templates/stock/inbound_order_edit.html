@@ -102,7 +102,7 @@
                   {% endif %}
                   <div>
                     <div class="fw-bold">{{ line_form.instance.display_name }}</div>
-                    <div class="meta-note">{{ line_form.instance.product.barcode }}</div>
+                    <div class="meta-note">{{ line_form.instance.product.barcode }}{% if line_form.instance.store_id %} · <b>{{ line_form.instance.store.name }}</b>{% endif %}</div>
                   </div>
                 </div>
               </td>

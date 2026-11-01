@@ -76,8 +76,10 @@ class SellPageTests(PagesMixin, TestCase):
 
     def test_the_product_pages_show_each_shop(self):
         html = self.client.get(reverse("product_list")).content.decode()
-        self.assertIn('class="shop-split"', html)
-        self.assertIn("Khan <b>3</b>", html)
+        # one pill, a segment per shop: initial + units
+        self.assertIn('class="stock-seg', html)
+        self.assertIn("<i>K</i>3</span>", html)
+        self.assertIn("Khan Perfume 3 · Scentory 1 · 4 in all", html)
         panel = self.client.get(reverse("product_panel", args=[self.product.id])).content.decode()
         self.assertIn("Khan 3 · Scentory 1", panel)
 
@@ -169,3 +171,54 @@ class OpeningSplitTests(ShopsMixin, TestCase):
         self.assertEqual(store_stock.balances(), [])                      # opening stock owes nothing
         with self.assertRaises(CommandError):
             self.run_split("--apply")
+
+
+class ShopViewsTests(PagesMixin, TestCase):
+    """2026-11-01: each shop's profit, the stock pill, one line per delivery."""
+
+    def test_the_shop_you_are_in_is_bold_in_the_pill(self):
+        self.batch(self.khan, 3)
+        self.batch(self.scentory, 0)
+        self.pick(self.scentory)
+        html = self.client.get(reverse("product_list")).content.decode()
+        self.assertIn('<span class="seg here none"><i>S</i>0</span>', html)
+        self.assertIn('<span class="seg"><i>K</i>3</span>', html)
+
+    def test_a_delivery_lists_each_product_once_with_each_shops_part(self):
+        supplier = Supplier.objects.create(name="Naypes")
+        order = InboundOrder.objects.create(supplier=supplier, status="received")
+        store_stock.receive_batches(product=self.product, quantity=6, cost_price=Decimal("10"),
+                                    allocation={self.khan.id: 4, self.scentory.id: 2},
+                                    supplier=supplier, inbound_order=order)
+        html = self.client.get(reverse("sales_records"), {"view": "purchases"}).content.decode()
+        self.assertEqual(html.count('class="ord-item"'), 1)
+        self.assertIn("&times;6", html)
+        self.assertIn("Khan <b>4</b> · Scentory <b>2</b>", html)
+        sup = self.client.get(reverse("supplier_detail", args=[supplier.id])).content.decode()
+        self.assertIn("Khan <b>4</b> · Scentory <b>2</b>", sup)
+        pdp = self.client.get(reverse("product_detail", args=[self.product.id])).content.decode()
+        self.assertIn("6 bought", pdp)
+        self.assertIn("(Khan 4 · Scentory 2)", pdp)
+
+    def test_a_split_direct_stock_in_offers_an_adjust_link_per_shop(self):
+        store_stock.receive_batches(product=self.product, quantity=3, cost_price=Decimal("10"),
+                                    allocation={self.khan.id: 2, self.scentory.id: 1})
+        html = self.client.get(reverse("sales_records"), {"view": "purchases"}).content.decode()
+        self.assertIn(">Adjust Khan</a>", html)
+        self.assertIn(">Adjust Scentory</a>", html)
+
+    def test_the_dashboard_counts_the_transfer_markup_in_a_shops_profit(self):
+        from .services.stock_ops import consume_stock_fifo
+        self.batch(self.khan, 5, cost="10")
+        order = SaleOrder.objects.create(store=self.scentory)
+        cost = consume_stock_fifo(self.product, 2, self.scentory, sale_order=order)
+        Sale.objects.create(product=self.product, quantity=2, unit_price=Decimal("50"), order=order,
+                            store=self.scentory, cost_basis=cost)
+        self.pick(self.scentory)
+        page = self.client.get(reverse("dashboard"))
+        # sold 100, cost 20, paid Khan 2 x 3 markup
+        self.assertEqual(page.context["month_sales_profit"], Decimal("74.00"))
+        self.assertContains(page, "transfers &minus;EUR 6.00")
+        cache.clear()
+        self.pick(self.khan)
+        self.assertEqual(self.client.get(reverse("dashboard")).context["month_sales_profit"], Decimal("6.00"))

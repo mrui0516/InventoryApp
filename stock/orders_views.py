@@ -39,6 +39,7 @@ from .models import InboundOrder, Purchase, Sale, SaleOrder
 from .permissions import (has_admin_access, has_manager_access,
                           has_order_reconciliation_access,
                           has_sales_sensitive_access)
+from .services.store_stock import merge_batches
 from .services.dashboard import (build_yearly_sales_overview,
                                  order_tender_amounts, resolve_year)
 from .services.profit import sale_profit_map_for_sale_ids
@@ -384,10 +385,23 @@ def _annotate_purchase_items(items):
     return items
 
 
+def _direct_edit_links(items, next_url):
+    """A direct purchase's "Adjust" link edits one batch: a merged line gets
+    one link per shop's batch instead."""
+    for item in items:
+        urls = [f"{reverse('direct_purchase_edit', args=[b.id])}?{urlencode({'next': next_url})}"
+                for b in item.parts]
+        item.edit_url = urls[0] if len(urls) == 1 else ''
+        item.edit_links = [] if len(urls) == 1 else [
+            {'label': shop['label'], 'url': f"{reverse('direct_purchase_edit', args=[b.id])}?{urlencode({'next': next_url})}"}
+            for shop in item.shops for b in shop['batches']]
+
+
 def load_purchases(start, end, q, next_url):
     """Inbound orders and direct purchases in the range, newest first.
 
-    Not filtered by store: stock is shared between the shops.
+    Not filtered by store: a delivery is one purchase for both shops. Each
+    product shows once per delivery, with each shop's part (merge_batches).
     """
     groups = []
     inbound = (InboundOrder.objects
@@ -397,7 +411,7 @@ def load_purchases(start, end, q, next_url):
                                  'items__supplier')
                .order_by('-created_at'))
     for order in inbound:
-        items = _annotate_purchase_items(order.items.all())
+        items = _annotate_purchase_items(merge_batches(order.items.all()))
         supplier = order.supplier or next((i.supplier for i in items if i.supplier_id), None)
         created = timezone.localtime(order.created_at)
         groups.append({
@@ -425,10 +439,8 @@ def load_purchases(start, end, q, next_url):
     for purchase in direct:
         by_day[timezone.localtime(purchase.date).date()].append(purchase)
     for day, purchases in by_day.items():
-        items = _annotate_purchase_items(purchases)
-        for item in items:
-            item.edit_url = (f"{reverse('direct_purchase_edit', args=[item.id])}"
-                             f"?{urlencode({'next': next_url})}")
+        items = _annotate_purchase_items(merge_batches(purchases))
+        _direct_edit_links(items, next_url)
         names = sorted({i.supplier.name for i in items if i.supplier_id})
         groups.append({
             'key': f'direct-{day.isoformat()}',

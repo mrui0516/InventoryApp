@@ -74,7 +74,7 @@
         <div class="snapshot-card">
           <div class="metric-label">{% if show_profit %}Gross Profit{% else %}Average Ticket{% endif %}</div>
           <div class="metric-value">{% if show_profit %}EUR {{ month_sales_profit|floatformat:2 }}{% else %}EUR {{ month_avg_ticket|floatformat:2 }}{% endif %}</div>
-          <div class="metric-sub">{% if show_profit %}Margin {{ month_gross_margin_pct|floatformat:1 }}% · FIFO based{% else %}{{ month_active_customer_count }} active customers this month{% endif %}</div>
+          <div class="metric-sub">{% if show_profit %}Margin {{ month_gross_margin_pct|floatformat:1 }}% · FIFO based{% if month_transfer_margin %} · transfers {% if month_transfer_margin > 0 %}+{% else %}&minus;{% endif %}EUR {{ month_transfer_margin|absval|floatformat:2 }}{% endif %}{% else %}{{ month_active_customer_count }} active customers this month{% endif %}</div>
           {% if show_profit and mom_comparison.profit_delta_pct is not None %}
             <div class="metric-sub mt-1">
               <span class="note-pill {% if mom_comparison.profit_delta_pct >= 0 %}good{% else %}bad{% endif %}">
