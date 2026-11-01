@@ -8,8 +8,8 @@ and sales, and every row that points at them. Refuses to delete while a
 category still holds an active product - unless ``--archive-products`` is
 given, which archives them first (as "Delete" does in the app: gone from the
 catalogue, search and selling; sales, purchases and profit kept). Archived
-products are left without a category; attributes defined for the category go
-with it; stores, suppliers, brands and shelf styles simply lose the link.
+products are left without a category; stores, suppliers and brands simply
+lose the link.
 """
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
@@ -64,11 +64,9 @@ class Command(BaseCommand):
         if active.count() > 50:
             out(f'    ... and {active.count() - 50} more')
         out(f'  archived products {archived.count()}  (kept, left without a category)')
-        out(f'  attributes        {sum(c.attributes.count() for c in doomed if hasattr(c, "attributes"))}  (deleted with them)')
         out(f'  stores selling    {sum(c.stores.count() for c in doomed)}  (link removed)')
         out(f'  suppliers linked  {sum(c.supplier_set.count() for c in doomed)}  (link removed)')
         out(f'  brands linked     {sum(c.brands.count() for c in doomed)}  (link removed)')
-        out(f'  shelf styles      {sum(c.shelf_styles.count() for c in doomed)}  (link removed)')
         if active.exists() and not archive_products:
             raise CommandError('Some of these categories still hold active products - archive or move them '
                                'first, or add --archive-products.')

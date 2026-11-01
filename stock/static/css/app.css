@@ -802,30 +802,79 @@ body.anon .erp-content{
   .ch-head{ font-size:.74rem; letter-spacing:.04em; }
 }
 
-/* --------------------------- Dashboard on a phone --------------------------- */
-/* What to act on first: the month, Retail vs Revenda, low stock, stores, the
-   trend; the reading-heavy sections are folds (closed on a phone). */
-.dash-mbar{ display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; }
-.mb-step{ display:grid; place-items:center; width:44px; height:44px; border:1px solid var(--app-border-strong);
-          border-radius:var(--app-radius-sm); background:var(--app-surface); font-size:1.5rem; line-height:1;
+/* ------------------- Dashboard bar: month, category, channel ------------------- */
+/* One bar at every width; any change applies at once (no Apply button). */
+.dash-mbar{ display:flex; align-items:center; gap:.5rem .6rem; flex-wrap:wrap; }
+.mb-monthset{ display:flex; align-items:center; gap:.35rem; flex:0 0 17rem; }
+.mb-step{ display:grid; place-items:center; width:40px; height:40px; border:1px solid var(--app-border-strong);
+          border-radius:var(--app-radius-sm); background:var(--app-surface); font-size:1.4rem; line-height:1;
           color:var(--app-text); text-decoration:none; flex:0 0 auto; }
+.mb-step:hover{ background:var(--app-surface-2); color:var(--app-text); }
 .mb-step.is-off{ opacity:.35; }
-.mb-month{ position:relative; flex:1 1 7rem; min-width:0; height:44px; margin:0; display:grid; place-items:center;
+.mb-month{ position:relative; flex:1 1 auto; min-width:0; height:40px; margin:0; display:grid; place-items:center;
            border:1px solid var(--app-border-strong); border-radius:var(--app-radius-sm); background:var(--app-surface);
-           font-weight:800; color:var(--app-text); }
+           font-weight:700; color:var(--app-text); white-space:nowrap; cursor:pointer; }
 .mb-month input{ position:absolute; inset:0; opacity:0; width:100%; height:100%; cursor:pointer; }
-.mb-cats{ position:relative; flex:1 1 100%; }
-.mb-cats > summary{ list-style:none; min-height:40px; display:flex; align-items:center; gap:.4rem; padding:0 .8rem;
+.mb-cats{ position:relative; flex:0 1 16rem; min-width:9rem; }
+.mb-cats > summary{ list-style:none; height:40px; display:flex; align-items:center; gap:.45rem; padding:0 .85rem;
                     border:1px solid var(--app-border-strong); border-radius:999px; background:var(--app-surface);
-                    font-weight:700; color:var(--app-accent-ink); cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+                    color:var(--app-text); cursor:pointer; white-space:nowrap; }
 .mb-cats > summary::-webkit-details-marker{ display:none; }
 .mb-cats > summary::after{ content:"\25BE"; margin-left:auto; color:var(--app-muted); }
-.mb-cat-list{ position:absolute; z-index:30; left:0; right:0; top:calc(100% + .3rem); display:grid; gap:.1rem;
+.mb-k{ font-size:.78rem; font-weight:600; color:var(--app-muted); }
+.mb-v{ font-weight:700; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.mb-cat-list{ position:absolute; z-index:30; left:0; min-width:100%; top:calc(100% + .3rem); display:grid; gap:.1rem;
               padding:.4rem; max-height:55vh; overflow:auto; background:var(--app-surface);
               border:1px solid var(--app-border-strong); border-radius:var(--app-radius); box-shadow:var(--app-shadow-md); }
-.mb-cat-list label{ display:flex; align-items:center; gap:.6rem; min-height:44px; padding:0 .5rem; margin:0; font-weight:600; }
-.mb-cat-list a{ display:flex; align-items:center; min-height:44px; padding:0 .5rem; font-weight:700; border-top:1px solid var(--app-border); }
+.mb-cat-list label{ display:flex; align-items:center; gap:.6rem; min-height:44px; padding:0 .5rem; margin:0; font-weight:600; white-space:nowrap; }
+.mb-none{ padding:.5rem; color:var(--app-muted); }
+/* channel: a segmented control - the picked one is a raised white pill */
+.mb-ch{ display:inline-flex; align-items:stretch; gap:2px; height:40px; padding:3px; flex:0 0 auto;
+        border:1px solid var(--app-border); border-radius:999px; background:var(--app-surface-2); }
+.mb-ch a{ display:inline-flex; align-items:center; gap:.4rem; padding:0 .9rem; border-radius:999px;
+          font-size:.9rem; font-weight:600; color:var(--app-primary); text-decoration:none; white-space:nowrap; }
+.mb-ch a:hover{ color:var(--app-text); }
+.mb-ch a.on{ background:#fff; color:var(--app-text); box-shadow:0 1px 2px rgba(28,25,23,.12); }
+.mb-ch i{ width:.55rem; height:.55rem; border-radius:999px; display:inline-block; }
+.mb-ch .retail i{ background:#3ba6f1; }
+.mb-ch .revenda i{ background:#f59e0b; }
+.mb-end{ margin-left:auto; display:flex; align-items:center; gap:1rem; }
+.mb-end a{ display:inline-flex; align-items:center; min-height:40px; font-weight:600; color:var(--app-accent); text-decoration:none; white-space:nowrap; }
+.mb-end a:hover{ text-decoration:underline; }
+.mb-end:empty{ display:none; }
 
+/* the channel a heading is showing */
+.ch-tag{ display:inline-flex; align-items:center; vertical-align:middle; margin-left:.35rem; padding:.12rem .55rem;
+         border-radius:999px; font-family:inherit; font-size:.74rem; font-weight:700; letter-spacing:.02em;
+         background:#e0f2fe; color:#0c5a8f; }
+.ch-tag.revenda{ background:#fef3c7; color:#92400e; }
+/* Retail / Revenda cards pick the channel */
+a.ch-card{ display:block; color:inherit; text-decoration:none; cursor:pointer; transition:border-color .15s ease, opacity .15s ease; }
+a.ch-card:hover{ border-color:var(--app-border-strong); }
+.ch-card.on.retail{ border-color:#3ba6f1; box-shadow:inset 0 0 0 1px #3ba6f1; }
+.ch-card.on.revenda{ border-color:#f59e0b; box-shadow:inset 0 0 0 1px #f59e0b; }
+.dash-sec-channel.is-picked .ch-card:not(.on){ opacity:.55; }
+.dash-sec-channel.is-picked .ch-card:not(.on):hover{ opacity:.85; }
+a.note-pill.ch-both{ color:var(--app-accent); text-decoration:none; }
+/* card heads: the title on the same line as its tags, and room below it */
+.dash-page .section-head{ align-items:center; }
+.dash-page .section-head h2{ margin:0; }
+.dash-page > .dash-card > .section-head{ margin-bottom:.8rem; }
+
+@media (max-width:767.98px){
+  /* row 1: the month and its links; then category; then channel */
+  .mb-monthset{ flex:1 1 12rem; }
+  .mb-step, .mb-month{ height:44px; }
+  .mb-step{ width:44px; }
+  .mb-end{ order:1; margin-left:0; gap:.8rem; }
+  .mb-cats{ order:2; flex:1 1 100%; }
+  .mb-ch{ order:3; flex:1 1 100%; height:44px; }
+  .mb-ch a{ flex:1 1 0; justify-content:center; padding:0 .5rem; }
+}
+
+/* --------------------------- Dashboard on a phone --------------------------- */
+/* What to act on first: the month, Retail vs Revenda, the lists, stores, the
+   trend; the reading-heavy sections are folds (closed on a phone). */
 .pm-bar{ display:flex; height:12px; border-radius:999px; overflow:hidden; background:var(--app-surface-2); margin:.2rem 0 .6rem; }
 .pm-1{ background:#3ba6f1; } .pm-2{ background:#10b981; } .pm-3{ background:#f59e0b; } .pm-4{ background:#7c3aed; } .pm-5{ background:#78716c; }
 .pm-legend{ list-style:none; margin:0; padding:0; display:grid; gap:.35rem; }
@@ -933,6 +982,9 @@ body.anon .erp-content{
 .theme-stone .mb-step,
 .theme-stone .mb-month{ border-color:var(--app-border); border-radius:999px; }
 .theme-stone .mb-cats > summary{ border-color:var(--app-border); color:var(--app-text); }
+.theme-stone .mb-ch .revenda i{ background:#44403c; }
+.theme-stone .ch-card.on.revenda{ border-color:#44403c; box-shadow:inset 0 0 0 1px #44403c; }
+.theme-stone .ch-tag.revenda{ background:#e7e5e4; color:#292524; }
 
 /* data colours: cyan for the subject, stone greys for the rest */
 .theme-stone .mix-fill{ background:#3ba6f1; }

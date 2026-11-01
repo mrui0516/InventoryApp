@@ -15,74 +15,40 @@
   </div>
 
   {% if isManger %}
-    {# Phone: month stepper + categories in one row; any change applies at once. #}
-    <form method="get" class="dash-mbar d-md-none" id="dashMbar">
-      <a class="mb-step" href="{{ prev_month_url }}" aria-label="Previous month">&lsaquo;</a>
-      <label class="mb-month">
-        <span>{{ month_label }}</span>
-        <input type="month" name="month" value="{{ selected_month }}" aria-label="Month" onchange="this.form.submit()">
-      </label>
-      {% if next_month_url %}<a class="mb-step" href="{{ next_month_url }}" aria-label="Next month">&rsaquo;</a>{% else %}<span class="mb-step is-off" aria-hidden="true">&rsaquo;</span>{% endif %}
+    {# Month, categories and channel in one bar; any change applies at once. #}
+    <form method="get" class="dash-mbar" id="dashMbar">
+      {% if channel %}<input type="hidden" name="ch" value="{{ channel }}">{% endif %}
+      <div class="mb-monthset">
+        <a class="mb-step" href="{{ prev_month_url }}" aria-label="Previous month">&lsaquo;</a>
+        <label class="mb-month">
+          <span>{{ month_label }}</span>
+          <input type="month" name="month" value="{{ selected_month }}" aria-label="Month" onchange="this.form.submit()">
+        </label>
+        {% if next_month_url %}<a class="mb-step" href="{{ next_month_url }}" aria-label="Next month">&rsaquo;</a>{% else %}<span class="mb-step is-off" aria-hidden="true">&rsaquo;</span>{% endif %}
+      </div>
       <details class="mb-cats">
-        <summary>{% if selected_cat_chips %}{% for chip in selected_cat_chips %}{{ chip.name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% elif dashboard_defaulted_to_perfume %}{{ dashboard_default_category_name }}{% else %}All categories{% endif %}</summary>
+        <summary><span class="mb-k">Category</span><span class="mb-v">{% if selected_cat_chips %}{% for chip in selected_cat_chips %}{{ chip.name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% elif dashboard_defaulted_to_perfume %}{{ dashboard_default_category_name }}{% else %}All{% endif %}</span></summary>
         <div class="mb-cat-list">
           {% for c in categories %}
             <label><input type="checkbox" name="cat" value="{{ c.id }}" {% if c.id|stringformat:"s" in selected_cat_ids %}checked{% endif %} onchange="this.form.submit()"> {{ c.name }}</label>
+          {% empty %}
+            <span class="mb-none">No categories yet.</span>
           {% endfor %}
-          <a href="{{ current_month_url }}">This month</a>
         </div>
       </details>
-    </form>
-
-    <form method="get" class="dash-card pad d-none d-md-block dash-sec-filter">
-      <div class="row g-3 align-items-end">
-        <div class="col-lg-3 col-md-4">
-          <label class="toolbar-label" for="dashboard-month">Month</label>
-          <input id="dashboard-month" type="month" name="month" class="form-control" value="{{ selected_month }}">
-        </div>
-        <div class="col-lg-5 col-md-8">
-          <label class="toolbar-label">Categories</label>
-          <div class="dropdown w-100">
-            <button class="btn btn-outline-secondary dropdown-toggle w-100 text-start" type="button" data-bs-toggle="dropdown">Filter categories</button>
-            <div class="dropdown-menu p-3 w-100" style="max-height:22rem;overflow:auto;">
-              {% for c in categories %}
-                <label class="form-check d-flex align-items-center gap-2 mb-2">
-                  <input class="form-check-input" type="checkbox" name="cat" value="{{ c.id }}" {% if c.id|stringformat:"s" in selected_cat_ids %}checked{% endif %}>
-                  <span>{{ c.name }}</span>
-                </label>
-              {% empty %}
-                <div class="tiny">No categories yet.</div>
-              {% endfor %}
-            </div>
-          </div>
-        </div>
-        <div class="col-lg-4">
-          <div class="toolbar-actions justify-content-lg-end">
-            <a class="btn btn-outline-secondary" href="{{ prev_month_url }}">Previous</a>
-            <a class="btn btn-outline-secondary" href="{{ current_month_url }}">Current</a>
-            {% if next_month_url %}<a class="btn btn-outline-secondary" href="{{ next_month_url }}">Next</a>{% endif %}
-            <button type="submit" class="btn btn-primary">Apply</button>
-            <a class="btn btn-outline-dark" href="{% url 'dashboard' %}">Reset</a>
-          </div>
-        </div>
-      </div>
-      <div class="mt-3">
-        {% if selected_cat_chips %}
-          <div class="chip-row">
-            {% for chip in selected_cat_chips %}<span class="chip">{{ chip.name }} <a href="{{ chip.remove_url }}" class="chip-remove" aria-label="Remove {{ chip.name }}" title="Remove {{ chip.name }}">&times;</a></span>{% endfor %}
-          </div>
-        {% elif dashboard_defaulted_to_perfume %}
-          <div class="tiny">Defaulting to {{ dashboard_default_category_name }} until you choose another category.</div>
-        {% else %}
-          <div class="tiny">Showing all categories.</div>
-        {% endif %}
+      <nav class="mb-ch" aria-label="Channel">
+        {% for t in channel_tabs %}<a href="{{ t.url }}" class="{% if t.value %}{{ t.value }}{% else %}all{% endif %}{% if t.on %} on{% endif %}"{% if t.on %} aria-current="true"{% endif %}>{% if t.value %}<i aria-hidden="true"></i>{% endif %}{{ t.label }}</a>{% endfor %}
+      </nav>
+      <div class="mb-end">
+        {% if next_month_url %}<a href="{{ current_month_url }}">This month</a>{% endif %}
+        {% if channel or next_month_url or not dashboard_defaulted_to_perfume %}<a href="{% url 'dashboard' %}">Reset</a>{% endif %}
       </div>
     </form>
 
     <div class="dash-card pad dash-sec-month">
       <div class="section-head">
         <div>
-          <h2>{{ month_label }}</h2>
+          <h2>{{ month_label }}{% if channel_label %} <span class="ch-tag {{ channel }}">{{ channel_label }}</span>{% endif %}</h2>
         </div>
         <div class="quick-tags">
           {% if best_sales_day %}<span class="note-pill good">Best day {{ best_sales_day.date|date:"Y-m-d" }} · EUR {{ best_sales_day.amount|floatformat:2 }}</span>{% endif %}
@@ -126,17 +92,17 @@
         <div class="snapshot-card">
           <div class="metric-label">Purchase Spend</div>
           <div class="metric-value">EUR {{ month_purchase_amount|floatformat:2 }}</div>
-          <div class="metric-sub">{{ month_purchase_group_count }} purchase groups · {{ month_purchase_qty }} units · {{ month_purchase_to_sales_pct|floatformat:1 }}% of sales</div>
+          <div class="metric-sub">{{ month_purchase_group_count }} purchase groups · {{ month_purchase_qty }} units · {% if channel %}both channels{% else %}{{ month_purchase_to_sales_pct|floatformat:1 }}% of sales{% endif %}</div>
         </div>
         <div class="snapshot-card">
-          <div class="metric-label">IOU Summary</div>
+          <div class="metric-label">IOU Summary{% if channel_label %} · {{ channel_label }}{% endif %}</div>
           <div class="metric-value">EUR {{ open_receivable_balance|floatformat:2 }}</div>
           <div class="metric-sub">{{ open_invoice_count }} open · {{ overdue_invoice_count }} overdue · collected {{ receivable_collection_ratio_pct|floatformat:1 }}%</div>
         </div>
         <div class="snapshot-card">
           <div class="metric-label">Perfume Stock</div>
           <div class="metric-value">{{ perfume_stock_units }}</div>
-          <div class="metric-sub">{{ perfume_stock_sku_count }} perfume SKUs · stock cost EUR {{ perfume_stock_cost|floatformat:2 }}</div>
+          <div class="metric-sub">{{ perfume_stock_sku_count }} perfume SKUs · stock cost EUR {{ perfume_stock_cost|floatformat:2 }}{% if channel %} · both channels{% endif %}</div>
         </div>
       </div>
 
@@ -165,26 +131,27 @@
       {% endif %}
     </div>
 
-    {% if isManger and channel_split and month_sales_amount %}
-    {# Retail and Revenda side by side: the same month's sales, split by the #}
-    {# customer's type. A sale with no customer (walk-in) counts as retail. #}
-    <div class="dash-card pad dash-sec-channel">
+    {% if isManger and channel_split and both_channels_amount %}
+    {# Retail and Revenda side by side: the same month's sales, split by the  #}
+    {# customer's type. A sale with no customer (walk-in) counts as retail.   #}
+    {# A card picks its channel for the whole page; the picked one goes back. #}
+    <div class="dash-card pad dash-sec-channel{% if channel %} is-picked{% endif %}">
       <div class="section-head">
         <div><h2>Retail vs Revenda</h2></div>
-        <div class="quick-tags"><span class="note-pill">{{ month_label }}</span></div>
+        <div class="quick-tags">{% if channel %}<a class="note-pill ch-both" href="{% for t in channel_tabs %}{% if not t.value %}{{ t.url }}{% endif %}{% endfor %}">Show both</a>{% else %}<span class="note-pill">{{ month_label }}</span>{% endif %}</div>
       </div>
       <div class="ch-bar" role="img" aria-label="{% for c in channel_split %}{{ c.label }} {{ c.share_pct|floatformat:0 }}%{% if not forloop.last %}, {% endif %}{% endfor %}">
         {% for c in channel_split %}<span class="ch-seg {{ c.kind }}" style="width:{{ c.share_pct|stringformat:'.2f' }}%"></span>{% endfor %}
       </div>
       <div class="ch-grid">
         {% for c in channel_split %}
-          <div class="ch-card {{ c.kind }}">
+          <a class="ch-card {{ c.kind }}{% if c.active %} on{% endif %}" href="{{ c.url }}" aria-pressed="{% if c.active %}true{% else %}false{% endif %}">
             <div class="ch-head"><i class="ch-dot" aria-hidden="true"></i>{{ c.label }}<span class="ch-share">{{ c.share_pct|floatformat:0 }}%</span></div>
             <div class="ch-v">EUR {{ c.amount|floatformat:"2g" }}</div>
             <div class="ch-s">{{ c.orders }} order{{ c.orders|pluralize }} · {{ c.qty }} items · avg EUR {{ c.avg_ticket|floatformat:2 }}</div>
             {% if show_profit %}<div class="ch-s">Profit EUR {{ c.profit|floatformat:"2g" }} · margin {{ c.margin_pct|floatformat:1 }}%</div>{% endif %}
             <div class="ch-s">{{ c.customers }} named customer{{ c.customers|pluralize }}</div>
-          </div>
+          </a>
         {% endfor %}
       </div>
     </div>
@@ -197,7 +164,7 @@
           <h2>Store comparison</h2>
         </div>
         <div class="quick-tags">
-          <span class="note-pill">All stores · {{ month_label }}</span>
+          <span class="note-pill">All stores · {{ month_label }}{% if channel_label %} · {{ channel_label }}{% endif %}</span>
         </div>
       </div>
       <div class="row g-3">
@@ -221,7 +188,7 @@
       <div class="dash-card pad h-100">
         <div class="section-top">
           <div>
-            <h3>Sales trend</h3>
+            <h3>Sales trend{% if channel_label %} <span class="ch-tag {{ channel }}">{{ channel_label }}</span>{% endif %}</h3>
           </div>
           <div class="quick-tags">
             <a class="btn btn-sm btn-outline-primary" href="{% url 'sales_records' %}?view=analysis">Full year view</a>
@@ -295,6 +262,7 @@
           <div>
             <h2>Inventory intelligence</h2>
           </div>
+          {% if channel %}<div class="quick-tags"><span class="note-pill">Both channels</span></div>{% endif %}
         </div></summary>
         <div class="stack-list">
           <div class="inventory-box">
@@ -337,7 +305,7 @@
     {# The lists that answer "what next": one card, one list at a time.        #}
     {# Tabs switch on the page; the last one chosen is remembered per browser. #}
     <div class="dash-card pad dash-sec-focus dl" id="dashLists">
-      <div class="section-head"><div><h2>Products &amp; customers</h2></div>
+      <div class="section-head"><div><h2>Products &amp; customers{% if channel_label %} <span class="ch-tag {{ channel }}">{{ channel_label }}</span>{% endif %}</h2></div>
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'product_list' %}">All products</a></div>
       <nav class="dl-tabs" role="tablist" aria-label="Lists">
         <button type="button" role="tab" data-dl="sell" class="on" aria-selected="true">Sell-through</button>
@@ -348,7 +316,7 @@
       </nav>
 
       <div class="dl-pane" data-dl-pane="sell" role="tabpanel">
-        <p class="dl-note">Deliveries of the last 90 days, fastest from arrival to low stock (under 5).</p>
+        <p class="dl-note">Deliveries of the last 90 days, fastest from arrival to low stock (under 5).{% if channel %} Both channels.{% endif %}</p>
         {% for r in sell_through %}
           <a class="dl-row" href="{% url 'product_detail' r.product_id %}" data-panel="{% url 'product_panel' r.product_id %}">
             {% if r.image_url %}<img class="dl-img" src="{{ r.image_url }}" alt="" loading="lazy">{% else %}<span class="dl-img"></span>{% endif %}
@@ -375,7 +343,7 @@
       </div>
 
       <div class="dl-pane" data-dl-pane="slow" role="tabpanel" hidden>
-        <p class="dl-note">Longest without a sale, counted from the last sale or the arrival of the oldest stock left. Stock that arrived in the last 30 days is not listed.</p>
+        <p class="dl-note">Longest without a sale, counted from the last sale or the arrival of the oldest stock left. Stock that arrived in the last 30 days is not listed.{% if channel %} Both channels.{% endif %}</p>
         {% for row in slow_movers %}
           <a class="dl-row" href="{% url 'product_detail' row.product_id %}" data-panel="{% url 'product_panel' row.product_id %}">
             {% if row.image_url %}<img class="dl-img" src="{{ row.image_url }}" alt="" loading="lazy">{% else %}<span class="dl-img"></span>{% endif %}
@@ -389,11 +357,12 @@
       </div>
 
       <div class="dl-pane" data-dl-pane="capital" role="tabpanel" hidden>
+        {% if channel %}<p class="dl-note">Stock of both channels &middot; sold this period: {{ channel_label }} only.</p>{% endif %}
         {% for row in capital_locked_products %}
           <a class="dl-row" href="{% url 'product_detail' row.product_id %}" data-panel="{% url 'product_panel' row.product_id %}">
             {% if row.image_url %}<img class="dl-img" src="{{ row.image_url }}" alt="" loading="lazy">{% else %}<span class="dl-img"></span>{% endif %}
             <span class="dl-main"><span class="dl-name">{{ row.display_name }}</span>
-              <span class="dl-meta">{{ row.stock_qty }} in stock &middot; {{ row.stock_share_pct|floatformat:1 }}% of stock cost &middot; {{ row.period_sales_qty }} sold this period</span></span>
+              <span class="dl-meta">{{ row.stock_qty }} in stock &middot; {{ row.stock_share_pct|floatformat:1 }}% of stock cost &middot; {{ row.period_sales_qty }} sold{% if channel %} {{ channel_label|lower }}{% endif %} this period</span></span>
             <span class="dl-fig">&euro;{{ row.stock_cost|floatformat:0 }}</span>
           </a>
         {% empty %}

@@ -3,7 +3,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-from django.db.models import Count, DecimalField, ExpressionWrapper, F, Max, Sum
+from django.db.models import Count, DecimalField, ExpressionWrapper, F, Max, Q, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
@@ -23,6 +23,40 @@ _LINE_TOTAL_EXPR = ExpressionWrapper(
 def _apply_store(queryset, store):
     """Scope a Sale/SaleOrder/ARInvoice queryset to a store (``None`` = all stores)."""
     return queryset.filter(store=store) if store is not None else queryset
+
+
+# Retail vs Revenda, by the customer's type. A sale with no customer (walk-in)
+# is retail. The order's customer wins over the line's own.
+CHANNELS = ("retail", "revenda")
+
+
+def normalise_channel(value):
+    """``'retail'`` / ``'revenda'``, or ``''`` for both."""
+    value = (value or "").strip().lower()
+    return value if value in CHANNELS else ""
+
+
+def _revenda_sales_q():
+    return (Q(order__customer__kind="revenda")
+            | Q(order__customer__isnull=True, customer__kind="revenda"))
+
+
+def _apply_channel(sales_qs, channel):
+    """Scope a Sale queryset to one channel (``''`` = both)."""
+    if channel == "revenda":
+        return sales_qs.filter(_revenda_sales_q())
+    if channel == "retail":
+        return sales_qs.exclude(_revenda_sales_q())
+    return sales_qs
+
+
+def _apply_customer_channel(queryset, channel, field="customer"):
+    """Scope an ARInvoice / ARPayment queryset by the customer's type."""
+    if channel == "revenda":
+        return queryset.filter(**{f"{field}__kind": "revenda"})
+    if channel == "retail":
+        return queryset.exclude(**{f"{field}__kind": "revenda"})
+    return queryset
 
 
 def order_tender_amounts(order, subtotal, items):
@@ -123,7 +157,8 @@ def resolve_dashboard_month(month_value, today):
     }
 
 
-def compute_period_headline(month_start, period_end, selected_category_ids=None, show_profit=False, store=None):
+def compute_period_headline(month_start, period_end, selected_category_ids=None, show_profit=False, store=None,
+                            channel=""):
     """Lightweight headline totals for a period (no inventory / AR / supplier work).
 
     Used for the month-over-month comparison so the prior period does not pay
@@ -136,7 +171,7 @@ def compute_period_headline(month_start, period_end, selected_category_ids=None,
         .annotate(business_at=Coalesce("order__created_at", "date"))
         .filter(business_at__date__gte=month_start, business_at__date__lte=period_end)
     )
-    sales_qs = _apply_store(sales_qs, store)
+    sales_qs = _apply_channel(_apply_store(sales_qs, store), channel)
     if selected_category_ids:
         sales_qs = sales_qs.filter(product__category_id__in=selected_category_ids)
 
@@ -175,7 +210,8 @@ def _pct_delta(current, previous):
     return float((Decimal(current or 0) - previous) / previous * Decimal("100"))
 
 
-def build_period_comparison(month_context, current_headline, selected_category_ids=None, show_profit=False, store=None):
+def build_period_comparison(month_context, current_headline, selected_category_ids=None, show_profit=False, store=None,
+                            channel=""):
     """Compare the current period against the same-length window of the prior month."""
     month_start = month_context["month_start"]
     period_end = month_context["period_end"]
@@ -185,7 +221,8 @@ def build_period_comparison(month_context, current_headline, selected_category_i
     prev_month_start = _month_start(prev_month_last_day)
     prev_period_end = min(prev_month_start + timedelta(days=days_elapsed - 1), prev_month_last_day)
 
-    prior = compute_period_headline(prev_month_start, prev_period_end, selected_category_ids, show_profit, store)
+    prior = compute_period_headline(prev_month_start, prev_period_end, selected_category_ids, show_profit, store,
+                                    channel)
 
     return {
         "prev_month_label": prev_month_start.strftime("%B %Y"),
@@ -352,8 +389,13 @@ def build_yearly_sales_overview(year, today, selected_category_ids=None, show_pr
     }
 
 
-def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_ids=None, show_profit=False, store=None):
+def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_ids=None, show_profit=False, store=None,
+                                     channel=""):
+    """The month on the dashboard. With ``channel`` set, every sales and IOU
+    figure is that channel's alone; stock, purchases and sell-through are shared
+    by both channels and stay whole. ``channel_split`` always shows both."""
     selected_category_ids = selected_category_ids or []
+    channel = normalise_channel(channel)
     payment_labels = dict(Sale.PAYMENT_METHOD_CHOICES)
 
     sales_qs = (
@@ -386,7 +428,8 @@ def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_
     walk_in_order_keys = set()
     store_buckets = {}
     # Retail vs Revenda, by the customer's type; a sale with no customer
-    # (walk-in) is retail. Same lines as the headline, so they add up to it.
+    # (walk-in) is retail. Counted before the channel filter, so the split
+    # always shows both and adds up to the unfiltered month.
     channel_buckets = {
         kind: {"kind": kind, "amount": Decimal("0.00"), "qty": 0,
                "profit": Decimal("0.00"), "order_keys": set(), "customer_ids": set()}
@@ -400,6 +443,17 @@ def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_
         order_key = f"order-{order.id}" if order else f"sale-{sale.id}"
         customer = order.customer if order and order.customer_id else sale.customer
         product = sale.product
+        kind = "revenda" if (customer and customer.kind == "revenda") else "retail"
+
+        channel_bucket = channel_buckets[kind]
+        channel_bucket["amount"] += line_total
+        channel_bucket["qty"] += sale.quantity
+        channel_bucket["profit"] += line_profit
+        channel_bucket["order_keys"].add(order_key)
+        if customer:
+            channel_bucket["customer_ids"].add(customer.id)
+        if channel and kind != channel:
+            continue
 
         total_sales_amount += line_total
         total_sales_qty += sale.quantity
@@ -427,14 +481,6 @@ def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_
         store_bucket["qty"] += sale.quantity
         store_bucket["profit"] += line_profit
         store_bucket["order_keys"].add(order_key)
-
-        channel = channel_buckets["revenda" if (customer and customer.kind == "revenda") else "retail"]
-        channel["amount"] += line_total
-        channel["qty"] += sale.quantity
-        channel["profit"] += line_profit
-        channel["order_keys"].add(order_key)
-        if customer:
-            channel["customer_ids"].add(customer.id)
 
         if customer:
             customer_bucket = customer_buckets.setdefault(
@@ -627,23 +673,20 @@ def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_
     top_suppliers.sort(key=lambda item: (-item["amount"], item["name"].lower()))
     top_suppliers = top_suppliers[:5]
 
+    invoices = _apply_customer_channel(_apply_store(ARInvoice.objects.all(), store), channel)
+    payments = _apply_customer_channel(
+        ARPayment.objects.filter(created_at__date__gte=month_start, created_at__date__lte=period_end),
+        channel, field="invoice__customer")
+    if store is not None:
+        payments = payments.filter(invoice__store=store)
     month_receivables_added = (
-        _apply_store(ARInvoice.objects.filter(date__gte=month_start, date__lte=period_end), store)
+        invoices.filter(date__gte=month_start, date__lte=period_end)
         .aggregate(total=Sum("total_amount"))["total"] or Decimal("0.00")
     )
-    month_receipts_collected = (
-        _apply_store(
-            ARPayment.objects.filter(created_at__date__gte=month_start, created_at__date__lte=period_end),
-            store,
-        ).aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
-        if store is None else
-        ARPayment.objects.filter(
-            created_at__date__gte=month_start, created_at__date__lte=period_end, invoice__store=store,
-        ).aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
-    )
+    month_receipts_collected = payments.aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
 
     open_agg = (
-        _apply_store(ARInvoice.objects.filter(total_amount__gt=F("amount_paid")), store)
+        invoices.filter(total_amount__gt=F("amount_paid"))
         .aggregate(
             balance=Sum(
                 F("total_amount") - F("amount_paid"),
@@ -655,10 +698,10 @@ def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_
     open_receivable_balance = open_agg["balance"] or Decimal("0.00")
     open_invoice_count = open_agg["count"] or 0
 
-    overdue_invoice_count = _apply_store(ARInvoice.objects.filter(
+    overdue_invoice_count = invoices.filter(
         due_date__lt=period_end,
         total_amount__gt=F("amount_paid"),
-    ), store).count()
+    ).count()
     receivable_collection_ratio_pct = (
         (month_receipts_collected / month_receivables_added) * Decimal("100.00")
         if month_receivables_added else Decimal("0.00")
@@ -819,6 +862,7 @@ def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_
         cursor += timedelta(days=1)
 
     channel_split = []
+    both_channels_amount = sum((b["amount"] for b in channel_buckets.values()), Decimal("0.00"))
     for label, kind in (("Retail", "retail"), ("Revenda", "revenda")):
         bucket = channel_buckets[kind]
         orders = len(bucket["order_keys"])
@@ -833,12 +877,15 @@ def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_
             "avg_ticket": (bucket["amount"] / orders) if orders else Decimal("0.00"),
             "margin_pct": ((bucket["profit"] / bucket["amount"]) * Decimal("100.00")
                            if bucket["amount"] else Decimal("0.00")),
-            "share_pct": ((bucket["amount"] / total_sales_amount) * Decimal("100.00")
-                          if total_sales_amount else Decimal("0.00")),
+            "share_pct": ((bucket["amount"] / both_channels_amount) * Decimal("100.00")
+                          if both_channels_amount else Decimal("0.00")),
+            "active": kind == channel,
         })
 
     return {
+        "channel": channel,
         "channel_split": channel_split,
+        "both_channels_amount": both_channels_amount,
         "month_sales_amount": total_sales_amount,
         "month_sales_qty": total_sales_qty,
         "month_sales_profit": total_sales_profit,

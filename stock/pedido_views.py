@@ -1,7 +1,6 @@
 """The Pedido screen: pick products, add transport and fees, hand over a PDF.
 
-Kept out of views.py, which is already thousands of lines, following the same
-split as shelf_views.
+Kept out of views.py, which is already thousands of lines.
 
 Pedido is the Revenda side of the shop, as Sell is the retail side: the
 customer search lists resellers only and prices start at wholesale - or at

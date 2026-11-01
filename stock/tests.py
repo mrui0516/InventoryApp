@@ -3913,372 +3913,6 @@ class EmployeePriceReadOnlyTests(TestCase):
         self.assertFalse(p.price_locked)   # employee POST cannot lock it
 
 
-class CategoryAttributeTests(TestCase):
-    """Fields the shop defines for itself, with no migration."""
-
-    def setUp(self):
-        from stock.models import CategoryAttribute, AttributeOption
-        self.accessories = Category.objects.create(name="Accessories")
-        self.cases = Category.objects.create(name="Cases", parent=self.accessories)
-
-        self.colour = CategoryAttribute.objects.create(
-            category=self.accessories, name="Colour", code="colour",
-            data_type="choice", variant_attribute=True, sort_order=1)
-        for label in ["Black", "Clear", "Blue"]:
-            AttributeOption.objects.create(attribute=self.colour, label=label)
-
-        self.case_type = CategoryAttribute.objects.create(
-            category=self.cases, name="Case type", code="case_type",
-            data_type="choice", variant_attribute=True, sort_order=2)
-        for label in ["Rubber", "Flip", "MagSafe"]:
-            AttributeOption.objects.create(attribute=self.case_type, label=label)
-
-        self.thickness = CategoryAttribute.objects.create(
-            category=self.cases, name="Thickness", code="thickness",
-            data_type="number", unit="mm", sort_order=3)
-        self.wireless = CategoryAttribute.objects.create(
-            category=self.cases, name="Wireless charging", code="wireless",
-            data_type="boolean", sort_order=4)
-
-        self.product = self._product("Clear TPU", self.cases)
-
-    def _product(self, name, category):
-        from stock.services.barcodes import assign_internal_barcode
-        product = Product(name=name, brand="Generic", category=category,
-                          default_price=Decimal("9"))
-        assign_internal_barcode(product)
-        return product
-
-    # -- inheritance -------------------------------------------------------
-    def test_a_subcategory_inherits_its_parents_attributes(self):
-        from stock.models import attributes_for_category
-        codes = [a.code for a in attributes_for_category(self.cases)]
-        self.assertEqual(codes, ["colour", "case_type", "thickness", "wireless"])
-
-    def test_a_parent_does_not_see_its_childrens_attributes(self):
-        from stock.models import attributes_for_category
-        codes = [a.code for a in attributes_for_category(self.accessories)]
-        self.assertEqual(codes, ["colour"])
-
-    def test_a_subcategory_can_override_an_inherited_attribute(self):
-        from stock.models import CategoryAttribute, attributes_for_category
-        own = CategoryAttribute.objects.create(
-            category=self.cases, name="Colour", code="colour",
-            data_type="text", sort_order=1)
-        found = {a.code: a for a in attributes_for_category(self.cases)}
-        self.assertEqual(found["colour"], own)
-
-    def test_a_category_loop_does_not_hang(self):
-        # Category.parent is a plain FK with nothing stopping a cycle.
-        from stock.models import attributes_for_category
-        self.accessories.parent = self.cases
-        self.accessories.save()
-        self.assertTrue(attributes_for_category(self.cases))
-
-    def test_no_category_means_no_attributes(self):
-        from stock.models import attributes_for_category
-        self.assertEqual(list(attributes_for_category(None)), [])
-
-    # -- values ------------------------------------------------------------
-    def test_a_choice_is_matched_by_label_whatever_the_case(self):
-        value = self.product.set_attribute("colour", "black")
-        self.assertEqual(value.value_option.label, "Black")
-        self.assertEqual(value.display(), "Black")
-
-    def test_a_choice_outside_the_options_is_refused(self):
-        with self.assertRaises(ValidationError):
-            self.product.set_attribute("colour", "Turquoise")
-
-    def test_a_number_is_stored_as_a_number_and_shows_its_unit(self):
-        value = self.product.set_attribute("thickness", "1.5")
-        self.assertEqual(value.value_number, Decimal("1.5"))
-        self.assertEqual(value.display(), "1.5 mm")
-
-    def test_a_comma_decimal_is_accepted(self):
-        # Portuguese keyboards produce 1,5 - refusing it would be a till bug.
-        value = self.product.set_attribute("thickness", "1,5")
-        self.assertEqual(value.value_number, Decimal("1.5"))
-
-    def test_a_number_that_is_not_a_number_is_refused(self):
-        with self.assertRaises(ValidationError):
-            self.product.set_attribute("thickness", "thick")
-
-    def test_a_boolean_reads_as_yes_or_no(self):
-        self.assertEqual(self.product.set_attribute("wireless", "yes").display(), "Yes")
-        self.assertEqual(self.product.set_attribute("wireless", "0").display(), "No")
-
-    def test_setting_an_unknown_code_is_refused(self):
-        with self.assertRaises(ValueError):
-            self.product.set_attribute("nonsense", "x")
-
-    def test_an_attribute_from_another_category_is_not_reachable(self):
-        from stock.models import CategoryAttribute
-        other = Category.objects.create(name="Shisha")
-        CategoryAttribute.objects.create(category=other, name="Bowl", code="bowl")
-        with self.assertRaises(ValueError):
-            self.product.set_attribute("bowl", "Clay")
-
-    def test_answering_the_same_attribute_twice_overwrites(self):
-        self.product.set_attribute("colour", "Black")
-        self.product.set_attribute("colour", "Blue")
-        self.assertEqual(self.product.attribute_values.count(), 1)
-        self.assertEqual(self.product.attributes.first().display(), "Blue")
-
-    def test_switching_type_clears_the_old_column(self):
-        # A stale value in another column would resurface if the type changed.
-        value = self.product.set_attribute("thickness", "1.5")
-        value.attribute.data_type = "text"
-        value.set_value("thin")
-        self.assertIsNone(value.value_number)
-        self.assertEqual(value.display(), "thin")
-
-    def test_an_empty_answer_clears_the_value(self):
-        self.product.set_attribute("colour", "Black")
-        value = self.product.set_attribute("colour", "")
-        self.assertIsNone(value.value_option)
-        self.assertEqual(value.display(), "")
-
-    def test_an_option_from_another_attribute_is_refused(self):
-        from stock.models import ProductAttributeValue
-        wrong = self.case_type.options.first()
-        value = ProductAttributeValue(product=self.product, attribute=self.colour,
-                                      value_option=wrong)
-        with self.assertRaises(ValidationError):
-            value.clean()
-
-    # -- summaries ---------------------------------------------------------
-    def test_summary_is_ordered_the_way_the_shop_arranged_it(self):
-        self.product.set_attribute("thickness", "1.5")
-        self.product.set_attribute("colour", "Black")
-        self.product.set_attribute("case_type", "Rubber")
-        self.assertEqual(self.product.attribute_summary(),
-                         [("Colour", "Black"), ("Case type", "Rubber"), ("Thickness", "1.5 mm")])
-
-    def test_summary_can_be_narrowed_to_what_separates_stock_rows(self):
-        self.product.set_attribute("thickness", "1.5")
-        self.product.set_attribute("colour", "Black")
-        self.assertEqual(self.product.attribute_summary(only_variant=True),
-                         [("Colour", "Black")])
-
-    def test_blank_answers_are_left_out_of_the_summary(self):
-        self.product.set_attribute("colour", "Black")
-        self.product.set_attribute("thickness", "")
-        self.assertEqual(self.product.attribute_summary(), [("Colour", "Black")])
-
-    def test_variant_attributes_are_what_matrix_entry_will_use(self):
-        from stock.models import variant_attributes_for_category
-        codes = [a.code for a in variant_attributes_for_category(self.cases)]
-        self.assertEqual(codes, ["colour", "case_type"])
-
-    def test_perfume_is_unaffected_by_any_of_this(self):
-        perfumes = Category.objects.create(name="Perfumes")
-        perfume = Product.objects.create(name="Oud", barcode="9700000000001", brand="B",
-                                         category=perfumes, default_price=Decimal("50"))
-        self.assertEqual(perfume.attribute_summary(), [])
-
-
-class ProductFormAttributeTests(TestCase):
-    """Shop-defined attributes must survive a round trip through the form."""
-
-    def setUp(self):
-        from stock.models import CategoryAttribute, AttributeOption
-        self.accessories = Category.objects.create(name="Accessories")
-        self.perfumes = Category.objects.create(name="Perfumes")
-        self.brand = Brand.objects.create(name="Generic")
-
-        self.colour = CategoryAttribute.objects.create(
-            category=self.accessories, name="Colour", code="colour",
-            data_type="choice", variant_attribute=True, sort_order=1)
-        self.black = AttributeOption.objects.create(attribute=self.colour, label="Black")
-        AttributeOption.objects.create(attribute=self.colour, label="Clear")
-        self.thickness = CategoryAttribute.objects.create(
-            category=self.accessories, name="Thickness", code="thickness",
-            data_type="number", unit="mm", sort_order=2)
-        self.wireless = CategoryAttribute.objects.create(
-            category=self.accessories, name="Wireless", code="wireless",
-            data_type="boolean", sort_order=3)
-        # An attribute on a category this product is not in.
-        self.bowl = CategoryAttribute.objects.create(
-            category=self.perfumes, name="Bottle", code="bottle", data_type="text")
-
-    _ean = iter(range(5600000000001, 5600000009999))
-
-    def _data(self, **overrides):
-        data = {
-            'barcode': str(next(self._ean)),
-            'category': self.accessories.id,
-            'brand_master': self.brand.id,
-            'name': 'Clear TPU case',
-            'default_price': '9.90',
-        }
-        data.update(overrides)
-        return data
-
-    def test_attribute_answers_are_saved(self):
-        form = ProductForm(data=self._data(**{
-            f'attr_{self.colour.pk}': str(self.black.pk),
-            f'attr_{self.thickness.pk}': '1.5',
-            f'attr_{self.wireless.pk}': 'yes',
-        }))
-        self.assertTrue(form.is_valid(), form.errors.as_json())
-        product = form.save()
-        self.assertEqual(product.attribute_summary(),
-                         [("Colour", "Black"), ("Thickness", "1.5 mm"), ("Wireless", "Yes")])
-
-    def test_answers_for_other_categories_are_ignored(self):
-        # Every category's fields are rendered; only the chosen one applies.
-        form = ProductForm(data=self._data(**{f'attr_{self.bowl.pk}': 'Crystal'}))
-        self.assertTrue(form.is_valid(), form.errors.as_json())
-        product = form.save()
-        self.assertEqual(product.attribute_summary(), [])
-
-    def test_editing_keeps_answers_that_were_not_changed(self):
-        form = ProductForm(data=self._data(**{f'attr_{self.colour.pk}': str(self.black.pk)}))
-        self.assertTrue(form.is_valid(), form.errors.as_json())
-        product = form.save()
-
-        again = ProductForm(instance=product)
-        self.assertEqual(again.initial.get(f'attr_{self.colour.pk}'), self.black.pk)
-
-        edit = ProductForm(data=self._data(
-            name="Renamed", **{f'attr_{self.colour.pk}': str(self.black.pk)}),
-            instance=product)
-        self.assertTrue(edit.is_valid(), edit.errors.as_json())
-        saved = edit.save()
-        self.assertEqual(saved.attribute_summary(), [("Colour", "Black")])
-
-    def test_clearing_an_answer_clears_it(self):
-        form = ProductForm(data=self._data(**{f'attr_{self.colour.pk}': str(self.black.pk)}))
-        self.assertTrue(form.is_valid())
-        product = form.save()
-        edit = ProductForm(data=self._data(**{f'attr_{self.colour.pk}': ''}), instance=product)
-        self.assertTrue(edit.is_valid(), edit.errors.as_json())
-        self.assertEqual(edit.save().attribute_summary(), [])
-
-    def test_moving_a_product_to_another_category_drops_stale_answers(self):
-        form = ProductForm(data=self._data(**{f'attr_{self.colour.pk}': str(self.black.pk)}))
-        self.assertTrue(form.is_valid())
-        product = form.save()
-        self.assertEqual(product.attribute_values.count(), 1)
-
-        moved = ProductForm(data=self._data(category=self.perfumes.id), instance=product)
-        self.assertTrue(moved.is_valid(), moved.errors.as_json())
-        saved = moved.save()
-        self.assertFalse(saved.attribute_values.filter(attribute=self.colour).exists())
-
-    def test_an_unanswered_boolean_is_not_recorded_as_no(self):
-        # "Not answered" and "No" are different facts about a product.
-        form = ProductForm(data=self._data(**{f'attr_{self.wireless.pk}': ''}))
-        self.assertTrue(form.is_valid())
-        product = form.save()
-        self.assertFalse(product.attribute_values.filter(attribute=self.wireless).exists())
-
-    def test_an_answered_no_is_recorded(self):
-        form = ProductForm(data=self._data(**{f'attr_{self.wireless.pk}': 'no'}))
-        self.assertTrue(form.is_valid())
-        product = form.save()
-        self.assertEqual(product.attribute_summary(), [("Wireless", "No")])
-
-    def test_a_number_field_rejects_text(self):
-        form = ProductForm(data=self._data(**{f'attr_{self.thickness.pk}': 'thick'}))
-        self.assertFalse(form.is_valid())
-        self.assertIn(f'attr_{self.thickness.pk}', form.errors)
-
-
-class AttributeUiTests(TestCase):
-    """The pages must actually render - manage.py check does not compile templates."""
-
-    def setUp(self):
-        from stock.models import CategoryAttribute, AttributeOption, DeviceModel
-        self.accessories = Category.objects.create(name="Accessories")
-        self.perfumes = Category.objects.create(name="Perfumes")
-        Brand.objects.create(name="Generic")
-        self.colour = CategoryAttribute.objects.create(
-            category=self.accessories, name="Colour", code="colour",
-            data_type="choice", variant_attribute=True)
-        self.black = AttributeOption.objects.create(attribute=self.colour, label="Black")
-
-        from stock.services.barcodes import assign_internal_barcode
-        self.case = Product(name="Clear TPU", brand="Generic", category=self.accessories,
-                            default_price=Decimal("9"))
-        assign_internal_barcode(self.case)
-        self.case.set_attribute("colour", "Black")
-        apple = Brand.objects.create(name="Apple")
-        device = DeviceModel.objects.create(brand=apple, name="iPhone 15 Pro Max")
-        self.case.device_models.add(device)
-
-        self.perfume = Product.objects.create(
-            name="Oud", barcode="9800000000001", brand="B",
-            category=self.perfumes, default_price=Decimal("50"), volume_ml=100)
-
-        user = get_user_model().objects.create_superuser(
-            username="mgr", password="pw123456", email="m@x.com")
-        self.client.force_login(user)
-
-    def test_product_detail_shows_attributes_and_fitment(self):
-        html = self.client.get(reverse('product_detail', args=[self.case.pk])).content.decode()
-        self.assertIn("Colour", html)
-        self.assertIn("Black", html)
-        self.assertIn("Apple iPhone 15 Pro Max", html)
-
-    def test_an_accessory_page_does_not_show_empty_perfume_rows(self):
-        html = self.client.get(reverse('product_detail', args=[self.case.pk])).content.decode()
-        self.assertNotIn("Fragrance family", html)
-        self.assertNotIn("Concentration", html)
-
-    def test_a_perfume_page_still_shows_its_own_rows(self):
-        html = self.client.get(reverse('product_detail', args=[self.perfume.pk])).content.decode()
-        self.assertIn("Fragrance family", html)
-        self.assertIn("100 ml", html)
-
-
-class SeedAccessoryAttributesTests(TestCase):
-    def setUp(self):
-        from django.core.management import call_command
-        self.call = call_command
-
-    def _counts(self):
-        from stock.models import CategoryAttribute, AttributeOption
-        return CategoryAttribute.objects.count(), AttributeOption.objects.count()
-
-    def test_dry_run_writes_nothing(self):
-        self.call("seed_accessory_attributes", verbosity=0)
-        self.assertEqual(self._counts(), (0, 0))
-        self.assertEqual(Category.objects.count(), 0)
-
-    def test_apply_creates_the_tree_and_the_attributes(self):
-        self.call("seed_accessory_attributes", "--apply", verbosity=0)
-        attributes, options = self._counts()
-        self.assertGreater(attributes, 0)
-        self.assertGreater(options, 0)
-        cases = Category.objects.get(name="Cases")
-        self.assertEqual(cases.parent.name, "Accessories")
-
-    def test_colour_is_inherited_by_every_subcategory(self):
-        from stock.models import attributes_for_category
-        self.call("seed_accessory_attributes", "--apply", verbosity=0)
-        for name in ["Cases", "Screen protectors", "Audio"]:
-            codes = [a.code for a in attributes_for_category(Category.objects.get(name=name))]
-            self.assertIn("colour", codes, name)
-
-    def test_running_it_twice_changes_nothing(self):
-        self.call("seed_accessory_attributes", "--apply", verbosity=0)
-        before = self._counts()
-        self.call("seed_accessory_attributes", "--apply", verbosity=0)
-        self.assertEqual(self._counts(), before)
-
-    def test_it_does_not_overwrite_a_hand_edited_attribute(self):
-        from stock.models import CategoryAttribute
-        self.call("seed_accessory_attributes", "--apply", verbosity=0)
-        colour = CategoryAttribute.objects.get(code="colour",
-                                               category__name="Accessories")
-        colour.name = "Cor"
-        colour.save()
-        self.call("seed_accessory_attributes", "--apply", verbosity=0)
-        colour.refresh_from_db()
-        self.assertEqual(colour.name, "Cor")
-
-
 class TemplateHygieneTests(SimpleTestCase):
     def test_no_multi_line_django_comments(self):
         """``{# #}`` is single-line only - a comment spanning two lines is
@@ -5162,7 +4796,7 @@ class ExportPortugueseAndPricingTests(TestCase):
 
     def test_a_non_perfume_never_takes_the_discount(self):
         from stock.views import discount_applies
-        others = Category.objects.create(name="Accessories", form_kind="accessory")
+        others = Category.objects.create(name="Accessories")
         item = self._product("Cabo", "9960000000035", stock=0)
         item.category = others
         item.volume_ml = 100
@@ -5545,7 +5179,7 @@ class ShopifyStockPushTests(TestCase):
         from stock.models import Supplier
         self.category = Category.objects.create(name="Perfumes", form_kind="perfume",
                                                 sync_to_shopify=True)
-        self.offline = Category.objects.create(name="Cases", form_kind="accessory",
+        self.offline = Category.objects.create(name="Cases",
                                                sync_to_shopify=False)
         self.supplier = Supplier.objects.create(name="Sup")
         self.product = Product.objects.create(
@@ -5653,14 +5287,10 @@ class ShopifyStockPushTests(TestCase):
                 self.assertFalse(push.called)
 
     def test_a_product_with_no_barcode_is_not_pushed(self):
-        from stock.services.barcodes import assign_internal_barcode
         with self.settings(SHOPIFY_INVENTORY_SYNC=True, SHOPIFY_PUSH_BACKGROUND=False):
             with self._patched() as push:
-                nameless = Product(name="No code", brand="Khan",
-                                   category=self.category, default_price=Decimal("5"))
-                assign_internal_barcode(nameless)
-                # An internal barcode is still a barcode, so this one *does*
-                # push - the guard is for a genuinely empty one.
+                nameless = Product.objects.create(name="No code", brand="Khan", barcode="9900000009991",
+                                                  category=self.category, default_price=Decimal("5"))
                 Product.objects.filter(pk=nameless.pk).update(barcode='')
                 push.reset_mock()
                 with self.captureOnCommitCallbacks(execute=True):
@@ -5888,489 +5518,6 @@ class CatalogExportTests(TestCase):
         self.assertIn('spreadsheetml', response['Content-Type'])
 
 
-class ShelfMapTests(TestCase):
-    """Is there stock, and is there more above the shelf. Nothing is counted."""
-
-    def setUp(self):
-        from stock.models import ShelfAxis, ShelfOption, ShelfStyle, DeviceModel
-        # migration 0051 already seeds a Colour axis, so take that one
-        self.axis, _ = ShelfAxis.objects.get_or_create(
-            slug="colour", defaults={"name": "Colour"})
-        ShelfOption.objects.all().delete()
-        self.style = ShelfStyle.objects.create(name="Normal silicone",
-                                               slug="normal-silicone", axis=self.axis)
-        self.apple = Brand.objects.create(name="Apple")
-        self.samsung = Brand.objects.create(name="Samsung")
-        self.black = ShelfOption.objects.create(axis=self.axis, name="Black", sort_order=1)
-        self.clear = ShelfOption.objects.create(axis=self.axis, name="Transparent", sort_order=2)
-        self.m15 = DeviceModel.objects.create(brand=self.apple, name="iPhone 15")
-        self.m9 = DeviceModel.objects.create(brand=self.apple, name="iPhone 9")
-        self.m11 = DeviceModel.objects.create(brand=self.apple, name="iPhone 11")
-
-        self.manager = get_user_model().objects.create_superuser(
-            username="shelf_mgr", password="pw123456", email="sm@x.com")
-        self.staff = get_user_model().objects.create_user(
-            username="shelf_staff", password="pw123456")
-        self.client.force_login(self.manager)
-
-    # -- natural ordering --------------------------------------------------
-    def test_models_sort_by_number_not_alphabetically(self):
-        from stock.models import DeviceModel
-        names = list(DeviceModel.objects.filter(brand=self.apple)
-                     .order_by('sort_key').values_list('name', flat=True))
-        self.assertEqual(names, ["iPhone 9", "iPhone 11", "iPhone 15"])
-
-    def test_a_newly_added_model_lands_in_its_place(self):
-        from stock.models import DeviceModel
-        response = self.client.post(reverse('shelf_add_model'),
-                                    {'brand': 'Apple', 'name': 'iPhone 12'})
-        self.assertEqual(response.status_code, 200)
-        names = list(DeviceModel.objects.filter(brand=self.apple)
-                     .order_by('sort_key').values_list('name', flat=True))
-        self.assertEqual(names, ["iPhone 9", "iPhone 11", "iPhone 12", "iPhone 15"])
-
-    def test_the_grid_lists_models_in_that_order_grouped_by_brand(self):
-        from stock.models import DeviceModel
-        DeviceModel.objects.create(brand=self.samsung, name="Galaxy S24")
-        response = self.client.get(reverse('shelf'))
-        order = [row['model'].name for row in response.context['rows']]
-        self.assertEqual(order, ["iPhone 9", "iPhone 11", "iPhone 15", "Galaxy S24"])
-
-    # -- state -------------------------------------------------------------
-    def _set(self, model, colour, state='display'):
-        import json
-        return self.client.post(reverse('shelf_save_states'), {
-            'style': self.style.pk,
-            'changes': json.dumps([{'model': model.pk, 'option': colour.pk,
-                                    'state': state}]),
-        })
-
-    def test_a_cell_starts_out_without_a_row_existing(self):
-        from stock.models import ShelfStock
-        response = self.client.get(reverse('shelf'))
-        row = next(r for r in response.context['rows'] if r['model'] == self.m15)
-        self.assertEqual([c['state'] for c in row['cells']], ['out', 'out'])
-        self.assertEqual(ShelfStock.objects.count(), 0)
-
-    def test_a_saved_edit_is_written(self):
-        from stock.models import ShelfStock
-        self.assertTrue(self._set(self.m15, self.black, 'extra').json()['ok'])
-        self.assertEqual(ShelfStock.objects.get().state, 'extra')
-
-    def test_several_cells_save_in_one_request(self):
-        import json
-        from stock.models import ShelfStock
-        response = self.client.post(reverse('shelf_save_states'), {
-            'style': self.style.pk,
-            'changes': json.dumps([
-                {'model': self.m15.pk, 'option': self.black.pk, 'state': 'extra'},
-                {'model': self.m15.pk, 'option': self.clear.pk, 'state': 'display'},
-                {'model': self.m11.pk, 'option': self.black.pk, 'state': 'display'},
-            ]),
-        })
-        self.assertEqual(response.json()['saved'], 3)
-        self.assertEqual(ShelfStock.objects.count(), 3)
-
-    def test_an_unknown_state_is_ignored_rather_than_stored(self):
-        from stock.models import ShelfStock
-        self._set(self.m15, self.black, 'nonsense')
-        self.assertFalse(ShelfStock.objects.filter(state='nonsense').exists())
-
-    def test_a_malformed_change_does_not_take_the_rest_down(self):
-        import json
-        from stock.models import ShelfStock
-        self.client.post(reverse('shelf_save_states'), {
-            'style': self.style.pk,
-            'changes': json.dumps([
-                {'model': 'nonsense', 'option': self.black.pk, 'state': 'extra'},
-                {'model': self.m15.pk, 'option': self.clear.pk, 'state': 'display'},
-            ]),
-        })
-        self.assertEqual(ShelfStock.objects.count(), 1)
-        self.assertEqual(ShelfStock.objects.get().option, self.clear)
-
-    def test_broken_json_is_refused(self):
-        response = self.client.post(reverse('shelf_save_states'),
-                                    {'style': self.style.pk, 'changes': '{{'})
-        self.assertEqual(response.status_code, 400)
-
-    def test_colours_of_the_same_model_are_independent(self):
-        self._set(self.m15, self.black, 'extra')
-        response = self.client.get(reverse('shelf'))
-        row = next(r for r in response.context['rows'] if r['model'] == self.m15)
-        self.assertEqual([c['state'] for c in row['cells']], ['extra', 'out'])
-
-    def test_the_change_records_who_made_it(self):
-        from stock.models import ShelfStock
-        self._set(self.m15, self.black)
-        self.assertEqual(ShelfStock.objects.get().updated_by, self.manager)
-
-    def test_shop_floor_staff_can_mark_a_colour_out(self):
-        # Marking sold-out is the job of whoever is at the shelf.
-        self.client.force_login(self.staff)
-        response = self._set(self.m15, self.black, 'extra')
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.json()['ok'])
-
-    def test_a_signed_out_visitor_cannot_change_anything(self):
-        from stock.models import ShelfStock
-        self.client.logout()
-        self._set(self.m15, self.black)
-        self.assertEqual(ShelfStock.objects.count(), 0)
-
-    def test_nothing_records_a_quantity(self):
-        from stock.models import ShelfStock
-        self._set(self.m15, self.black, 'extra')
-        field_names = {f.name for f in ShelfStock._meta.get_fields()}
-        self.assertNotIn('quantity', field_names)
-        self.assertEqual(ShelfStock.objects.get().state, 'extra')
-
-    # -- notes -------------------------------------------------------------
-    def test_a_note_is_saved_against_the_model(self):
-        response = self.client.post(reverse('shelf_set_note'), {
-            'style': self.style.pk, 'model': self.m15.pk,
-            'note': 'same case as 14 Pro'})
-        self.assertEqual(response.json()['note'], 'same case as 14 Pro')
-
-    def test_a_note_does_not_link_the_states_of_two_models(self):
-        # Notes are a reminder for the person at the shelf, nothing more.
-        self.client.post(reverse('shelf_set_note'), {
-            'style': self.style.pk, 'model': self.m15.pk, 'note': 'same as 11'})
-        self._set(self.m15, self.black, 'extra')
-        response = self.client.get(reverse('shelf'))
-        other = next(r for r in response.context['rows'] if r['model'] == self.m11)
-        self.assertEqual([c['state'] for c in other['cells']], ['out', 'out'])
-
-    def test_a_note_is_searchable(self):
-        self.client.post(reverse('shelf_set_note'), {
-            'style': self.style.pk, 'model': self.m15.pk, 'note': 'same as 14 Pro'})
-        response = self.client.get(reverse('shelf'))
-        row = next(r for r in response.context['rows'] if r['model'] == self.m15)
-        self.assertIn('same as 14 pro', row['search'])
-
-    # -- adding colours and models ----------------------------------------
-    def test_a_colour_can_be_added(self):
-        from stock.models import ShelfOption
-        response = self.client.post(reverse('shelf_add_option'),
-                                    {'axis': self.axis.pk, 'name': 'Beige'})
-        self.assertTrue(response.json()['ok'])
-        self.assertTrue(ShelfOption.objects.filter(name='Beige').exists())
-
-    def test_a_duplicate_colour_is_refused(self):
-        response = self.client.post(reverse('shelf_add_option'),
-                                    {'axis': self.axis.pk, 'name': 'black'})
-        self.assertEqual(response.status_code, 409)
-
-    def test_a_duplicate_model_is_refused(self):
-        response = self.client.post(reverse('shelf_add_model'),
-                                    {'brand': 'Apple', 'name': 'iphone 15'})
-        self.assertEqual(response.status_code, 409)
-
-    def test_staff_cannot_add_models_or_colours(self):
-        from stock.models import DeviceModel, ShelfOption
-        self.client.force_login(self.staff)
-        self.assertEqual(self.client.post(reverse('shelf_add_model'),
-                         {'brand': 'Apple', 'name': 'iPhone 16'}).status_code, 403)
-        self.assertEqual(self.client.post(reverse('shelf_add_option'),
-                         {'axis': self.axis.pk, 'name': 'Teal'}).status_code, 403)
-        self.assertFalse(DeviceModel.objects.filter(name='iPhone 16').exists())
-        self.assertFalse(ShelfOption.objects.filter(name='Teal').exists())
-
-    # -- the page ----------------------------------------------------------
-    def test_the_page_renders_a_grid_with_no_photos(self):
-        html = self.client.get(reverse('shelf')).content.decode()
-        self.assertIn('id="shelf-body"', html)
-        self.assertIn('Transparent', html)
-        body = html[html.index('id="shelf-body"'):html.index('</table>')]
-        self.assertNotIn('<img', body)
-
-    def test_the_page_counts_how_many_models_are_fully_out(self):
-        self._set(self.m15, self.black, 'display')
-        response = self.client.get(reverse('shelf'))
-        self.assertEqual(response.context['total_models'], 3)
-        self.assertEqual(response.context['out_models'], 2)
-
-    def test_a_style_with_no_rows_yet_still_opens(self):
-        from stock.models import ShelfStyle
-        style = ShelfStyle.objects.create(name="MagSafe", slug="magsafe",
-                                          axis=self.axis, sort_order=2)
-        response = self.client.get(reverse('shelf_style', args=[style.slug]))
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.context['style'], style)
-
-    def test_each_style_keeps_its_own_states(self):
-        from stock.models import ShelfStyle
-        magsafe = ShelfStyle.objects.create(name="MagSafe", slug="magsafe",
-                                            axis=self.axis, sort_order=2)
-        self._set(self.m15, self.black, 'extra')
-        response = self.client.get(reverse('shelf_style', args=[magsafe.slug]))
-        row = next(r for r in response.context['rows'] if r['model'] == self.m15)
-        self.assertEqual([c['state'] for c in row['cells']], ['out', 'out'])
-
-    def test_the_page_works_before_any_style_exists(self):
-        from stock.models import ShelfStyle, ShelfStock
-        ShelfStock.objects.all().delete()
-        ShelfStyle.objects.all().delete()
-        response = self.client.get(reverse('shelf'))
-        self.assertEqual(response.status_code, 200)
-        self.assertIsNone(response.context['style'])
-
-
-class AddProductDefersToShelfTests(TestCase):
-    """Cases are never entered as products - the shelf grid is the answer."""
-
-    def setUp(self):
-        from stock.models import ShelfAxis, ShelfStyle
-        self.cases = Category.objects.create(name="Cases", form_kind="accessory")
-        self.perfumes = Category.objects.create(name="Perfumes", form_kind="perfume")
-        axis, _ = ShelfAxis.objects.get_or_create(
-            slug='colour', defaults={'name': 'Colour'})
-        self.style = ShelfStyle.objects.create(
-            name="Normal silicone", slug="normal-silicone",
-            axis=axis, category=self.cases)
-        user = get_user_model().objects.create_superuser(
-            username="ap_mgr", password="pw123456", email="ap@x.com")
-        self.client.force_login(user)
-
-    def _targets(self):
-        import json
-        response = self.client.get(reverse('add_product'))
-        return json.loads(response.context['shelf_targets_json'])
-
-    def test_a_shelf_tracked_category_points_at_its_grid(self):
-        targets = self._targets()
-        self.assertIn(str(self.cases.pk), targets)
-        entry = targets[str(self.cases.pk)][0]
-        self.assertEqual(entry['name'], "Normal silicone")
-        self.assertEqual(entry['url'], reverse('shelf_style', args=['normal-silicone']))
-
-    def test_a_normal_category_is_not_diverted(self):
-        self.assertNotIn(str(self.perfumes.pk), self._targets())
-
-    def test_several_styles_under_one_category_are_all_offered(self):
-        from stock.models import ShelfAxis, ShelfStyle
-        axis = ShelfAxis.objects.get(slug='colour')
-        ShelfStyle.objects.create(name="MagSafe", slug="magsafe",
-                                  axis=axis, category=self.cases)
-        names = {t['name'] for t in self._targets()[str(self.cases.pk)]}
-        self.assertEqual(names, {"Normal silicone", "MagSafe"})
-
-    def test_an_inactive_style_is_not_offered(self):
-        self.style.is_active = False
-        self.style.save(update_fields=['is_active'])
-        self.assertNotIn(str(self.cases.pk), self._targets())
-
-    def test_adding_a_handset_is_the_only_thing_needed(self):
-        # No product, no barcode, no price - just the model, then colours.
-        from stock.models import DeviceModel, Product
-        Brand.objects.create(name="Apple")
-        response = self.client.post(reverse('shelf_add_model'),
-                                    {'brand': 'Apple', 'name': 'iPhone 17 Pro'})
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(DeviceModel.objects.filter(name='iPhone 17 Pro').exists())
-        self.assertEqual(Product.all_objects.count(), 0)
-
-
-class ShelfNavAndPriceTests(TestCase):
-    """Category, then type, with the wholesale price beside it."""
-
-    def setUp(self):
-        from decimal import Decimal
-        from stock.models import ShelfAxis, ShelfOption, ShelfStyle, DeviceModel
-        self.colour, _ = ShelfAxis.objects.get_or_create(
-            slug='colour', defaults={'name': 'Colour'})
-        ShelfOption.objects.all().delete()
-        self.glue = ShelfAxis.objects.create(name='Glue & edge', slug='glue-edge')
-        ShelfOption.objects.create(axis=self.colour, name='Black')
-        ShelfOption.objects.create(axis=self.glue, name='Full glue curved')
-
-        self.cases = Category.objects.create(name="Cases", form_kind="accessory")
-        self.glass_cat = Category.objects.create(name="Screen protectors",
-                                                 form_kind="accessory")
-        self.silicone = ShelfStyle.objects.create(
-            name="Normal silicone", slug="normal-silicone", axis=self.colour,
-            category=self.cases, wholesale_price=Decimal("1.20"), sort_order=1)
-        self.magsafe = ShelfStyle.objects.create(
-            name="MagSafe", slug="magsafe", axis=self.colour,
-            category=self.cases, wholesale_price=Decimal("3.50"), sort_order=2)
-        self.glass = ShelfStyle.objects.create(
-            name="Tempered glass", slug="tempered-glass", axis=self.glue,
-            category=self.glass_cat, wholesale_price=Decimal("0.80"), sort_order=3)
-
-        apple = Brand.objects.create(name="Apple")
-        DeviceModel.objects.create(brand=apple, name="iPhone 15", release_year=2023)
-        user = get_user_model().objects.create_superuser(
-            username="nav_mgr", password="pw123456", email="n@x.com")
-        self.client.force_login(user)
-
-    def test_types_are_grouped_under_their_category(self):
-        response = self.client.get(reverse('shelf'))
-        groups = {g['name']: [s.name for s in g['styles']]
-                  for g in response.context['groups']}
-        self.assertEqual(groups["Cases"], ["Normal silicone", "MagSafe"])
-        self.assertEqual(groups["Screen protectors"], ["Tempered glass"])
-
-    def test_the_page_knows_which_category_is_open(self):
-        response = self.client.get(reverse('shelf_style', args=['tempered-glass']))
-        self.assertEqual(response.context['current_group']['name'], "Screen protectors")
-
-    def test_the_wholesale_price_is_shown(self):
-        html = self.client.get(reverse('shelf_style', args=['magsafe'])).content.decode()
-        self.assertIn("3.50", html)
-        self.assertIn("wholesale", html)
-
-    def test_a_type_with_no_price_set_does_not_show_an_empty_tag(self):
-        self.magsafe.wholesale_price = None
-        self.magsafe.save(update_fields=['wholesale_price'])
-        html = self.client.get(reverse('shelf_style', args=['magsafe'])).content.decode()
-        self.assertNotIn("wholesale", html)
-
-    def test_glass_and_cases_show_different_columns(self):
-        cases = self.client.get(reverse('shelf_style', args=['normal-silicone']))
-        glass = self.client.get(reverse('shelf_style', args=['tempered-glass']))
-        self.assertEqual([c.name for c in cases.context['columns']], ['Black'])
-        self.assertEqual([c.name for c in glass.context['columns']],
-                         ['Full glue curved'])
-
-    def test_the_grid_is_read_only_until_edit(self):
-        html = self.client.get(reverse('shelf')).content.decode()
-        self.assertIn('id="edit-btn"', html)
-        self.assertIn('id="save-btn"', html)
-        # every cell records the state the server holds, so Cancel can restore
-        self.assertIn('data-saved=', html)
-
-    def test_a_style_with_no_category_still_appears(self):
-        from stock.models import ShelfStyle
-        ShelfStyle.objects.create(name="Loose", slug="loose", axis=self.colour,
-                                  sort_order=9)
-        names = [g['name'] for g in self.client.get(reverse('shelf')).context['groups']]
-        self.assertIn("Other", names)
-
-
-class ShelfAxisTests(TestCase):
-    """A style names the axis that forms its columns, so a new kind of goods
-    brings its own columns without a code change."""
-
-    def setUp(self):
-        from stock.models import ShelfAxis, ShelfOption, ShelfStyle, DeviceModel
-        self.colour, _ = ShelfAxis.objects.get_or_create(
-            slug='colour', defaults={'name': 'Colour'})
-        ShelfOption.objects.all().delete()
-        self.glue = ShelfAxis.objects.create(name='Glue & edge', slug='glue-edge')
-
-        self.black = ShelfOption.objects.create(axis=self.colour, name='Black')
-        self.curved = ShelfOption.objects.create(axis=self.glue, name='Full glue curved')
-
-        self.cases = ShelfStyle.objects.create(name='Normal silicone',
-                                               slug='normal-silicone', axis=self.colour)
-        self.glass = ShelfStyle.objects.create(name='Tempered glass',
-                                               slug='tempered-glass', axis=self.glue)
-        apple = Brand.objects.create(name='Apple')
-        self.model = DeviceModel.objects.create(brand=apple, name='iPhone 15',
-                                                release_year=2023)
-        user = get_user_model().objects.create_superuser(
-            username='axis_mgr', password='pw123456', email='a@x.com')
-        self.client.force_login(user)
-
-    def test_each_style_shows_only_its_own_axis_columns(self):
-        cases = self.client.get(reverse('shelf_style', args=[self.cases.slug]))
-        glass = self.client.get(reverse('shelf_style', args=[self.glass.slug]))
-        self.assertEqual([c.name for c in cases.context['columns']], ['Black'])
-        self.assertEqual([c.name for c in glass.context['columns']],
-                         ['Full glue curved'])
-
-    def test_the_same_handset_appears_under_every_style(self):
-        # Entered once, available everywhere - that is the point of a shared
-        # model registry.
-        for style in (self.cases, self.glass):
-            response = self.client.get(reverse('shelf_style', args=[style.slug]))
-            names = [row['model'].name for row in response.context['rows']]
-            self.assertEqual(names, ['iPhone 15'], style.name)
-
-    def test_states_do_not_leak_between_styles(self):
-        import json
-        self.client.post(reverse('shelf_save_states'), {
-            'style': self.cases.pk,
-            'changes': json.dumps([{'model': self.model.pk,
-                                    'option': self.black.pk, 'state': 'extra'}])})
-        glass = self.client.get(reverse('shelf_style', args=[self.glass.slug]))
-        row = glass.context['rows'][0]
-        self.assertEqual([c['state'] for c in row['cells']], ['out'])
-
-    def test_a_new_option_only_joins_its_own_axis(self):
-        from stock.models import ShelfOption
-        self.client.post(reverse('shelf_add_option'),
-                         {'axis': self.glue.pk, 'name': 'Privacy'})
-        self.assertTrue(ShelfOption.objects.filter(axis=self.glue, name='Privacy').exists())
-        cases = self.client.get(reverse('shelf_style', args=[self.cases.slug]))
-        self.assertEqual([c.name for c in cases.context['columns']], ['Black'])
-
-    def test_adding_a_style_picks_an_axis(self):
-        from stock.models import ShelfStyle
-        response = self.client.post(reverse('shelf_add_style'),
-                                    {'name': 'Hydrogel film', 'axis': self.glue.pk})
-        self.assertEqual(response.status_code, 302)
-        style = ShelfStyle.objects.get(slug='hydrogel-film')
-        self.assertEqual(style.axis, self.glue)
-
-    def test_a_style_added_without_an_axis_falls_back_to_colour(self):
-        from stock.models import ShelfStyle
-        self.client.post(reverse('shelf_add_style'), {'name': 'MagSafe'})
-        self.assertEqual(ShelfStyle.objects.get(slug='magsafe').axis, self.colour)
-
-    def test_an_axis_in_use_cannot_be_deleted_out_from_under_a_style(self):
-        from django.db.models import ProtectedError
-        with self.assertRaises(ProtectedError):
-            self.glue.delete()
-
-
-class PhoneModelSeedTests(TestCase):
-    def setUp(self):
-        from django.core.management import call_command
-        self.call = call_command
-
-    def test_dry_run_writes_nothing(self):
-        from stock.models import DeviceModel
-        self.call("seed_phone_models", verbosity=0)
-        self.assertEqual(DeviceModel.objects.count(), 0)
-
-    def test_apply_creates_the_lineup_in_shelf_order(self):
-        from django.db.models import Value
-        from django.db.models.functions import Coalesce
-        from stock.models import DeviceModel
-        self.call("seed_phone_models", "--apply", verbosity=0)
-        names = list(DeviceModel.objects
-                     .annotate(y=Coalesce('release_year', Value(9999)))
-                     .order_by('y', 'sort_key', 'name')
-                     .values_list('name', flat=True))
-        self.assertIn("iPhone 16 Pro Max", names)
-        # the year decides first, so X sits between the 8 and the 11
-        self.assertLess(names.index("iPhone 8"), names.index("iPhone X"))
-        self.assertLess(names.index("iPhone X"), names.index("iPhone 11"))
-        self.assertLess(names.index("iPhone 11"), names.index("iPhone 15"))
-
-    def test_running_it_twice_adds_nothing(self):
-        from stock.models import DeviceModel
-        self.call("seed_phone_models", "--apply", verbosity=0)
-        before = DeviceModel.objects.count()
-        self.call("seed_phone_models", "--apply", verbosity=0)
-        self.assertEqual(DeviceModel.objects.count(), before)
-
-    def test_aliases_let_the_till_find_a_handset(self):
-        from stock.models import resolve_device
-        self.call("seed_phone_models", "--apply", verbosity=0)
-        self.assertEqual(resolve_device("15PM").name, "iPhone 15 Pro Max")
-        self.assertEqual(resolve_device("iphone 15 pro max").name, "iPhone 15 Pro Max")
-
-    def test_an_unknown_brand_is_reported_not_guessed(self):
-        from io import StringIO
-        from stock.models import DeviceModel
-        out = StringIO()
-        self.call("seed_phone_models", "--brand", "Nokia", "--apply", stdout=out)
-        self.assertIn("No lineup", out.getvalue())
-        self.assertEqual(DeviceModel.objects.count(), 0)
-
-
 class NaturalKeyTests(SimpleTestCase):
     def test_numbers_compare_as_numbers(self):
         from stock.models import natural_key
@@ -6507,8 +5654,8 @@ class CreateCategoryTests(TestCase):
     """The shop adds its own categories; no developer, no migration."""
 
     def setUp(self):
-        self.accessories = Category.objects.create(
-            name="Accessories", form_kind="accessory", sync_to_shopify=False)
+        self.other = Category.objects.create(name="Other goods", sync_to_shopify=False)
+        self.perfumes = Category.objects.create(name="Perfumes", form_kind="perfume", sync_to_shopify=True)
         self.manager = get_user_model().objects.create_superuser(
             username="boss3", password="pw123456", email="b3@x.com")
         self.client.force_login(self.manager)
@@ -6517,45 +5664,52 @@ class CreateCategoryTests(TestCase):
         return self.client.post(reverse('create_category'), data)
 
     def test_a_top_level_category_is_created_with_the_kind_given(self):
-        response = self._post(name="Vapes", form_kind="accessory")
+        response = self._post(name="Niche", form_kind="perfume")
         self.assertEqual(response.status_code, 200)
-        category = Category.objects.get(name="Vapes")
-        self.assertEqual(category.form_kind, "accessory")
+        category = Category.objects.get(name="Niche")
+        self.assertEqual(category.form_kind, "perfume")
         self.assertIsNone(category.parent)
 
+    def test_an_unknown_kind_is_general(self):
+        # the accessory kind went with the accessory code (2026-11-01)
+        self._post(name="Vapes", form_kind="accessory")
+        self.assertEqual(Category.objects.get(name="Vapes").form_kind, "general")
+
     def test_a_subcategory_inherits_its_parents_kind_and_shopify_setting(self):
-        response = self._post(name="Tablet cases", parent=self.accessories.pk)
+        response = self._post(name="Minis", parent=self.perfumes.pk)
         self.assertEqual(response.status_code, 200)
-        child = Category.objects.get(name="Tablet cases")
-        self.assertEqual(child.parent, self.accessories)
-        self.assertEqual(child.effective_form_kind, "accessory")
-        self.assertFalse(child.sync_to_shopify)
+        child = Category.objects.get(name="Minis")
+        self.assertEqual(child.parent, self.perfumes)
+        self.assertEqual(child.effective_form_kind, "perfume")
+        self.assertTrue(child.sync_to_shopify)
+        self._post(name="Bags", parent=self.other.pk)
+        self.assertFalse(Category.objects.get(name="Bags").sync_to_shopify)
 
     def test_a_new_perfume_category_goes_on_the_storefront(self):
         self._post(name="Niche perfume", form_kind="perfume")
         self.assertTrue(Category.objects.get(name="Niche perfume").sync_to_shopify)
 
-    def test_a_new_accessory_category_stays_off_the_storefront(self):
-        self._post(name="Vapes", form_kind="accessory")
+    def test_a_new_general_category_stays_off_the_storefront(self):
+        self._post(name="Vapes", form_kind="general")
         self.assertFalse(Category.objects.get(name="Vapes").sync_to_shopify)
 
     def test_the_response_carries_what_the_page_needs(self):
-        payload = self._post(name="Tablet cases", parent=self.accessories.pk).json()
+        payload = self._post(name="Bags", parent=self.other.pk).json()
         self.assertTrue(payload['ok'])
-        self.assertEqual(payload['name'], "Tablet cases")
-        self.assertEqual(payload['kind'], "accessory")
-        self.assertEqual(payload['parent'], self.accessories.pk)
+        self.assertEqual(payload['name'], "Bags")
+        self.assertEqual(payload['kind'], "general")
+        self.assertEqual(payload['parent'], self.other.pk)
 
     def test_a_duplicate_under_the_same_parent_is_refused_and_points_at_it(self):
-        first = self._post(name="Tablet cases", parent=self.accessories.pk).json()
-        response = self._post(name="tablet CASES", parent=self.accessories.pk)
+        first = self._post(name="Tablet cases", parent=self.other.pk).json()
+        response = self._post(name="tablet CASES", parent=self.other.pk)
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.json()['id'], first['id'])
         self.assertEqual(Category.objects.filter(name__iexact="Tablet cases").count(), 1)
 
     def test_the_same_name_under_a_different_parent_is_allowed(self):
         other = Category.objects.create(name="Shisha")
-        self._post(name="Glass", parent=self.accessories.pk)
+        self._post(name="Glass", parent=self.other.pk)
         response = self._post(name="Glass", parent=other.pk)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(Category.objects.filter(name="Glass").count(), 2)
@@ -6563,7 +5717,7 @@ class CreateCategoryTests(TestCase):
     def test_a_blank_name_is_refused(self):
         response = self._post(name="   ")
         self.assertEqual(response.status_code, 400)
-        self.assertFalse(Category.objects.exclude(pk=self.accessories.pk).exists())
+        self.assertEqual(Category.objects.count(), 2)
 
     def test_an_over_long_name_is_refused(self):
         self.assertEqual(self._post(name="x" * 51).status_code, 400)
@@ -6589,14 +5743,12 @@ class ProductListCategoryChipsTests(TestCase):
     """Three chips, not twelve - and one covers everything beneath it."""
 
     def setUp(self):
-        from stock.services.barcodes import assign_internal_barcode
-        self.accessories = Category.objects.create(name="Accessories", form_kind="accessory")
+        self.accessories = Category.objects.create(name="Accessories")
         self.cases = Category.objects.create(name="Cases", parent=self.accessories)
         self.perfumes = Category.objects.create(name="Perfumes", form_kind="perfume")
 
-        self.case = Product(name="Clear TPU", brand="Generic", category=self.cases,
-                            default_price=Decimal("9"))
-        assign_internal_barcode(self.case)
+        self.case = Product.objects.create(name="Clear TPU", brand="Generic", category=self.cases,
+                                           barcode="9900000009992", default_price=Decimal("9"))
         self.perfume = Product.objects.create(
             name="Oud", barcode="9910000000001", brand="B",
             category=self.perfumes, default_price=Decimal("50"))
@@ -6622,11 +5774,9 @@ class ProductListCategoryChipsTests(TestCase):
         self.assertEqual([p.name for p in response.context['products']], ["Clear TPU"])
 
     def test_a_deep_tree_is_covered(self):
-        from stock.services.barcodes import assign_internal_barcode
         deep = Category.objects.create(name="MagSafe cases", parent=self.cases)
-        product = Product(name="MagSafe clear", brand="Generic", category=deep,
-                          default_price=Decimal("15"))
-        assign_internal_barcode(product)
+        Product.objects.create(name="MagSafe clear", brand="Generic", category=deep,
+                               barcode="9900000009993", default_price=Decimal("15"))
         response = self.client.get(reverse('product_list'), {'category': self.accessories.pk})
         self.assertIn("MagSafe clear", [p.name for p in response.context['products']])
 
@@ -6641,11 +5791,8 @@ class AddProductWizardTests(TestCase):
     """Pick a category first; the form then asks only that category's questions."""
 
     def setUp(self):
-        from django.core.management import call_command
-        call_command("seed_accessory_attributes", "--apply", verbosity=0)
         self.perfumes = Category.objects.create(name="Perfumes", form_kind="perfume")
-        self.cases = Category.objects.get(name="Cases")
-        self.accessories = Category.objects.get(name="Accessories")
+        self.other = Category.objects.create(name="Other goods")
         self.brand = Brand.objects.create(name="Generic")
         user = get_user_model().objects.create_superuser(
             username="mgr2", password="pw123456", email="m2@x.com")
@@ -6658,15 +5805,15 @@ class AddProductWizardTests(TestCase):
         import json
         response = self.client.get(reverse('add_product'))
         kinds = json.loads(response.context['category_kind_json'])
-        self.assertEqual(kinds[str(self.cases.pk)], "accessory")
+        self.assertEqual(kinds[str(self.other.pk)], "general")
         self.assertEqual(kinds[str(self.perfumes.pk)], "perfume")
 
     def test_a_subcategory_inherits_the_form_kind_of_its_parent(self):
         import json
-        child = Category.objects.create(name="Tablet cases", parent=self.accessories)
+        child = Category.objects.create(name="Minis", parent=self.perfumes)
         response = self.client.get(reverse('add_product'))
         kinds = json.loads(response.context['category_kind_json'])
-        self.assertEqual(kinds[str(child.pk)], "accessory")
+        self.assertEqual(kinds[str(child.pk)], "perfume")
 
     def test_choosing_a_category_does_not_navigate_away(self):
         # The picker stays on the page and the form opens underneath it, so
@@ -6678,35 +5825,9 @@ class AddProductWizardTests(TestCase):
         self.assertNotIn('window.scrollTo', html)
         self.assertNotIn('stepPick.hidden = true', html)
 
-    def test_case_types_cover_the_kinds_the_shop_stocks(self):
-        from stock.models import CategoryAttribute
-        case_type = CategoryAttribute.objects.get(code="case_type")
-        labels = set(case_type.options.values_list('label', flat=True))
-        for label in ["Plain silicone / rubber", "Fancy / printed", "MagSafe",
-                      "Flip / wallet"]:
-            self.assertIn(label, labels)
-        self.assertTrue(case_type.variant_attribute)
-
-    def test_protector_glue_and_edge_are_separate_stock_rows(self):
-        from stock.models import CategoryAttribute
-        for code in ["glue", "edge", "protector_type"]:
-            attribute = CategoryAttribute.objects.get(code=code)
-            self.assertTrue(attribute.variant_attribute, code)
-
     def test_the_category_select_is_still_submitted(self):
         # The buttons drive it, but it must stay in the DOM for validation.
         self.assertIn('name="category"', self._html())
-
-    def _post(self, **overrides):
-        data = {
-            'barcode': '',
-            'category': self.cases.pk,
-            'brand_master': self.brand.pk,
-            'name': 'Clear TPU',
-            'default_price': '9.90',
-        }
-        data.update(overrides)
-        return self.client.post(reverse('add_product'), data)
 
     def test_a_perfume_keeps_the_gender_it_was_given(self):
         response = self.client.post(reverse('add_product'), {
@@ -6722,109 +5843,6 @@ class AddProductWizardTests(TestCase):
         perfume = Product.objects.get(name="Oud")
         self.assertEqual(perfume.gender, 'men')
         self.assertEqual(perfume.volume_ml, 100)
-
-
-class DeviceFitmentTests(TestCase):
-    """A customer asks for "a case for a 15PM" and must find the right case."""
-
-    def setUp(self):
-        from stock.models import DeviceModel, DeviceAlias, CompatibilityGroup
-        self.accessories = Category.objects.create(name="Accessories", sync_to_shopify=False)
-        self.apple = Brand.objects.create(name="Apple")
-
-        self.pro_max = DeviceModel.objects.create(brand=self.apple, name="iPhone 15 Pro Max",
-                                                  release_year=2023)
-        self.plus = DeviceModel.objects.create(brand=self.apple, name="iPhone 15 Plus",
-                                               release_year=2023)
-        for alias in ["15PM", "15 Pro Max", "A2849"]:
-            DeviceAlias.objects.create(device=self.pro_max, alias=alias)
-
-        # Same glass on both handsets, so one protector covers the pair.
-        self.same_glass = CompatibilityGroup.objects.create(name="iPhone 15 Pro Max / 15 Plus")
-        self.same_glass.devices.set([self.pro_max, self.plus])
-
-        self.case = self._product("Clear case")
-        self.case.device_models.add(self.pro_max)
-        self.protector = self._product("Tempered glass")
-        self.protector.compatibility_groups.add(self.same_glass)
-        self.cable = self._product("USB-C cable", universal_fit=True)
-        self.other_case = self._product("Case for Pixel")
-
-    def _product(self, name, **kwargs):
-        from stock.services.barcodes import assign_internal_barcode
-        product = Product(name=name, brand="Generic", category=self.accessories,
-                          default_price=Decimal("9"), **kwargs)
-        assign_internal_barcode(product)
-        return product
-
-    # -- resolving what the customer said ---------------------------------
-    def test_an_alias_finds_the_handset(self):
-        from stock.models import resolve_device
-        for spelling in ["15PM", "15 pro max", "a2849", "15-PM"]:
-            self.assertEqual(resolve_device(spelling), self.pro_max, spelling)
-
-    def test_the_full_name_finds_the_handset_however_it_is_spaced(self):
-        from stock.models import resolve_device
-        for spelling in ["iPhone 15 Pro Max", "apple iphone15promax", "APPLE IPHONE 15 PRO MAX"]:
-            self.assertEqual(resolve_device(spelling), self.pro_max, spelling)
-
-    def test_an_unknown_spelling_resolves_to_nothing(self):
-        from stock.models import resolve_device
-        self.assertIsNone(resolve_device("Nokia 3310"))
-        self.assertIsNone(resolve_device(""))
-
-    def test_the_same_alias_cannot_point_at_two_handsets(self):
-        from stock.models import DeviceAlias
-        from django.db.utils import IntegrityError
-        with self.assertRaises(IntegrityError):
-            DeviceAlias.objects.create(device=self.plus, alias="15 pm")
-
-    # -- finding what fits -------------------------------------------------
-    def test_a_handset_finds_its_case_its_group_and_universal_goods(self):
-        from stock.models import products_fitting
-        names = set(products_fitting(self.pro_max).values_list('name', flat=True))
-        self.assertEqual(names, {"Clear case", "Tempered glass", "USB-C cable"})
-
-    def test_a_group_member_finds_the_shared_protector_but_not_the_moulded_case(self):
-        from stock.models import products_fitting
-        names = set(products_fitting(self.plus).values_list('name', flat=True))
-        self.assertEqual(names, {"Tempered glass", "USB-C cable"})
-
-    def test_a_product_is_not_returned_twice_when_it_matches_two_ways(self):
-        from stock.models import products_fitting
-        self.protector.device_models.add(self.pro_max)     # model AND group
-        rows = list(products_fitting(self.pro_max).values_list('name', flat=True))
-        self.assertEqual(len(rows), len(set(rows)))
-
-    def test_fits_agrees_with_the_queryset(self):
-        self.assertTrue(self.case.fits(self.pro_max))
-        self.assertFalse(self.case.fits(self.plus))
-        self.assertTrue(self.protector.fits(self.plus))
-        self.assertTrue(self.cable.fits(self.plus))
-        self.assertFalse(self.other_case.fits(self.pro_max))
-
-    def test_universal_goods_fit_even_an_unknown_handset(self):
-        self.assertTrue(self.cable.fits(None))
-        self.assertFalse(self.case.fits(None))
-
-    def test_perfume_is_untouched_by_any_of_this(self):
-        perfume = Product.objects.create(name="Oud", barcode="9600000000001", brand="B",
-                                         category=Category.objects.create(name="Perfumes"),
-                                         default_price=Decimal("50"))
-        self.assertFalse(perfume.universal_fit)
-        self.assertEqual(perfume.fitment_label, '')
-        self.assertFalse(perfume.fits(self.pro_max))
-
-    # -- labels ------------------------------------------------------------
-    def test_fitment_label_reads_naturally(self):
-        self.assertEqual(self.cable.fitment_label, 'Universal')
-        self.assertEqual(self.case.fitment_label, 'Apple iPhone 15 Pro Max')
-        self.assertEqual(self.protector.fitment_label, 'iPhone 15 Pro Max / 15 Plus')
-
-    def test_search_finds_handsets_by_partial_alias(self):
-        from stock.models import search_devices
-        self.assertIn(self.pro_max, search_devices("15p"))
-        self.assertIn(self.pro_max, search_devices("pro max"))
 
 
 class TillSearchTests(TestCase):
@@ -6915,62 +5933,6 @@ class TillSearchTests(TestCase):
                          ["Oud A", "Oud B"])
 
 
-class TillDeviceSearchTests(TestCase):
-    """Typing a handset at the till must return the accessories that fit it."""
-
-    def setUp(self):
-        from stock.models import DeviceModel, DeviceAlias, CompatibilityGroup
-        from stock.services.barcodes import assign_internal_barcode
-        self.accessories = Category.objects.create(name="Accessories", sync_to_shopify=False)
-        apple = Brand.objects.create(name="Apple")
-        self.pro_max = DeviceModel.objects.create(brand=apple, name="iPhone 15 Pro Max")
-        DeviceAlias.objects.create(device=self.pro_max, alias="15PM")
-        self.plus = DeviceModel.objects.create(brand=apple, name="iPhone 15 Plus")
-        group = CompatibilityGroup.objects.create(name="iPhone 15 Pro Max / 15 Plus")
-        group.devices.set([self.pro_max, self.plus])
-
-        def make(name, **kw):
-            product = Product(name=name, brand="Generic", category=self.accessories,
-                              default_price=Decimal("9"), **kw)
-            assign_internal_barcode(product)
-            # Stock, or the till search will rightly not offer it.
-            Purchase.objects.create(product=product, quantity=5, remaining=5,
-                                    cost_price=Decimal("1"))
-            return product
-
-        self.case = make("Clear TPU")
-        self.case.device_models.add(self.pro_max)
-        self.protector = make("Tempered glass")
-        self.protector.compatibility_groups.add(group)
-        self.cable = make("USB-C cable", universal_fit=True)
-
-        user = get_user_model().objects.create_user(username="till2", password="pw123456")
-        self.client.force_login(user)
-
-    def _search(self, q):
-        response = self.client.get(reverse('products_autocomplete'), {'q': q})
-        return {row['name'] for row in response.json()['results']}
-
-    def test_an_alias_returns_everything_made_for_that_handset(self):
-        self.assertEqual(self._search("15PM"), {"Clear TPU", "Tempered glass"})
-
-    def test_the_handset_name_works_too(self):
-        self.assertEqual(self._search("iPhone 15 Pro Max"), {"Clear TPU", "Tempered glass"})
-
-    def test_universal_goods_do_not_answer_every_handset(self):
-        # Otherwise every cable in the shop turns up under every phone.
-        self.assertNotIn("USB-C cable", self._search("15PM"))
-
-    def test_searching_by_product_name_still_works(self):
-        self.assertEqual(self._search("Tempered"), {"Tempered glass"})
-
-    def test_a_product_matching_both_ways_appears_once(self):
-        self.protector.device_models.add(self.pro_max)
-        response = self.client.get(reverse('products_autocomplete'), {'q': '15PM'})
-        names = [row['name'] for row in response.json()['results']]
-        self.assertEqual(len(names), len(set(names)))
-
-
 class ShopifySyncScopeTests(TestCase):
     """Accessories are shop-floor only; only perfume goes on the storefront."""
 
@@ -7019,50 +5981,6 @@ class ShopifySyncScopeTests(TestCase):
         self.assertContains(response, "not sold on Shopify")
 
 
-class InternalBarcodeTests(TestCase):
-    """Cases and screen protectors arrive with no EAN; we mint a valid one."""
-
-    def test_check_digit_matches_gs1_examples(self):
-        from stock.services.barcodes import ean13_check_digit
-        self.assertEqual(ean13_check_digit('590123412345'), '7')
-        self.assertEqual(ean13_check_digit('400638133393'), '1')
-
-    def test_generated_code_is_a_valid_ean13(self):
-        from stock.services.barcodes import build_internal_barcode, ean13_check_digit
-        code = build_internal_barcode(1)
-        self.assertEqual(len(code), 13)
-        self.assertTrue(code.isdigit())
-        self.assertTrue(code.startswith('29'))
-        self.assertEqual(code[-1], ean13_check_digit(code[:12]))
-
-    def test_sequence_advances_and_never_collides(self):
-        from stock.services.barcodes import assign_internal_barcode
-        category = Category.objects.create(name="Accessories")
-        codes = []
-        for i in range(5):
-            product = Product(name=f"Case {i}", brand="Generic", category=category,
-                              default_price=Decimal("9"))
-            codes.append(assign_internal_barcode(product))
-        self.assertEqual(len(set(codes)), 5)
-        self.assertEqual(codes, sorted(codes))
-
-    def test_it_skips_a_number_already_taken(self):
-        from stock.services.barcodes import assign_internal_barcode, build_internal_barcode
-        category = Category.objects.create(name="Accessories")
-        taken = build_internal_barcode(1)
-        Product.objects.create(name="Squatter", barcode=taken, brand="B",
-                               category=category, default_price=Decimal("1"))
-        product = Product(name="Case", brand="Generic", category=category,
-                          default_price=Decimal("9"))
-        self.assertNotEqual(assign_internal_barcode(product), taken)
-
-    def test_a_real_barcode_is_not_flagged_internal(self):
-        category = Category.objects.create(name="Accessories")
-        product = Product.objects.create(name="Cable", barcode="5901234123457", brand="B",
-                                         category=category, default_price=Decimal("5"))
-        self.assertFalse(product.barcode_is_internal)
-
-
 class ProductFormBlankBarcodeTests(TestCase):
     """Adding a no-barcode product through the form must just work."""
 
@@ -7086,7 +6004,6 @@ class ProductFormBlankBarcodeTests(TestCase):
         self.assertTrue(form.is_valid(), form.errors.as_json())
         product = form.save()
         self.assertEqual(product.barcode, '5901234123457')
-        self.assertFalse(product.barcode_is_internal)
 
     def test_a_duplicate_barcode_is_still_rejected(self):
         Product.objects.create(name="Taken", barcode='5901234123457', brand="B",
@@ -7102,7 +6019,6 @@ class ProductFormBlankBarcodeTests(TestCase):
         self.assertTrue(form.is_valid(), form.errors.as_json())
         saved = form.save()
         self.assertEqual(saved.barcode, '5901234123457')
-        self.assertFalse(saved.barcode_is_internal)
 
 
 class StoreSellableCategoryTests(TestCase):
@@ -9331,7 +8247,7 @@ class RoundANavigationTests(TestCase):
         links, nav = self._menu(self.admin, store=self.store_a)
         self.assertEqual(links, ["Today", "Dashboard", "Orders", "Sell", "Pedido",
                                  "Products", "Catalog View",
-                                 "Shelf", "Customers", "IOU", "Inbound", "Suppliers",
+                                 "Customers", "IOU", "Inbound", "Suppliers",
                                  "Attendance", "Tools", "Team", "Stores", "Print Header",
                                  "Fees", "Correct orders", "Audit"])
         for group in ("Sell", "Products", "Customers", "Purchasing", "Settings"):
@@ -10484,6 +9400,89 @@ class ChannelSplitTests(TestCase):
         self.assertEqual(split['retail']['customers'], 1)
         self.assertEqual(split['revenda']['share_pct'], Decimal("50"))
 
+class DashboardChannelFilterTests(TestCase):
+    """Dashboard: Retail or Revenda picked, every sales figure is that channel's
+    alone; stock stays whole and the split keeps showing both (2026-11-01)."""
+
+    def setUp(self):
+        cache.clear()
+        self.admin = get_user_model().objects.create_superuser("chf_admin", password="pw123456")
+        self.client.force_login(self.admin)
+        self.cat = Category.objects.create(name="Perfumes")
+        self.product = Product.objects.create(name="Chf", brand="X", barcode="9921000000001",
+                                              category=self.cat, default_price=Decimal("10"))
+        Purchase.objects.create(product=self.product, quantity=10, remaining=7, cost_price=Decimal("4"))
+        self.revenda = Customer.objects.create(name="Rev Shop", nif="605000001", kind=Customer.REVENDA)
+        self.retail = Customer.objects.create(name="Ret Person", nif="605000002")
+        for customer, price in ((self.revenda, "30"), (self.retail, "10"), (None, "20")):
+            order = SaleOrder.objects.create(customer=customer)
+            Sale.objects.create(order=order, product=self.product, customer=customer, quantity=1,
+                                unit_price=Decimal(price), payment_method="cash")
+        # an order with no customer of its own takes the line's customer
+        Sale.objects.create(order=SaleOrder.objects.create(), product=self.product, customer=self.revenda,
+                            quantity=1, unit_price=Decimal("5"), payment_method="card")
+        ARInvoice.objects.create(customer=self.revenda, total_amount=Decimal("50"))
+        ARInvoice.objects.create(customer=self.retail, total_amount=Decimal("8"))
+        self.today = timezone.localdate()
+
+    def _snap(self, channel=""):
+        from .services.dashboard import build_monthly_dashboard_snapshot
+        return build_monthly_dashboard_snapshot(month_start=self.today.replace(day=1), period_end=self.today,
+                                                channel=channel)
+
+    def test_each_channel_counts_only_its_own_sales(self):
+        both, rev, ret = self._snap(), self._snap("revenda"), self._snap("retail")
+        self.assertEqual(both["month_sales_amount"], Decimal("65"))
+        self.assertEqual(rev["month_sales_amount"], Decimal("35"))
+        self.assertEqual(ret["month_sales_amount"], Decimal("30"))
+        self.assertEqual(rev["month_order_count"] + ret["month_order_count"], both["month_order_count"])
+        self.assertEqual([c["name"] for c in rev["month_top_customers"]], ["Rev Shop"])
+        self.assertIsNone(rev["month_walk_in_summary"])
+        self.assertEqual(ret["month_walk_in_summary"]["amount"], Decimal("20"))
+        self.assertEqual({r["code"] for r in ret["month_payment_breakdown"]}, {"cash"})
+        self.assertEqual(sum(pt["sales"] for pt in rev["chart_data"]), Decimal("35"))
+
+    def test_the_split_still_shows_both_and_marks_the_picked_one(self):
+        split = {c["kind"]: c for c in self._snap("revenda")["channel_split"]}
+        self.assertEqual(split["retail"]["amount"], Decimal("30"))
+        self.assertEqual(split["revenda"]["amount"], Decimal("35"))
+        self.assertTrue(split["revenda"]["active"])
+        self.assertFalse(split["retail"]["active"])
+
+    def test_stock_is_shared_and_ious_follow_the_customer(self):
+        rev, ret = self._snap("revenda"), self._snap("retail")
+        self.assertEqual(rev["current_stock_units"], 7)
+        self.assertEqual(ret["current_stock_units"], 7)
+        self.assertEqual(rev["open_receivable_balance"], Decimal("50"))
+        self.assertEqual(ret["open_receivable_balance"], Decimal("8"))
+
+    def test_the_comparison_uses_the_same_channel(self):
+        from .services.dashboard import compute_period_headline
+        start = self.today.replace(day=1)
+        self.assertEqual(compute_period_headline(start, self.today, channel="revenda")["sales_amount"], Decimal("35"))
+        self.assertEqual(compute_period_headline(start, self.today, channel="retail")["sales_amount"], Decimal("30"))
+
+    def test_the_page_keeps_the_channel_in_every_link(self):
+        response = self.client.get(reverse("dashboard") + "?ch=revenda")
+        html = response.content.decode()
+        self.assertEqual(response.context["channel"], "revenda")
+        self.assertEqual(response.context["month_sales_amount"], Decimal("35"))
+        self.assertIn('<input type="hidden" name="ch" value="revenda">', html)
+        self.assertIn("ch=revenda", response.context["prev_month_url"])
+        tabs = {t["value"]: t for t in response.context["channel_tabs"]}
+        self.assertTrue(tabs["revenda"]["on"])
+        self.assertNotIn("ch=", tabs[""]["url"])
+        cards = {c["kind"]: c for c in response.context["channel_split"]}
+        self.assertNotIn("ch=", cards["revenda"]["url"])          # picked: back to both
+        self.assertIn("ch=retail", cards["retail"]["url"])
+        self.assertIsNone(response.context["target_progress"])
+
+    def test_an_unknown_channel_means_both(self):
+        response = self.client.get(reverse("dashboard") + "?ch=wholesale")
+        self.assertEqual(response.context["channel"], "")
+        self.assertEqual(response.context["month_sales_amount"], Decimal("65"))
+
+
 class StaticVersionTests(TestCase):
     """CSS/JS links carry the file's version, so a deploy is never hidden
     behind a browser's cached copy (PythonAnywhere sends no Cache-Control)."""
@@ -11451,7 +10450,7 @@ class TidyProductNamesCommandTests(TestCase):
         self.assertEqual(self.p1.brand, "LATTAFA")
 
     def test_types_are_only_guessed_for_perfumes(self):
-        acc = Category.objects.create(name="Accessories", form_kind="accessory")
+        acc = Category.objects.create(name="Accessories")
         cable = Product.objects.create(name="USB MINI CABLE", brand="China", barcode="6290000001009", category=acc)
         self._run("--apply")
         cable.refresh_from_db()
@@ -11478,7 +10477,7 @@ class RemoveCategoriesCommandTests(TestCase):
         return out.getvalue()
 
     def setUp(self):
-        self.acc = Category.objects.create(name="Accessories", form_kind="accessory")
+        self.acc = Category.objects.create(name="Accessories")
         self.cases = Category.objects.create(name="Cases", parent=self.acc)
         self.perfumes = Category.objects.create(name="Perfumes", form_kind="perfume")
 

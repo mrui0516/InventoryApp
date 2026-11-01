@@ -6,7 +6,6 @@ from django.db.models import Q
 from django.forms import inlineformset_factory
 from django.utils import timezone
 
-from .services.barcodes import assign_internal_barcode
 from .services.names import title_case
 from .models import (
     ARInvoice,
@@ -61,9 +60,6 @@ class ProductForm(forms.ModelForm):
             'spec',
             'color',
             'gender',
-            'universal_fit',
-            'device_models',
-            'compatibility_groups',
             'volume_ml',
             'concentration',
             'perfume_type',
@@ -79,8 +75,6 @@ class ProductForm(forms.ModelForm):
         ]
         widgets = {
             'gender': forms.Select(attrs={'class': 'form-select'}),
-            'device_models': forms.SelectMultiple(attrs={'size': 8}),
-            'compatibility_groups': forms.SelectMultiple(attrs={'size': 5}),
             'concentration': forms.Select(attrs={'class': 'form-select'}),
             'perfume_type': forms.Select(attrs={'class': 'form-select'}),
             # a perfume usually sits in several families
@@ -167,109 +161,15 @@ class ProductForm(forms.ModelForm):
         self.fields['notes_heart'].label = 'Notas de Coração'
         self.fields['notes_base'].label = 'Notas de Base'
         self.fields['inspired_by_text'].label = 'Inspired by'
-        self.fields['universal_fit'].label = 'Fits every device'
-        self.fields['device_models'].label = 'Fits these models'
-        self.fields['compatibility_groups'].label = 'Fits these groups'
-        for name in ('device_models', 'compatibility_groups', 'universal_fit'):
-            self.fields[name].required = False
 
         if not can_edit_prices:
             self.fields['default_price'].disabled = True
             self.fields['wholesale_price'].disabled = True
             self.fields['price_locked'].disabled = True
 
-        self._build_attribute_fields()
-
-    # -- shop-defined attributes ------------------------------------------
-    def _build_attribute_fields(self):
-        """Add a field per shop-defined attribute, for every category.
-
-        Which attributes apply depends on the category, and the category is
-        chosen in this same form, so every category's attributes are rendered
-        and the template shows only the active one's. save() then applies only
-        the ones that belong to the chosen category - a value left behind in a
-        hidden field must never overwrite anything.
-        """
-        from .models import AttributeOption, CategoryAttribute
-        self.attribute_fields = []
-        attributes = (CategoryAttribute.objects
-                      .select_related('category')
-                      .prefetch_related('options')
-                      .order_by('category__name', 'sort_order', 'name'))
-        answered = {}
-        if self.instance.pk:
-            answered = {value.attribute_id: value
-                        for value in self.instance.attribute_values.all()}
-
-        for attribute in attributes:
-            name = f'attr_{attribute.pk}'
-            self.fields[name] = self._attribute_field(attribute)
-            existing = answered.get(attribute.pk)
-            if existing is not None:
-                self.initial.setdefault(name, self._attribute_initial(existing))
-            self.attribute_fields.append({
-                'attribute': attribute,
-                'field_name': name,
-                'field': self[name],          # bound, so the template can render it
-                'category_id': attribute.category_id,
-            })
-
-    def _attribute_field(self, attribute):
-        from .models.attributes import BOOLEAN, CHOICE, NUMBER
-        common = {'required': False, 'label': attribute.name}
-        if attribute.data_type == CHOICE:
-            choices = [('', '—')] + [(option.pk, option.label)
-                                     for option in attribute.options.all()]
-            return forms.ChoiceField(choices=choices, **common)
-        if attribute.data_type == NUMBER:
-            if attribute.unit:
-                common['label'] = f'{attribute.name} ({attribute.unit})'
-            return forms.DecimalField(max_digits=12, decimal_places=3, **common)
-        if attribute.data_type == BOOLEAN:
-            # Three states on purpose: unanswered is not the same as "no".
-            return forms.ChoiceField(
-                choices=[('', '—'), ('yes', 'Yes'), ('no', 'No')], **common)
-        return forms.CharField(max_length=200, **common)
-
-    @staticmethod
-    def _attribute_initial(value):
-        from .models.attributes import BOOLEAN, CHOICE, NUMBER
-        kind = value.attribute.data_type
-        if kind == CHOICE:
-            return value.value_option_id or ''
-        if kind == NUMBER:
-            return value.value_number
-        if kind == BOOLEAN:
-            if value.value_boolean is None:
-                return ''
-            return 'yes' if value.value_boolean else 'no'
-        return value.value_text
-
-    def _save_attributes(self, product):
-        from .models import ProductAttributeValue, attributes_for_category
-        from .models.attributes import BOOLEAN
-        applicable = attributes_for_category(product.category)
-        keep = []
-        for attribute in applicable:
-            raw = self.cleaned_data.get(f'attr_{attribute.pk}')
-            if raw in (None, ''):
-                continue                  # unanswered means no row, not a blank one
-            if attribute.data_type == BOOLEAN:
-                raw = (raw == 'yes')
-            value, _created = ProductAttributeValue.objects.get_or_create(
-                product=product, attribute=attribute)
-            value.set_value(raw)
-            value.save()
-            keep.append(attribute.pk)
-        # Drops answers that were cleared, and answers left over from the old
-        # category when a product is moved.
-        (product.attribute_values
-         .exclude(attribute_id__in=keep)
-         .delete())
-
     def clean_barcode(self):
-        # Editing keeps the barcode a product already has (older goods may
-        # carry an internal one); a new product needs the EAN from the box.
+        # Editing keeps the barcode a product already has; a new product
+        # needs the EAN from the box.
         barcode = (self.cleaned_data.get('barcode') or '').strip()
         if barcode:
             return barcode
@@ -325,14 +225,10 @@ class ProductForm(forms.ModelForm):
             product.model = None
 
         if commit:
-            if product.barcode:
-                product.save()
-            else:
-                assign_internal_barcode(product)
+            product.save()
             if product.brand_master and product.category_id:
                 product.brand_master.categories.add(product.category)
             self.save_m2m()
-            self._save_attributes(product)
         return product
 
 

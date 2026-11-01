@@ -36,3 +36,6 @@ db.sqlite3.*
 
 # Django file cache (settings.CACHES)
 cache/
+
+# graphify knowledge graph of the codebase (built locally)
+graphify-out/

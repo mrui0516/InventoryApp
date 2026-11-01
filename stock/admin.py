@@ -5,9 +5,6 @@ from django.urls import reverse
 from .models import (
     Product, Purchase, Sale, SaleOrder, Brand, ProductSeries,
     Category, Supplier, Customer, ProductImage, DailySalesSummary, InboundOrder,
-    DeviceModel, DeviceAlias, CompatibilityGroup,
-    ShelfAxis, ShelfOption, ShelfStyle,
-    CategoryAttribute, AttributeOption, ProductAttributeValue,
     ARInvoice, ARItem, ARPayment, AttendanceRecord, PrintProfile, StockAdjustmentLog,
     SalesTarget, SaleOrderPayment, Store, StoreProfile
 )
@@ -323,80 +320,3 @@ class SaleOrderPaymentAdmin(admin.ModelAdmin):
     list_filter = ('method', 'created_at')
     search_fields = ('order__id', 'order__customer__name')
     date_hierarchy = 'created_at'
-
-
-
-class DeviceAliasInline(admin.TabularInline):
-    """Aliases live with their handset - adding a new spelling is one row."""
-    model = DeviceAlias
-    extra = 3
-
-
-@admin.register(DeviceModel)
-class DeviceModelAdmin(admin.ModelAdmin):
-    list_display = ('brand', 'name', 'release_year', 'alias_list', 'is_active')
-    list_filter = ('brand', 'is_active', 'release_year')
-    search_fields = ('name', 'normalised', 'aliases__alias')
-    inlines = [DeviceAliasInline]
-
-    @admin.display(description='Also written as')
-    def alias_list(self, obj):
-        return ', '.join(obj.aliases.values_list('alias', flat=True)) or '-'
-
-
-@admin.register(CompatibilityGroup)
-class CompatibilityGroupAdmin(admin.ModelAdmin):
-    list_display = ('name', 'device_list', 'note')
-    search_fields = ('name', 'devices__name')
-    filter_horizontal = ('devices',)
-
-    @admin.display(description='Fits')
-    def device_list(self, obj):
-        return ', '.join(str(d) for d in obj.devices.all()[:6]) or '-'
-
-
-class AttributeOptionInline(admin.TabularInline):
-    """Options live with their attribute - defining a field and its choices
-    is one screen, not two."""
-    model = AttributeOption
-    extra = 4
-
-
-@admin.register(CategoryAttribute)
-class CategoryAttributeAdmin(admin.ModelAdmin):
-    list_display = ('category', 'name', 'code', 'data_type',
-                    'variant_attribute', 'required', 'sort_order')
-    list_filter = ('category', 'data_type', 'variant_attribute', 'required')
-    list_editable = ('variant_attribute', 'required', 'sort_order')
-    search_fields = ('name', 'code')
-    prepopulated_fields = {'code': ('name',)}
-    inlines = [AttributeOptionInline]
-
-
-class ProductAttributeValueInline(admin.TabularInline):
-    model = ProductAttributeValue
-    extra = 0
-    autocomplete_fields = ('attribute',)
-
-
-class ShelfOptionInline(admin.TabularInline):
-    """Columns live with their axis - defining what a grid is measured by and
-    what its columns are is one screen."""
-    model = ShelfOption
-    extra = 3
-
-
-@admin.register(ShelfAxis)
-class ShelfAxisAdmin(admin.ModelAdmin):
-    list_display = ('name', 'sort_order')
-    prepopulated_fields = {'slug': ('name',)}
-    inlines = [ShelfOptionInline]
-
-
-@admin.register(ShelfStyle)
-class ShelfStyleAdmin(admin.ModelAdmin):
-    list_display = ('name', 'category', 'axis', 'wholesale_price',
-                    'sort_order', 'is_active')
-    list_filter = ('category', 'axis', 'is_active')
-    list_editable = ('wholesale_price', 'sort_order', 'is_active')
-    prepopulated_fields = {'slug': ('name',)}

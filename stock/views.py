@@ -51,7 +51,7 @@ from .models import (
     Product, Purchase, Sale, Supplier, Customer, ProductImage,
     Category, SaleOrder, InboundOrder, InboundPendingItem, ARInvoice, ARItem,
     Brand, SaleOrderChangeLog, AttendanceRecord, PrintProfile,
-    StockAdjustmentLog, SaleOrderPayment, Store, StoreProfile, search_devices,
+    StockAdjustmentLog, SaleOrderPayment, Store, StoreProfile,
     PedidoDraft, Concentration,
 )
 from .services import order_charges
@@ -81,6 +81,7 @@ from .services.dashboard import (
     build_period_comparison,
     build_target_progress,
     build_yearly_sales_overview,
+    normalise_channel,
     order_tender_amounts,
     resolve_dashboard_month,
     resolve_year,
@@ -1960,8 +1961,8 @@ def create_category(request):
 
     The shop decides what it sells, so new kinds of goods must not need a
     developer. A subcategory inherits its parent's form kind and its Shopify
-    setting, which is almost always what is meant - "Tablet cases" under
-    Accessories is an accessory, and stays off the storefront.
+    setting, which is almost always what is meant - "Minis" under Perfumes is
+    a perfume, and goes to the storefront with them.
     """
     name = (request.POST.get('name') or '').strip()
     parent_id = (request.POST.get('parent') or '').strip()
@@ -2045,26 +2046,6 @@ def build_category_kind_map():
             for c in Category.objects.select_related('parent')}
 
 
-def build_shelf_targets():
-    """``{category_id: [{name, url}]}`` for categories tracked on the shelf.
-
-    Cases and glass are never entered as products: the handset is added once
-    and then each colour is marked on the shelf. So choosing one of those
-    categories on the add-product page offers the grid rather than a form
-    nobody should be filling in.
-    """
-    from .models import ShelfStyle
-    targets = {}
-    for style in (ShelfStyle.objects
-                  .filter(is_active=True, category__isnull=False)
-                  .select_related('category')):
-        targets.setdefault(str(style.category_id), []).append({
-            'name': style.name,
-            'url': reverse('shelf_style', args=[style.slug]),
-        })
-    return targets
-
-
 @login_required
 @manager_required
 def add_product_view(request):
@@ -2084,7 +2065,6 @@ def add_product_view(request):
         'form': form,
         'category_groups': build_category_picker(),
         'category_kind_json': json.dumps(build_category_kind_map()),
-        'shelf_targets_json': json.dumps(build_shelf_targets()),
         'brand_series_map_json': json.dumps(build_brand_series_map()),
         'brand_catalog_json': json.dumps(build_brand_catalog()),
     })
@@ -2159,11 +2139,9 @@ def product_detail_view(request, pk):
     category_name = (product.category.name if product.category else '').lower()
     return render(request, 'stock/product_detail.html', {
         'product': product,
-        # Perfume rows and accessory rows are different facts; showing both
-        # leaves half the panel reading "-" whichever kind you are looking at.
+        # The perfume rows (volume, notes, family) mean nothing for other
+        # goods; shown there they would all read "-".
         'is_perfume': 'perfum' in category_name,
-        'attribute_rows': product.attribute_summary(),
-        'fitment_label': product.fitment_label,
         'purchases': purchases,
         'sales': sales,
         'sales_older_count': sales_older_count,
@@ -2644,6 +2622,8 @@ def dashboard_view(request):
     selected_cats = list(categories.filter(id__in=selected_cat_ids_int))
 
     month_context = resolve_dashboard_month(request.GET.get('month', '').strip(), today)
+    # Retail / Revenda: every sales figure below follows it (?ch=).
+    channel = normalise_channel(request.GET.get('ch'))
 
     # Short-TTL cache for the monthly snapshot (the heavy part: FIFO profit replay,
     # inventory/AR scans). Today's live order list below is computed fresh, so the
@@ -2651,7 +2631,7 @@ def dashboard_view(request):
     cache_scope = ','.join(str(cid) for cid in sorted(selected_cat_ids_int))
     snapshot_cache_key = (
         f"dash:snap:{month_context['month_value']}:{cache_scope}:"
-        f"{int(show_profit)}:{month_context['period_end'].isoformat()}:store{store_cache_key}"
+        f"{int(show_profit)}:{month_context['period_end'].isoformat()}:store{store_cache_key}:ch{channel}"
     )
     # A finished month no longer changes (bar a correction): keep it for hours.
     dashboard_ttl = 300 if month_context['period_end'] >= today else 6 * 3600
@@ -2663,6 +2643,7 @@ def dashboard_view(request):
             selected_category_ids=selected_cat_ids_int,
             show_profit=show_profit,
             store=store_scope,
+            channel=channel,
         )
         cache.set(snapshot_cache_key, monthly_overview, dashboard_ttl)
 
@@ -2672,7 +2653,7 @@ def dashboard_view(request):
         'order_count': monthly_overview['month_order_count'],
         'avg_ticket': monthly_overview['month_avg_ticket'],
     }
-    comparison_cache_key = f"dash:cmp:{month_context['month_value']}:{cache_scope}:{int(show_profit)}:{month_context['period_end'].isoformat()}:store{store_cache_key}"
+    comparison_cache_key = f"dash:cmp:{month_context['month_value']}:{cache_scope}:{int(show_profit)}:{month_context['period_end'].isoformat()}:store{store_cache_key}:ch{channel}"
     mom_comparison = cache.get(comparison_cache_key)
     if mom_comparison is None:
         mom_comparison = build_period_comparison(
@@ -2680,20 +2661,25 @@ def dashboard_view(request):
             selected_category_ids=selected_cat_ids_int,
             show_profit=show_profit,
             store=store_scope,
+            channel=channel,
         )
         cache.set(comparison_cache_key, mom_comparison, dashboard_ttl)
 
-    target_progress = build_target_progress(
+    # The target is the whole shop's: it means nothing against one channel.
+    target_progress = None if channel else build_target_progress(
         month_context, monthly_overview['month_sales_amount'],
         selected_category_ids=selected_cat_ids_int,
     )
 
-    def build_dashboard_url(month_value=None, category_ids=None):
+    def build_dashboard_url(month_value=None, category_ids=None, ch=None):
+        ch = channel if ch is None else ch
         params = []
         if month_value:
             params.append(('month', month_value))
         for category_id in category_ids or []:
             params.append(('cat', str(category_id)))
+        if ch:
+            params.append(('ch', ch))
         query = urlencode(params, doseq=True)
         base_url = reverse('dashboard')
         return f'{base_url}?{query}' if query else base_url
@@ -2703,6 +2689,16 @@ def dashboard_view(request):
             f"{reverse('sales_records')}?"
             f"{urlencode({'start_date': point['date'].isoformat(), 'end_date': point['date'].isoformat()})}"
         )
+
+    month_value = month_context['month_value']
+    channel_tabs = [
+        {'value': value, 'label': label, 'on': value == channel,
+         'url': build_dashboard_url(month_value, selected_cat_ids_int, ch=value)}
+        for value, label in (('', 'All'), ('retail', 'Retail'), ('revenda', 'Revenda'))
+    ]
+    for row in monthly_overview['channel_split']:
+        # A card picks its channel; the picked one goes back to both.
+        row['url'] = build_dashboard_url(month_value, selected_cat_ids_int, ch='' if row['active'] else row['kind'])
 
     selected_cat_chips = []
     for category in selected_cats:
@@ -2798,6 +2794,8 @@ def dashboard_view(request):
             f"{reverse('sales_records')}?"
             f"{urlencode({'start_date': month_context['month_start'].isoformat(), 'end_date': month_context['period_end'].isoformat()})}"
         ),
+        'channel_tabs': channel_tabs,
+        'channel_label': dict(Customer.KIND_CHOICES).get(channel, '') if channel else '',
         'today': today,
         'today_sales_qty': today_sales_qty,
         'today_order_count': len(sale_orders_today),
@@ -5558,14 +5556,6 @@ def products_autocomplete(request):
             Q(color__icontains=q) |
             Q(barcode__icontains=q)
         )
-        # "15PM" is not in any product name - it is a handset. Accessories are
-        # asked for by what they fit, so a query naming a phone also returns
-        # the things made for it. Universal goods are deliberately left out:
-        # every cable in the shop would otherwise answer every phone.
-        device_ids = list(search_devices(q, limit=5).values_list('id', flat=True))
-        if device_ids:
-            text_match |= (Q(device_models__in=device_ids) |
-                           Q(compatibility_groups__devices__in=device_ids))
         # Best sellers first: whoever is at the till is usually reaching for
         # the thing that sells, and a dozen results ordered by brand buries it.
         # A subquery rather than a join, so the text filter above cannot

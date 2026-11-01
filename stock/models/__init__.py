@@ -7,18 +7,11 @@ class is re-exported here so existing ``from stock.models import X`` /
 ``from .models import X`` imports keep working unchanged.
 
 Domain dependency order (acyclic): core → catalog → partners → inventory
-→ sales → finance → reporting → hr. Devices sit beside catalog.
+→ sales → finance → reporting → hr.
 """
 from .core import BusinessSettings, PrintProfile, Store, StoreProfile
 from .catalog import (Category, Brand, ProductSeries, Product, ProductImage,
                       Concentration, FragranceFamily, Inspiration)
-from .attributes import (CategoryAttribute, AttributeOption, ProductAttributeValue,
-                         attributes_for_category, variant_attributes_for_category)
-from .shelf import (ShelfAxis, ShelfOption, ShelfStyle, ShelfStock, ModelShelfNote,
-                    natural_key, OUT, DISPLAY, EXTRA, STOCK_STATES, NEXT_STATE)
-from .devices import (DeviceModel, DeviceAlias, CompatibilityGroup,
-                      normalise_device_text, resolve_device, search_devices,
-                      products_fitting)
 from .partners import Supplier, Customer
 from .inventory import InboundOrder, InboundPendingItem, Purchase, StockAdjustmentLog
 from .sales import (SaleOrder, Sale, SaleOrderChangeLog, SaleOrderPayment,
@@ -35,17 +28,6 @@ __all__ = [
     # catalog
     'Category', 'Brand', 'ProductSeries', 'Product', 'ProductImage',
     'Concentration', 'FragranceFamily', 'Inspiration',
-    # devices / fitment
-    'DeviceModel', 'DeviceAlias', 'CompatibilityGroup',
-    # shop-defined attributes
-    'CategoryAttribute', 'AttributeOption', 'ProductAttributeValue',
-    'attributes_for_category', 'variant_attributes_for_category',
-    # shelf map (cases)
-    'ShelfAxis', 'ShelfOption', 'ShelfStyle', 'ShelfStock', 'ModelShelfNote',
-    'natural_key',
-    'OUT', 'DISPLAY', 'EXTRA', 'STOCK_STATES', 'NEXT_STATE',
-    'normalise_device_text', 'resolve_device', 'search_devices',
-    'products_fitting',
     # partners
     'Supplier', 'Customer',
     # inventory

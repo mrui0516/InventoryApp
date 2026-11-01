@@ -4,7 +4,7 @@ from django.contrib.auth import views as auth_views
 from django.conf import settings
 from django.conf.urls.static import static
 
-from . import panel_views, pedido_views, shelf_views, views
+from . import panel_views, pedido_views, views
 
 
 urlpatterns = [
@@ -29,16 +29,6 @@ urlpatterns = [
     path('inbound-orders/<int:order_id>/rollback/', views.inbound_order_rollback,
          name='inbound_order_rollback'),
     path('categories/create/', views.create_category, name='create_category'),
-    # shelf map (accessories: is there stock, and is there more above the shelf)
-    path('shelf/', shelf_views.shelf_view, name='shelf'),
-    path('shelf/save/', shelf_views.shelf_save_states, name='shelf_save_states'),
-    path('shelf/note/', shelf_views.shelf_set_note, name='shelf_set_note'),
-    path('shelf/model/add/', shelf_views.shelf_add_model, name='shelf_add_model'),
-    path('shelf/option/add/', shelf_views.shelf_add_option, name='shelf_add_option'),
-    # Before the slug route: <slug:slug> happily matches "add", which sent
-    # every attempt to create a style into the grid view and a 404.
-    path('shelf/style/add/', shelf_views.shelf_add_style, name='shelf_add_style'),
-    path('shelf/style/<slug:slug>/', shelf_views.shelf_view, name='shelf_style'),
     path('products/<int:pk>/', views.product_detail_view, name='product_detail'),
     path('sales-history/', views.product_sales_history_view, name='product_sales_history'),
     path('backup/download/', views.download_db_backup, name='download_db_backup'),

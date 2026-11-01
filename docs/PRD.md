@@ -48,7 +48,7 @@
 #### 1.3.1 员工界面收窄（Employee interface restriction）
 员工登录后可见/可用的功能被收窄为一个精简子集，而非"完整页面隐藏字段"：
 
-- **可见页面**:Today(员工的 `dashboard`)、Orders(`sales_records`)、Sell(POS)、Products(只看)、Deliveries(在途进货的对货单,见 F2.3.3a)、Customers。Today(daily_summary)、Pedido、Catalog View、Shelf、IOU、Inbound、Suppliers 和整个 Settings 不在员工侧栏;对应视图也用 `@manager_required` / `@admin_required` 在视图层拦截(员工直接访问 URL 会被 302 回首页并看到原因),不仅仅是导航隐藏。
+- **可见页面**:Today(员工的 `dashboard`)、Orders(`sales_records`)、Sell(POS)、Products(只看)、Deliveries(在途进货的对货单,见 F2.3.3a)、Customers。Today(daily_summary)、Pedido、Catalog View、IOU、Inbound、Suppliers 和整个 Settings 不在员工侧栏;对应视图也用 `@manager_required` / `@admin_required` 在视图层拦截(员工直接访问 URL 会被 302 回首页并看到原因),不仅仅是导航隐藏。
 - **Products 对员工只读**:员工可搜索浏览列表、看详情,并下载**面向顾客的产品 Excel**(不含成本);**新增、编辑、删除产品仅经理**(2026-08-17 起,`add_product_view` / `edit_product` 为 `@manager_required`)。
 - **Sales（销售，员工视图）**：单日订单列表（默认今天，可切换日期），展示时间/客户/件数/支付方式/金额，无图表、无年度总览、无采购数据，按登录用户所在店铺范围。新增**按订单号搜索**：输入订单号直接跳到该订单详情（`sale_order_detail`，与经理共用同一详情/小票页，员工只能开本店订单）。每个订单行提供 **View**（弹窗内联显示该单商品明细/合计，不含利润成本）+ **Print**（链到订单详情）两个按钮，供快速对账。经理登录仍看到完整的 `/sales-records/` 页面（含图表、年度趋势、采购对比）。
 - **Customers（客户，员工视图）**：无查询词时不展示任何客户列表（避免整表暴露）；输入姓名/电话/邮箱/NIF 关键字后仅展示匹配客户的姓名/电话/邮箱（不含消费统计/分析）。保留"新增客户"（沿用既有 AJAX 新增接口，弹窗内完成，无需离开搜索页）。点击某客户进入的详情页仅展示**该客户的订单列表**（日期/订单号/件数/支付方式/金额，每行 **View 弹窗 + Print 按钮**）用于对账，不含消费分析图表、AR 余额、时间线。经理仍看到完整的客户详情页（图表/AR/时间线等）。员工的 Sales/Customers 页样式与经理页一致（共享设计骨架）。
@@ -67,7 +67,7 @@
   |---|---|---|
   | (顶部) | **Today**、**Dashboard**、**Orders** —— 三个独立页面 | Today、Orders 全部(员工的 Today = `dashboard` 的员工版);Dashboard 经理 |
   | Sell | Sell(收银)、Pedido | Sell 全部;Pedido 经理。**选 All stores 时整组隐藏**(2026-10-25):销售和 Pedido 草稿都必须落在某一家店;手机底栏的 Sell 位改为 **Orders**,选回具体店铺即恢复。Today 首屏的 Sell / Pedido 按钮同样隐藏 |
-  | Products | Products、Catalog View、Shelf | Products 全部;其余经理 |
+  | Products | Products、Catalog View | Products 全部;其余经理 |
   | Customers | Customers、IOU | Customers 全部;IOU 经理 |
   | Purchasing | Inbound、Suppliers | 经理 |
   | Settings(默认折叠,身处其中某页时展开) | Attendance、Tools(经理);Team、Stores、Print Header、Fees、Correct orders(原 Order audit)、Audit(超管) | 见左 |
@@ -136,6 +136,8 @@
   - 顺序按要处理的先后:月份数字(Sales 深色整行 + 其余 4 个 2×2 小卡)→ Retail vs Revenda → 低库存(只列最紧急 3 个,View all 打开侧栏)→ 门店对比 → 销售趋势(付款构成改为一条比例色条 + 图例)→ 库存 / 重点商品 / 积压商品默认折叠。
   - 去重(电脑端同样生效):库存卡里与 Low stock 卡重复的低库存行删除;按 Perfumes 筛选时与"当前库存"完全相同的"香水库存"行不再显示;手机上隐藏与 IOU 卡重复的 Collection focus。
 - **F2.2.7 零售 / 批发拆分(2026-10-25)**:Dashboard 月份卡下方新增「Retail vs Revenda」:一条按金额比例的色条 + 两张并排卡(手机上也并排,便于对比),各自显示销售额、占比、订单数、件数、客单价、命名客户数,有利润权限时再显示利润与毛利率。按**客户类型**拆分,**无客户的散客算零售**;与月份头条用同一批销售行计算,两者相加等于头条。
+- **F2.2.8 按渠道看整个 Dashboard(2026-11-01)**:点 Retail 或 Revenda 卡(或顶栏的 All · Retail · Revenda),整页只算这个渠道:月份数字与环比、门店对比、销售趋势、付款构成、Products & customers 里的 Top products 与 Customers、Capital locked 的"本期卖出"、IOU(按客户类型)。库存、进货、供应商、Sell-through、Slow movers 是两个渠道共用的,保持全量,并标注 "both channels";销售目标是全店的,选了渠道时不显示。Retail vs Revenda 卡始终显示两边,选中的一张加框,另一张变淡,再点一次回到全部。渠道写在网址里(`?ch=retail|revenda`),换月、换分类都保留;缓存键带渠道。
+- **F2.2.9 顶部筛选栏(2026-11-01)**:手机、平板、电脑同一条栏:‹ 月份 ›(点月份可直接选)、Category 下拉(勾选即生效)、All · Retail · Revenda 分段按钮,右侧 This month / Reset(只在有用时出现)。去掉了原来电脑端的 Previous / Current / Next / Apply / Reset 五个按钮(两行、和输入框对不齐)。
 - **F2.2.8** 默认按分类筛选（默认分类为 "Perfumes"），用户可切换分类查看对应仪表盘数据。
 - **F2.2.9** 页面内嵌二维码生成（用于快速分享/打印某个链接，如目录页）。
 - **F2.2.10** 敏感财务数据（毛利润、成本类指标）仅对经理及以上角色展示；员工视图隐藏对应区块/数值。
@@ -533,7 +535,7 @@
 
 ### 模块 2.21 — 报价单（Pedido）
 
-入口：`/pedido/`(`pedido_views.pedido_view`,侧栏 **Sell → Pedido**),`@manager_required`。给批发客户快速出一张报价单 PDF。**定位(2026-10-25 老板确认):Sell 是零售,Pedido 专为 Revenda。**代码在 `stock/pedido_views.py` + `stock/services/pedido.py`(金额) + `stock/services/pedido_pdf.py`(渲染),不在 `views.py` 里——沿用 `shelf_views.py` 的拆分先例。
+入口：`/pedido/`(`pedido_views.pedido_view`,侧栏 **Sell → Pedido**),`@manager_required`。给批发客户快速出一张报价单 PDF。**定位(2026-10-25 老板确认):Sell 是零售,Pedido 专为 Revenda。**代码在 `stock/pedido_views.py` + `stock/services/pedido.py`(金额) + `stock/services/pedido_pdf.py`(渲染),不在 `views.py` 里。
 
 - **F2.21.1 草稿(2026-10-25 起;此前刻意不落库)**:每次生成 PDF 同时保存为 **`PedidoDraft`**(迁移 `0060`),**属于当前店铺**。页面顶部列出本店的未完成草稿(客户、电话、产品数、更新时间、总额),每条三个操作:
   - **Editar**:`/pedido/?draft=<id>` 把表单原样还原(客户、各行数量和报价单价、运费、额外费用、折扣、有效期、备注);再次生成 PDF **更新同一份草稿**(响应头 `X-Pedido-Draft` 告诉页面草稿号,列表无刷新更新)。

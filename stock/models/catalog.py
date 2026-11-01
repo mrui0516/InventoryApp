@@ -20,12 +20,10 @@ def product_image_upload_to(instance, filename):
 
 GENERAL = 'general'
 PERFUME = 'perfume'
-ACCESSORY = 'accessory'
 
 FORM_KINDS = [
     (GENERAL, 'General'),
     (PERFUME, 'Perfume'),
-    (ACCESSORY, 'Accessory / device'),
 ]
 
 
@@ -47,8 +45,8 @@ class Category(models.Model):
     def effective_form_kind(self):
         """This category's form kind, inherited from its parent if unset.
 
-        A subcategory of Accessories is an accessory unless it says otherwise,
-        so creating "Tablet cases" needs no extra thought.
+        A subcategory of Perfumes is a perfume unless it says otherwise, so
+        creating "Minis" needs no extra thought.
         """
         node, seen = self, set()
         while node is not None and node.pk not in seen:
@@ -160,20 +158,6 @@ class Product(models.Model):
     name = models.CharField(max_length=100, db_index=True, blank=True, default='')
     model = models.CharField(max_length=100, blank=True, null=True, db_index=True)
     barcode = models.CharField(max_length=13, unique=True, db_index=True)
-    # True when we minted the barcode ourselves because the goods arrived
-    # without one - see services/barcodes.py. It is still a valid EAN-13.
-    barcode_is_internal = models.BooleanField(default=False)
-
-    # -- fitment (accessories) --------------------------------------------
-    # What this fits, if it is the sort of thing that fits something. Perfume
-    # leaves all three alone. A cable is universal_fit; a case lists the
-    # handsets it was moulded for; a screen protector usually points at a
-    # CompatibilityGroup so one tick covers every phone sharing that glass.
-    universal_fit = models.BooleanField(default=False)
-    device_models = models.ManyToManyField(
-        'stock.DeviceModel', blank=True, related_name='products')
-    compatibility_groups = models.ManyToManyField(
-        'stock.CompatibilityGroup', blank=True, related_name='products')
     brand = models.CharField(max_length=50, db_index=True)
     brand_master = models.ForeignKey(Brand, on_delete=models.SET_NULL, null=True, blank=True, related_name='products')
     series_master = models.ForeignKey(ProductSeries, on_delete=models.SET_NULL, null=True, blank=True, related_name='products')
@@ -277,62 +261,6 @@ class Product(models.Model):
     @retail_price.setter
     def retail_price(self, value):
         self.default_price = value
-
-    @property
-    def attributes(self):
-        """Shop-defined attribute values, in the order the shop arranged them."""
-        return (self.attribute_values
-                .select_related('attribute', 'value_option')
-                .order_by('attribute__sort_order', 'attribute__name'))
-
-    def attribute_summary(self, only_variant=False):
-        """``[(name, display)]`` for the product page and till lines."""
-        rows = []
-        for value in self.attributes:
-            if only_variant and not value.attribute.variant_attribute:
-                continue
-            shown = value.display()
-            if shown:
-                rows.append((value.attribute.name, shown))
-        return rows
-
-    def set_attribute(self, code, raw):
-        """Answer one shop-defined attribute by its code."""
-        from .attributes import ProductAttributeValue, attributes_for_category
-        attribute = next(
-            (a for a in attributes_for_category(self.category) if a.code == code), None)
-        if attribute is None:
-            raise ValueError(f'{code!r} is not an attribute of category {self.category}.')
-        value, _created = ProductAttributeValue.objects.get_or_create(
-            product=self, attribute=attribute)
-        value.set_value(raw)
-        value.save()
-        return value
-
-    def fits(self, device):
-        """Does this product fit ``device``? Universal goods fit everything."""
-        if self.universal_fit:
-            return True
-        if device is None:
-            return False
-        if self.device_models.filter(pk=device.pk).exists():
-            return True
-        return self.compatibility_groups.filter(devices=device).exists()
-
-    @property
-    def fitment_label(self):
-        """Short human summary of what this fits, for lists and the till."""
-        if self.universal_fit:
-            return 'Universal'
-        groups = list(self.compatibility_groups.all()[:2])
-        models_ = list(self.device_models.all()[:2])
-        parts = [group.name for group in groups] + [str(m) for m in models_]
-        if not parts:
-            return ''
-        total = self.compatibility_groups.count() + self.device_models.count()
-        if total > len(parts):
-            parts.append(f'+{total - len(parts)}')
-        return ', '.join(parts)
 
     # -- how a perfume reads ----------------------------------------------
     @property

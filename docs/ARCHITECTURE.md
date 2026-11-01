@@ -44,9 +44,6 @@ InventoryApp/
     ├── models/                       # 按域拆分，__init__ 重导出全部模型（from .models import X 不变）
     │   ├── core.py                   # Store, StoreProfile, PrintProfile, BusinessSettings
     │   ├── catalog.py                # Category, Brand, ProductSeries, Product, ProductImage, 香水属性
-    │   ├── attributes.py             # 分类自定义属性：CategoryAttribute, AttributeOption, ProductAttributeValue
-    │   ├── shelf.py                  # 货架图：ShelfAxis, ShelfOption, ShelfStyle, ShelfStock
-    │   ├── devices.py                # 配件适配：DeviceModel, DeviceAlias, CompatibilityGroup
     │   ├── partners.py               # Supplier, Customer
     │   ├── inventory.py              # InboundOrder, InboundPendingItem, Purchase, StockAdjustmentLog
     │   ├── sales.py                  # SaleOrder, Sale, SaleOrderChangeLog, SaleOrderPayment, SaleOrderCharge, PedidoDraft
@@ -58,7 +55,6 @@ InventoryApp/
     ├── views.py                      # 大部分页面视图（单文件，正按路线图逐步拆分）
     ├── orders_views.py               # 经理 Orders 页：Sales | Purchases | Analysis
     ├── pedido_views.py               # 报价单：表单 → PDF + 本店草稿 PedidoDraft
-    ├── shelf_views.py                # 货架图页面
     ├── forms.py / admin.py / urls.py
     ├── permissions.py                # 角色判定 + 装饰器（login / manager / admin）
     ├── stores.py                     # 当前店铺（会话）与按店过滤
@@ -343,90 +339,24 @@ has_admin_access(user)          → is_superuser only
 - `check_barcode` / `products_autocomplete` —— 收银台查询默认按门店过滤
 
 **例外：进货必须看到全部目录。** 库存是全公司共享的，Scentory 的账号收货时
-也可能收到配件，所以 `inbound.html` 在请求上带 `?scope=stock`，
+也可能收到别家店卖的货，所以 `inbound.html` 在请求上带 `?scope=stock`，
 由 `views.py::_lookup_scope()` 放行。改动这两个端点时不要丢掉这个参数。
 
 调整门店可售分类不需要改代码：Django admin → Store → Sellable categories。
 
-### 5.11 无条码商品与内部条码（Internal barcodes）
+### 5.11 配件代码已移除（2026-11-01）
 
-手机壳、钢化膜、数据线大多**根本没有 EAN**，但 `Product.barcode` 是全系统的身份键：
-收银台查询、Cloudinary `public_id`、Shopify variant SKU —— 全项目 122 处引用。
-所以**不把它改成可空**，而是自己发号。
+店里只录香水（2026-10-29 删除了 Accessories / Shisha 分类）。之后把只为配件存在的代码一起删掉，
+迁移 `0067_remove_accessory_models` 删表：
 
-GS1 把 `02` 和 `20–29` 前缀留给店内自用，因此内部条码是一个**合法的 EAN-13**：
-塞得进现有的 13 位字段、能被扫码枪读出、可以打印成货架标签，下游一行代码都不用改。
-
-- 实现：`stock/services/barcodes.py`，前缀 `29` + 10 位流水 + 校验位。
-- `Product.barcode_is_internal` 只用于 UI 区分号码来源，不参与任何业务逻辑。
-- 表单留空即自动发号（`ProductForm.clean_barcode` + `save`）；**编辑时留空不会清掉已有条码**。
-- SQLite 上 `select_for_update()` 是空操作，并发靠 unique 索引兜底：
-  撞号就顺延取下一个（`assign_internal_barcode` 的重试循环）。
-
-现有 238 条香水没有一条用 `29` 前缀，不存在冲突。
-
-### 5.12 配件适配层（Devices / fitment）
-
-配件不是按"它是什么"卖的，是按"它配什么"卖的。顾客说"15PM 的壳"，
-每次说法还都不一样。三张表解决：
-
-| 表 | 作用 | 例子 |
-|---|---|---|
-| `DeviceModel` | 一台真实机型 | Apple / iPhone 15 Pro Max |
-| `DeviceAlias` | 同一台机器的其它写法（**数据，不是代码**） | `15PM` / `15 Pro Max` / `A2849` |
-| `CompatibilityGroup` | 尺寸相同、可共用配件的一组机型 | "iPhone 15 Pro Max / 15 Plus" |
-
-产品侧三个字段，`fits()` 里 **OR** 起来：
-
-- `Product.universal_fit` —— 数据线、充电头、鼠标，配所有设备
-- `Product.device_models` (M2M) —— 开模的壳，只配指定机型
-- `Product.compatibility_groups` (M2M) —— 钢化膜之类，勾一个组等于勾了组里全部机型
-
-**归一化**：`normalise_device_text()` 把 `iPhone 15 Pro Max` / `iphone-15 pro max` /
-`IPHONE15PROMAX` 全部折成 `iphone15promax`。`DeviceModel.normalised` **只存机型名**，
-因为店员打的是"iPhone 15 Pro Max"而不是"Apple iPhone 15 Pro Max"；
-`resolve_device()` 会额外尝试**剥掉开头的品牌名**（品牌来自数据库，新增品牌不用改代码）。
-
-`DeviceAlias.normalised` 上有 **unique 约束**：同一个简写不能指向两台机器，
-否则收银台无从选择。
-
-**收银台**：`products_autocomplete` 在常规文字匹配之外，会把查询词丢给
-`search_devices()`；命中机型就把"配这台机器的产品"并进结果（`.distinct()` 去重）。
-**通用商品故意不并进去** —— 否则店里每一根线都会出现在每一台手机的搜索结果里。
-
-新机型上市 = admin 里加一行 DeviceModel + 几个别名，不需要改代码。
-
-### 5.13 店铺自定义属性（Category attributes）
-
-香水的容量/浓度/香型做成了真列。配件不能这么做：壳有类型（软胶/硬壳/翻盖/MagSafe），
-膜有边型和胶型，下个月又是别的。每加一个字段就改一次 model + migration，不是店铺的工作方式。
-
-所以**让店铺自己定义**：
-
-| 表 | 作用 |
-|---|---|
-| `CategoryAttribute` | "配件有个字段叫 Case type，是选择型，且区分库存行" |
-| `AttributeOption` | 这个字段的可选项 |
-| `ProductAttributeValue` | 某个产品的答案，**分列存储**（数字存数字列，才能正确排序筛选） |
-
-**沿分类树继承**：在 Accessories 上定义一次 Colour，下面所有子分类都有。
-同一个 `code` **就近覆盖** —— 子分类可以重定义继承来的属性。
-`attributes_for_category()` 带**环检测**（`Category.parent` 是普通 FK，没有任何东西阻止成环）。
-
-**`variant_attribute` 是关键标志**：它标出"会让两个东西成为不同库存行"的属性。
-黑色壳和透明壳是两个产品；同一个壳描述成"软触感"不是。
-第 4 步的矩阵批量录入就读这个标志决定画哪个网格。
-
-**表单**：每个分类的属性**全部渲染**，模板只显示当前分类的（沿用香水分组那套 `hidden` 做法）。
-`save()` **只应用属于所选分类的属性** —— 藏起来的字段照样提交，绝不能让残留值覆盖东西
-（改分类时旧分类的答案会被清掉）。**空答案不存行**："没填"和"填了否"是两回事。
-
-**注意**：`{% render_field %}`（widget_tweaks）**不接受带过滤器的属性值**，
-`id=x|add:"_id"` 会抛 `add requires 2 arguments`。用 `field.id_for_label`。
-`manage.py check` 不编译模板，只有跑测试才会发现。
-
-初始属性集：`python manage.py seed_accessory_attributes`（默认 dry-run，`--apply` 写入）。
-可重复运行，不覆盖手工改过的属性。之后全部在 admin 里增改，不用改代码。
+- 机型适配：`DeviceModel` / `DeviceAlias` / `CompatibilityGroup`，以及 `Product.universal_fit`、
+  `device_models`、`compatibility_groups`；收银搜索不再按机型并入结果。
+- 货架图（Shelf 页面）：`ShelfAxis` / `ShelfOption` / `ShelfStyle` / `ShelfStock` / `ModelShelfNote`。
+- 分类自定义属性：`CategoryAttribute` / `AttributeOption` / `ProductAttributeValue`。
+- 内部条码：`services/barcodes.py` 与 `Product.barcode_is_internal`。新产品必须扫 EAN，
+  老产品上已有的 `29…` 条码照常可用（它们就是普通条码）。
+- 种子命令 `seed_phone_models` / `seed_accessory_attributes` / `seed_shelf`；`Category.form_kind`
+  只剩 `general` / `perfume`。
 
 ### 5.13b 产品列表的分类筛选
 
@@ -444,54 +374,23 @@ GS1 把 `02` 和 `20–29` 前缀留给店内自用，因此内部条码是一�
 **`{% render_field %}`（widget_tweaks）不接受带过滤器的属性值。**
 `id=x|add:"_id"` 会抛 `add requires 2 arguments`。用 `field.id_for_label`。
 
-### 5.14 新增产品：先选分类，再按分类提问（Add-product wizard）
+### 5.14 新增 / 编辑产品（香水表单）
 
-原来是一张 13 个字段的大表，香水和配件混在一起。现在分两步：
+`add_product.html` 与 `edit_product.html` 共用 `_product_fields.html`，只有香水一种表单
+（分类为隐藏字段，新增时默认 Perfumes）：
 
-**第一步**：按钮选分类。顶级分类一排（Perfumes / Accessories / Shisha），
-有子分类的（Accessories）**就地向下展开**第二排。
-**全程不跳转、不滚动**——选择器一直留在页面上，表单在它下面展开，改分类一下即可。
+- **条码必填**（新增时）；编辑时留空保留原条码（`ProductForm.clean_barcode`）。
+- **名称可空**：很多香水只靠系列名就能认出（"Khamrah"），强制填写会造成重复。
+- **类型** `Product.perfume_type`：香水 / Body spray / Air freshener / Coffret / Mini。
+- 品牌、系列、名称一律 `services/names.title_case`（每个词首字母大写；EDP、YSL 这类缩写保持大写），
+  新品牌 / 新系列按不区分大小写匹配已有的，不会再出现 "LATTAFA" 与 "Lattafa" 两个品牌。
+- 页面顶部预览列表里显示的名称：系列 · 名称 · 类型 · 容量（`Product.list_name`）。
 
-配件子分类（`seed_accessory_attributes` 只是**起始集**，不是固定的）：
-Cases / Screen protectors / Cables / Chargers & plugs / Power banks /
-Audio / Mice & keyboards / Storage / Holders & mounts / Other electronics。
+**分类仍可在页面上新建**（`create_category`，`POST`，manager 限定）：子分类继承父分类的
+`form_kind` 与 Shopify 开关；同一父分类下同名会被拒绝（409）并返回已有的那个。
 
-**分类可以在页面上直接加**（`create_category`，`POST`，manager 限定）：
-顶级行末尾的「+ New category」（要选 form kind），
-子分类行末尾的「+ New type」（**自动继承父分类的 form_kind 和 Shopify 开关**，
-所以 Accessories 下新建的一定是配件表单、且不上网店）。
-同一父分类下同名会被拒绝（409）并**直接选中已存在的那个**，不会产生重复分类。
-新分类当场插进按钮行和 `<select>`，页面不刷新。
-
-**选择器是一个 state machine**：`openParent` + `chosen` 两个状态，一个 `render()` 收口。
-之前在每个点击处各自 toggle class，导致展开 Accessories 后仍留着蓝框、
-而表单显示的是另一个分类的字段。**展开父分类不等于选中它** —— 展开时表单收起，
-屏幕上的字段永远属于高亮的那个分类。
-
-**第二步**：表单只问这个分类该问的。
-
-| 字段组 | 显示条件（`data-kind`） |
-|---|---|
-| Identity（条码/品牌/系列/名称） | always |
-| Perfume（**性别** / 容量 / 浓度 / 香型 / inspired by） | `perfume` |
-| Variant（Specification） | `general accessory` |
-| ↳ Color（旧字段） | `general` —— 配件的颜色走自定义属性，否则会问两遍 |
-| Fits（通用 / 机型 / 兼容组） | `accessory` |
-| Specs（店铺自定义属性） | 按分类有没有定义 |
-| Pricing / Description | always |
-
-**判断依据是 `Category.form_kind`（数据），不是猜分类名。**
-之前 `edit_product` 用 `/perfum/i.test(分类名)` 判断，新开一个"香水配件"分类就会误判。
-`form_kind` 有三个值：`general` / `perfume` / `accessory`，
-**沿父分类继承**（`effective_form_kind`）—— 在 Accessories 下新建"Tablet cases"自动就是配件表单。
-在 admin 里改，不用改代码。
-
-**注意**：隐藏的组**仍然在 DOM 里、仍然会提交**。Gender 现在放在 Perfume 组内，
-新增产品没有旧值可丢所以安全；但**改这类结构时必须确认没有值会被静默清掉**
-（历史教训：Gender 曾经只渲染在隐藏的香水组里，保存非香水时被清空）。
+**注意**：隐藏字段仍在 DOM 里、仍会提交，改表单结构时要确认没有值被静默清掉；
 `add_product` / `edit_product` 都有测试断言每个字段只渲染一次。
-
-表单校验失败重新渲染时，分类已经选好，页面**直接跳到第二步**，不用重选。
 
 ### 5.15 客户产品清单：Excel 与 PDF
 

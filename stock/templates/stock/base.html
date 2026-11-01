@@ -115,7 +115,6 @@
         {% endif %}
         {% if user|is_manager_user %}
         <a class="erp-nav-link {% if current_url == 'catalog' %}active{% endif %}" href="{% url 'catalog' %}">Catalog View</a>
-        <a class="erp-nav-link {% if current_url == 'shelf' or current_url == 'shelf_style' %}active{% endif %}" href="{% url 'shelf' %}">Shelf</a>
         {% endif %}
 
         <div class="erp-nav-group">Customers</div>

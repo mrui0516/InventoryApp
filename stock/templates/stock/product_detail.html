@@ -179,9 +179,7 @@
             {% if show_sensitive and product.inspired_by_text %}<div><dt>Inspired by</dt><dd>{{ product.inspired_by_text }}</dd></div>{% endif %}
           {% else %}
             {% if product.spec %}<div><dt>Spec</dt><dd>{{ product.spec }}</dd></div>{% endif %}
-            {% if fitment_label %}<div><dt>Fits</dt><dd>{{ fitment_label }}</dd></div>{% endif %}
           {% endif %}
-          {% for name, value in attribute_rows %}<div><dt>{{ name }}</dt><dd>{{ value }}</dd></div>{% endfor %}
           {% if product.color %}<div><dt>Colour</dt><dd>{{ product.color }}</dd></div>{% endif %}
           <div><dt>Added</dt><dd>{{ product.created_at|date:"Y-m-d" }}</dd></div>
         </dl>
