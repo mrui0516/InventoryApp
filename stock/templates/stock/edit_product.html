@@ -13,6 +13,16 @@
   .ep-batch .when{ font-variant-numeric:tabular-nums; }
   .ep-batch .sub{ color:var(--app-muted); font-size:.82rem; }
   .ep-batch .left{ font-weight:800; font-variant-numeric:tabular-nums; text-align:right; }
+  .ep-shops{ display:flex; flex-wrap:wrap; gap:.4rem 1.2rem; font-size:.95rem; margin-bottom:.6rem; }
+  .ep-shops b{ font-variant-numeric:tabular-nums; }
+  .ep-move{ display:grid; grid-template-columns:minmax(0,16rem) 6rem auto; justify-content:start; gap:.5rem; align-items:end; }
+  .ep-move label{ display:grid; gap:.2rem; margin:0; min-width:0; }
+  .ep-move label > span{ font-size:.85rem; font-weight:700; color:var(--app-muted); }
+  .ep-move .btn{ min-height:38px; }
+  @media (max-width:575.98px){
+    .ep-move{ grid-template-columns:minmax(0,1fr) 5.5rem; }
+    .ep-move .btn{ grid-column:1 / -1; min-height:44px; }
+  }
   .ep-danger{ border-color:#f1c7c7; background:#fff8f8; display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; }
   .ep-danger p{ margin:0; color:#7a3131; font-size:.9rem; max-width:40rem; }
 </style>
@@ -46,6 +56,26 @@
           <p class="text-muted mb-0">No purchase records.</p>
         {% endfor %}
       </div>
+    </section>
+  {% endif %}
+
+  {% if user|is_manager_user and shop_moves %}
+    <section class="ep-card" aria-label="Move between shops">
+      <h2>Move between shops</h2>
+      <div class="ep-shops">{% for s in shop_split %}<span>{{ s.name }} <b>{{ s.units }}</b></span>{% endfor %}</div>
+      <form method="post" action="{% url 'stock_transfers' %}" class="ep-move">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="move">
+        <input type="hidden" name="free" value="1">
+        <input type="hidden" name="barcode" value="{{ product.barcode }}">
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <input type="hidden" name="note" value="Product page">
+        <label><span>From &rarr; to</span>
+          <select class="form-select" name="direction">{% for d in shop_moves %}<option value="{{ d.value }}">{{ d.label }}</option>{% endfor %}</select></label>
+        <label><span>Qty</span>
+          <input type="number" class="form-control" name="quantity" min="1" step="1" value="1" required></label>
+        <button type="submit" class="btn btn-outline-primary">Move, no charge</button>
+      </form>
     </section>
   {% endif %}
 

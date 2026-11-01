@@ -178,7 +178,7 @@ def move_units(product, quantity, from_store, to_store, *, transfer=None, reason
             transfer = StockTransfer.objects.create(
                 from_store=from_store, to_store=to_store, reason=reason, sale_order=sale_order,
                 created_by=user, note=note[:200])
-        rate = Decimal('0.00') if transfer.reason == StockTransfer.OPENING else (
+        rate = Decimal('0.00') if transfer.reason in StockTransfer.FREE else (
             transfer_markup() if markup is None else markup)
         line = StockTransferLine.objects.create(
             transfer=transfer, product=product, quantity=quantity, cost_total=Decimal('0.00'),
@@ -194,7 +194,7 @@ def move_units(product, quantity, from_store, to_store, *, transfer=None, reason
 
     if line is not None:
         line.cost_total = cost.quantize(Decimal('0.01'))
-        line.amount = Decimal('0.00') if transfer.reason == StockTransfer.OPENING else (
+        line.amount = Decimal('0.00') if transfer.reason in StockTransfer.FREE else (
             line.cost_total + line.markup_per_unit * quantity)
         line.save(update_fields=['cost_total', 'amount'])
     return line
@@ -351,6 +351,56 @@ def balances():
         debtor, creditor = (a, b) if net > 0 else (b, a)
         out.append({'debtor': stores.get(debtor), 'creditor': stores.get(creditor), 'amount': abs(net)})
     return out
+
+
+# ------------------------------------------------------- undoing a transfer
+@transaction.atomic
+def undo_transfer(transfer):
+    """Send a transfer's goods back and delete it, with what it owed.
+
+    Only a transfer made by hand (or a stock count, or the opening split): a
+    sale's goods were sold - waive its debt instead. The units come back from
+    the batches this transfer filled first, then the receiving shop's newest
+    ones; when it no longer holds them all, nothing is undone."""
+    if transfer.reason not in StockTransfer.UNDOABLE:
+        raise ValidationError('The goods of a sale were sold and cannot go back: waive what it owes instead.')
+    src, dst = transfer.from_store, transfer.to_store
+    lines = list(transfer.lines.select_related('product'))
+    short = []
+    for line in lines:
+        held = store_units(line.product, dst)
+        if held < line.quantity:
+            short.append(f'{line.product.display_name} ({held} of {line.quantity} left)')
+    if short:
+        raise ValidationError(f'{dst.name} no longer holds all of it: ' + ', '.join(short[:5])
+                              + (f' and {len(short) - 5} more' if len(short) > 5 else '')
+                              + '. Move what is left with a new transfer.')
+    for line in lines:
+        batches = (Purchase.objects.filter(product=line.product, store=dst, remaining__gt=0)
+                   .select_related('product'))
+        own = [b for b in batches if b.transfer_line_id == line.id]
+        rest = sorted((b for b in batches if b.transfer_line_id != line.id),
+                      key=lambda b: (b.date, b.id), reverse=True)
+        left = line.quantity
+        for batch in own + rest:
+            if left <= 0:
+                break
+            used = min(left, batch.remaining)
+            _split(batch, used, src, None)
+            left -= used
+    transfer.delete()
+
+
+@transaction.atomic
+def waive_transfer(transfer):
+    """A sale's transfer owes nothing any more (its goods stay sold)."""
+    if transfer.reason != StockTransfer.SALE:
+        raise ValidationError('Only a transfer made for a sale is waived; undo the others.')
+    if transfer.waived_at is None:
+        transfer.lines.update(amount=Decimal('0.00'), markup_per_unit=Decimal('0.00'))
+        transfer.waived_at = timezone.now()
+        transfer.save(update_fields=['waived_at'])
+    return transfer
 
 
 @transaction.atomic

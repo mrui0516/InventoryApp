@@ -19,20 +19,27 @@ class DailySalesSummary(models.Model):
 
 
 class SalesTarget(models.Model):
-    """Per-category monthly revenue goal, used by the dashboard target widget.
+    """A shop's monthly revenue goal for one category, used by the dashboard
+    target widget.
 
-    One target per category, applied every month. The dashboard sums the
-    targets of the currently-selected categories (or all defined targets when
-    no category filter is active) and shows progress + run-rate projection.
+    One target per shop and category, applied every month. The dashboard sums
+    the targets of the selected categories - of the picked shop, or of every
+    shop when all are shown - and shows progress + run-rate projection.
     """
-    category = models.OneToOneField(
-        'Category', on_delete=models.CASCADE, related_name='sales_target',
+    store = models.ForeignKey('Store', on_delete=models.CASCADE, null=True, blank=True,
+                              related_name='sales_targets')
+    category = models.ForeignKey(
+        'Category', on_delete=models.CASCADE, related_name='sales_targets',
     )
     monthly_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['category__name']
+        ordering = ['store_id', 'category__name']
+        constraints = [
+            models.UniqueConstraint(fields=['store', 'category'], name='uniq_sales_target_store_category'),
+        ]
 
     def __str__(self):
-        return f"{self.category.name}: EUR {self.monthly_amount:.2f}/mo"
+        shop = f"{self.store.name} " if self.store_id else ""
+        return f"{shop}{self.category.name}: EUR {self.monthly_amount:.2f}/mo"

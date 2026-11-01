@@ -48,6 +48,7 @@
   .pdp-row .l2{ font-size:.86rem; color:var(--app-primary); overflow-wrap:anywhere; }
   .pdp-row .fig{ text-align:right; font-weight:800; font-variant-numeric:tabular-nums; white-space:nowrap; }
   .pdp-row .fig small{ display:block; font-weight:600; color:var(--app-muted); font-size:.8rem; }
+  .pdp-fold summary{ color:var(--app-accent); font-weight:700; cursor:pointer; padding:.5rem 0 .2rem; }
   .pdp-shops{ font-weight:500; color:var(--app-muted); white-space:nowrap; }
   .pdp-left{ display:inline-block; font-size:.78rem; font-weight:800; padding:.05rem .45rem; border-radius:999px; background:#e7f6ec; color:#1a7f3c; }
   .pdp-left.low{ background:#fff7ed; color:#c2410c; }
@@ -131,7 +132,7 @@
     <div class="pdp" style="gap:1rem;">
       {% if show_sales_sensitive %}
         <section class="pdp-card" aria-label="Sales history">
-          <h2>Sales &middot; last 10 days {% if full_sales_url %}<a href="{{ full_sales_url }}">All sales &rarr;</a>{% endif %}</h2>
+          <h2>Sales &middot; last 30 days {% if full_sales_url %}<a href="{{ full_sales_url }}">All sales &rarr;</a>{% endif %}</h2>
           {% for s in sales %}
             <div class="pdp-row">
               <div>
@@ -141,7 +142,7 @@
               <div class="fig">&euro;{{ s.unit_price|mul:s.quantity|floatformat:2 }}<small>{{ s.payment_method|default:""|capfirst }}</small></div>
             </div>
           {% empty %}
-            <p class="pdp-empty">No sales in the last 10 days.</p>
+            <p class="pdp-empty">No sales in the last 30 days.</p>
           {% endfor %}
           {% if sales_older_count %}<p class="pdp-more">{{ sales_older_count }} older sale{{ sales_older_count|pluralize }} &middot; <a href="{{ full_sales_url }}">see them all</a></p>{% endif %}
         </section>
@@ -149,19 +150,20 @@
 
       {% if show_sensitive %}
         <section class="pdp-card" aria-label="Purchase history">
-          <h2>Purchases</h2>
+          <h2>Purchases &middot; last 3 months</h2>
           {% for p in purchases %}
-            <div class="pdp-row">
-              <div>
-                <div class="l1">{{ p.date|date:"d M Y" }} &middot; {{ p.quantity }} bought{% if p.shops %} <span class="pdp-shops">({% for s in p.shops %}{{ s.label }} {{ s.quantity }}{% if not forloop.last %} · {% endif %}{% endfor %})</span>{% endif %}</div>
-                <div class="l2">{% if p.supplier %}<a href="{% url 'supplier_detail' p.supplier_id %}">{{ p.supplier.name }}</a>{% else %}No supplier linked{% endif %}
-                  &middot; <span class="pdp-left{% if p.remaining <= 0 %} none{% elif p.remaining < 5 %} low{% endif %}">{{ p.remaining }} left</span></div>
-              </div>
-              <div class="fig">&euro;{{ p.cost_price|floatformat:2 }}<small>each</small></div>
-            </div>
+            {% include "stock/_pdp_purchase_row.html" %}
           {% empty %}
-            <p class="pdp-empty">No purchases yet.</p>
+            <p class="pdp-empty">{% if purchases_older %}No purchases in the last 3 months.{% else %}No purchases yet.{% endif %}</p>
           {% endfor %}
+          {% if purchases_older %}
+            <details class="pdp-fold">
+              <summary>{{ purchases_older|length }} older purchase{{ purchases_older|length|pluralize }}</summary>
+              {% for p in purchases_older %}
+                {% include "stock/_pdp_purchase_row.html" %}
+              {% endfor %}
+            </details>
+          {% endif %}
         </section>
       {% endif %}
     </div>

@@ -1,7 +1,7 @@
 """Card fees: what the terminal keeps, taken off profit.
 
 The fee is worked out when an order is made, from the card part of its
-payments and the rate set in Settings, and stored on the order. Profit then
+payments and its shop's rate (Shop settings), and stored on the order. Profit then
 spreads it over the order's lines by their value (``fee_by_sale``), so every
 figure built on ``sale_profit_map_for_sale_ids`` - Dashboard, Orders, Today,
 customer pages, reports - is net of it. MB WAY and cash carry no fee.
@@ -15,17 +15,20 @@ import datetime as _dt
 FEES_FROM = _dt.date(2026, 10, 28)
 
 
-def rate():
+def rate(store=None):
+    """The shop's card fee; an order without a shop uses the business one."""
+    if store is not None:
+        return store.card_fee_pct
     from ..models import BusinessSettings
     return BusinessSettings.get().card_fee_pct
 
 
-def fee_for(payment_totals):
-    """The fee on a ``{method: amount}`` payment split."""
+def fee_for(payment_totals, store=None):
+    """The fee on a ``{method: amount}`` payment split, at ``store``'s rate."""
     card = Decimal(str((payment_totals or {}).get('card') or 0))
     if card <= 0:
         return Decimal('0.00')
-    return (card * rate() / Decimal('100')).quantize(CENT, rounding=ROUND_HALF_UP)
+    return (card * rate(store) / Decimal('100')).quantize(CENT, rounding=ROUND_HALF_UP)
 
 
 def fee_by_sale(sales):
@@ -54,7 +57,7 @@ def fee_by_sale(sales):
 def record(order, payment_totals):
     """Store the fee on a new order (Sell)."""
     from ..models import SaleOrder
-    fee = fee_for(payment_totals)
+    fee = fee_for(payment_totals, order.store if order.store_id else None)
     SaleOrder.objects.filter(pk=order.pk).update(card_fee=fee)
     order.card_fee = fee
 

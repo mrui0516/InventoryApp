@@ -17,6 +17,10 @@ class Store(models.Model):
     # (decants are poured from it). While the shop has a product, one of its
     # bottles is that sample, so a full-price sale may take only the rest.
     keeps_samples = models.BooleanField(default=False)
+    # What this shop's card terminal keeps of every card payment. Each order
+    # stores its own fee when it is made, so a new rate never rewrites the past.
+    card_fee_pct = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('1.00'),
+                                       verbose_name='Card fee (%)')
     created_at = models.DateTimeField(auto_now_add=True)
 
     # Which categories this store actually sells. Khan Perfume carries perfume
@@ -130,9 +134,8 @@ class PrintProfile(models.Model):
 class BusinessSettings(models.Model):
     """Business-wide settings that are not per store - one row.
 
-    ``card_fee_pct``: what the card terminal keeps of every card payment. Each
-    order stores its own fee when it is made (``SaleOrder.card_fee``), so a
-    later change of rate never rewrites the profit of past sales.
+    ``card_fee_pct``: the card fee for an order without a shop; each shop has
+    its own (``Store.card_fee_pct``).
     """
     card_fee_pct = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('1.00'),
                                        verbose_name='Card fee (%)')

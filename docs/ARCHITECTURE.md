@@ -78,7 +78,7 @@ InventoryApp/
     │   ├── barcodes.py               # 无条码商品的内部条码
     │   ├── order_corrections.py      # 历史订单修正/删除 + SaleOrderChangeLog
     │   ├── order_charges.py          # 运费/费用；客户上次售价 last_prices()
-    │   ├── card_fees.py              # 刷卡手续费：成交时记在订单上（BusinessSettings.card_fee_pct）
+    │   ├── card_fees.py              # 刷卡手续费：成交时按订单所在店的费率记在订单上（Store.card_fee_pct）
     │   ├── submissions.py            # 一次性提交令牌：在记录的同一事务里写入 FormSubmission
     │   ├── summaries.py              # DailySalesSummary 重算
     │   ├── dashboard.py              # 月度快照、环比、销售目标、多店对比
@@ -166,7 +166,7 @@ AUTH_USER (Django User)
   └─< StockAdjustmentLog.user (FK user, nullable)
 
 DailySalesSummary  —— 独立汇总表，date 唯一，无外键，由 Sale 信号驱动重算
-SalesTarget        —— 每分类月度销售目标（category 唯一 OneToOne→Category，monthly_amount）
+SalesTarget        —— 每店每分类月度销售目标（store FK + category FK，二者唯一；monthly_amount）
 PrintProfile       —— 单例配置表（固定 pk=1）
 ```
 
@@ -250,7 +250,7 @@ has_admin_access(user)          → is_superuser only
 ### 5.7 仪表盘分析与缓存（`services/dashboard.py`）
 - `build_monthly_dashboard_snapshot` 计算月度全量快照（销售/采购/AR/库存/资金占用/滞销品等）。
 - **MoM 同期对比**用轻量函数 `compute_period_headline`（仅做销售头部聚合，DB 端 `Sum(unit_price*quantity)`，利润仅在 `show_profit` 时才触发 FIFO 重放）计算上月同期窗口，避免为对比而重复整份快照的库存/AR 开销；`build_period_comparison` 产出各 KPI 的带符号增减幅。
-- **销售目标**：`build_target_progress` 汇总所选分类的 `SalesTarget.monthly_amount`，给出达成进度与（仅当月）日均跑率月末预测。
+- **销售目标**：`build_target_progress(…, store)` 汇总所选分类的 `SalesTarget.monthly_amount`（选店时只取该店，否则各店之和），给出达成进度与（仅当月）日均跑率月末预测。
 - **年度销售趋势**：`build_yearly_sales_overview(year, …)`（`resolve_year` 负责年份夹取）按月聚合全年销售为 12 行明细 + 支付占比 + 年度合计，供 `record_view`（`/sales-records/`）在**无区间**时渲染 12 月柱状图与明细表（Sales Trend 已并入该页，`yearly_sales_view` / `/sales-trend/` 仅保留为旧链接的重定向）；利润对全年 sale_ids 做一次 FIFO 重放。
 - **当日支付方式统计**：`dashboard_view` 在遍历当日订单时顺带按 `payment_method` 累加金额/件数，产出 `today_payment_breakdown`（实时，不走快照缓存）。
 - **缓存（cheap win）**：视图层对月度快照与 MoM 对比按 `(month, sorted category ids, show_profit, period_end)` 维度做 60s `LocMemCache` 缓存；"今日操作"区块（含当日支付统计）仍每次实时计算，故缓存仅影响月度总览的新鲜度（≤60s），不影响当日订单。AR 汇总已由 Python 循环改为 DB `aggregate`，低库存列表补 `prefetch_related('images')` 消除 N+1。
@@ -275,7 +275,7 @@ has_admin_access(user)          → is_superuser only
 - **读侧全量过滤（Phase 2 已完成）**：**仪表盘** `dashboard_view` + `services/dashboard.py`（`compute_period_headline`/`build_period_comparison`/`build_monthly_dashboard_snapshot`/`build_yearly_sales_overview` 均加 `store=None` 参数，经 `_apply_store()` 过滤销售与 AR；库存/采购/滞销分析保持全店共享；快照缓存键加入 store 维度）；**销售趋势**（并入 `record_view` 的无区间态）；**订单修正中心** `sale_order_correction_center_view` 列表；**客户详情** `customer_detail_view`（该客户的订单与 AR 按店铺）；**客户列表** `customer_search_view`（统计子查询按店铺 + 指定店铺时仅显示"本店客户"）；**考勤** `attendance_view` 团队区（按 `user__store_profile__store`）。所有过滤 All stores 时不生效。
 - **店铺管理页**（Admin）：`store_list_view`/`store_create_view`/`store_edit_view`/`store_delete_view`（`/stores/*`，`@admin_required`）+ `StoreForm`，模板 `store_list.html`/`store_form.html`，侧栏 Admin 分组入口。保存时强制"恰有一个默认店铺"；删除仅在店铺无销售/发票/员工且非默认时允许。`Store`/`StoreProfile` 亦注册进 Django Admin。
 - **打印小票抬头按店铺**：`PrintProfile` 加 `store` OneToOne（迁移 0030/0031：原单例抬头挂到默认店铺，其余店铺各建一份，从默认抬头 + 店名播种）。`PrintProfile.get_for_store(store)` 按店铺取/建；`get_solo()` 退化为默认店铺抬头。小票（`sale_order_detail`）用**该订单店铺**的抬头；抬头编辑页（`print_profile_edit_view`）编辑**当前活动店铺**的抬头（All stores 时编辑默认店铺）。
-- **仍待接入**：按分类的销售目标 `SalesTarget` 改为按店铺（模型变更；当前仪表盘目标进度用店铺销售额对比全局分类目标，为已知局限）；员工创建/编辑表单增加显式店铺选择（当前新建按活动/默认店铺自动分配）。
+- **仍待接入**：员工创建/编辑表单增加显式店铺选择（当前新建按活动/默认店铺自动分配）。
 
 ### 5.9c 按店库存（2026-11-01）
 
@@ -294,6 +294,8 @@ Orders → Purchases（`orders_views.load_purchases`）、供应商页、产品�
 **加价只记在调货账上**：移过去的批次保留真实成本，所以公司总利润与哪家店卖出无关；
 `StockTransferLine.amount = cost_total + markup_per_unit × quantity`（期初调拨为 0）。
 `balances()` 把双向调货金额与 `StoreSettlement` 相抵，得出"谁欠谁多少"。
+
+**免费调货与撤销**（迁移 0069）：`StockTransfer.FREE = (OPENING, COUNT)` 的调货行加价和金额都是 0（`COUNT` = "Stock count"，产品编辑页和 Transfers 页勾 No charge 时用）。`undo_transfer(transfer)` 只接受 `UNDOABLE = (MANUAL, OPENING, COUNT)`：先检查调入店每款还有足够件数（不够整笔拒绝），再用 `_split(batch, n, from_store, None)` 退回——先退 `transfer_line` 指向这笔的批次，再退调入店最新的批次——最后删除调货（行级联删除，批次的 `transfer_line` 置空）。`waive_transfer` 只接受 `SALE`：行的 `amount` 和 `markup_per_unit` 置 0，记 `waived_at`。结账记录直接删除。视图 `stock_transfers_view` 的 action：`move`（`free=1` → COUNT；`next` 经 `url_has_allowed_host_and_scheme` 校验后跳回）、`undo`、`waive`、`unsettle`。
 
 **单店利润**：`transfer_margins(start, end, *, category_ids, channel)` 返回 `[(store_id, 日期, 金额)]`——
 每条调货行（期初除外）在调货当天给调出店 `+markup_per_unit × quantity`、给调入店同额的负数，合计为 0。

@@ -8234,7 +8234,7 @@ class RoundANavigationTests(TestCase):
                                  "Products", "Catalog View",
                                  "Customers", "IOU", "Inbound", "Transfers", "Suppliers",
                                  "Attendance", "Tools", "Team", "Stores", "Print Header",
-                                 "Fees", "Correct orders", "Audit"])
+                                 "Shop settings", "Correct orders", "Audit"])
         for group in ("Sell", "Products", "Customers", "Purchasing", "Settings"):
             self.assertIn(f">{group}<", nav)
 
@@ -9912,7 +9912,7 @@ class CardFeeTests(TestCase):
         from .stores import ACTIVE_STORE_SESSION_KEY
         self.admin = get_user_model().objects.create_superuser("cf_fee_admin", password="pw123456")
         self.client.force_login(self.admin)
-        store = Store.objects.create(name="Fee Store", code="FEE")
+        store = self.store = Store.objects.create(name="Fee Store", code="FEE")
         session = self.client.session
         session[ACTIVE_STORE_SESSION_KEY] = store.id
         session.save()
@@ -9953,7 +9953,8 @@ class CardFeeTests(TestCase):
 
     def test_a_new_rate_applies_to_new_sales_only(self):
         first = self._sell([{"method": "card", "amount": "100.00"}], "d" * 32)
-        response = self.client.post(reverse("business_settings"), {"card_fee_pct": "1,5"})
+        # 2026-11-01: each shop has its own rate
+        response = self.client.post(reverse("business_settings"), {f"card_fee_{self.store.id}": "1,5"})
         self.assertRedirects(response, reverse("business_settings"), fetch_redirect_response=False)
         second = self._sell([{"method": "card", "amount": "100.00"}], "e" * 32)
         first.refresh_from_db()
@@ -9973,9 +9974,10 @@ class CardFeeTests(TestCase):
         employee = get_user_model().objects.create_user("cf_fee_emp", password="pw123456")
         self.client.force_login(employee)
         self.assertNotEqual(self.client.get(reverse("business_settings")).status_code, 200)
-        self.assertNotEqual(self.client.post(reverse("business_settings"), {"card_fee_pct": "9"}).status_code, 200)
-        from .models import BusinessSettings
-        self.assertEqual(BusinessSettings.get().card_fee_pct, Decimal("1.00"))
+        self.assertNotEqual(self.client.post(reverse("business_settings"),
+                                             {f"card_fee_{self.store.id}": "9"}).status_code, 200)
+        self.store.refresh_from_db()
+        self.assertEqual(self.store.card_fee_pct, Decimal("1.00"))
 
 
 class InboundChecklistTests(TestCase):

@@ -21,11 +21,15 @@ class StockTransfer(models.Model):
     MANUAL = 'manual'
     SALE = 'sale'
     OPENING = 'opening'
+    COUNT = 'count'
     REASON_CHOICES = [
         (MANUAL, 'Transfer'),
         (SALE, 'Sale needed it'),
         (OPENING, 'Opening stock'),     # the first split; no money owed
+        (COUNT, 'Stock count'),         # putting the shops' counts right; no money owed
     ]
+    FREE = (OPENING, COUNT)              # transfers that owe nothing
+    UNDOABLE = (MANUAL, OPENING, COUNT)  # their goods can go back; a sale's were sold
 
     from_store = models.ForeignKey('Store', on_delete=models.PROTECT, related_name='transfers_out')
     to_store = models.ForeignKey('Store', on_delete=models.PROTECT, related_name='transfers_in')
@@ -36,6 +40,9 @@ class StockTransfer(models.Model):
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
                                    null=True, blank=True, related_name='stock_transfers')
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    # A sale's transfer cannot be undone (its goods were sold); the debt can be
+    # waived instead: its lines then owe nothing.
+    waived_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at', '-id']

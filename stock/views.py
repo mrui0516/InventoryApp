@@ -2114,8 +2114,14 @@ def product_detail_view(request, pk):
     purchases = product.purchase_set.select_related('supplier').order_by('-date')
     from .services.store_stock import merge_batches
     purchase_lines = merge_batches(purchases)
+    # the last three months show, older purchases fold away
+    today = timezone.localdate()
+    back = today.month - 3
+    since = today.replace(year=today.year + (back - 1) // 12, month=(back - 1) % 12 + 1, day=1)
+    purchases_recent = [p for p in purchase_lines if timezone.localtime(p.date).date() >= since]
+    purchases_older = purchase_lines[len(purchases_recent):]
 
-    # Sales History on this page shows only the last 10 days; the rest lives on the
+    # Sales History on this page shows only the last 30 days; the rest lives on the
     # dedicated product sales-history page (linked via full_sales_url).
     sales_base = (
         product.sale_set
@@ -2124,7 +2130,7 @@ def product_detail_view(request, pk):
         .order_by('-business_at', '-id')
     )
     sales_total_count = sales_base.count()
-    recent_cutoff = timezone.localdate() - timedelta(days=10)
+    recent_cutoff = timezone.localdate() - timedelta(days=30)
     sales = list(sales_base.filter(business_at__date__gte=recent_cutoff))
     sales_older_count = sales_total_count - len(sales)
     full_sales_url = f"{reverse('product_sales_history')}?product={product.id}"
@@ -2138,9 +2144,10 @@ def product_detail_view(request, pk):
     fifo_purchase = product.purchase_set.filter(remaining__gt=0).order_by('date').first()
     fifo_price = fifo_purchase.cost_price if fifo_purchase else None
 
-    # Per-supplier cost comparison/trend (purchases is ordered -date, so first seen = latest).
+    # Per-supplier cost comparison/trend (purchases is ordered -date, so first seen = latest);
+    # a delivery split between the shops counts once.
     supplier_cost_map = {}
-    for p in purchases:
+    for p in purchase_lines:
         entry = supplier_cost_map.setdefault(p.supplier_id, {
             'supplier_id': p.supplier_id,
             'name': p.supplier.name if p.supplier else 'No supplier',
@@ -2180,7 +2187,8 @@ def product_detail_view(request, pk):
         # The perfume rows (volume, notes, family) mean nothing for other
         # goods; shown there they would all read "-".
         'is_perfume': 'perfum' in category_name,
-        'purchases': purchase_lines,
+        'purchases': purchases_recent,
+        'purchases_older': purchases_older,
         'sales': sales,
         'sales_older_count': sales_older_count,
         'full_sales_url': full_sales_url,
@@ -2571,6 +2579,10 @@ def edit_product_view(request, pk):
     images = product.images.all()
     purchases = product.purchase_set.select_related('store', 'supplier').order_by('-date')
     purchase_count = product.purchase_set.count()
+    from .services.store_stock import active_stores, shop_split
+    shops = active_stores()
+    shop_moves = [{'value': f'{a.id}-{b.id}', 'label': f'{a.name} → {b.name}'}
+                  for a in shops for b in shops if a.id != b.id]
     sale_count = product.sale_set.count()
     # total available stock (sum of remaining from all batches)
     total_stock = purchases.aggregate(s=Coalesce(Sum('remaining'), Value(0), output_field=IntegerField()))['s'] or 0
@@ -2581,6 +2593,8 @@ def edit_product_view(request, pk):
         'product': product,
         'images': images,
         'purchases': purchases,
+        'shop_moves': shop_moves,
+        'shop_split': shop_split([product.id]).get(product.id, []),
         'total_stock': total_stock,
         'purchase_count': purchase_count,
         'sale_count': sale_count,
@@ -2707,6 +2721,7 @@ def dashboard_view(request):
     target_progress = None if channel else build_target_progress(
         month_context, monthly_overview['month_sales_amount'],
         selected_category_ids=selected_cat_ids_int,
+        store=store_scope,
     )
 
     def build_dashboard_url(month_value=None, category_ids=None, ch=None):
@@ -3161,48 +3176,97 @@ def audit_error_resolve(request, error_id):
 @login_required
 @admin_required
 def business_settings_view(request):
-    """Settings for the whole business: the card fee rate and the markup one
-    shop charges the other per unit moved."""
-    from .models import BusinessSettings
+    """Shop settings: each shop's card fee and monthly sales targets, and the
+    markup one shop charges the other per unit moved."""
+    from .models import BusinessSettings, SalesTarget
+    from .services.store_stock import active_stores
     settings_row = BusinessSettings.get()
-    error = ''
+    shops = active_stores()
+    categories = list(Category.objects.order_by('name'))
+    targets = {(t.store_id, t.category_id): t for t in SalesTarget.objects.filter(store__in=shops)}
+    errors = []
+
+    def number(raw, low, high):
+        raw = (raw or '').strip().replace(',', '.').replace('€', '')
+        if raw == '':
+            return None
+        value = Decimal(raw)
+        if value < low or value > high:
+            raise InvalidOperation
+        return value.quantize(Decimal('0.01'))
+
     if request.method == 'POST':
-        raw = (request.POST.get('card_fee_pct') or '').strip().replace(',', '.')
-        raw_markup = (request.POST.get('transfer_markup') or str(settings_row.transfer_markup)).strip().replace(',', '.')
-        try:
-            value = Decimal(raw)
-            if value < 0 or value > 10:
-                raise InvalidOperation
-        except (InvalidOperation, ValueError):
-            error = 'Enter a percentage between 0 and 10, e.g. 1 or 1.5.'
-        else:
+        fees, new_targets, markup = {}, {}, None
+        for shop in shops:
             try:
-                markup = Decimal(raw_markup)
-                if markup < 0 or markup > 1000:
-                    raise InvalidOperation
+                fees[shop.id] = number(request.POST.get(f'card_fee_{shop.id}'), 0, 10)
             except (InvalidOperation, ValueError):
-                error = 'Enter the transfer markup in euro, e.g. 3.'
-            else:
-                settings_row.card_fee_pct = value.quantize(Decimal('0.01'))
-                settings_row.transfer_markup = markup.quantize(Decimal('0.01'))
-                settings_row.save(update_fields=['card_fee_pct', 'transfer_markup', 'updated_at'])
-                messages.success(request, f'Card fee {settings_row.card_fee_pct}%, transfer markup '
-                                          f'€{settings_row.transfer_markup} per unit.')
-                return redirect('business_settings')
-    return render(request, 'stock/business_settings.html', {'settings_row': settings_row, 'error': error})
+                errors.append(f'{shop.name}: enter the card fee as a percentage between 0 and 10, e.g. 1 or 1.5.')
+            for cat in categories:
+                try:
+                    new_targets[(shop.id, cat.id)] = number(
+                        request.POST.get(f'target_{shop.id}_{cat.id}'), 0, Decimal('9999999'))
+                except (InvalidOperation, ValueError):
+                    errors.append(f'{shop.name} · {cat.name}: enter the monthly target in euro.')
+        try:
+            markup = number(request.POST.get('transfer_markup'), 0, 1000)
+        except (InvalidOperation, ValueError):
+            errors.append('Enter the transfer markup in euro, e.g. 3.')
+        if not errors:
+            with transaction.atomic():
+                for shop in shops:
+                    if fees.get(shop.id) is not None and fees[shop.id] != shop.card_fee_pct:
+                        shop.card_fee_pct = fees[shop.id]
+                        shop.save(update_fields=['card_fee_pct'])
+                if markup is not None:
+                    settings_row.transfer_markup = markup
+                    settings_row.save(update_fields=['transfer_markup', 'updated_at'])
+                for (store_id, cat_id), amount in new_targets.items():
+                    row = targets.get((store_id, cat_id))
+                    if not amount:
+                        if row is not None:
+                            row.delete()
+                    elif row is None:
+                        SalesTarget.objects.create(store_id=store_id, category_id=cat_id, monthly_amount=amount)
+                    elif row.monthly_amount != amount:
+                        row.monthly_amount = amount
+                        row.save(update_fields=['monthly_amount', 'updated_at'])
+            messages.success(request, 'Shop settings saved.')
+            return redirect('business_settings')
+
+    rows = [{'category': cat,
+             'cells': [{'shop': shop, 'name': f'target_{shop.id}_{cat.id}',
+                        'value': (request.POST.get(f'target_{shop.id}_{cat.id}', '') if errors else
+                                  (targets[(shop.id, cat.id)].monthly_amount
+                                   if (shop.id, cat.id) in targets else ''))}
+                       for shop in shops]}
+            for cat in categories]
+    return render(request, 'stock/business_settings.html', {
+        'settings_row': settings_row,
+        'shops': [{'shop': s, 'name': f'card_fee_{s.id}',
+                   'value': request.POST.get(f'card_fee_{s.id}', '') if errors else s.card_fee_pct}
+                  for s in shops],
+        'target_rows': rows,
+        'errors': errors,
+    })
 
 
 @login_required
 @manager_required
 def stock_transfers_view(request):
     """Goods between the shops: what they owe each other, settling it, moving
-    stock by hand, and the history of both."""
+    stock by hand (or free, while the counts are put right), undoing a move,
+    waiving a sale's debt, and the history of both."""
+    from django.utils.http import url_has_allowed_host_and_scheme
     from .models import StockTransfer, StoreSettlement
     from .services import store_stock
     shops = store_stock.active_stores()
     by_id = {s.id: s for s in shops}
     if request.method == 'POST':
         action = request.POST.get('action')
+        nxt = (request.POST.get('next') or '').strip()
+        back = nxt if nxt and url_has_allowed_host_and_scheme(
+            nxt, allowed_hosts={request.get_host()}, require_https=request.is_secure()) else None
         try:
             if action == 'move':
                 barcode = (request.POST.get('barcode') or '').strip()
@@ -3217,13 +3281,36 @@ def stock_transfers_view(request):
                 src, dst = by_id.get(src_id), by_id.get(dst_id)
                 if src is None or dst is None:
                     raise ValueError('Choose which way the goods go.')
-                line = store_stock.move_units(product, qty, src, dst, user=request.user,
-                                              note=(request.POST.get('note') or '').strip())
+                free = request.POST.get('free') == '1'
+                line = store_stock.move_units(
+                    product, qty, src, dst, user=request.user, note=(request.POST.get('note') or '').strip(),
+                    reason=StockTransfer.COUNT if free else StockTransfer.MANUAL)
                 request.session['transfer_direction'] = f'{src.id}-{dst.id}'
                 held = store_stock.stock_by_store([product.id]).get(product.id, {})
                 messages.success(request, f'Moved {qty} x {product.display_name} to {dst.name} '
-                                          f'(owed €{line.amount:.2f}). Now: '
-                                          + ' · '.join(f'{s.name} {held.get(s.id, 0)}' for s in shops))
+                                          + ('(no charge). ' if free else f'(owed €{line.amount:.2f}). ')
+                                          + 'Now: ' + ' · '.join(f'{s.name} {held.get(s.id, 0)}' for s in shops))
+            elif action == 'undo':
+                transfer = StockTransfer.objects.select_related('from_store', 'to_store').filter(
+                    pk=request.POST.get('transfer') or 0).first()
+                if transfer is None:
+                    raise ValueError('That transfer is gone already.')
+                label = f'#{transfer.id} {transfer.from_store.name} → {transfer.to_store.name}'
+                store_stock.undo_transfer(transfer)
+                messages.success(request, f'Transfer {label} undone: the goods are back in '
+                                          f'{transfer.from_store.name}.')
+            elif action == 'waive':
+                transfer = StockTransfer.objects.filter(pk=request.POST.get('transfer') or 0).first()
+                if transfer is None:
+                    raise ValueError('That transfer is gone already.')
+                store_stock.waive_transfer(transfer)
+                messages.success(request, f'Transfer #{transfer.id} owes nothing now.')
+            elif action == 'unsettle':
+                settlement = StoreSettlement.objects.filter(pk=request.POST.get('settlement') or 0).first()
+                if settlement is None:
+                    raise ValueError('That settlement is gone already.')
+                settlement.delete()
+                messages.success(request, f'Settlement of €{settlement.amount:.2f} deleted.')
             elif action == 'settle':
                 payer, payee = by_id.get(int(request.POST.get('payer') or 0)), by_id.get(int(request.POST.get('payee') or 0))
                 if payer is None or payee is None:
@@ -3240,7 +3327,7 @@ def stock_transfers_view(request):
             messages.error(request, '; '.join(e.messages))
         except ValueError as e:
             messages.error(request, str(e))
-        return redirect('stock_transfers')
+        return redirect(back or 'stock_transfers')
 
     transfers = list(StockTransfer.objects.select_related('from_store', 'to_store', 'created_by')
                      .prefetch_related('lines__product')[:100])

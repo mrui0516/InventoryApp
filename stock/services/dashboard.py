@@ -242,14 +242,16 @@ def build_period_comparison(month_context, current_headline, selected_category_i
     }
 
 
-def build_target_progress(month_context, current_sales_amount, selected_category_ids=None):
+def build_target_progress(month_context, current_sales_amount, selected_category_ids=None, store=None):
     """Monthly revenue-target progress + run-rate projection for the current month.
 
-    Sums the per-category :class:`SalesTarget` rows matching the dashboard's
-    category filter (all defined targets when no filter is active). Returns
-    ``None`` when no positive target applies.
+    Sums the :class:`SalesTarget` rows matching the dashboard's category filter
+    (all defined targets when no filter is active) - the picked shop's, or every
+    shop's when ``store`` is None. Returns ``None`` when no positive target applies.
     """
     targets = SalesTarget.objects.all()
+    if store is not None:
+        targets = targets.filter(store=store)
     if selected_category_ids:
         targets = targets.filter(category_id__in=selected_category_ids)
     target_amount = targets.aggregate(total=Sum("monthly_amount"))["total"] or Decimal("0.00")

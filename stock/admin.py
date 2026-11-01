@@ -309,9 +309,10 @@ class StockAdjustmentLogAdmin(admin.ModelAdmin):
 
 @admin.register(SalesTarget)
 class SalesTargetAdmin(admin.ModelAdmin):
-    list_display = ('category', 'monthly_amount', 'updated_at')
+    list_display = ('store', 'category', 'monthly_amount', 'updated_at')
     list_editable = ('monthly_amount',)
-    ordering = ('category__name',)
+    list_filter = ('store',)
+    ordering = ('store_id', 'category__name')
 
 
 @admin.register(SaleOrderPayment)

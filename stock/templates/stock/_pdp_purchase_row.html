@@ -1,0 +1,9 @@
+{# one purchase on the product page: a delivery's batches merged, each shop's part #}
+<div class="pdp-row">
+  <div>
+    <div class="l1">{{ p.date|date:"d M Y" }} &middot; {{ p.quantity }} bought{% if p.shops %} <span class="pdp-shops">({% for s in p.shops %}{{ s.label }} {{ s.quantity }}{% if not forloop.last %} · {% endif %}{% endfor %})</span>{% endif %}</div>
+    <div class="l2">{% if p.supplier %}<a href="{% url 'supplier_detail' p.supplier_id %}">{{ p.supplier.name }}</a>{% else %}No supplier linked{% endif %}
+      &middot; <span class="pdp-left{% if p.remaining <= 0 %} none{% elif p.remaining < 5 %} low{% endif %}">{{ p.remaining }} left</span></div>
+  </div>
+  <div class="fig">&euro;{{ p.cost_price|floatformat:2 }}<small>each</small></div>
+</div>

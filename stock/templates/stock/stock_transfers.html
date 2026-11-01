@@ -43,6 +43,7 @@
         </select></label>
       <label class="tr-f tr-note"><span>Note</span>
         <input type="text" class="form-control" name="note" maxlength="200"></label>
+      <label class="tr-free"><input type="checkbox" name="free" value="1"> No charge (stock count)</label>
       <button type="submit" class="btn btn-primary tr-go">Move</button>
     </form>
   </section>
@@ -59,6 +60,7 @@
           <div class="tr-main">
             <div class="tr-way">{{ t.from_store.name }} &rarr; {{ t.to_store.name }}
               <span class="tr-tag {{ t.reason }}">{{ t.get_reason_display }}</span>
+              {% if t.waived_at %}<span class="tr-tag waived" title="Waived {{ t.waived_at|date:'d M Y H:i' }}">Waived</span>{% endif %}
               {% if t.sale_order_id %}<a href="{% url 'sale_order_detail' t.sale_order_id %}">#{{ t.sale_order_id }}</a>{% endif %}</div>
             {# a long transfer (the opening split) shows three lines and folds the rest #}
             {% with lines=t.lines.all %}
@@ -66,7 +68,22 @@
               {% if lines|length > 4 %}<details class="tr-more"><summary>+{{ lines|length|add:"-3" }} more</summary>{% for l in lines %}{% if forloop.counter > 3 %}{{ l.quantity }}&times; {{ l.product.list_name|default:l.product.display_name }}{% if not forloop.last %}, {% endif %}{% endif %}{% endfor %}</details>{% endif %}</div>
             {% endwith %}
           </div>
-          <div class="tr-amt">{% if t.reason == 'opening' %}&mdash;{% else %}&euro;{{ t.amount|floatformat:2 }}{% endif %}</div>
+          <div class="tr-side">
+            <div class="tr-amt">{% if t.reason == 'opening' or t.reason == 'count' %}&mdash;{% else %}&euro;{{ t.amount|floatformat:2 }}{% endif %}</div>
+            {% if t.reason == 'sale' %}
+              {% if not t.waived_at and t.amount %}
+              <form method="post" onsubmit="return confirm('Waive transfer #{{ t.id }}? {{ t.to_store.name|escapejs }} will owe nothing for it. The goods stay sold.');">
+                {% csrf_token %}<input type="hidden" name="action" value="waive"><input type="hidden" name="transfer" value="{{ t.id }}">
+                <button type="submit" class="btn btn-sm btn-outline-secondary tr-act">Waive</button>
+              </form>
+              {% endif %}
+            {% else %}
+              <form method="post" onsubmit="return confirm('Undo transfer #{{ t.id }}? The goods go back from {{ t.to_store.name|escapejs }} to {{ t.from_store.name|escapejs }} and the transfer is deleted.');">
+                {% csrf_token %}<input type="hidden" name="action" value="undo"><input type="hidden" name="transfer" value="{{ t.id }}">
+                <button type="submit" class="btn btn-sm btn-outline-danger tr-act">Undo</button>
+              </form>
+            {% endif %}
+          </div>
         </div>
       {% empty %}
         <p class="tr-empty">No transfers yet.</p>
@@ -78,7 +95,13 @@
           <div class="tr-when">{{ s.settled_on|date:"d M" }}<small>{{ s.settled_on|date:"Y" }}</small></div>
           <div class="tr-main"><div class="tr-way">{{ s.payer.name }} paid {{ s.payee.name }}</div>
             <div class="tr-lines">{% if s.note %}{{ s.note }} &middot; {% endif %}{% if s.created_by %}{{ s.created_by.username }}{% endif %}</div></div>
-          <div class="tr-amt">&euro;{{ s.amount|floatformat:2 }}</div>
+          <div class="tr-side">
+            <div class="tr-amt">&euro;{{ s.amount|floatformat:2 }}</div>
+            <form method="post" onsubmit="return confirm('Delete this settlement of €{{ s.amount|floatformat:2 }}? What {{ s.payer.name|escapejs }} owes goes back up by it.');">
+              {% csrf_token %}<input type="hidden" name="action" value="unsettle"><input type="hidden" name="settlement" value="{{ s.id }}">
+              <button type="submit" class="btn btn-sm btn-outline-danger tr-act">Delete</button>
+            </form>
+          </div>
         </div>
       {% empty %}
         <p class="tr-empty">No settlements yet.</p>
@@ -116,11 +139,18 @@
   .tr-amt{ font-weight:800; font-variant-numeric:tabular-nums; white-space:nowrap; }
   .tr-tag{ font-size:.72rem; font-weight:700; padding:.08rem .45rem; border-radius:999px; background:#e7e5e4; color:#44403c; }
   .tr-tag.sale{ background:#e0f2fe; color:#0c5a8f; }
-  .tr-tag.opening{ background:#ecfdf5; color:#0f766e; }
+  .tr-tag.opening, .tr-tag.count{ background:#ecfdf5; color:#0f766e; }
+  .tr-tag.waived{ background:#fef3c7; color:#92400e; }
+  .tr-side{ display:flex; flex-direction:column; align-items:flex-end; gap:.3rem; }
+  .tr-side form{ margin:0; }
+  .tr-act{ min-height:32px; padding:.15rem .6rem; font-size:.85rem; }
+  .tr-free{ order:1; grid-column:1 / -1; display:flex; align-items:center; gap:.4rem; margin:0; font-size:.9rem; font-weight:600; }
+  .tr-free input{ width:1.1rem; height:1.1rem; }
   .tr-empty{ color:var(--app-muted); margin:.5rem 0 0; }
   @media (max-width:767.98px){
     .tr-move{ grid-template-columns:minmax(0,1fr) 5rem; }
     .tr-dir, .tr-note, .tr-go{ grid-column:1 / -1; }
+    .tr-free{ order:0; }
     .tr-owe-pay{ grid-template-columns:minmax(0,1fr) minmax(0,1fr); width:100%; }
     .tr-owe-pay .btn{ grid-column:1 / -1; min-height:44px; }
     .tr-go{ min-height:44px; }
