@@ -386,10 +386,6 @@
   td .transit-pill{ display:flex; width:max-content; margin:.3rem auto 0; }
   .pm-fig .transit-pill{ margin-top:.2rem; }
   .product-block.has-bell{ grid-template-columns:32px 64px minmax(0,1fr); gap:.75rem; }
-  /* bell off and sold out: the row steps back - but the photo keeps its
-     colours, it is how the product is told apart */
-  tr.is-muted > td{ background:var(--app-surface-2) !important; }
-  tr.is-muted .product-name, tr.is-muted .pm-name, tr.is-muted .price-stack,
   /* two shops: one pill, a segment each - the shop's initial, then its units;
      the colour is the total's, the shop you are in is bold, an empty shop red */
   .stock-seg{ display:inline-flex; border-radius:999px; border:1px solid; overflow:hidden; white-space:nowrap;
@@ -404,6 +400,10 @@
   .stock-seg.zero{ background:#fef2f2; color:#b42318; border-color:#fecaca; }
   .pm-fig .stock-seg{ font-size:.85rem; }
   .pm-fig .stock-seg .seg{ padding:.12rem .4rem; }
+  /* bell off and sold out: the row steps back - but the photo keeps its
+     colours, it is how the product is told apart */
+  tr.is-muted > td{ background:var(--app-surface-2) !important; }
+  tr.is-muted .product-name, tr.is-muted .pm-name, tr.is-muted .price-stack,
   tr.is-muted .stock-pill, tr.is-muted .stock-seg, tr.is-muted .sales-stack, tr.is-muted .brand-pill,
   tr.is-muted .product-meta, tr.is-muted .pm-sub, tr.is-muted .pm-fig{ opacity:.55; }
   .restock-bell{ display:inline-grid; place-items:center; width:32px; height:32px; padding:0; border-radius:999px;

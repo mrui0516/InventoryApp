@@ -222,3 +222,9 @@ class ShopViewsTests(PagesMixin, TestCase):
         cache.clear()
         self.pick(self.khan)
         self.assertEqual(self.client.get(reverse("dashboard")).context["month_sales_profit"], Decimal("6.00"))
+
+    def test_the_muted_row_rule_is_one_selector_list(self):
+        # 2026-11-01: a style block dropped into the middle of this list gave
+        # the bell-off, sold-out rows pill borders on their name and prices
+        html = self.client.get(reverse("product_list")).content.decode()
+        self.assertIn("tr.is-muted .price-stack,\n  tr.is-muted .stock-pill,", html)
