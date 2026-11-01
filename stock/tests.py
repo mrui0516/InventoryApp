@@ -9558,7 +9558,9 @@ class RestockAndTransitTests(TestCase):
                                           cost_price=Decimal("4"))
         self.assertNotIn(p.display_name, self._names())
         html = self.client.get(reverse("product_list") + "?q=Transit").content.decode()
-        self.assertIn('+6<span class="tp-long"> on the way</span>', html)
+        # 2026-11-01: a truck and +6; the words are in its title
+        self.assertIn('aria-label="6 on the way"', html)
+        self.assertIn('</svg>+6</span>', html)
         self.assertIn(reverse("toggle_restock", args=[p.id]), html)
 
     def test_a_deleted_product_is_not_stock_any_more(self):
