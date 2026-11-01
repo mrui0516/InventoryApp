@@ -1,6 +1,6 @@
 # 项目状态文档（Status）
 
-> 快照时间：2026-10-28。记录现在线上运行的是什么、测试与环境状态、已知风险。配合 [PRD.md](./PRD.md)（功能与验收标准）与 [ARCHITECTURE.md](./ARCHITECTURE.md)（技术架构）一起阅读。
+> 快照时间：2026-11-01。记录现在线上运行的是什么、测试与环境状态、已知风险。配合 [PRD.md](./PRD.md)（功能与验收标准）与 [ARCHITECTURE.md](./ARCHITECTURE.md)（技术架构）一起阅读。
 >
 > 第 6 节只记"发生了什么"，一条一行；具体改了哪些函数请查 `git log`。
 
@@ -11,8 +11,8 @@
 | 维度 | 状态 | 说明 |
 |---|---|---|
 | 线上运行 | ✅ PythonAnywhere 欧盟区 | `https://scentory.eu.pythonanywhere.com`，两家店（Khan Perfume、Scentory）日常收银、入库都在线上；线上 `db.sqlite3` 是唯一准数据 |
-| 自动化测试 | ✅ 870 个全部通过 | `python manage.py test stock`，在干净导出上跑 |
-| 数据库迁移 | ✅ 最新 `0065_error_log`，无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
+| 自动化测试 | ✅ 820 个全部通过 | `python manage.py test stock restock_alerts`，在干净导出上跑 |
+| 数据库迁移 | ✅ 最新 `0067_remove_accessory_models`，无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
 | 生产配置 | ✅ `DEBUG=False`，密钥只在服务器 `.env` | `settings.py` 的 `if not DEBUG` 块：强制 HTTPS、安全 Cookie、HSTS、防点击劫持 |
 | 数据备份 | ✅ 每日快照 + 本机拉取 | PA 定时任务 `backup_db --keep 30`，本机 `scripts/pull_backup_from_pa.py` 拉到 U 盘；Settings → Tools 可手动下载。见 [BACKUP.md](./BACKUP.md) |
 | 错误日志 | ✅ Settings → Audit → Errors | 500 崩溃、安全警告、Cloudinary/Shopify 警告写入 `ErrorLog` 与 PA 错误日志 |
@@ -35,7 +35,7 @@
 
 ## 3. 测试与质量
 
-- `python manage.py test stock` → **870 个测试全部通过**（约 9 分钟）；`python manage.py check` 无问题。
+- `python manage.py test stock restock_alerts` → **820 个测试全部通过**（约 8 分钟）；`python manage.py check` 无问题。
 - 外部集成（Shopify / Cloudinary）的测试全部 mock，不发真实网络请求。
 - 提交前在 `git archive HEAD` 的干净导出上跑全套：工作区里可能有别的进行中的改动，会让结果失真。
 
@@ -73,7 +73,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
-- 2026-11-01: **Dashboard 按渠道筛选 + 顶部筛选栏重做 + 删除配件代码。** (1) 点 Retail / Revenda(卡片或顶栏分段按钮)整页只算这个渠道,共用的库存 / 进货 / Sell-through / Slow movers 保持全量并标注;`?ch=` 进缓存键。(2) 月份栏三种屏幕统一为一行:‹ 月份 ›、Category、渠道,改了即生效,没有 Apply。(3) 删除机型适配、货架图、分类自定义属性、内部条码与 3 个种子命令(迁移 0067 删 11 张表与 Product 的 4 个字段),侧栏不再有 Shelf;`docs/SHELF_MAP.md` 删除。(4) `graphify-out/` 加入 .gitignore。新增 7 个测试,删除只测配件的测试 112 个(12 组整组 + 向导里 2 个),改写 5 组混合测试。
+- 2026-11-01: **Dashboard 按渠道筛选 + 顶部筛选栏重做 + 删除配件代码。** (1) 点 Retail / Revenda(卡片或顶栏分段按钮)整页只算这个渠道,共用的库存 / 进货 / Sell-through / Slow movers 保持全量并标注;`?ch=` 进缓存键。(2) 月份栏三种屏幕统一为一行:‹ 月份 ›、Category、渠道,改了即生效,没有 Apply。(3) 删除机型适配、货架图、分类自定义属性、内部条码与 3 个种子命令(迁移 0067 删 11 张表与 Product 的 4 个字段),侧栏不再有 Shelf;`docs/SHELF_MAP.md` 删除。(4) `graphify-out/` 加入 .gitignore。新增 7 个测试,删除只测配件的测试 114 个(13 组整组 + 向导里 2 个),改写 5 组混合测试。
 - 2026-10-30: **产品详情页重排并加补货铃铛;Back 改为回到上级并停在这条记录。** 产品、客户、供应商、订单、IOU 的记录页 Back 回到所属列表中它所在的那一页并高亮该行(这个标签页之前打开过该列表则回到当时的页码和筛选);编辑页回到记录。产品列表的 View 直接进入产品页,点行的其他位置打开侧边栏。新增 5 个测试,改写 2 个。
 - 2026-10-29: **线上预览发现 Accessories 下仍有 169 个在售配件(本地副本里没有),删除分类命令按设计拒绝执行。** 命令加 `--archive-products`(先归档再删分类,历史保留),预览显示这些产品的库存与销量;类型识别改为只对香水分类,不再把 "Mini 数据线"、"键盘套装" 判成香水类型;CDN、YSL、USB 等缩写保持大写。新增 2 个测试。
 - 2026-10-29: **产品列表、下拉框、经营看板。** 产品列表:类型标签带数量,Filters 加浓度与性别,表头点击排序,名称不再带品牌、不重复类型或容量,导出重新排版并带上全部筛选。全站下拉框统一样式。看板:去掉 Low stock(加载时间减半);列表合并成一张带标签的卡片;新增 Sell-through(到货到低库存最快);Slow movers 改为按闲置天数,新到货不再挤占;缓存改为所有进程共用的文件缓存,过去月份缓存 6 小时。新增 9 个测试,改写 4 个看板测试(Low stock 卡片已移除)。

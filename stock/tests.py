@@ -5518,21 +5518,6 @@ class CatalogExportTests(TestCase):
         self.assertIn('spreadsheetml', response['Content-Type'])
 
 
-class NaturalKeyTests(SimpleTestCase):
-    def test_numbers_compare_as_numbers(self):
-        from stock.models import natural_key
-        ordered = sorted(["iPhone 15", "iPhone 9", "iPhone 11", "iPhone 15 Pro"],
-                         key=natural_key)
-        self.assertEqual(ordered,
-                         ["iPhone 9", "iPhone 11", "iPhone 15", "iPhone 15 Pro"])
-
-    def test_it_copes_with_no_digits_and_with_empty(self):
-        from stock.models import natural_key
-        self.assertEqual(natural_key("Galaxy S"), "galaxy s")
-        self.assertEqual(natural_key(""), "")
-        self.assertEqual(natural_key(None), "")
-
-
 class SupplierOrderSortingTests(TestCase):
     """Supplier history is read newest-arrival first."""
 
