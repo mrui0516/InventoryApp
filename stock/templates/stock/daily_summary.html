@@ -46,6 +46,9 @@
   .snapshot-card .metric-label{ font-size:.64rem; letter-spacing:.04em; }
   .snapshot-card .metric-value{ margin-top:.15rem; font-size:1.2rem; }
   .snapshot-card .metric-sub{ margin-top:.1rem; font-size:.72rem; }
+  .rcv-shop{ font-size:.85rem; color:var(--app-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.3; }
+  .rcv-shop b{ color:var(--app-text); font-variant-numeric:tabular-nums; }
+  .rcv-link{ display:inline-block; margin-top:.2rem; font-size:.85rem; font-weight:700; }
   @media (max-width:575.98px){
     .snapshot-grid{ grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:.4rem; }
     .snapshot-card{ padding:.45rem .55rem; }
@@ -121,7 +124,9 @@
     <div class="snapshot-card">
       <span class="metric-label">Stock Received</span>
       <div class="metric-value">{{ received_units }}</div>
-      <div class="metric-sub">{{ received_orders }} inbound</div>
+      <div class="metric-sub">{{ received_orders }} receipt{{ received_orders|pluralize }}{% if show_order_financials and received_units %} &middot; EUR {{ received_cost|floatformat:2 }}{% endif %}</div>
+      {% for s in received_shops %}<div class="rcv-shop">{{ s.label }} <b>{{ s.units }}</b>{% if show_order_financials %} &middot; &euro;{{ s.cost|floatformat:2 }}{% endif %}</div>{% endfor %}
+      {% if received_units %}<a class="rcv-link" href="{{ received_url }}">Records &rarr;</a>{% endif %}
     </div>
   </div>
 

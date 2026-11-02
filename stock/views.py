@@ -4756,18 +4756,32 @@ def daily_summary_view(request):
         for s in stats_list[:8]
     ]
 
-    # Stock received that day, both shops together.
+    # Stock received that day: the batches made when the goods came in (dated
+    # at receipt - an order placed earlier and received today counts today),
+    # by the shop they were delivered to. A transfer keeps both the date and
+    # that shop, so moving goods afterwards changes nothing here.
+    from .services.store_stock import active_stores
+    shops = active_stores()
+    received = Purchase.objects.filter(date__date=day)
+    if not store_is_all and active_store is not None:
+        received = received.filter(received_store=active_store)
+    by_shop = {s.id: {'label': s.name.split()[0], 'units': 0, 'cost': Decimal('0.00')} for s in shops}
+    receipts = set()
     received_units = 0
     received_cost = Decimal('0.00')
-    received_orders = 0
-    for inbound in InboundOrder.objects.filter(created_at__date=day).prefetch_related('items'):
-        received_orders += 1
-        for item in inbound.items.all():
-            received_units += item.quantity
-            received_cost += (item.cost_price or Decimal('0.00')) * item.quantity
-    for purchase in Purchase.objects.filter(inbound_order__isnull=True, date__date=day):
+    for purchase in received.only('quantity', 'cost_price', 'received_store_id', 'inbound_order_id', 'date'):
+        line_cost = (purchase.cost_price or Decimal('0.00')) * purchase.quantity
         received_units += purchase.quantity
-        received_cost += (purchase.cost_price or Decimal('0.00')) * purchase.quantity
+        received_cost += line_cost
+        receipts.add(f'in-{purchase.inbound_order_id}' if purchase.inbound_order_id
+                     else f'direct-{purchase.date:%Y%m%d%H%M%S}')
+        shop = by_shop.get(purchase.received_store_id)
+        if shop is not None:
+            shop['units'] += purchase.quantity
+            shop['cost'] += line_cost
+    received_orders = len(receipts)
+    # all shops: each shop's part, also a shop that received nothing
+    received_shops = list(by_shop.values()) if (store_is_all and len(shops) > 1 and received_units) else []
 
     next_day = day + timedelta(days=1)
     return render(request, 'stock/daily_summary.html', {
@@ -4790,6 +4804,10 @@ def daily_summary_view(request):
         'received_orders': received_orders,
         'received_units': received_units,
         'received_cost': received_cost,
+        'received_shops': received_shops,
+        'received_url': (f"{reverse('sales_records')}?"
+                         + urlencode({'view': 'purchases', 'start_date': day.isoformat(),
+                                      'end_date': day.isoformat()})),
         'show_profit': show_profit,
         'show_order_financials': show_order_financials,
         'store_is_all': store_is_all,

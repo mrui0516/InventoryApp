@@ -288,3 +288,37 @@ class BatchGroupCorrectionTests(PagesMixin, TestCase):
         self.assertIn("At most 5", self.post([self.old.id, self.new.id], 6)["error"])
         khan = self.batch(self.khan, 1)
         self.assertFalse(self.post([self.old.id, khan.id], 1)["success"])
+
+
+class TodayStockReceivedTests(PagesMixin, TestCase):
+    """2026-11-02: Today counts goods received that day - not orders placed that day - per shop."""
+
+    def setUp(self):
+        super().setUp()
+        from .models import InboundOrder
+        placed = InboundOrder.objects.create(status="pending_receipt")
+        InboundOrder.objects.filter(pk=placed.pk).update(created_at=timezone.now() - timedelta(days=3))
+        store_stock.receive_batches(product=self.product, quantity=5, cost_price=Decimal("10"),
+                                    allocation={self.khan.id: 3, self.scentory.id: 2}, inbound_order=placed)
+        InboundOrder.objects.create(status="pending_receipt")       # placed today, not here yet
+
+    def today(self, store):
+        session = self.client.session
+        session["active_store_id"] = store
+        session.save()
+        return self.client.get(reverse("daily_summary"))
+
+    def test_an_order_placed_earlier_and_received_today_counts_today(self):
+        page = self.today("all")
+        self.assertEqual(page.context["received_units"], 5)
+        self.assertEqual(page.context["received_orders"], 1)
+        self.assertEqual([(s["label"], s["units"], s["cost"]) for s in page.context["received_shops"]],
+                         [("Khan", 3, Decimal("30.00")), ("Scentory", 2, Decimal("20.00"))])
+        self.assertContains(page, "view=purchases")
+
+    def test_one_shop_sees_what_it_received_also_after_a_transfer(self):
+        store_stock.move_units(self.product, 2, self.khan, self.scentory)
+        page = self.today(self.scentory.id)
+        self.assertEqual(page.context["received_units"], 2)
+        self.assertEqual(page.context["received_shops"], [])
+        self.assertEqual(self.today(self.khan.id).context["received_units"], 3)
