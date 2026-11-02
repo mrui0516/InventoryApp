@@ -1,0 +1,12 @@
+{% doc %}
+Renders the first-order welcome offer.
+@param {boolean} [subscribed] - Whether a newsletter form was just submitted.
+{% enddoc %}
+<p class="rte" style="font-size:1.3rem;line-height:1.6;">
+  {% if subscribed %}
+    {{ 'scentory_welcome.subscribed' | t }}
+  {% else %}
+    {{ 'scentory_welcome.offer' | t }}
+  {% endif %}
+  <a href="{{ pages['boas-vindas'].url }}">{{ 'scentory_welcome.details' | t }}</a>
+</p>

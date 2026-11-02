@@ -29,9 +29,9 @@ variant SKU**.
 **库存按样品规则**（和更新路径同一个 `_inventory_targets`）：
 100ml = 库存 − 2（留 2 瓶做样品/分装源），10ml/5ml = 只要还有 1 瓶就是 10。
 
-**分装价格**：10ml = 正装 × 17.5%，5ml = × 11.5%，四舍五入到 €0.05
-（`DECANT_PRICE_RATIO`）。这个比例是**照着线上现有产品反推的**，误差 ≤ €0.30；
-创建后在 Shopify 改了就是改了，**app 只写正装价格，不会覆盖分装价**。
+**分装价格（2026-11-01 起）**：10ml = 同款正装价格 × 10%，5ml = 同款正装价格 × 5% + €0.50，按 HALF_UP 四舍五入到 €0.01。
+创建和后续价格同步均使用此规则（`DECANT_PRICE_RATIO` / `DECANT_FIXED_FEE`）。
+即使正装价格没有变化，价格同步也会校准同一 Shopify 产品现有的 5ml / 10ml；仅同步库存时不改价格。
 **成本只写在正装上**——分装是一瓶的一部分，套用整瓶成本会让每笔分装看起来都在亏。
 
 ### 之前为什么不对
@@ -299,8 +299,8 @@ the way the storefront's existing ones are built — a product created with a si
   `on-hand − 2` (the last two bottles are the shop's samples), and the decants show
   `10` available while any bottle remains, `0` when the product is fully out. So a
   perfume with 9 on hand lists 7 full bottles and both decants.
-- **Prices**: the app's price on the 100ml; the decants at 17.5% and 11.5% of it,
-  rounded to 5 cents, matching what is already on the store. Cost is set on the
+- **Prices**: the app's full-bottle price; 10ml is 10%, and 5ml is 5% plus EUR0.50,
+  rounded half-up to cents on creation and ongoing price sync. Cost is set on the
   full bottle only.
 - **Title**: brand + series + name + EDP/EDT + volume, prettified (`Lattafa Khamrah
   Qahwa 100ml`), never the app's shouty upper case.

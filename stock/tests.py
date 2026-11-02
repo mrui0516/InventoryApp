@@ -5110,13 +5110,13 @@ class ShopifyCreateFormatTests(TestCase):
             self._perfume(default_price=Decimal("40.00"), stock=0))
         prices = {v['sku']: v['price'] for v in payload['variants']}
         self.assertEqual(prices["6290362349730"], '40.00')
-        self.assertEqual(prices["6290362349730-10ML"], '7.00')     # 17.5%
-        self.assertEqual(prices["6290362349730-5ML"], '4.60')      # 11.5%
+        self.assertEqual(prices["6290362349730-10ML"], '4.00')     # 10%
+        self.assertEqual(prices["6290362349730-5ML"], '2.50')      # 5% + EUR0.50
 
-    def test_decant_prices_round_to_five_cents(self):
+    def test_decant_prices_round_to_cents(self):
         from stock.services.shopify_sync import decant_price
-        self.assertEqual(decant_price(Decimal("49.99"), '-10ML'), Decimal("8.75"))
-        self.assertEqual(decant_price(Decimal("34.00"), '-5ML'), Decimal("3.90"))
+        self.assertEqual(decant_price(Decimal("49.99"), '-10ML'), Decimal("5.00"))
+        self.assertEqual(decant_price(Decimal("34.00"), '-5ML'), Decimal("2.20"))
 
     def test_only_the_full_bottle_carries_the_cost(self):
         # A decant is a share of a bottle; the bottle's cost on a 5ml would
