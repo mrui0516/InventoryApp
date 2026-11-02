@@ -6,13 +6,28 @@
   .ep-extra{ display:grid; gap:1rem; margin-top:1rem; }
   .ep-card{ background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius); padding:1rem; }
   .ep-card h2{ font-size:.78rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--app-muted); margin:0 0 .6rem; }
-  .ep-stock-total{ font-size:.92rem; margin-bottom:.5rem; }
-  .ep-batch{ display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:.2rem .9rem; align-items:center;
-    padding:.5rem 0; border-top:1px solid var(--app-border); font-size:.9rem; }
-  .ep-batch:first-of-type{ border-top:0; }
-  .ep-batch .when{ font-variant-numeric:tabular-nums; }
-  .ep-batch .sub{ color:var(--app-muted); font-size:.82rem; }
-  .ep-batch .left{ font-weight:800; font-variant-numeric:tabular-nums; text-align:right; }
+  .ep-stock-total{ display:flex; flex-wrap:wrap; gap:.3rem 1.2rem; font-size:.95rem; margin-bottom:.5rem; }
+  .ep-stock-total b{ font-variant-numeric:tabular-nums; }
+  /* a purchase per row: what it was, then a column per shop */
+  .ep-line{ display:grid; grid-template-columns:minmax(0,1fr) repeat(var(--cols,1), minmax(0,11rem)); gap:.3rem .9rem;
+    align-items:center; padding:.5rem 0; border-top:1px solid var(--app-border); font-size:.9rem; }
+  .ep-cols{ border-top:0; padding-top:0; font-size:.85rem; font-weight:700; color:var(--app-muted); }
+  .ep-cols small{ font-weight:500; }
+  .ep-what .when{ font-weight:700; font-variant-numeric:tabular-nums; }
+  .ep-what .sub{ color:var(--app-muted); font-size:.85rem; }
+  .ep-cell{ display:grid; gap:.3rem; min-width:0; }
+  .ep-part{ display:flex; align-items:center; justify-content:space-between; gap:.5rem; }
+  .ep-part .left{ font-weight:800; font-variant-numeric:tabular-nums; }
+  .ep-part .left small{ font-weight:500; color:var(--app-muted); font-size:.85rem; }
+  .ep-none{ color:var(--app-muted); }
+  .ep-fold summary{ color:var(--app-accent); font-weight:700; cursor:pointer; padding:.5rem 0; border-top:1px solid var(--app-border); }
+  @media (max-width:575.98px){
+    .ep-cols{ display:none; }
+    .ep-line{ grid-template-columns:repeat(var(--cols,1), minmax(0,1fr)); }
+    .ep-what{ grid-column:1 / -1; }
+    .ep-cell[data-label]::before{ content:attr(data-label); font-size:.85rem; font-weight:700; color:var(--app-muted); }
+    .ep-part .btn{ min-height:36px; }
+  }
   .ep-shops{ display:flex; flex-wrap:wrap; gap:.4rem 1.2rem; font-size:.95rem; margin-bottom:.6rem; }
   .ep-shops b{ font-variant-numeric:tabular-nums; }
   .ep-move{ display:grid; grid-template-columns:minmax(0,16rem) 6rem auto; justify-content:start; gap:.5rem; align-items:end; }
@@ -43,18 +58,24 @@
   {% if request.user.is_superuser %}
     <section class="ep-card" aria-label="Stock batches">
       <h2>Stock batches</h2>
-      <div class="ep-stock-total"><b id="current-stock-display">{{ total_stock }}</b> in stock</div>
+      <div class="ep-stock-total"><span><b id="current-stock-display">{{ total_stock }}</b> in stock</span>
+        {% for s in shop_split %}<span>{{ s.name }} <b data-shop-total="{{ s.id }}">{{ s.units }}</b></span>{% endfor %}</div>
       <div id="stock-batch-list">
-        {% for p in purchases %}
-          <div class="ep-batch" data-purchase-id="{{ p.id }}">
-            <div><span class="when">{{ p.date|date:"Y-m-d" }}</span>
-              <div class="sub">{% if p.store %}<b>{{ p.store.name }}</b> &middot; {% endif %}{{ p.quantity }} bought &middot; &euro;{{ p.cost_price|floatformat:2 }}{% if p.supplier %} &middot; {{ p.supplier.name }}{% endif %}</div></div>
-            <div class="left"><span class="remain-value">{{ p.remaining }}</span> left</div>
-            <button type="button" class="btn btn-sm btn-outline-secondary edit-remain-btn" data-purchase-id="{{ p.id }}" data-old="{{ p.remaining }}">Correct</button>
-          </div>
+        {% if batch_shown %}
+          <div class="ep-line ep-cols" style="--cols:{{ batch_columns|length|default:1 }}"><span>Purchase</span>
+            {% for s in batch_columns %}<span>{{ s.name }} <small>left / had</small></span>{% empty %}<span>Left / had</span>{% endfor %}</div>
+        {% endif %}
+        {% for line in batch_shown %}
+          {% include "stock/_ep_batch_line.html" %}
         {% empty %}
           <p class="text-muted mb-0">No purchase records.</p>
         {% endfor %}
+        {% if batch_folded %}
+          <details class="ep-fold">
+            <summary>{{ batch_folded|length }} older batch{{ batch_folded|length|pluralize:"es" }}, sold out</summary>
+            {% for line in batch_folded %}{% include "stock/_ep_batch_line.html" %}{% endfor %}
+          </details>
+        {% endif %}
       </div>
     </section>
   {% endif %}
@@ -99,7 +120,7 @@
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
-          <label for="new-remain-input" class="form-label">Remaining in this batch</label>
+          <label for="new-remain-input" class="form-label">Remaining in this shop, of this purchase</label>
           <input type="number" id="new-remain-input" class="form-control" min="0" max="100000" inputmode="numeric">
           <div class="form-text">Was <span id="old-remain-display">&mdash;</span>. Recorded in Audit &rarr; Stock.</div>
         </div>
@@ -112,7 +133,7 @@
   </div>
   <script>
   document.addEventListener('DOMContentLoaded', () => {
-    let currentEditPurchaseId = null;
+    let currentIds = '';
     const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('editRemainModal'));
     const newRemainInput = document.getElementById('new-remain-input');
     const oldRemainDisplay = document.getElementById('old-remain-display');
@@ -120,9 +141,10 @@
 
     document.querySelectorAll('.edit-remain-btn').forEach((button) => {
       button.addEventListener('click', () => {
-        currentEditPurchaseId = parseInt(button.dataset.purchaseId, 10);
+        currentIds = button.dataset.ids;
         oldRemainDisplay.textContent = button.dataset.old;
         newRemainInput.value = button.dataset.old;
+        newRemainInput.max = button.dataset.max;
         modal.show();
       });
     });
@@ -130,17 +152,25 @@
     document.getElementById('save-remain-btn').addEventListener('click', async () => {
       const newValue = parseInt(newRemainInput.value, 10);
       if (!Number.isFinite(newValue) || newValue < 0) { alert('Please enter a valid number.'); return; }
-      const response = await fetch('/api/adjust_purchase_stock/', {
+      const response = await fetch('{% url "api_adjust_batch_group" %}', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
-        body: JSON.stringify({ purchase_id: currentEditPurchaseId, new_remaining: newValue }),
+        body: JSON.stringify({ purchase_ids: currentIds.split(',').map(Number), new_remaining: newValue }),
       });
       const data = await response.json();
       if (!data.success) { alert(data.error || 'Could not update stock.'); return; }
-      const row = document.querySelector(`.ep-batch[data-purchase-id="${currentEditPurchaseId}"]`);
+      const row = document.querySelector(`.ep-part[data-ids="${currentIds}"]`);
       if (row) {
         row.querySelector('.remain-value').textContent = newValue;
         row.querySelector('.edit-remain-btn').dataset.old = newValue;
+        // the shop's own total in the header
+        const shop = row.dataset.shop;
+        const shopTotal = shop && document.querySelector(`[data-shop-total="${shop}"]`);
+        if (shopTotal) {
+          let sum = 0;
+          document.querySelectorAll(`.ep-part[data-shop="${shop}"] .remain-value`).forEach((n) => { sum += parseInt(n.textContent, 10) || 0; });
+          shopTotal.textContent = sum;
+        }
       }
       let total = data.inventory_snapshot?.product_total_stock;
       if (!Number.isFinite(total)) {

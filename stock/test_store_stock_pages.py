@@ -76,10 +76,9 @@ class SellPageTests(PagesMixin, TestCase):
 
     def test_the_product_pages_show_each_shop(self):
         html = self.client.get(reverse("product_list")).content.decode()
-        # one pill, a segment per shop: initial + units
-        self.assertIn('class="stock-seg', html)
-        self.assertIn("<i>K</i>3</span>", html)
-        self.assertIn("Khan Perfume 3 · Scentory 1 · 4 in all", html)
+        # in Scentory: its own units in the pill, Khan's under it
+        self.assertIn('title="Scentory 1 · Khan Perfume 3">1</span>', html)
+        self.assertIn('<span class="shop-other">Khan <b>3</b></span>', html)
         panel = self.client.get(reverse("product_panel", args=[self.product.id])).content.decode()
         self.assertIn("Khan 3 · Scentory 1", panel)
 
@@ -176,13 +175,29 @@ class OpeningSplitTests(ShopsMixin, TestCase):
 class ShopViewsTests(PagesMixin, TestCase):
     """2026-11-01: each shop's profit, the stock pill, one line per delivery."""
 
-    def test_the_shop_you_are_in_is_bold_in_the_pill(self):
+    def test_in_one_shop_the_list_counts_that_shops_stock(self):
         self.batch(self.khan, 3)
-        self.batch(self.scentory, 0)
         self.pick(self.scentory)
         html = self.client.get(reverse("product_list")).content.decode()
-        self.assertIn('<span class="seg here none"><i>S</i>0</span>', html)
-        self.assertIn('<span class="seg"><i>K</i>3</span>', html)
+        self.assertIn('<span class="stock-pill zero" title="Scentory 0 · Khan Perfume 3">0</span>', html)
+        self.assertIn('<span class="shop-other">Khan <b>3</b></span>', html)
+        self.assertNotIn("{#", html)            # a template comment must not leak onto the page
+        # out of stock here, though Khan has it
+        out = self.client.get(reverse("product_list"), {"stock_status": "out_of_stock"})
+        self.assertIn(self.product, list(out.context["page_obj"]))
+        self.pick(self.khan)
+        out = self.client.get(reverse("product_list"), {"stock_status": "out_of_stock"})
+        self.assertNotIn(self.product, list(out.context["page_obj"]))
+
+    def test_all_shops_show_the_total_and_each_shop(self):
+        self.batch(self.khan, 3)
+        self.batch(self.scentory, 4)
+        session = self.client.session
+        session["active_store_id"] = "all"
+        session.save()
+        html = self.client.get(reverse("product_list")).content.decode()
+        self.assertIn('title="7 in all">7</span><span class="shop-other"><span class="lbl">Khan</span><span class="ini">K</span> <b>3</b>'
+                      ' · <span class="lbl">Scentory</span><span class="ini">S</span> <b>4</b></span>', html)
 
     def test_a_delivery_lists_each_product_once_with_each_shops_part(self):
         supplier = Supplier.objects.create(name="Naypes")

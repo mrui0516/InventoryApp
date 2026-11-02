@@ -162,7 +162,7 @@
 
               <div class="ord-meta">
                 <span class="ord-cust">
-                  {% if order.customer_id %}<a href="{% url 'customer_detail' order.customer_id %}">{{ order.summary_customer }}</a>{% else %}{{ order.summary_customer }}{% endif %}
+                  {% if order.customer_id %}<a href="{% url 'customer_detail' order.customer_id %}">{{ order.summary_customer }}</a>{% else %}{{ order.summary_customer }}{% endif %}{% if order.customer and order.customer.kind == 'revenda' %}<span class="ch-tag revenda">Revenda</span>{% endif %}
                 </span>
                 <span class="ord-tags">
                   <span class="pill">{{ order.summary_qty }} pcs</span>

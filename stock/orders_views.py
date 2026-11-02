@@ -108,6 +108,7 @@ def resolve_params(get, today):
     payment = (get.get('payment') or '').strip().lower()
     if payment not in PAYMENT_LABELS:
         payment = ''
+    from .services.dashboard import normalise_channel
     try:
         page = max(int(get.get('page') or 1), 1)
     except (TypeError, ValueError):
@@ -122,6 +123,8 @@ def resolve_params(get, today):
         # still search.
         'q': (get.get('q') or get.get('product_q') or '').strip()[:80],
         'payment': payment,
+        # Retail / Revenda (wholesale) by the customer's type; '' = both
+        'ch': normalise_channel(get.get('ch')),
         'page': page,
         'year_raw': get.get('year'),
     }
@@ -139,6 +142,7 @@ def page_url(params, **changes):
         'end_date': params['end'].isoformat(),
         'q': params['q'] or None,
         'payment': params['payment'] or None,
+        'ch': params['ch'] or None,
     }
     if merged['layout'] == 'list':
         merged['layout'] = None
@@ -193,6 +197,8 @@ def load_orders(start, end, *, active_store, store_is_all, show_profit):
                 'customer': customer,
                 'customer_name': customer.name if customer else 'Walk-in',
                 'customer_url': reverse('customer_detail', args=[customer.id]) if customer else '',
+                # wholesale or retail, by the customer's type; walk-ins are retail
+                'kind': 'revenda' if (customer and customer.kind == 'revenda') else 'retail',
                 'store_name': order.store.name if (order and order.store_id) else '',
                 'created_at': created,
                 'day': created.date(),
@@ -276,6 +282,13 @@ def filter_payment(orders, payment):
     if not payment:
         return orders
     return [row for row in orders if row['pay'].get(payment, ZERO) > 0]
+
+
+def filter_channel(orders, channel):
+    """Retail or Revenda orders only (``''`` = both)."""
+    if not channel:
+        return orders
+    return [row for row in orders if row['kind'] == channel]
 
 
 def summarize(orders):
@@ -394,15 +407,52 @@ def _direct_edit_links(items, next_url):
         item.edit_url = urls[0] if len(urls) == 1 else ''
         item.edit_links = [] if len(urls) == 1 else [
             {'label': shop['label'], 'url': f"{reverse('direct_purchase_edit', args=[b.id])}?{urlencode({'next': next_url})}"}
-            for shop in item.shops for b in shop['batches']]
+            for shop in (item.shops or [{'label': 'batch', 'batches': item.parts}]) for b in shop['batches']]
 
 
-def load_purchases(start, end, q, next_url):
+def _scope_to_shop(items, store):
+    """A shop's part of a delivery: each line cut to what that shop received."""
+    kept = []
+    for item in items:
+        qty = item.by_shop.get(store.id, 0)
+        if qty:
+            item.quantity, item.shops = qty, []
+            item.parts = [b for b in item.parts if b.received_store_id == store.id]
+            kept.append(item)
+    return kept
+
+
+def _shop_totals(items, shop_names):
+    """``[{label, qty, cost}]`` - what each active shop received of these lines
+    (one that received nothing too, so every record names each shop)."""
+    from .services.store_stock import active_stores
+    out = {s.id: {'label': s.name.split()[0], 'qty': 0, 'cost': ZERO} for s in active_stores()}
+    if len(out) < 2:
+        return []
+    for item in items:
+        for shop_id, qty in item.by_shop.items():
+            row = out.setdefault(shop_id, {'label': (shop_names.get(shop_id) or 'No shop').split()[0],
+                                           'qty': 0, 'cost': ZERO})
+            row['qty'] += qty
+            row['cost'] += (item.cost_price or ZERO) * qty
+    return list(out.values())
+
+
+def load_purchases(start, end, q, next_url, store=None):
     """Inbound orders and direct purchases in the range, newest first.
 
-    Not filtered by store: a delivery is one purchase for both shops. Each
-    product shows once per delivery, with each shop's part (merge_batches).
+    Each product shows once per delivery (merge_batches, by the shop it was
+    delivered to). With ``store``: only what that shop received, at its own
+    quantities and cost. Without: everything, with each shop's part
+    (``shops``: quantity and cost) on every line and delivery.
     """
+    from .models import Store
+    shop_names = dict(Store.objects.values_list("id", "name"))
+
+    def lines_of(batches):
+        items = merge_batches(batches, by='received')
+        return _scope_to_shop(items, store) if store is not None else items
+
     groups = []
     inbound = (InboundOrder.objects
                .filter(created_at__date__gte=start, created_at__date__lte=end)
@@ -411,7 +461,9 @@ def load_purchases(start, end, q, next_url):
                                  'items__supplier')
                .order_by('-created_at'))
     for order in inbound:
-        items = _annotate_purchase_items(merge_batches(order.items.all()))
+        items = _annotate_purchase_items(lines_of(order.items.all()))
+        if not items:
+            continue
         supplier = order.supplier or next((i.supplier for i in items if i.supplier_id), None)
         created = timezone.localtime(order.created_at)
         groups.append({
@@ -426,6 +478,7 @@ def load_purchases(start, end, q, next_url):
             'items': items,
             'qty': sum(i.quantity for i in items),
             'cost': sum((i.line_total for i in items), ZERO),
+            'shops': [] if store is not None else _shop_totals(items, shop_names),
             'edit_url': (f"{reverse('inbound_order_edit', args=[order.id])}"
                          f"?{urlencode({'next': next_url})}"),
         })
@@ -439,7 +492,9 @@ def load_purchases(start, end, q, next_url):
     for purchase in direct:
         by_day[timezone.localtime(purchase.date).date()].append(purchase)
     for day, purchases in by_day.items():
-        items = _annotate_purchase_items(merge_batches(purchases))
+        items = _annotate_purchase_items(lines_of(purchases))
+        if not items:
+            continue
         _direct_edit_links(items, next_url)
         names = sorted({i.supplier.name for i in items if i.supplier_id})
         groups.append({
@@ -455,6 +510,7 @@ def load_purchases(start, end, q, next_url):
             'items': items,
             'qty': sum(i.quantity for i in items),
             'cost': sum((i.line_total for i in items), ZERO),
+            'shops': [] if store is not None else _shop_totals(items, shop_names),
             'edit_url': '',
         })
 
@@ -574,10 +630,14 @@ def orders_page(request):
         'payment_label': PAYMENT_LABELS.get(params['payment'], ''),
         'clear_q_url': page_url(params, q=None),
         'clear_payment_url': page_url(params, payment=None),
-        # The PDF prints what is on screen: same range, search and payment.
+        'channel': params['ch'],
+        'channel_urls': [{'label': label, 'on': params['ch'] == value, 'url': page_url(params, ch=value or None)}
+                         for value, label in (('', 'All'), ('retail', 'Retail'), ('revenda', 'Revenda'))],
+        # The PDF prints what is on screen: same range, search, payment and channel.
         'export_url': (f"{reverse('export_sales_purchases_pdf')}?" + urlencode(
             [(k, v) for k, v in (('start_date', start.isoformat()), ('end_date', end.isoformat()),
-                                 ('q', params['q']), ('payment', params['payment'])) if v])),
+                                 ('q', params['q']), ('payment', params['payment']),
+                                 ('ch', params['ch'])) if v])),
     }
 
     if view in ('sales', 'analysis'):
@@ -585,7 +645,8 @@ def orders_page(request):
                              store_is_all=store_is_all, show_profit=show_profit)
 
     if view == 'sales':
-        orders = filter_payment(search_orders(orders, params['q']), params['payment'])
+        orders = filter_channel(filter_payment(search_orders(orders, params['q']), params['payment']),
+                                params['ch'])
         summary = summarize(orders)
         context.update({
             'summary': summary,
@@ -621,16 +682,25 @@ def orders_page(request):
                 return render(request, 'stock/_orders_rows.html', context)
 
     elif view == 'purchases':
-        purchases = load_purchases(start, end, params['q'], request.get_full_path())
+        purchases = load_purchases(start, end, params['q'], request.get_full_path(),
+                                   store=None if store_is_all else active_store)
+        shop_totals = {}
+        for group in purchases:
+            for row in group['shops']:
+                total = shop_totals.setdefault(row['label'], {'label': row['label'], 'qty': 0, 'cost': ZERO})
+                total['qty'] += row['qty']
+                total['cost'] += row['cost']
         context.update({
             'purchases': purchases,
             'total_purchase_amount': sum((g['cost'] for g in purchases), ZERO),
             'total_purchase_orders': len(purchases),
             'total_purchase_qty': sum(g['qty'] for g in purchases),
+            'purchase_shop_totals': list(shop_totals.values()),
         })
 
     else:  # analysis
-        purchases = load_purchases(start, end, '', request.get_full_path())
+        purchases = load_purchases(start, end, '', request.get_full_path(),
+                                   store=None if store_is_all else active_store)
         trend, payment_chart, top_products = build_analysis(orders, purchases, show_profit)
         summary = summarize(orders)
         year = resolve_year(params['year_raw'], today)
@@ -681,7 +751,8 @@ def export_report(request):
 
     orders = load_orders(start, end, active_store=active_store, store_is_all=store_is_all,
                          show_profit=show_profit)
-    orders = filter_payment(search_orders(orders, params['q']), params['payment'])
+    orders = filter_channel(filter_payment(search_orders(orders, params['q']), params['payment']),
+                            params['ch'])
     summary = summarize(orders)
 
     days = {}
@@ -701,6 +772,8 @@ def export_report(request):
         filters.append(f'search "{params["q"]}"')
     if params['payment']:
         filters.append(f"paid by {PAYMENT_LABELS.get(params['payment'], params['payment'])}")
+    if params['ch']:
+        filters.append('Revenda only' if params['ch'] == 'revenda' else 'Retail only')
     store = None if (store_is_all or active_store is None) else active_store
     range_label = (start.strftime('%d/%m/%Y') if start == end else
                    f"{start.strftime('%d/%m/%Y')} - {end.strftime('%d/%m/%Y')}")

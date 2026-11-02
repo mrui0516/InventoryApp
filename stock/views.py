@@ -740,6 +740,10 @@ def inbound_view(request):
         'today': today,
         'pending_reviews': _build_pending_reviews(),
         'alloc_stores': shops if len(shops) > 1 else [],
+        # the shop's own receipts (all shops: each shop's part), this month
+        'records_url': f"{reverse('sales_records')}?"
+                       + urlencode({'view': 'purchases', 'start_date': today.replace(day=1).isoformat(),
+                                    'end_date': today.isoformat()}),
     }
 
     if request.method != 'POST':
@@ -1258,6 +1262,9 @@ def product_list_view(request):
     stock_status = (request.GET.get('stock_status') or '').strip()
     sort_by = (request.GET.get('sort') or 'latest').strip()
     active_store, _is_all = resolve_active_store(request)
+    from .services.store_stock import active_stores
+    # in one shop the stock column, its filters and its sort are that shop's
+    stock_store = None if _is_all or len(active_stores()) < 2 else active_store
     state = get_filtered_product_list_state(
         show_sales_sensitive=show_sales_sensitive,
         query=query,
@@ -1266,6 +1273,7 @@ def product_list_view(request):
         stock_status=stock_status,
         sort_by=sort_by,
         store=active_store,
+        stock_store=stock_store,
         **product_list_extras(request),
     )
 
@@ -1278,7 +1286,7 @@ def product_list_view(request):
     active_filter_labels = state['active_filter_labels']
 
     total_types = products_qs.count()
-    in_stock_types = products_qs.filter(total_stock__gt=0).count()
+    in_stock_types = products_qs.filter(list_stock__gt=0).count()
 
     paginator = Paginator(products_qs, 10)
     page_obj = paginator.get_page(page_with_focus(request, products_qs, 10))
@@ -1290,11 +1298,13 @@ def product_list_view(request):
     split = shop_split([p.id for p in page_obj], here=None if here_is_all else here)
     for p in page_obj:
         p.shop_split = split.get(p.id, [])
+        p.shop_here = next((s for s in p.shop_split if s['here']), None)
+        p.shop_others = [s for s in p.shop_split if not s['here']]
         p.display_price = p.default_price
         p.primary_image_url = get_product_image_url(p)
         p.in_transit = transit.get(p.id, 0)
 
-    total_stock = sum(p.total_stock for p in page_obj)
+    total_stock = sum(p.list_stock for p in page_obj)
     query_params = request.GET.copy()
     query_params.pop('page', None)
     context = {
@@ -1370,7 +1380,9 @@ def product_list_extras(request):
 
 
 def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_category, selected_brand, stock_status, sort_by, store=None,
-                                    perfume_type='', concentration='', gender=''):
+                                    perfume_type='', concentration='', gender='', stock_store=None):
+    """``stock_store``: the stock filters and sorts count that shop's units
+    (``list_stock``); without it, both shops together (as exports need)."""
     recent_sales_start = timezone.now() - timedelta(days=30)
     stock_subquery = (
         Purchase.objects
@@ -1403,6 +1415,13 @@ def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_cat
     products_qs = scope_products_by_store(Product.objects, store).annotate(
         total_stock=Coalesce(Subquery(stock_subquery, output_field=IntegerField()), Value(0), output_field=IntegerField()),
     )
+    if stock_store is not None:
+        shop_stock = (Purchase.objects.filter(product=OuterRef('pk'), store=stock_store)
+                      .values('product').annotate(total=Sum('remaining')).values('total')[:1])
+        products_qs = products_qs.annotate(
+            list_stock=Coalesce(Subquery(shop_stock, output_field=IntegerField()), Value(0), output_field=IntegerField()))
+    else:
+        products_qs = products_qs.annotate(list_stock=F('total_stock'))
     if show_sales_sensitive:
         products_qs = products_qs.annotate(
             total_sold_qty=Coalesce(Subquery(total_sales_subquery, output_field=IntegerField()), Value(0), output_field=IntegerField()),
@@ -1467,11 +1486,11 @@ def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_cat
             )
 
     if stock_status == 'in_stock':
-        products_qs = products_qs.filter(total_stock__gt=0)
+        products_qs = products_qs.filter(list_stock__gt=0)
     elif stock_status == 'low_stock':
-        products_qs = products_qs.filter(total_stock__gt=0, total_stock__lte=5)
+        products_qs = products_qs.filter(list_stock__gt=0, list_stock__lte=5)
     elif stock_status == 'out_of_stock':
-        products_qs = products_qs.filter(total_stock__lte=0)
+        products_qs = products_qs.filter(list_stock__lte=0)
 
     # Counted before the type itself is applied, so every type tab shows its own number.
     type_counts = dict(Product.objects.filter(id__in=products_qs.values('id'))
@@ -1491,8 +1510,8 @@ def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_cat
         'latest': ['-id'],
         'name_asc': ['brand', 'model', 'name', 'id'],
         'name_desc': ['-brand', '-model', '-name', '-id'],
-        'stock_desc': ['-total_stock', 'brand', 'model', 'name'],
-        'stock_asc': ['total_stock', 'brand', 'model', 'name'],
+        'stock_desc': ['-list_stock', 'brand', 'model', 'name'],
+        'stock_asc': ['list_stock', 'brand', 'model', 'name'],
         'sales_asc': ['total_sold_qty', 'recent_sold_qty', 'brand', 'model', 'name'],
         'sales_desc': ['-total_sold_qty', '-recent_sold_qty', 'brand', 'model', 'name'],
         'recent_sales_desc': ['-recent_sold_qty', '-total_sold_qty', 'brand', 'model', 'name'],
@@ -2113,7 +2132,7 @@ def product_detail_view(request, pk):
 
     purchases = product.purchase_set.select_related('supplier').order_by('-date')
     from .services.store_stock import merge_batches
-    purchase_lines = merge_batches(purchases)
+    purchase_lines = merge_batches(purchases, by='received')
     # the last three months show, older purchases fold away
     today = timezone.localdate()
     back = today.month - 3
@@ -2579,10 +2598,27 @@ def edit_product_view(request, pk):
     images = product.images.all()
     purchases = product.purchase_set.select_related('store', 'supplier').order_by('-date')
     purchase_count = product.purchase_set.count()
-    from .services.store_stock import active_stores, shop_split
+    from .services.store_stock import active_stores, merge_batches, shop_split
     shops = active_stores()
     shop_moves = [{'value': f'{a.id}-{b.id}', 'label': f'{a.name} → {b.name}'}
                   for a in shops for b in shops if a.id != b.id]
+    # Stock batches: a purchase per row, each shop's batches side by side; rows
+    # still holding stock (and the three newest) show, sold-out older ones fold.
+    columns = shops if len(shops) > 1 else []
+    batch_lines = merge_batches(purchases, by='store')
+    for n, line in enumerate(batch_lines):
+        if columns:
+            line.cells = [{'shop': s, 'batches': [b for b in line.parts if b.store_id == s.id]} for s in columns]
+        else:
+            line.cells = [{'shop': None, 'batches': line.parts}]
+        for cell in line.cells:
+            cell['left'] = sum(b.remaining for b in cell['batches'])
+            cell['had'] = sum(b.quantity for b in cell['batches'])
+            cell['ids'] = ','.join(str(b.id) for b in cell['batches'])
+            cell['shop_id'] = cell['shop'].id if cell['shop'] else ""
+        line.shown = line.remaining > 0 or n < 3
+    batch_shown = [line for line in batch_lines if line.shown]
+    batch_folded = [line for line in batch_lines if not line.shown]
     sale_count = product.sale_set.count()
     # total available stock (sum of remaining from all batches)
     total_stock = purchases.aggregate(s=Coalesce(Sum('remaining'), Value(0), output_field=IntegerField()))['s'] or 0
@@ -2594,6 +2630,9 @@ def edit_product_view(request, pk):
         'images': images,
         'purchases': purchases,
         'shop_moves': shop_moves,
+        'batch_columns': columns,
+        'batch_shown': batch_shown,
+        'batch_folded': batch_folded,
         'shop_split': shop_split([product.id]).get(product.id, []),
         'total_stock': total_stock,
         'purchase_count': purchase_count,
@@ -3915,7 +3954,7 @@ def supplier_detail_view(request, supplier_id):
             items = [item for item in order.items.all() if item.supplier_id == supplier.id]
         if not items:
             continue
-        items = merge_batches(items)       # one line per product, each shop's part on it
+        items = merge_batches(items, by='received')    # one line per product, each shop's part on it
 
         row_amount = Decimal('0.00')
         row_qty = 0
@@ -3977,7 +4016,7 @@ def supplier_detail_view(request, supplier_id):
         group_key = comparable_recorded_at(group_key)
         row_amount = Decimal('0.00')
         row_qty = 0
-        items = merge_batches(items)
+        items = merge_batches(items, by='received')
         _direct_edit_links(items, next_url)
         for item in items:
             item.line_total = (item.cost_price or Decimal('0.00')) * item.quantity
@@ -6381,6 +6420,61 @@ def api_adjust_purchase_stock(request):
         })
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
+
+
+# API: one shop's part of a purchase (one or more batches) corrected as one number
+@login_required
+@require_POST
+def api_adjust_batch_group(request):
+    """POST JSON ``{"purchase_ids": [1, 2], "new_remaining": 3}``.
+
+    The batches are one shop's part of one purchase (the edit page shows them
+    as one cell). Fewer units come off the oldest batches first, as selling
+    takes them; more go back into the newest that have room. Each changed
+    batch is logged like a single correction."""
+    if not has_manager_access(request.user):
+        return JsonResponse({'success': False, 'error': 'Permission denied'}, status=403)
+    try:
+        data = json.loads(request.body.decode('utf-8') if isinstance(request.body, bytes) else request.body)
+        ids = [int(x) for x in data.get('purchase_ids') or []]
+        target = int(data.get('new_remaining', 0))
+    except (TypeError, ValueError):
+        return JsonResponse({'success': False, 'error': 'Enter a whole number.'})
+    batches = list(Purchase.objects.select_related('product').filter(pk__in=ids).order_by('date', 'id'))
+    if not batches or len(batches) != len(set(ids)):
+        return JsonResponse({'success': False, 'error': 'Those batches are gone. Reload the page.'})
+    if len({(b.product_id, b.store_id) for b in batches}) != 1:
+        return JsonResponse({'success': False, 'error': 'Those batches are not one shop\'s part of one product.'})
+    capacity = sum(b.quantity for b in batches)
+    if target < 0:
+        return JsonResponse({'success': False, 'error': 'Stock cannot be negative'})
+    if target > capacity:
+        return JsonResponse({'success': False, 'error': f'At most {capacity}: that is how many came in.'})
+    current = sum(b.remaining for b in batches)
+    product = batches[0].product
+    with transaction.atomic():
+        change = target - current
+        order = batches if change < 0 else list(reversed(batches))
+        for batch in order:
+            if change == 0:
+                break
+            new = (max(batch.remaining + change, 0) if change < 0
+                   else min(batch.remaining + change, batch.quantity))
+            if new == batch.remaining:
+                continue
+            updated = Purchase.objects.filter(pk=batch.pk, remaining=batch.remaining).update(remaining=new)
+            if not updated:
+                transaction.set_rollback(True)
+                return JsonResponse({'success': False, 'error': 'Stock changed concurrently, please retry.'})
+            StockAdjustmentLog.objects.create(
+                user=request.user, product=product, purchase=batch, adjustment_type='purchase_remaining',
+                old_value=batch.remaining, new_value=new)
+            change -= new - batch.remaining
+        inventory_snapshot = build_inventory_snapshot(product)
+        from .services.pricing import sync_perfume_price
+        sync_perfume_price(product)
+    return JsonResponse({'success': True, 'old_remaining': current, 'new_remaining': target,
+                         'inventory_snapshot': inventory_snapshot})
 
 
 # API: 调整产品总库存（按 FIFO 创建/移除批次）

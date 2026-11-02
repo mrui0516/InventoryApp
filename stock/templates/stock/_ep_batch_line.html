@@ -1,0 +1,17 @@
+{# a purchase on the edit page: when, how many, cost; then each shop's part of it #}
+<div class="ep-line" style="--cols:{{ batch_columns|length|default:1 }}">
+  <div class="ep-what"><span class="when">{{ line.date|date:"Y-m-d" }}</span>
+    <div class="sub">{{ line.quantity }} bought &middot; &euro;{{ line.cost_price|floatformat:2 }}{% if line.supplier %} &middot; {{ line.supplier.name }}{% endif %}</div></div>
+  {% for cell in line.cells %}
+    <div class="ep-cell"{% if cell.shop %} data-label="{{ cell.shop.name }}"{% endif %}>
+      {% if cell.batches %}
+        <div class="ep-part" data-ids="{{ cell.ids }}" data-shop="{{ cell.shop_id }}">
+          <span class="left"><span class="remain-value">{{ cell.left }}</span><small> / {{ cell.had }}</small></span>
+          <button type="button" class="btn btn-sm btn-outline-secondary edit-remain-btn" data-ids="{{ cell.ids }}" data-old="{{ cell.left }}" data-max="{{ cell.had }}">Correct</button>
+        </div>
+      {% else %}
+        <span class="ep-none">&mdash;</span>
+      {% endif %}
+    </div>
+  {% endfor %}
+</div>

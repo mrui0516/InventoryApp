@@ -286,8 +286,13 @@ has_admin_access(user)          → is_superuser only
 目标店新建一批：同产品、同供应商、同进货单、同成本、**同日期**（`date` 是 auto_now_add，创建后再 update 回原日期），
 `transfer_line` 指向这次调货。整批未动过的货直接改 `store`。
 这样所有批次的进货数量之和不变——进货金额、供应商统计、FIFO 利润回溯、库存流水、进货单回滚都不用改；
-列表里用 `merge_batches(batches)` 把同一进货单（直接入库：同一秒）、同产品、同供应商、同成本的批次合并成一行
-（第一批的副本，`quantity` / `remaining` 求和，`parts` 是原批次，`shops` 是各店的部分），
+列表里用 `merge_batches(batches, by='store'|'received')` 把同一进货单（直接入库：同一秒）、同产品、同供应商、同成本的批次合并成一行
+（第一批的副本，`quantity` / `remaining` 求和，`parts` 是原批次，`by_shop` = `{店铺id: 件数}`，`shops` 是各店的部分；
+`by='store'` 按批次现在所在的店——编辑页改库存用；`by='received'` 按 `Purchase.received_store`——进货记录用）。
+`received_store`（迁移 0070）是货送到的店：新建时等于 `store`，`_split` 复制它，所以调货不改变一家店的入库量；
+迁移回填：没有 `transfer_line` 的批次 = 现在的店，调货产生的批次 = 那次调货的调出店。
+`load_purchases(…, store)`：选店时用 `_scope_to_shop` 把每行裁成这家店收到的部分（没有就整单不显示），
+全部店铺时 `_shop_totals` 给每张单列出每家活动店铺的件数和金额。
 Orders → Purchases（`orders_views.load_purchases`）、供应商页、产品详情页都用它；`receive_batches` 把同一行各店批次的 `date` 对齐，
 直接入库才合得上。直接入库合并后的 "Adjust" 由 `_direct_edit_links` 给每批一个链接。进货单编辑页和产品编辑页仍按批次（标了店名）。
 
@@ -323,7 +328,14 @@ Orders → Purchases（`orders_views.load_purchases`）、供应商页、产品�
 `sample_here`、`shops`（每家店的数量和是否有样品）；`check_barcode`（`?scope=stock` 时给合计）和 Pedido 草稿行都用它。
 
 **列表与页面**：`shop_split(product_ids, here=None)` 给每家店的 `name` / `label` / `initial` / `units` / `here`（只有一家店时为空）。
-产品列表用 `_stock_badge.html` 画成一个分段胶囊（首字母 + 件数，颜色按合计，`here` 加粗，0 标红）；侧栏 / 详情页显示"Khan 3 · Scentory 2"。
+产品列表用 `_stock_badge.html`：在某一家店里，彩色数字 = 本店件数（`p.shop_here`），下面小字 = 其它店（`p.shop_others`）；
+全部店铺时彩色数字 = 合计，下面写各店（手机用首字母）。`get_filtered_product_list_state(…, stock_store)` 给出 `list_stock`
+（选店时 = 该店件数，否则 = `total_stock`），库存筛选、排序和 "in stock" 计数都用它；导出不传 `stock_store`，仍按合计。
+侧栏 / 详情页显示"Khan 3 · Scentory 2"。编辑页 Stock batches 用 `merge_batches(by='store')`，每格一家店，
+`api_adjust_batch_group` 把一格（同一店同一产品的几个批次）改成一个总数。
+
+**销售渠道**（2026-11-02）：`orders_views.resolve_params` 读 `?ch=`（`dashboard.normalise_channel`），`load_orders` 给每单
+`kind`（客户类型 revenda / retail），`filter_channel` 在 Sales 列表和 Export PDF 里筛；Today 页模板直接看 `order.customer.kind`。
 看板选了一家店时库存部分（库存总量、Capital locked、Slow movers、香水库存）只算这家店。
 
 **Shopify 不变**：推送的仍是两店合计（`shopify_sync._inventory_targets`，有分装的 100ml 款 = 合计 − `DECANT_RESERVE`(2)，

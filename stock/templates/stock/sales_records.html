@@ -95,6 +95,10 @@
   .c-id{ font-weight:800; color:var(--app-primary); }
   .c-cust{ font-weight:600; }
   .c-hit{ display:block; font-size:.82rem; font-weight:700; color:var(--acc-ink); overflow:hidden; text-overflow:ellipsis; }
+  .c-cust .ch-tag{ font-size:.85rem; padding:.02rem .5rem; }
+  .c-shops{ display:block; font-size:.85rem; font-weight:500; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .c-shops b{ color:var(--app-text); font-variant-numeric:tabular-nums; }
+  .c-shops i{ font-style:normal; margin:0 .4rem; opacity:.5; }
   .c-qty,.c-amt{ text-align:right; }
   .c-amt{ font-weight:800; }
   .c-pay,.c-store{ color:var(--app-primary); font-size:.88rem; }
@@ -208,6 +212,7 @@
   {# ---- one query bar ---------------------------------------------------- #}
   <form method="get" class="op-query" id="op-query">
     {% if view != 'sales' %}<input type="hidden" name="view" value="{{ view }}">{% endif %}
+    {% if view == 'sales' and channel %}<input type="hidden" name="ch" value="{{ channel }}">{% endif %}
     {% if calendar_mode %}<input type="hidden" name="layout" value="calendar"><input type="hidden" name="month" value="{{ start_date|slice:':7' }}">{% endif %}
     {% if view == 'analysis' and params.year_raw %}<input type="hidden" name="year" value="{{ params.year_raw }}">{% endif %}
     <div class="op-qrow">
@@ -231,6 +236,9 @@
         </span></span>
       {% endif %}
       {% if view == 'sales' %}
+        <span><span class="op-seg-label">Channel</span><span class="op-seg">
+          {% for c in channel_urls %}<a class="{% if c.on %}on{% endif %}" href="{{ c.url }}">{{ c.label }}</a>{% endfor %}
+        </span></span>
         <span><span class="op-seg-label">Show as</span><span class="op-seg">
           <a class="{% if not calendar_mode %}on{% endif %}" href="{{ layout_urls.list }}">List</a>
           <a class="{% if calendar_mode %}on{% endif %}" href="{{ layout_urls.calendar }}">Calendar</a>
@@ -321,6 +329,7 @@
       <div class="op-kpi hi"><span class="k">Purchased</span><span class="v">EUR {{ total_purchase_amount|floatformat:"2g" }}</span><span class="s">{% if start_date == end_date %}{{ start_date }}{% else %}{{ start_date }} &rarr; {{ end_date }}{% endif %}</span></div>
       <div class="op-kpi"><span class="k">Receipts</span><span class="v">{{ total_purchase_orders }}</span></div>
       <div class="op-kpi"><span class="k">Items</span><span class="v">{{ total_purchase_qty }}</span></div>
+      {% for s in purchase_shop_totals %}<div class="op-kpi"><span class="k">{{ s.label }}</span><span class="v">EUR {{ s.cost|floatformat:"2g" }}</span><span class="s">{{ s.qty }} pcs</span></div>{% endfor %}
     </div>
     <div class="op-list">
       {% for group in purchases %}
@@ -331,7 +340,7 @@
           <button type="button" class="op-open" data-layer="pl-{{ group.key }}">
             <span class="c-time">{{ group.created_at|date:"H:i" }}</span>
             <span class="c-id">{{ group.short_ref }}</span>
-            <span class="c-cust">{{ group.supplier_name }}{% if group.matched_items %}<span class="c-hit">{% for item in group.matched_items|slice:":2" %}{{ item.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>{% endif %}</span>
+            <span class="c-cust">{{ group.supplier_name }}{% if group.matched_items %}<span class="c-hit">{% for item in group.matched_items|slice:":2" %}{{ item.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>{% endif %}{% if group.shops %}<span class="c-shops">{% for s in group.shops %}{{ s.label }} <b>{{ s.qty }}</b> &middot; &euro;{{ s.cost|floatformat:2 }}{% if not forloop.last %}<i>|</i>{% endif %}{% endfor %}</span>{% endif %}</span>
             <span class="c-qty">{{ group.qty }}<small> pcs</small></span>
             <span class="c-amt">EUR {{ group.cost|floatformat:2 }}</span>
             <span class="c-pay">{{ group.invoice_no }}</span>
@@ -346,6 +355,7 @@
               {% for item in group.items %}<div class="ol-item{% if item.is_match %} is-hit{% endif %}">{% include "stock/_purchase_order_item.html" %}</div>{% endfor %}
             </div>
             <dl class="ol-totals">
+              {% if group.shops %}{% for s in group.shops %}<div><dt>{{ s.label }}</dt><dd>{{ s.qty }} pcs &middot; EUR {{ s.cost|floatformat:2 }}</dd></div>{% endfor %}{% endif %}
               <div><dt>Items</dt><dd>{{ group.qty }}</dd></div>
               <div class="grand"><dt>Cost</dt><dd>EUR {{ group.cost|floatformat:2 }}</dd></div>
             </dl>
@@ -362,7 +372,7 @@
     <div class="op-kpis">
       <div class="op-kpi hi"><span class="k">Sales</span><span class="v">EUR {{ total_sales_amount|floatformat:"2g" }}</span><span class="s">{% if start_date == end_date %}{{ start_date }}{% else %}{{ start_date }} &rarr; {{ end_date }}{% endif %}</span></div>
       {% if show_profit %}<div class="op-kpi"><span class="k">Gross profit</span><span class="v">EUR {{ total_sales_profit|floatformat:"2g" }}</span><span class="s">{{ summary.margin }}% of sales</span></div>{% endif %}
-      <div class="op-kpi"><span class="k">Purchased</span><span class="v">EUR {{ total_purchase_amount|floatformat:"2g" }}</span><span class="s">all stores</span></div>
+      <div class="op-kpi"><span class="k">Purchased</span><span class="v">EUR {{ total_purchase_amount|floatformat:"2g" }}</span><span class="s">{{ store_label }}</span></div>
     </div>
 
     {% if trend_data %}

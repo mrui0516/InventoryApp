@@ -48,15 +48,21 @@ def shop_split(product_ids, here=None):
             for pid in product_ids}
 
 
-def merge_batches(batches):
+def merge_batches(batches, by='store'):
     """One line per product and price for goods that came in together.
 
     A received line is stored as one batch per shop, and a transfer splits a
     batch again, but it was one purchase. Batches of the same delivery (or, for
     a direct stock-in, of the same moment), product, supplier and cost become
     one line: the first batch, carrying the summed ``quantity`` / ``remaining``
-    and ``parts`` (the batches). ``shops`` lists each shop's part
-    (``label``, ``quantity``, ``remaining``, ``batches``) when there are several."""
+    and ``parts`` (the batches).
+
+    ``by``: ``'store'`` splits a line by the shop holding each batch now (stock
+    to correct), ``'received'`` by the shop it was delivered to (purchase
+    records). ``by_shop`` is ``{shop_id: quantity}``; ``shops`` lists each
+    shop's part (``id``, ``label``, ``quantity``, ``remaining``, ``batches``)
+    when there are several."""
+    shop_of = (lambda b: b.received_store_id) if by == 'received' else (lambda b: b.store_id)
     lines, by_key = [], {}
     for batch in batches:
         key = (batch.product_id, batch.inbound_order_id, batch.supplier_id, batch.cost_price,
@@ -72,13 +78,16 @@ def merge_batches(batches):
     order = {s.id: n for n, s in enumerate(active_stores())}
     names = dict(Store.objects.values_list('id', 'name'))
     for line in lines:
+        line.by_shop = defaultdict(int)
+        for batch in line.parts:
+            line.by_shop[shop_of(batch)] += batch.quantity
         line.shops = []
-        if len({b.store_id for b in line.parts}) < 2:
+        if len(line.by_shop) < 2:
             continue
         shops = {}
         for batch in line.parts:
-            shop = shops.setdefault(batch.store_id, {
-                'label': (names.get(batch.store_id) or 'No shop').split()[0],
+            shop = shops.setdefault(shop_of(batch), {
+                'id': shop_of(batch), 'label': (names.get(shop_of(batch)) or 'No shop').split()[0],
                 'quantity': 0, 'remaining': 0, 'batches': []})
             shop['quantity'] += batch.quantity
             shop['remaining'] += batch.remaining
@@ -145,7 +154,8 @@ def _split(batch, used, to_store, line):
         raise _conflict(product)
     moved = Purchase.objects.create(
         product=product, supplier_id=batch.supplier_id, inbound_order_id=batch.inbound_order_id,
-        store=to_store, quantity=used, remaining=used, cost_price=batch.cost_price, transfer_line=line)
+        store=to_store, received_store_id=batch.received_store_id,
+        quantity=used, remaining=used, cost_price=batch.cost_price, transfer_line=line)
     # date is auto_now_add: the moved units keep the day they were bought
     Purchase.objects.filter(pk=moved.pk).update(date=batch.date)
     return Decimal(used) * (batch.cost_price or Decimal('0.00'))

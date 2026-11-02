@@ -109,6 +109,7 @@ urlpatterns = [
     path('ar/<int:invoice_id>/add-items/', views.ar_add_items_view, name='ar_add_items'),
 
     path('api/adjust_purchase_stock/', views.api_adjust_purchase_stock, name='api_adjust_purchase_stock'),
+    path('api/adjust_batch_group/', views.api_adjust_batch_group, name='api_adjust_batch_group'),
     path('api/adjust_total_stock/', views.api_adjust_total_stock, name='api_adjust_total_stock'),
 ]
 

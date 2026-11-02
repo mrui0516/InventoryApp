@@ -12,7 +12,7 @@
 |---|---|---|
 | 线上运行 | ✅ PythonAnywhere 欧盟区 | `https://scentory.eu.pythonanywhere.com`，两家店（Khan Perfume、Scentory）日常收银、入库都在线上；线上 `db.sqlite3` 是唯一准数据 |
 | 自动化测试 | ✅ 872 个全部通过 | `python manage.py test stock restock_alerts`，在干净导出上跑 |
-| 数据库迁移 | ✅ 最新 `0069_shop_settings_and_transfer_undo`，无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
+| 数据库迁移 | ✅ 最新 `0070_batch_received_store`，无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
 | 生产配置 | ✅ `DEBUG=False`，密钥只在服务器 `.env` | `settings.py` 的 `if not DEBUG` 块：强制 HTTPS、安全 Cookie、HSTS、防点击劫持 |
 | 数据备份 | ✅ 每日快照 + 本机拉取 | PA 定时任务 `backup_db --keep 30`，本机 `scripts/pull_backup_from_pa.py` 拉到 U 盘；Settings → Tools 可手动下载。见 [BACKUP.md](./BACKUP.md) |
 | 错误日志 | ✅ Settings → Audit → Errors | 500 崩溃、安全警告、Cloudinary/Shopify 警告写入 `ErrorLog` 与 PA 错误日志 |
@@ -73,6 +73,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-11-02: **按店的入库记录 + 编辑页批次按店并排 + 产品列表库存按店 + 销售渠道筛选。** (1) Inbound 页 "Inbound records" 链到 Orders → Purchases；选店时只列这家店收到的货（`Purchase.received_store`，迁移 0070，调货不改变它），全部店铺时每张单写各店件数与金额、顶部每店一个数字格。(2) 编辑页 Stock batches：一次进货一行，右边每家店一列"剩余 / 原有"，同店多个小批次合成一格用一个 Correct 改总数（新接口 `api_adjust_batch_group`）；售完的旧批次折叠。(3) 产品列表：在某家店里彩色数字是本店件数、下面小字另一家，筛选 / 排序 / in stock 计数按本店；全部店铺时显示合计和各店（手机用首字母）。(4) Orders → Sales 加 Channel: All / Retail / Revenda（也作用于 Export PDF），All 时批发单标 "Revenda"；Today 页批发单同样标注。新增 13 个测试。
 - 2026-11-01: **按店设置 + 撤销调货 + 编辑页免费调货。** (1) 刷卡手续费和每月销售目标按店（迁移 0069：`Store.card_fee_pct` 沿用原费率；`SalesTarget` 加 `store`，原目标归 Khan Perfume）；Settings → Fees 改名 **Shop settings**，在一页里填两家店的费率、各分类目标和调货加价；看板目标选店时只算该店。(2) Transfers：手动 / 盘点 / 期初调货可 Undo（货退回、记录与欠款删除；调入店剩下的不够时拒绝），收银自动调货只能 Waive（欠款清零），结账记录可 Delete。(3) 产品编辑页 "Move between shops"：免费调货（新类型 Stock count，不记欠款），Transfers 页也可勾 No charge。(4) 产品详情页：销售改为近 30 天；进货只显示近 3 个月，更早的折叠；供应商与成本按合并后的进货计数。新增 13 个测试。
 - 2026-11-01: **修复产品列表变灰行。** 铃铛关闭且缺货的行，产品名和价格被套上黑色胶囊框、Retail / Wholesale 挤成一行：店铺库存的样式插进了变灰行那条多选择器规则的中间。样式移出，加了回归测试。
 - 2026-11-01: **单店利润含调货加价 + 产品列表库存列重做 + 进货记录合并。** (1) 调货按"卖给另一家店"算：调货当天调出店 + 加价、调入店 − 加价（`store_stock.transfer_margins`），看板选店时毛利 / 环比 / 渠道卡片 / 全年分月利润和店铺对比都包含，毛利卡片显示 "transfers ±EUR X"；公司合计不变。(2) 产品列表库存列改成一个分段胶囊 "K 2 │ S 2"（颜色按合计，当前店加粗，0 标红），在途只留 "🚚+6"，手机上店铺行去掉。(3) 同一进货单同一款同一成本只显示一行，带各店数量（Orders → Purchases、供应商页、产品详情页，`merge_batches`）；直接入库各店批次时间对齐，"Adjust" 按店给链接；进货单编辑页每行标店名。删掉 Purchases 页 "Stock is shared between the shops" 那句过时说明。新增 10 个测试。

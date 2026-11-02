@@ -101,6 +101,11 @@ class Purchase(models.Model):
     # Set on a batch made by moving units from another shop's batch.
     transfer_line = models.ForeignKey('StockTransferLine', on_delete=models.SET_NULL,
                                       null=True, blank=True, related_name='batches')
+    # The shop the goods were delivered to. It never changes: a transfer moves
+    # the units (``store``) and the batch it makes keeps this, so a shop's
+    # inbound record stays what it received.
+    received_store = models.ForeignKey('Store', on_delete=models.PROTECT, null=True, blank=True,
+                                       related_name='received_batches')
 
     def __str__(self):
         return f"{self.product.name} - {self.quantity} - {self.date:%Y-%m-%d %H:%M}"
@@ -109,6 +114,8 @@ class Purchase(models.Model):
         if self.store_id is None and self._state.adding:
             from .core import Store
             self.store = Store.get_default()
+        if self.received_store_id is None and self._state.adding:
+            self.received_store_id = self.store_id
         super().save(*args, **kwargs)
 
     class Meta:

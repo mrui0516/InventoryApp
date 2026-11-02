@@ -153,3 +153,138 @@ class ProductPageListsTests(PagesMixin, TestCase):
         self.assertIn("6 bought", older)
         self.assertIn("Sales &middot; last 30 days", html)
         self.assertNotIn("No sales in the last 30 days", html)
+
+
+class InboundRecordsPerShopTests(PagesMixin, TestCase):
+    """2026-11-02: each shop's inbound record is what it received, also after transfers."""
+
+    def setUp(self):
+        super().setUp()
+        from .models import InboundOrder, Supplier
+        supplier = Supplier.objects.create(name="Naypes")
+        self.order = InboundOrder.objects.create(supplier=supplier, status="received")
+        store_stock.receive_batches(product=self.product, quantity=6, cost_price=Decimal("10"),
+                                    allocation={self.khan.id: 4, self.scentory.id: 2},
+                                    supplier=supplier, inbound_order=self.order)
+
+    def purchases(self, store):
+        session = self.client.session
+        session["active_store_id"] = store
+        session.save()
+        return self.client.get(reverse("sales_records"), {"view": "purchases"})
+
+    def test_a_transfer_does_not_change_what_a_shop_received(self):
+        store_stock.move_units(self.product, 3, self.khan, self.scentory)
+        self.assertEqual(sorted(Purchase.objects.values_list("received_store_id", flat=True)),
+                         sorted([self.khan.id, self.khan.id, self.scentory.id]))
+        page = self.purchases(self.scentory.id)
+        self.assertEqual(page.context["total_purchase_qty"], 2)
+        self.assertEqual(page.context["total_purchase_amount"], Decimal("20.00"))
+        page = self.purchases(self.khan.id)
+        self.assertEqual(page.context["total_purchase_qty"], 4)
+
+    def test_all_shops_show_each_shops_quantity_and_cost(self):
+        page = self.purchases("all")
+        self.assertEqual(page.context["total_purchase_qty"], 6)
+        self.assertEqual([(s["label"], s["qty"], s["cost"]) for s in page.context["purchase_shop_totals"]],
+                         [("Khan", 4, Decimal("40.00")), ("Scentory", 2, Decimal("20.00"))])
+        html = page.content.decode()
+        self.assertIn("Khan <b>4</b> &middot; &euro;40.00", html)
+        self.assertIn("Scentory <b>2</b> &middot; &euro;20.00", html)
+
+    def test_a_shop_that_received_nothing_has_no_record(self):
+        from .models import Store
+        other = Store.objects.create(name="Third", code="T3")
+        self.assertEqual(self.purchases(other.id).context["purchases"], [])
+
+    def test_the_inbound_page_links_to_the_records(self):
+        html = self.client.get(reverse("inbound")).content.decode()
+        self.assertIn(">Inbound records</a>", html)
+        self.assertIn("view=purchases", html)
+
+
+class StockBatchesTests(PagesMixin, TestCase):
+    def test_a_purchase_is_one_row_with_each_shops_batches_and_old_ones_fold(self):
+        from .models import InboundOrder
+        order = InboundOrder.objects.create(status="received")
+        store_stock.receive_batches(product=self.product, quantity=5, cost_price=Decimal("10"),
+                                    allocation={self.khan.id: 3, self.scentory.id: 2}, inbound_order=order)
+        for n in range(4):               # older purchases, sold out
+            self.batch(self.khan, 0, cost=str(20 + n), days_ago=100 + n)
+        page = self.client.get(reverse("edit_product", args=[self.product.id]))
+        shown, folded = page.context["batch_shown"], page.context["batch_folded"]
+        self.assertEqual(len(shown), 3)            # the delivery + the two newest empty ones
+        self.assertEqual(len(folded), 2)
+        first = shown[0]
+        self.assertEqual([(c["shop"].name, [b.remaining for b in c["batches"]]) for c in first.cells],
+                         [("Khan Perfume", [3]), ("Scentory", [2])])
+        self.assertContains(page, "2 older batches, sold out")
+
+
+class SalesChannelTests(PagesMixin, TestCase):
+    """2026-11-02: Orders -> Sales shows Retail, Revenda or both; Revenda orders are tagged."""
+
+    def setUp(self):
+        super().setUp()
+        from .models import Customer
+        session = self.client.session
+        session["active_store_id"] = "all"
+        session.save()
+        trade = Customer.objects.create(name="Loja Atacado", kind="revenda")
+        self.revenda = SaleOrder.objects.create(store=self.khan, customer=trade)
+        self.retail = SaleOrder.objects.create(store=self.khan)
+        for order, price in ((self.revenda, "30"), (self.retail, "50")):
+            Sale.objects.create(order=order, product=self.product, quantity=1, unit_price=Decimal(price),
+                                store=self.khan, customer=order.customer)
+
+    def ids(self, **params):
+        page = self.client.get(reverse("sales_records"), params)
+        return {row["order_id"] for row in page.context["orders"]}, page
+
+    def test_the_channel_picks_the_orders(self):
+        self.assertEqual(self.ids()[0], {self.revenda.id, self.retail.id})
+        self.assertEqual(self.ids(ch="revenda")[0], {self.revenda.id})
+        ids, page = self.ids(ch="retail")
+        self.assertEqual(ids, {self.retail.id})
+        self.assertEqual(page.context["total_sales_amount"], Decimal("50"))
+
+    def test_all_tags_the_revenda_orders(self):
+        _ids, page = self.ids()
+        html = page.content.decode()
+        self.assertEqual(html.count('Loja Atacado<span class="ch-tag revenda">Revenda</span>'), 1)
+        self.assertIn("ch=revenda\">Revenda</a>", html)
+
+    def test_the_pdf_follows_the_channel(self):
+        response = self.client.get(reverse("export_sales_purchases_pdf"), {"ch": "revenda"})
+        self.assertEqual(response.status_code, 200)
+
+    def test_today_tags_the_revenda_orders(self):
+        html = self.client.get(reverse("daily_summary")).content.decode()
+        self.assertIn('<span class="ch-tag revenda">Revenda</span>', html)
+
+
+class BatchGroupCorrectionTests(PagesMixin, TestCase):
+    def setUp(self):
+        super().setUp()
+        self.old = self.batch(self.scentory, 3, days_ago=5)
+        self.new = self.batch(self.scentory, 2)
+
+    def post(self, ids, n):
+        import json
+        return self.client.post(reverse("api_adjust_batch_group"),
+                                json.dumps({"purchase_ids": ids, "new_remaining": n}),
+                                content_type="application/json").json()
+
+    def test_fewer_come_off_the_oldest_and_more_go_into_the_newest(self):
+        self.assertTrue(self.post([self.old.id, self.new.id], 4)["success"])
+        self.old.refresh_from_db(); self.new.refresh_from_db()
+        self.assertEqual((self.old.remaining, self.new.remaining), (2, 2))
+        Purchase.objects.filter(pk=self.new.pk).update(remaining=0)
+        self.assertTrue(self.post([self.old.id, self.new.id], 3)["success"])
+        self.old.refresh_from_db(); self.new.refresh_from_db()
+        self.assertEqual((self.old.remaining, self.new.remaining), (2, 1))
+
+    def test_no_more_than_came_in_and_one_shop_only(self):
+        self.assertIn("At most 5", self.post([self.old.id, self.new.id], 6)["error"])
+        khan = self.batch(self.khan, 1)
+        self.assertFalse(self.post([self.old.id, khan.id], 1)["success"])

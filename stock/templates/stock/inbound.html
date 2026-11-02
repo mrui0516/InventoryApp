@@ -4,7 +4,14 @@
 {% block title %}Inbound{% endblock %}
 
 {% block content %}
-<h1 class="pos-title mb-4">Inbound &mdash; Add stock</h1>
+<div class="inb-head">
+  <h1 class="pos-title mb-0">Inbound &mdash; Add stock</h1>
+  <a class="btn btn-outline-primary" href="{{ records_url }}">Inbound records</a>
+</div>
+<style>
+  .inb-head{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.6rem 1rem; margin-bottom:1.5rem; }
+  .inb-head .btn{ min-height:40px; }
+</style>
 
 {% if error %}<div class="alert alert-danger mt-3" role="alert">{{ error }}</div>{% endif %}
 {% if success %}<div class="alert alert-success mt-3" role="alert">{{ success }}</div>{% endif %}
