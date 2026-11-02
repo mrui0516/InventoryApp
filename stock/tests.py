@@ -8544,16 +8544,19 @@ class OrdersPageTests(TestCase):
         response = self._get(view="purchases")
         self.assertNotContains(response, "not split by store")
 
-    def test_purchases_are_not_cut_down_by_the_active_store(self):
+    def test_purchases_follow_the_shop_that_received_them(self):
+        # 2026-11-02: a shop sees what it received; all shops see everything
         store = Store.objects.create(name="Lisboa OP", code="OPL")
-        session = self.client.session
-        session["active_store_id"] = store.id
-        session.save()
         inbound = InboundOrder.objects.create(invoice_no="OP-1")
         Purchase.objects.create(inbound_order=inbound, product=self.a, quantity=2,
-                                remaining=2, cost_price=Decimal("3"))
-        response = self._get(view="purchases")
-        self.assertEqual(response.context["total_purchase_amount"], Decimal("6.00"))
+                                remaining=2, cost_price=Decimal("3"), store=store)
+        other = Store.objects.create(name="Porto OP", code="OPP")
+        session = self.client.session
+        for picked, amount in ((store.id, Decimal("6.00")), (other.id, Decimal("0")), ("all", Decimal("6.00"))):
+            session["active_store_id"] = picked
+            session.save()
+            response = self._get(view="purchases")
+            self.assertEqual(response.context["total_purchase_amount"], amount, picked)
 
     def test_the_old_year_link_lands_in_analysis(self):
         response = self._get(view="year")
