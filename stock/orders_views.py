@@ -40,6 +40,7 @@ from .permissions import (has_admin_access, has_manager_access,
                           has_order_reconciliation_access,
                           has_sales_sensitive_access)
 from .services.store_stock import merge_batches
+from .services.inbound_rollback import can_roll_back
 from .services.dashboard import (build_yearly_sales_overview,
                                  order_tender_amounts, resolve_year)
 from .services.profit import sale_profit_map_for_sale_ids
@@ -497,6 +498,7 @@ def load_purchases(start, end, q, next_url, store=None, by='received'):
         if not items:
             continue
         supplier = order.supplier or next((i.supplier for i in items if i.supplier_id), None)
+        rollback_ok, rollback_reason = can_roll_back(order) if batches else (False, '')
         paid = timezone.localtime(order.created_at)
         arrived = timezone.localtime(min(b.date for b in batches)) if batches else None
         created = paid if by == 'paid' or arrived is None else arrived
@@ -518,26 +520,41 @@ def load_purchases(start, end, q, next_url, store=None, by='received'):
             'shops': [] if store is not None else _shop_totals(items, shop_names),
             'edit_url': (f"{reverse('inbound_order_edit', args=[order.id])}"
                          f"?{urlencode({'next': next_url})}"),
+            'rollback_url': (reverse('inbound_order_rollback', args=[order.id])
+                             if order.status == 'received' and batches else ''),
+            'can_rollback': rollback_ok if batches else False,
+            'rollback_reason': rollback_reason if batches else '',
         })
 
     direct = (Purchase.objects
               .filter(inbound_order__isnull=True, date__date__gte=start, date__date__lte=end)
               .select_related('product', 'supplier')
               .prefetch_related('product__images')
-              .order_by('-date', '-id'))
-    by_day = defaultdict(list)
+              .order_by('date', 'id'))
+    # One stock-in = the batches saved together (a cart is saved in well under
+    # a few seconds; two stock-ins are never that close).
+    stock_ins = []
     for purchase in direct:
-        by_day[timezone.localtime(purchase.date).date()].append(purchase)
-    for day, purchases in by_day.items():
+        if stock_ins and (purchase.date - stock_ins[-1][-1].date).total_seconds() <= 10:
+            stock_ins[-1].append(purchase)
+        else:
+            stock_ins.append([purchase])
+    from .services.inbound_rollback import can_roll_back_direct
+    for purchases in stock_ins:
+        day = timezone.localtime(purchases[0].date).date()
         items = _annotate_purchase_items(lines_of(purchases))
         if not items:
             continue
         _direct_edit_links(items, next_url)
         names = sorted({i.supplier.name for i in items if i.supplier_id})
+        rollback_ok, rollback_reason = can_roll_back_direct(purchases)
         groups.append({
-            'key': f'direct-{day.isoformat()}',
-            'ref': 'Direct purchases',
+            'key': f'direct-{purchases[0].id}',
+            'ref': 'Stock-in without supplier',
             'short_ref': 'Direct',
+            'rollback_ids': ','.join(str(b.id) for b in purchases),
+            'can_rollback': rollback_ok,
+            'rollback_reason': rollback_reason,
             'invoice_no': '',
             'supplier_name': (names[0] if len(names) == 1 else
                               'Mixed suppliers' if names else 'No supplier linked'),

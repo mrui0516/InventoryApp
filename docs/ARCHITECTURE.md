@@ -351,7 +351,7 @@ Orders → Purchases（`orders_views.load_purchases`）、供应商页、产品�
 把收货那一步整个反过来做（`services/inbound_rollback.py`）：
 
 1. 删掉这张单产生的 `Purchase` 批次 → 库存跟着回退
-2. 按批次原样重建 `InboundPendingItem` → 单子回到「待收货」，可以重新确认
+2. 按产品和单价合并重建 `InboundPendingItem`，`allocation` 取各批次的 `received_store`（2026-11-02 起）→ 单子回到「待收货」，重新确认时不用再分店
 3. `status='pending_receipt'`、`received_at=None` → 同时**退出供应商时效统计**（本来就没到货）
 
 **唯一的硬规则：这批货一件都不能卖过。**
@@ -364,6 +364,8 @@ Orders → Purchases（`orders_views.load_purchases`）、供应商页、产品�
 而那个 signal 正是通知 Shopify 库存减少、以及重算香水价格的地方。
 
 限经理操作（删库存的动作，不该和误点收货的是同一个人随手完成）。
+
+**入口与直接入库**（2026-11-02）：Orders → Purchases 的记录面板底部也有 **Roll back**（`load_purchases` 给每组 `rollback_url` / `rollback_ids` / `can_rollback` / `rollback_reason`）。没有供应商的直接入库（2026-11-02 起不能再建，`inbound_view` 拒绝）按"同一次保存"分组：按时间排序，相邻批次相差 ≤ 10 秒算同一次；`roll_back_direct(ids)` → `direct_stock_in_rollback` 视图。`_untouched()` 是两者共用的规则：有批次卖过（`remaining != quantity`）或带 `transfer_line`（调到了另一家店，调货单还记着欠款）就整体拒绝。
 
 ### 5.9b 供应商到货时效（Supplier lead time）
 

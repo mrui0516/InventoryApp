@@ -38,6 +38,12 @@ def can_roll_back(order):
     if not batches:
         return False, 'This order has no stock batches to remove.'
 
+    return _untouched(batches)
+
+
+def _untouched(batches):
+    """``(allowed, reason)``: nothing sold from the batches, nothing moved to
+    the other shop (that transfer would still say what it owes)."""
     sold = [b for b in batches if b.remaining != b.quantity]
     if sold:
         names = ', '.join(sorted({b.product.display_name for b in sold})[:3])
@@ -45,6 +51,11 @@ def can_roll_back(order):
             f'Some of this stock has already been sold ({names}). '
             'Rolling back would leave those sales describing stock that no '
             'longer exists - correct the sales first.')
+    moved = [b for b in batches if b.transfer_line_id]
+    if moved:
+        names = ', '.join(sorted({b.product.display_name for b in moved})[:3])
+        return False, (f'Some of it was moved to the other shop ({names}). '
+                       'Undo that transfer on Transfers first.')
     return True, ''
 
 
@@ -59,17 +70,28 @@ def roll_back_receipt(order, user=None):
         # button being pressed, someone at the till may have sold one.
         batches = list(Purchase.objects.select_related('product')
                        .filter(inbound_order=order))
-        if any(b.remaining != b.quantity for b in batches):
-            return False, ('That stock was sold while this page was open. '
-                           'Nothing has been changed.')
+        allowed, reason = _untouched(batches)
+        if not allowed:
+            return False, reason
 
-        restored = 0
+        # One pending line per product and price, with the split between the
+        # shops it was received with, so receiving it again needs no retyping.
+        lines = {}
         for batch in batches:
+            line = lines.setdefault((batch.product_id, batch.cost_price),
+                                    {'product': batch.product, 'quantity': 0, 'allocation': {}})
+            line['quantity'] += batch.quantity
+            shop = batch.received_store_id or batch.store_id
+            if shop:
+                line['allocation'][str(shop)] = line['allocation'].get(str(shop), 0) + batch.quantity
+        restored = 0
+        for (_product_id, cost_price), line in lines.items():
             InboundPendingItem.objects.create(
                 inbound_order=order,
-                product=batch.product,
-                quantity=batch.quantity,
-                cost_price=batch.cost_price,
+                product=line['product'],
+                quantity=line['quantity'],
+                cost_price=cost_price,
+                allocation=line['allocation'],
             )
             restored += 1
 
@@ -85,3 +107,31 @@ def roll_back_receipt(order, user=None):
 
     return True, (f'Order #{order.id} rolled back. {restored} line(s) are '
                   'awaiting receipt again and the stock has been removed.')
+
+
+# ------------------------------------------------- a stock-in with no supplier
+def can_roll_back_direct(batches):
+    """A stock-in made without a supplier (before 2026-11-02 that was allowed):
+    the same untouched rule as a receipt."""
+    if not batches:
+        return False, 'That stock-in is gone already.'
+    if any(b.inbound_order_id for b in batches):
+        return False, 'Those batches belong to an inbound order: roll back the order instead.'
+    return _untouched(batches)
+
+
+def roll_back_direct(batch_ids):
+    """Remove a stock-in made without a supplier. Returns ``(ok, message)``;
+    changes nothing on refusal."""
+    with transaction.atomic():
+        batches = list(Purchase.objects.select_related('product').filter(pk__in=list(batch_ids)))
+        if len(batches) != len(set(batch_ids)):
+            return False, 'Part of that stock-in is gone already. Reload the page.'
+        allowed, reason = can_roll_back_direct(batches)
+        if not allowed:
+            return False, reason
+        units = sum(b.quantity for b in batches)
+        products = len({b.product_id for b in batches})
+        for batch in batches:       # one at a time: the signals tell Shopify and reprice
+            batch.delete()
+    return True, f'Stock-in rolled back: {units} unit(s) of {products} product(s) removed.'

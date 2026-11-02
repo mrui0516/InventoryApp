@@ -9666,14 +9666,15 @@ class RestockBellRowTests(TestCase):
         self.assertEqual(InboundOrder.objects.get(id=order.id).status, 'received')
         self.assertTrue(Product.objects.get(id=self.older.id).restock)
 
-    def test_direct_inbound_switches_the_bell_back_on(self):
-        Product.objects.filter(id=self.older.id).update(restock=False)
+    def test_a_stock_in_without_a_supplier_is_refused(self):
+        # 2026-11-02: every stock-in names its supplier (it goes in as a
+        # pending order; receiving it switches the bell back on, above)
         self.client.post(reverse("inbound"), {
             "items_json": json.dumps([{"barcode": self.older.barcode, "qty": 3, "cost_price": "5.00"}]),
             "idemp_key": "rb-test-1",
         })
-        self.assertTrue(Purchase.objects.filter(product=self.older).exists())
-        self.assertTrue(Product.objects.get(id=self.older.id).restock)
+        self.assertFalse(Purchase.objects.filter(product=self.older, quantity=3).exists())
+        self.assertFalse(InboundOrder.objects.filter(pending_items__product=self.older).exists())
 
 QUICK_IMPORT_SAMPLE = """1 6290362346531Lattafa/Yara Elixir Eau de Parfum 100
 
@@ -9879,13 +9880,14 @@ class RecordedOnceTests(TestCase):
         self.assertEqual(SaleOrder.objects.count(), 1)
 
     def test_the_same_stock_in_sent_twice_is_recorded_once(self):
+        supplier = Supplier.objects.create(name="Twice Ltd")
         data = {"items_json": json.dumps([{"barcode": self.product.barcode, "qty": 3, "cost_price": "4.00"}]),
-                "submit_token": self.TOKEN}
+                "supplier": str(supplier.id), "submit_token": self.TOKEN}
         first = self.client.post(reverse("inbound"), data)
         self.assertRedirects(first, reverse("inbound"), fetch_redirect_response=False)
         cache.clear()
         self.client.post(reverse("inbound"), data)
-        self.assertEqual(Purchase.objects.filter(product=self.product, quantity=3).count(), 1)
+        self.assertEqual(InboundOrder.objects.filter(supplier=supplier).count(), 1)
 
     def test_the_forms_carry_a_fresh_token_and_are_never_cached(self):
         import re as _re

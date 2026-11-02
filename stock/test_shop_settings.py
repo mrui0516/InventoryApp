@@ -8,7 +8,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import (Category, Purchase, Sale, SaleOrder, SalesTarget, StockTransfer,
+from .models import (Category, Product, Purchase, Sale, SaleOrder, SalesTarget, StockTransfer,
                      StoreSettlement)
 from .services import card_fees, store_stock
 from .services.dashboard import build_target_progress
@@ -394,3 +394,62 @@ class TodayChannelTests(PagesMixin, TestCase):
         rows = {r["kind"]: (r["amount"], r["orders"], r["qty"]) for r in page.context["channel_rows"]}
         self.assertEqual(rows, {"retail": (Decimal("130.00"), 2, 3), "revenda": (Decimal("60.00"), 1, 3)})
         self.assertContains(page, "ch=revenda")
+
+
+class RollBackStockInTests(PagesMixin, TestCase):
+    """2026-11-02: a stock-in made without a supplier can be rolled back from Orders -> Purchases;
+    a received order rolls back from there too, with its split kept."""
+
+    def setUp(self):
+        super().setUp()
+        session = self.client.session
+        session["active_store_id"] = "all"
+        session.save()
+
+    def purchases(self):
+        return self.client.get(reverse("sales_records"), {"view": "purchases"})
+
+    def test_a_direct_stock_in_is_one_record_that_rolls_back(self):
+        made = store_stock.receive_batches(product=self.product, quantity=5, cost_price=Decimal("10"),
+                                           allocation={self.khan.id: 3, self.scentory.id: 2})
+        other = Product.objects.create(name="Other", brand="B", barcode="9940000000777", category=self.cat)
+        made += store_stock.receive_batches(product=other, quantity=2, cost_price=Decimal("8"),
+                                            allocation={self.khan.id: 2})
+        groups = self.purchases().context["purchases"]
+        self.assertEqual(len(groups), 1)
+        group = groups[0]
+        self.assertTrue(group["can_rollback"])
+        self.assertEqual(sorted(int(x) for x in group["rollback_ids"].split(",")), sorted(b.id for b in made))
+        response = self.client.post(reverse("direct_stock_in_rollback"), {"ids": group["rollback_ids"]})
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Purchase.objects.exists())
+
+    def test_nothing_rolls_back_once_some_is_sold_or_moved(self):
+        made = store_stock.receive_batches(product=self.product, quantity=5, cost_price=Decimal("10"),
+                                           allocation={self.khan.id: 5})
+        store_stock.move_units(self.product, 1, self.khan, self.scentory)
+        group = self.purchases().context["purchases"][0]
+        self.assertFalse(group["can_rollback"])
+        self.assertIn("moved to the other shop", group["rollback_reason"])
+        self.client.post(reverse("direct_stock_in_rollback"), {"ids": group["rollback_ids"]})
+        self.assertEqual(Purchase.objects.count(), 2)
+        Purchase.objects.filter(pk=made[0].pk).update(remaining=3)
+        ok, reason = __import__("stock.services.inbound_rollback", fromlist=["x"]).can_roll_back_direct(
+            list(Purchase.objects.filter(pk=made[0].pk)))
+        self.assertFalse(ok)
+        self.assertIn("already been sold", reason)
+
+    def test_a_received_order_rolls_back_with_its_split(self):
+        from .models import InboundOrder, Supplier
+        order = InboundOrder.objects.create(supplier=Supplier.objects.create(name="S"), status="received")
+        store_stock.receive_batches(product=self.product, quantity=5, cost_price=Decimal("10"),
+                                    allocation={self.khan.id: 3, self.scentory.id: 2}, inbound_order=order)
+        group = self.purchases().context["purchases"][0]
+        self.assertTrue(group["can_rollback"])
+        self.client.post(group["rollback_url"])
+        order.refresh_from_db()
+        self.assertEqual(order.status, "pending_receipt")
+        line = order.pending_items.get()
+        self.assertEqual((line.quantity, line.allocation),
+                         (5, {str(self.khan.id): 3, str(self.scentory.id): 2}))
+        self.assertFalse(Purchase.objects.exists())

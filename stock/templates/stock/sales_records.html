@@ -96,6 +96,7 @@
   .c-cust{ font-weight:600; }
   .c-hit{ display:block; font-size:.82rem; font-weight:700; color:var(--acc-ink); overflow:hidden; text-overflow:ellipsis; }
   .c-cust .ch-tag{ font-size:.85rem; padding:.02rem .5rem; }
+  .pl-why{ font-size:.85rem; color:var(--muted); flex:1 1 100%; }
   .c-when{ display:block; font-size:.85rem; font-weight:500; color:var(--muted); }
   .c-when:empty{ display:none; }
   .c-shops{ display:block; font-size:.85rem; font-weight:500; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -372,7 +373,22 @@
               <div class="grand"><dt>Cost</dt><dd>EUR {{ group.cost|floatformat:2 }}</dd></div>
             </dl>
           </div>
-          <div data-part="foot">{% if group.edit_url %}<a class="btn btn-primary" href="{{ group.edit_url }}">Adjust record</a>{% endif %}</div>
+          <div data-part="foot">
+            {% if group.rollback_url or group.rollback_ids %}
+              {% if group.can_rollback %}
+                <form method="post" action="{% if group.rollback_url %}{{ group.rollback_url }}{% else %}{% url 'direct_stock_in_rollback' %}{% endif %}"
+                      onsubmit="return confirm('Roll back {{ group.ref|escapejs }}? Its {{ group.qty }} unit(s) come out of stock{% if group.rollback_url %} and the order waits for receipt again{% endif %}.');">
+                  {% csrf_token %}
+                  {% if group.rollback_ids %}<input type="hidden" name="ids" value="{{ group.rollback_ids }}">{% endif %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <button type="submit" class="btn btn-outline-danger">Roll back</button>
+                </form>
+              {% else %}
+                <span class="pl-why">{{ group.rollback_reason }}</span>
+              {% endif %}
+            {% endif %}
+            {% if group.edit_url %}<a class="btn btn-primary" href="{{ group.edit_url }}">Adjust record</a>{% endif %}
+          </div>
         </template>
       {% empty %}
         <div class="op-empty">No purchases from {{ start_date }} to {{ end_date }}{% if q %} matching &ldquo;{{ q }}&rdquo;{% endif %}.</div>

@@ -88,13 +88,12 @@ class InboundSplitTests(PagesMixin, TestCase):
         return self.client.post(reverse("inbound"), {"items_json": json.dumps(
             [{"barcode": self.product.barcode, "qty": qty, "cost_price": 10, "alloc": alloc}])})
 
-    def test_stock_in_without_a_supplier_must_be_split(self):
-        self.stock_in({}, 5)
+    def test_stock_in_without_a_supplier_is_refused(self):
+        # 2026-11-02: split or not, nothing goes in without a supplier
+        response = self.stock_in({str(self.khan.id): 4, str(self.scentory.id): 2}, 6)
+        self.assertContains(response, "Choose the supplier")
         self.assertFalse(Purchase.objects.exists())
-        self.stock_in({str(self.khan.id): 3, str(self.scentory.id): 2}, 6)
-        self.assertFalse(Purchase.objects.exists())                # 5 of 6 placed
-        self.stock_in({str(self.khan.id): 4, str(self.scentory.id): 2}, 6)
-        self.assertEqual((self.units(self.khan), self.units(self.scentory)), (4, 2))
+        self.assertFalse(InboundOrder.objects.exists())
 
     def test_the_page_offers_a_column_per_shop(self):
         html = self.client.get(reverse("inbound")).content.decode()

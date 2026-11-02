@@ -164,7 +164,8 @@
 - **F2.3.1** 提供购物车式录入界面：扫码/搜索添加产品，逐行填写数量、进价（cost_price）。**供应商使用模糊搜索**（`suppliers_autocomplete` API + 文本框联想）替代下拉框；**Invoice Date 默认为当天**，可改选。
 - **F2.3.2 两种入库路径**：
   - **有供应商 → 暂定订单（pending）**：因为只是向供应商下单、收到发票，货物运输需要时间。提交后创建 `InboundOrder(status='pending_receipt')`，行项目存为 **`InboundPendingItem`**（**不创建 `Purchase`、不产生库存**），`invoice_date` 缺省取当天。
-  - **无供应商 → 即时入库**：仍为每个商品直接生成"散单"`Purchase`（`inbound_order=None`，`supplier=None`，`remaining=quantity`），立即产生库存。
+  - **供应商必填（2026-11-02 起）**：以前不选供应商会直接入库（"散单"`Purchase`，`inbound_order=None`），点错了没地方撤销。现在 Inbound 页的 Supplier 标为必填，没选时确认弹窗里提示 "Choose the supplier" 并拦下，后端也拒绝。所有进货都走暂定单 → 确认收货。
+  - **回滚（2026-11-02）**：Orders → Purchases 点开一条记录，底部 **Roll back**（经理，先弹确认）。已收货的进货单回到待收货（待收货明细按产品和单价合并、保留各店分配，重新收货不用再分）；以前不带供应商的直接入库（一次入库 = 同一次保存的那几批，10 秒内）整条删除。只要有一件卖掉了或调到了另一家店，就不能回滚，记录里写明原因。供应商页的 Undo receipt 照旧。
 - **F2.3.3 待收货列表（展示在 Inbound 页面）**：Inbound 页面顶部列出所有 `pending_receipt` 订单（供应商/发票/行数/总额/创建时间 + "Review & Receive" 入口）。
 - **F2.3.3a 对货单(2026-10-28)**:每张待收货订单有一份对货单,给员工在手机上核对到货:只显示**产品图、产品名、EAN、数量**(加总品种数/件数和下单日期),**不显示供应商、发票、进价、金额**。经理在 Inbound 待收货卡片点 "Check list" 打开;员工(进不了 Inbound)在侧栏 Products 组的 **Deliveries**(`inbound_checklists`,`/inbound/check/`)看到在途订单列表,点进 `/inbound/<id>/check/`(`inbound_checklist`)。只读,不打印;订单收货后对货单消失(404)。
 - **F2.3.4 复核 / 编辑 / 确认收货 / 取消（弹窗）**：在 Inbound 页面点击某暂定单的"Review & Receive"打开**该订单的弹窗**（每张暂定单一个 modal，含小尺寸产品缩略图，不再跳转独立页面），**再次确认所有信息**，可改供应商（模糊搜索）/发票号/发票日期/备注、可改各行数量与进价、可删行；表单提交到 `inbound_receive_view`（`/inbound/<id>/receive/`，仅处理 POST：receive/save/cancel；GET 重定向回 Inbound）。

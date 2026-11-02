@@ -26,6 +26,7 @@ urlpatterns = [
     path('products/export-shopify-csv/', views.export_shopify_inventory_csv, name='export_shopify_inventory_csv'),
     path('check_barcode/', views.check_barcode, name='check_barcode'),
     path('add-product/', views.add_product_view, name='add_product'),
+    path('direct-purchases/rollback/', views.direct_stock_in_rollback, name='direct_stock_in_rollback'),
     path('inbound-orders/<int:order_id>/rollback/', views.inbound_order_rollback,
          name='inbound_order_rollback'),
     path('categories/create/', views.create_category, name='create_category'),

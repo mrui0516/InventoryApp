@@ -332,7 +332,7 @@
 
         <div class="row g-3 align-items-end">
           <div class="col-md-6 position-relative">
-            <label class="form-label">Supplier (type to search)</label>
+            <label class="form-label">Supplier <span class="text-danger">*</span></label>
             <input type="text" id="supplier-search" class="form-control" placeholder="Type supplier name" autocomplete="off">
             <input type="hidden" name="supplier" id="supplier">
             <div id="supplier-suggestions" class="list-group position-absolute w-100 shadow-sm d-none" style="z-index:1000;"></div>
@@ -394,7 +394,7 @@
 
   <div class="checkout-bar">
     <div class="checkout-bar-info">
-      <span id="summary-supplier">Ungrouped inbound</span>
+      <span id="summary-supplier">No supplier yet</span>
       <span class="bar-sep">&middot;</span>
       <span id="summary-total-qty">0 pcs</span>
       <span class="checkout-warn d-none" id="summary-warning-badge" aria-live="polite"></span>
@@ -421,7 +421,7 @@
         <div class="review-modal-grid">
           <div class="review-modal-card">
             <div class="review-label">Supplier</div>
-            <div class="review-modal-value" id="review-supplier">Ungrouped inbound</div>
+            <div class="review-modal-value" id="review-supplier">No supplier yet</div>
           </div>
           <div class="review-modal-card">
             <div class="review-label">Items</div>
@@ -977,7 +977,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function getSupplierLabel() {
-    return supplierSelect.value ? (supplierSearch.value.trim() || 'Selected supplier') : 'Ungrouped inbound';
+    return supplierSelect.value ? (supplierSearch.value.trim() || 'Selected supplier') : 'No supplier yet';
   }
 
   function getInvoiceLabel() {
@@ -1043,10 +1043,7 @@ document.addEventListener('DOMContentLoaded', () => {
       warnings.push('Invoice number and invoice date should usually be filled together.');
     }
     if (!supplierSelect.value) {
-      warnings.push('No supplier selected — this inbound will be stocked immediately (not a pending order).');
-      if (allocStores.length && !window.allocReady(cartBody, true)) {
-        warnings.push('Split every line between the shops: the shop quantities must add up to Qty.');
-      }
+      warnings.push('Choose the supplier: every stock-in is recorded with its supplier.');
     } else {
       warnings.push('Supplier order — this will be created as PENDING. Confirm receipt later to add stock.');
     }
@@ -1445,8 +1442,10 @@ document.addEventListener('DOMContentLoaded', () => {
     submitBtn.disabled = true; submitBtn.textContent = 'Processing...';
   });
   confirmInboundBtn?.addEventListener('click', () => {
-    if (!supplierSelect.value && allocStores.length && !window.allocReady(cartBody)) {
-      alert('Split every line between the shops before stocking it: the shop quantities must add up to Qty.');
+    if (!supplierSelect.value) {
+      bootstrap.Modal.getOrCreateInstance(reviewModalEl).hide();
+      alert('Choose the supplier first: every stock-in is recorded with its supplier.');
+      supplierSearch.focus();
       return;
     }
     inboundForm.dataset.confirmed = '1';

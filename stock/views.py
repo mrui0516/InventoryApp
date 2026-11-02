@@ -830,32 +830,9 @@ def inbound_view(request):
                     f'Confirm receipt below when the goods arrive.'
                 )
             else:
-                # 没有 supplier：普通入库，不创建 InboundOrder
-                for row in items:
-                    barcode = str(row.get('barcode', '')).strip()
-                    try:
-                        qty = int(row.get('qty', 0))
-                        cost_price = Decimal(str(row.get('cost_price', 0)))
-                    except Exception:
-                        raise ValueError('Quantity/cost must be numbers.')
-
-                    if not barcode or qty < 1 or cost_price <= 0:
-                        raise ValueError('Invalid item line.')
-
-                    product = Product.objects.get(barcode=barcode)
-
-                    # Stocked now, so it is split between the shops now.
-                    from .services.store_stock import receive_batches, split_for_receipt
-                    receive_batches(
-                        product=product, quantity=qty, cost_price=cost_price,
-                        allocation=split_for_receipt(row.get('alloc'), qty, shops, product.display_name),
-                    )
-                    _bought_again(product)
-                    order_total += cost_price * qty
-
-                context['success'] = (
-                    f'Stock added (no supplier). Total €{order_total:.2f}.'
-                )
+                # Since 2026-11-02 every stock-in names its supplier: one made
+                # without could only be undone by hand.
+                raise ValueError('Choose the supplier: every stock-in is recorded with its supplier.')
 
     except submissions.AlreadySubmitted:
         messages.info(request, 'That stock-in was already recorded - it was not added again.')
@@ -1983,6 +1960,24 @@ def export_shopify_inventory_csv(request):
 # -----------------------------
 # 产品增/改/详情
 # -----------------------------
+@login_required
+@manager_required
+@require_POST
+def direct_stock_in_rollback(request):
+    """Undo a stock-in made without a supplier (Orders -> Purchases)."""
+    from django.utils.http import url_has_allowed_host_and_scheme
+    from .services.inbound_rollback import roll_back_direct
+
+    ids = [int(x) for x in (request.POST.get('ids') or '').split(',') if x.strip().isdigit()]
+    ok, message = roll_back_direct(ids) if ids else (False, 'Nothing to roll back.')
+    (messages.success if ok else messages.error)(request, message)
+    nxt = request.POST.get('next') or ''
+    if nxt and url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()},
+                                               require_https=request.is_secure()):
+        return redirect(nxt)
+    return redirect(f"{reverse('sales_records')}?view=purchases")
+
+
 @login_required
 @manager_required
 @require_POST
