@@ -125,6 +125,8 @@ def resolve_params(get, today):
         'payment': payment,
         # Retail / Revenda (wholesale) by the customer's type; '' = both
         'ch': normalise_channel(get.get('ch')),
+        # Purchases by the day the goods arrived (default) or were paid for
+        'pdate': 'paid' if (get.get('pdate') or '').strip().lower() == 'paid' else 'received',
         'page': page,
         'year_raw': get.get('year'),
     }
@@ -143,6 +145,7 @@ def page_url(params, **changes):
         'q': params['q'] or None,
         'payment': params['payment'] or None,
         'ch': params['ch'] or None,
+        'pdate': 'paid' if params.get('pdate') == 'paid' and params['view'] == 'purchases' else None,
     }
     if merged['layout'] == 'list':
         merged['layout'] = None
@@ -438,8 +441,30 @@ def _shop_totals(items, shop_names):
     return list(out.values())
 
 
-def load_purchases(start, end, q, next_url, store=None):
+def _pending_lines(order, store):
+    """An order still on the way: its lines as they were ordered, each shop's
+    part from the split saved on the line (none yet: all shops only)."""
+    lines = []
+    for item in order.pending_items.all():
+        by_shop = {int(k): v for k, v in (item.allocation or {}).items() if str(k).isdigit() and v}
+        if store is not None:
+            if not by_shop.get(store.id):
+                continue
+            item.quantity, by_shop = by_shop[store.id], {store.id: by_shop[store.id]}
+        item.by_shop, item.shops, item.parts = by_shop, [], []
+        item.supplier, item.supplier_id = order.supplier, order.supplier_id
+        item.edit_url, item.edit_links = '', []
+        lines.append(item)
+    return lines
+
+
+def load_purchases(start, end, q, next_url, store=None, by='received'):
     """Inbound orders and direct purchases in the range, newest first.
+
+    ``by='received'``: an order counts on the day its goods came in (its
+    batches' date, as Today counts them). ``by='paid'``: on the day it was
+    recorded / paid for, orders still on the way included (``pending``).
+    Each group carries both dates (``paid_on``, ``received_on``).
 
     Each product shows once per delivery (merge_batches, by the shop it was
     delivered to). With ``store``: only what that shop received, at its own
@@ -455,18 +480,30 @@ def load_purchases(start, end, q, next_url, store=None):
 
     groups = []
     inbound = (InboundOrder.objects
-               .filter(created_at__date__gte=start, created_at__date__lte=end)
                .select_related('supplier')
                .prefetch_related('items__product', 'items__product__images',
-                                 'items__supplier')
+                                 'items__supplier', 'pending_items__product__images')
                .order_by('-created_at'))
+    if by == 'paid':
+        inbound = inbound.filter(created_at__date__gte=start, created_at__date__lte=end)
+    else:
+        inbound = inbound.filter(items__date__date__gte=start, items__date__date__lte=end).distinct()
     for order in inbound:
-        items = _annotate_purchase_items(lines_of(order.items.all()))
+        batches = list(order.items.all())
+        pending = not batches and order.status == 'pending_receipt'
+        if pending and by != 'paid':
+            continue
+        items = _annotate_purchase_items(_pending_lines(order, store) if pending else lines_of(batches))
         if not items:
             continue
         supplier = order.supplier or next((i.supplier for i in items if i.supplier_id), None)
-        created = timezone.localtime(order.created_at)
+        paid = timezone.localtime(order.created_at)
+        arrived = timezone.localtime(min(b.date for b in batches)) if batches else None
+        created = paid if by == 'paid' or arrived is None else arrived
         groups.append({
+            'pending': pending,
+            'paid_on': paid.date(),
+            'received_on': arrived.date() if arrived else None,
             'key': f'in-{order.id}',
             'ref': f'Inbound #{order.id}',
             'short_ref': f'#{order.id}',
@@ -506,6 +543,9 @@ def load_purchases(start, end, q, next_url, store=None):
                               'Mixed suppliers' if names else 'No supplier linked'),
             'has_supplier': bool(names),
             'created_at': timezone.localtime(max(i.date for i in items)),
+            'pending': False,
+            'paid_on': day,
+            'received_on': day,
             'day': day,
             'items': items,
             'qty': sum(i.quantity for i in items),
@@ -620,12 +660,15 @@ def orders_page(request):
             'last7': page_url(params, layout=None,
                               start_date=(today - timedelta(days=DEFAULT_DAYS - 1)).isoformat(),
                               end_date=today.isoformat()),
+            'last30': page_url(params, layout=None, start_date=(today - timedelta(days=29)).isoformat(),
+                               end_date=today.isoformat()),
             'month': page_url(params, layout=None, start_date=today.replace(day=1).isoformat(),
                               end_date=today.isoformat()),
         },
         'quick_active': (
             'today' if (start == end == today) else
             'last7' if (start == today - timedelta(days=DEFAULT_DAYS - 1) and end == today) else
+            'last30' if (start == today - timedelta(days=29) and end == today) else
             'month' if (start == today.replace(day=1) and end == today) else ''),
         'payment_label': PAYMENT_LABELS.get(params['payment'], ''),
         'clear_q_url': page_url(params, q=None),
@@ -683,7 +726,11 @@ def orders_page(request):
 
     elif view == 'purchases':
         purchases = load_purchases(start, end, params['q'], request.get_full_path(),
-                                   store=None if store_is_all else active_store)
+                                   store=None if store_is_all else active_store, by=params['pdate'])
+        context['pdate'] = params['pdate']
+        context['pdate_urls'] = [{'label': label, 'on': params['pdate'] == value,
+                                  'url': page_url(params, pdate=None if value == 'received' else value)}
+                                 for value, label in (('received', 'Received'), ('paid', 'Paid'))]
         shop_totals = {}
         for group in purchases:
             for row in group['shops']:

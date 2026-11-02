@@ -96,6 +96,8 @@
   .c-cust{ font-weight:600; }
   .c-hit{ display:block; font-size:.82rem; font-weight:700; color:var(--acc-ink); overflow:hidden; text-overflow:ellipsis; }
   .c-cust .ch-tag{ font-size:.85rem; padding:.02rem .5rem; }
+  .c-when{ display:block; font-size:.85rem; font-weight:500; color:var(--muted); }
+  .c-when:empty{ display:none; }
   .c-shops{ display:block; font-size:.85rem; font-weight:500; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .c-shops b{ color:var(--app-text); font-variant-numeric:tabular-nums; }
   .c-shops i{ font-style:normal; margin:0 .4rem; opacity:.5; }
@@ -168,6 +170,7 @@
 
   @media (max-width: 760px){
     .op-grid2{ grid-template-columns:1fr; }
+    .c-shops{ white-space:normal; }        /* each shop's part wraps, never cut off */
     /* On a phone the figures must leave room for the orders: orders and
        items fold into the headline tile, and the tiles are tighter. */
     .op-kpis{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:.4rem; }
@@ -213,6 +216,7 @@
   <form method="get" class="op-query" id="op-query">
     {% if view != 'sales' %}<input type="hidden" name="view" value="{{ view }}">{% endif %}
     {% if view == 'sales' and channel %}<input type="hidden" name="ch" value="{{ channel }}">{% endif %}
+    {% if view == 'purchases' and pdate == 'paid' %}<input type="hidden" name="pdate" value="paid">{% endif %}
     {% if calendar_mode %}<input type="hidden" name="layout" value="calendar"><input type="hidden" name="month" value="{{ start_date|slice:':7' }}">{% endif %}
     {% if view == 'analysis' and params.year_raw %}<input type="hidden" name="year" value="{{ params.year_raw }}">{% endif %}
     <div class="op-qrow">
@@ -232,7 +236,13 @@
         <span><span class="op-seg-label">Range</span><span class="op-seg">
           <a class="{% if quick_active == 'today' %}on{% endif %}" href="{{ quick_urls.today }}">Today</a>
           <a class="{% if quick_active == 'last7' %}on{% endif %}" href="{{ quick_urls.last7 }}">7 days</a>
+          <a class="{% if quick_active == 'last30' %}on{% endif %}" href="{{ quick_urls.last30 }}">30 days</a>
           <a class="{% if quick_active == 'month' %}on{% endif %}" href="{{ quick_urls.month }}">This month</a>
+        </span></span>
+      {% endif %}
+      {% if view == 'purchases' %}
+        <span><span class="op-seg-label">Date</span><span class="op-seg">
+          {% for d in pdate_urls %}<a class="{% if d.on %}on{% endif %}" href="{{ d.url }}">{{ d.label }}</a>{% endfor %}
         </span></span>
       {% endif %}
       {% if view == 'sales' %}
@@ -340,7 +350,7 @@
           <button type="button" class="op-open" data-layer="pl-{{ group.key }}">
             <span class="c-time">{{ group.created_at|date:"H:i" }}</span>
             <span class="c-id">{{ group.short_ref }}</span>
-            <span class="c-cust">{{ group.supplier_name }}{% if group.matched_items %}<span class="c-hit">{% for item in group.matched_items|slice:":2" %}{{ item.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>{% endif %}{% if group.shops %}<span class="c-shops">{% for s in group.shops %}{{ s.label }} <b>{{ s.qty }}</b> &middot; &euro;{{ s.cost|floatformat:2 }}{% if not forloop.last %}<i>|</i>{% endif %}{% endfor %}</span>{% endif %}</span>
+            <span class="c-cust">{{ group.supplier_name }}{% if group.pending %}<span class="ch-tag">On the way</span>{% endif %}<span class="c-when">{% if pdate == 'paid' %}{% if group.received_on and group.received_on != group.paid_on %}received {{ group.received_on|date:"j M" }}{% endif %}{% elif group.paid_on != group.received_on %}paid {{ group.paid_on|date:"j M" }}{% endif %}</span>{% if group.matched_items %}<span class="c-hit">{% for item in group.matched_items|slice:":2" %}{{ item.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>{% endif %}{% if group.shops %}<span class="c-shops">{% for s in group.shops %}{{ s.label }} <b>{{ s.qty }}</b> &middot; &euro;{{ s.cost|floatformat:2 }}{% if not forloop.last %}<i>|</i>{% endif %}{% endfor %}</span>{% endif %}</span>
             <span class="c-qty">{{ group.qty }}<small> pcs</small></span>
             <span class="c-amt">EUR {{ group.cost|floatformat:2 }}</span>
             <span class="c-pay">{{ group.invoice_no }}</span>
@@ -348,13 +358,15 @@
           {% if group.edit_url %}<a class="op-print" href="{{ group.edit_url }}">Adjust</a>{% else %}<span class="op-print"></span>{% endif %}
         </div>
         <template id="pl-{{ group.key }}">
-          <div data-part="title">{{ group.ref }} &middot; {{ group.created_at|date:"Y-m-d H:i" }}</div>
+          <div data-part="title">{{ group.ref }} &middot; {{ group.created_at|date:"Y-m-d H:i" }}{% if group.pending %} <span class="ch-tag">On the way</span>{% endif %}</div>
           <div data-part="body">
             <div class="ol-cust">{{ group.supplier_name }}{% if group.invoice_no %} &middot; {{ group.invoice_no }}{% endif %}</div>
             <div class="ord-items">
               {% for item in group.items %}<div class="ol-item{% if item.is_match %} is-hit{% endif %}">{% include "stock/_purchase_order_item.html" %}</div>{% endfor %}
             </div>
             <dl class="ol-totals">
+              <div><dt>Paid</dt><dd>{{ group.paid_on|date:"j M Y" }}</dd></div>
+              <div><dt>Received</dt><dd>{% if group.received_on %}{{ group.received_on|date:"j M Y" }}{% else %}not yet{% endif %}</dd></div>
               {% if group.shops %}{% for s in group.shops %}<div><dt>{{ s.label }}</dt><dd>{{ s.qty }} pcs &middot; EUR {{ s.cost|floatformat:2 }}</dd></div>{% endfor %}{% endif %}
               <div><dt>Items</dt><dd>{{ group.qty }}</dd></div>
               <div class="grand"><dt>Cost</dt><dd>EUR {{ group.cost|floatformat:2 }}</dd></div>

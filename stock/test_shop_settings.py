@@ -322,3 +322,58 @@ class TodayStockReceivedTests(PagesMixin, TestCase):
         self.assertEqual(page.context["received_units"], 2)
         self.assertEqual(page.context["received_shops"], [])
         self.assertEqual(self.today(self.khan.id).context["received_units"], 3)
+
+
+class PurchasesByDateTests(PagesMixin, TestCase):
+    """2026-11-02: Purchases by the day goods arrived (default) or were paid for."""
+
+    def setUp(self):
+        super().setUp()
+        from .models import InboundOrder, InboundPendingItem
+        session = self.client.session
+        session["active_store_id"] = "all"
+        session.save()
+        self.paid_on = timezone.localdate() - timedelta(days=4)
+        self.order = InboundOrder.objects.create(status="pending_receipt", invoice_no="NP-9")
+        InboundOrder.objects.filter(pk=self.order.pk).update(
+            created_at=timezone.now() - timedelta(days=4))
+        store_stock.receive_batches(product=self.product, quantity=5, cost_price=Decimal("10"),
+                                    allocation={self.khan.id: 3, self.scentory.id: 2}, inbound_order=self.order)
+        self.on_the_way = InboundOrder.objects.create(status="pending_receipt", invoice_no="OW-1")
+        InboundPendingItem.objects.create(inbound_order=self.on_the_way, product=self.product, quantity=4,
+                                          cost_price=Decimal("9"), allocation={str(self.scentory.id): 4})
+
+    def keys(self, day, **extra):
+        page = self.client.get(reverse("sales_records"), {"view": "purchases", "start_date": day.isoformat(),
+                                                           "end_date": day.isoformat(), **extra})
+        return {g["key"] for g in page.context["purchases"]}, page
+
+    def test_received_today_shows_today_with_the_day_it_was_paid(self):
+        today = timezone.localdate()
+        keys, page = self.keys(today)
+        self.assertEqual(keys, {f"in-{self.order.id}"})
+        self.assertContains(page, f'paid {self.paid_on.day} {self.paid_on:%b}')
+        self.assertEqual(self.keys(self.paid_on)[0], set())
+
+    def test_paid_shows_it_on_the_day_paid_and_what_is_on_the_way(self):
+        today = timezone.localdate()
+        keys, page = self.keys(self.paid_on, pdate="paid")
+        self.assertEqual(keys, {f"in-{self.order.id}"})
+        self.assertContains(page, "received ")
+        keys, page = self.keys(today, pdate="paid")
+        self.assertEqual(keys, {f"in-{self.on_the_way.id}"})
+        self.assertContains(page, "On the way")
+        self.assertEqual(page.context["total_purchase_amount"], Decimal("36.00"))
+
+    def test_a_shop_sees_its_part_of_an_order_on_the_way(self):
+        session = self.client.session
+        session["active_store_id"] = self.khan.id
+        session.save()
+        self.assertEqual(self.keys(timezone.localdate(), pdate="paid")[0], set())
+
+    def test_a_30_day_range(self):
+        _keys, page = self.keys(timezone.localdate())
+        html = page.content.decode()
+        start = (timezone.localdate() - timedelta(days=29)).isoformat()
+        self.assertIn(f"start_date={start}", html)
+        self.assertIn(">30 days</a>", html)

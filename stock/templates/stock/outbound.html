@@ -1519,22 +1519,32 @@ document.addEventListener('DOMContentLoaded', () => {
   // quantities); the hidden #line-modal-qty stays the single source of truth.
   const qtyChipsWrap = document.getElementById('line-modal-qty-chips');
   const qtyMoreChip = document.getElementById('line-modal-qty-more');
+  // The most this line may take: a sample is one bottle; at full price, the
+  // full-price stock (the shops' samples kept back) less what the cart holds.
+  function modalMaxQty() {
+    if (!modalCtx) return 1;
+    if (modalKind() === 'sample') return 1;
+    const stock = Number(modalCtx.stock) || 0;
+    const inCart = cart.filter(i => i.barcode === modalCtx.barcode && i.uid !== editingUid && !i.sample)
+      .reduce((s, i) => s + i.qty, 0);
+    return Math.max(0, stock - inCart);
+  }
   function renderQtyChips() {
     const q = Number(document.getElementById('line-modal-qty').value) || 1;
-    const stock = Number(modalCtx && modalCtx.stock) || 0;
+    const max = modalMaxQty();
     qtyChipsWrap.querySelectorAll('.qty-chip[data-qty]').forEach((b) => {
       const v = Number(b.dataset.qty);
-      b.classList.toggle('active', v === q);
-      b.disabled = stock > 0 && v > stock;
+      b.classList.toggle('active', v === q && max >= 1);
+      b.disabled = v > max;
     });
     qtyMoreChip.textContent = q > 5 ? String(q) : '+';
     qtyMoreChip.classList.toggle('active', q > 5);
-    qtyMoreChip.disabled = stock > 0 && q >= stock;
+    qtyMoreChip.disabled = q >= max;
   }
   function setModalQty(q) {
-    const stock = Number(modalCtx && modalCtx.stock) || 0;
+    const max = modalMaxQty();
     q = Math.max(1, Math.floor(Number(q) || 1));
-    if (stock > 0) q = Math.min(q, stock);
+    q = max >= 1 ? Math.min(q, max) : 1;
     document.getElementById('line-modal-qty').value = q;
     renderQtyChips();
     updateLineModalPreview();
@@ -1577,6 +1587,7 @@ document.addEventListener('DOMContentLoaded', () => {
       : (last != null ? last : (retail != null ? retail : (wholesale != null ? wholesale : '')));
     document.getElementById('line-modal-base').value = (base !== '' && base != null) ? Number(base).toFixed(2) : '';
     document.getElementById('line-modal-discount').value = item ? (Number(item.discount) || 0).toFixed(2) : '0';
+    setPriceToggle(item && item.sample ? 'sample' : 'retail');   // not the last dialog's kind
     setModalQty(item ? item.qty : 1);
     const near = (a, b) => a != null && b != null && Math.abs(Number(a) - Number(b)) < 0.001;
     let kind = 'retail';
@@ -1586,6 +1597,7 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (last != null) kind = 'last';
     else if (retail == null && wholesale != null) kind = 'wholesale';
     setPriceToggle(kind);
+    setModalQty(Number(document.getElementById('line-modal-qty').value) || 1);   // the limit follows the price kind
     if (kind === 'sample' && !item) { document.getElementById('line-modal-base').value = ''; setModalQty(1); }
     modalSplit = !!(item && item.isSplit);
     modalPayMethod = (item && !item.isSplit && METHODS.includes(item.payment)) ? item.payment : lastMethod;
@@ -1684,7 +1696,7 @@ document.addEventListener('DOMContentLoaded', () => {
         : b.dataset.kind === 'last' ? Number((lastPrices[modalCtx.barcode] || {}).price)
         : Number(modalCtx.retail);
       if (isFinite(v)) document.getElementById('line-modal-base').value = v.toFixed(2);
-      updateLineModalPreview();
+      setModalQty(Number(document.getElementById('line-modal-qty').value) || 1);
     });
   });
   document.getElementById('line-modal-save').addEventListener('click', saveLineModal);
