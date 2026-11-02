@@ -377,3 +377,20 @@ class PurchasesByDateTests(PagesMixin, TestCase):
         start = (timezone.localdate() - timedelta(days=29)).isoformat()
         self.assertIn(f"start_date={start}", html)
         self.assertIn(">30 days</a>", html)
+
+
+class TodayChannelTests(PagesMixin, TestCase):
+    def test_today_splits_retail_and_revenda(self):
+        from .models import Customer
+        trade = Customer.objects.create(name="Atacado", kind="revenda")
+        for customer, qty, price in ((trade, 3, "20"), (None, 1, "50"), (None, 2, "40")):
+            order = SaleOrder.objects.create(store=self.khan, customer=customer)
+            Sale.objects.create(order=order, product=self.product, quantity=qty, unit_price=Decimal(price),
+                                store=self.khan, customer=customer)
+        session = self.client.session
+        session["active_store_id"] = "all"
+        session.save()
+        page = self.client.get(reverse("daily_summary"))
+        rows = {r["kind"]: (r["amount"], r["orders"], r["qty"]) for r in page.context["channel_rows"]}
+        self.assertEqual(rows, {"retail": (Decimal("130.00"), 2, 3), "revenda": (Decimal("60.00"), 1, 3)})
+        self.assertContains(page, "ch=revenda")

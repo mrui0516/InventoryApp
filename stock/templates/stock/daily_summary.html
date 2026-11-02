@@ -46,6 +46,9 @@
   .snapshot-card .metric-label{ font-size:.64rem; letter-spacing:.04em; }
   .snapshot-card .metric-value{ margin-top:.15rem; font-size:1.2rem; }
   .snapshot-card .metric-sub{ margin-top:.1rem; font-size:.72rem; }
+  a.ch-tile{ display:block; color:inherit; text-decoration:none; }
+  a.ch-tile:hover{ border-color:var(--app-border-strong); }
+  .ch-tile.revenda .metric-label{ color:#92400e; }
   .rcv-shop{ font-size:.85rem; color:var(--app-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.3; }
   .rcv-shop b{ color:var(--app-text); font-variant-numeric:tabular-nums; }
   .rcv-link{ display:inline-block; margin-top:.2rem; font-size:.85rem; font-weight:700; }
@@ -102,6 +105,13 @@
       <span class="metric-label">Items Sold</span>
       <div class="metric-value">{{ total_qty }}</div>
     </div>
+    {% for c in channel_rows %}
+      <a class="snapshot-card ch-tile {{ c.kind }}" href="{{ c.url }}">
+        <span class="metric-label">{{ c.label }}</span>
+        <div class="metric-value">{% if show_order_financials %}EUR {{ c.amount|floatformat:2 }}{% else %}{{ c.qty }} pcs{% endif %}</div>
+        <div class="metric-sub">{{ c.orders }} order{{ c.orders|pluralize }}{% if show_order_financials %} &middot; {{ c.qty }} pcs{% endif %}</div>
+      </a>
+    {% endfor %}
     {% if show_order_financials %}
       <div class="snapshot-card">
         <span class="metric-label">Average Order</span>

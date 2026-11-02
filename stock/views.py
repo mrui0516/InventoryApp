@@ -4677,6 +4677,7 @@ def daily_summary_view(request):
     total_qty = 0
     total_profit = Decimal('0.00')
     pay_totals = defaultdict(Decimal)
+    channel_totals = {kind: {'amount': Decimal('0.00'), 'orders': 0, 'qty': 0} for kind in ('retail', 'revenda')}
     product_stats = {}
     orders = []
     # Shipping and fees: in the money taken (the payment mix), not in sales.
@@ -4731,8 +4732,17 @@ def daily_summary_view(request):
         for method, amount in order_pay.items():
             if method:
                 pay_totals[method] += amount
+        # Retail or Revenda (wholesale), by the customer's type; walk-ins are retail
+        kind = 'revenda' if (order.customer_id and order.customer.kind == 'revenda') else 'retail'
+        bucket = channel_totals[kind]
+        bucket['amount'] += order_total
+        bucket['orders'] += 1
+        bucket['qty'] += order_qty
 
     order_count = len(orders)
+    day_url = f"{reverse('sales_records')}?start_date={day.isoformat()}&end_date={day.isoformat()}"
+    channel_rows = [dict(channel_totals[kind], kind=kind, label=label, url=f"{day_url}&ch={kind}")
+                    for kind, label in (('retail', 'Retail'), ('revenda', 'Revenda'))]
     avg_order = (total_amount / order_count) if order_count else Decimal('0.00')
 
     pay_total_sum = sum(pay_totals.values())
@@ -4801,6 +4811,7 @@ def daily_summary_view(request):
         'payment_rows': payment_rows,
         'payment_chart': payment_chart,
         'top_products': top_products,
+        'channel_rows': channel_rows,
         'received_orders': received_orders,
         'received_units': received_units,
         'received_cost': received_cost,
