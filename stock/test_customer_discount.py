@@ -88,3 +88,49 @@ class LastDiscountTests(TestCase):
         session["active_store_id"] = Store.get_default().id
         session.save()
         self.assertContains(self.client.get(reverse("pedido")), 'id="pd-disc-val"')
+
+    # -- set by hand on the customer's page (2026-11-04) -----------------------
+    def set_by_hand(self, **data):
+        return self.client.post(reverse("customer_discount_set", args=[self.customer.id]), data)
+
+    def test_a_figure_set_by_hand_counts_until_they_buy_again(self):
+        self.sold((self.a, 1, "17.00"))
+        self.set_by_hand(amount="5,50")
+        found = last_discount(self.customer.id)
+        self.assertEqual((found["discount"], found["source"]), (Decimal("5.50"), "hand"))
+        self.sold((self.a, 1, "18.00"))
+        found = last_discount(self.customer.id)
+        self.assertEqual((found["discount"], found["source"]), (Decimal("2.00"), "sale"))
+
+    def test_set_by_hand_with_no_sale_and_cleared_again(self):
+        self.set_by_hand(amount="4")
+        self.assertEqual(last_discount(self.customer.id)["discount"], Decimal("4.00"))
+        self.set_by_hand(clear="1", amount="4")
+        self.assertIsNone(last_discount(self.customer.id))
+        self.customer.refresh_from_db()
+        self.assertIsNone(self.customer.wholesale_discount)
+
+    def test_a_bad_figure_changes_nothing(self):
+        self.set_by_hand(amount="abc")
+        self.set_by_hand(amount="-2")
+        self.customer.refresh_from_db()
+        self.assertIsNone(self.customer.wholesale_discount)
+
+    def test_the_customer_page_shows_it_for_resellers(self):
+        self.sold((self.a, 1, "17.00"))
+        url = reverse("customer_detail", args=[self.customer.id])
+        self.assertContains(self.client.get(url), 'value="3.00"')
+        self.assertContains(self.client.get(url), "From last sale")
+        self.set_by_hand(amount="2")
+        page = self.client.get(url)
+        self.assertContains(page, "Set by hand")
+        self.assertContains(page, "Use last sale")
+        retail = Customer.objects.create(name="Walk", kind="retail")
+        self.assertNotContains(self.client.get(reverse("customer_detail", args=[retail.id])), "cdDisc")
+
+    def test_only_managers_set_it(self):
+        employee = get_user_model().objects.create_user("cd_emp2", password="pw123456")
+        self.client.force_login(employee)
+        self.set_by_hand(amount="9")
+        self.customer.refresh_from_db()
+        self.assertIsNone(self.customer.wholesale_discount)

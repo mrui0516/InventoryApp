@@ -458,7 +458,7 @@
           form.querySelector('input[name="price_mode"][value="wholesale"]').checked = true;
         }
         note.textContent = d.discount == null ? 'No earlier sale to this customer'
-          : `Last sale ${d.date}: ` + (Number(d.discount) > 0 ? `€${d.discount} below wholesale` : 'at wholesale');
+          : `${d.source === 'hand' ? 'Set by hand' : 'Last sale'} ${d.date}: ` + (Number(d.discount) > 0 ? `€${d.discount} below wholesale` : 'at wholesale');
         note.hidden = false;
       })
       .catch(() => { note.hidden = true; });

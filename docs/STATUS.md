@@ -12,7 +12,7 @@
 |---|---|---|
 | 线上运行 | ✅ PythonAnywhere 欧盟区 | `https://scentory.eu.pythonanywhere.com`，两家店（Khan Perfume、Scentory）日常收银、入库都在线上；线上 `db.sqlite3` 是唯一准数据 |
 | 自动化测试 | ✅ 897 个全部通过 | `python manage.py test stock restock_alerts`，在干净导出上跑 |
-| 数据库迁移 | ✅ 最新 `0070_batch_received_store`，无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
+| 数据库迁移 | ✅ 最新 `0071_customer_wholesale_discount`，无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
 | 生产配置 | ✅ `DEBUG=False`，密钥只在服务器 `.env` | `settings.py` 的 `if not DEBUG` 块：强制 HTTPS、安全 Cookie、HSTS、防点击劫持 |
 | 数据备份 | ✅ 每日快照 + 本机拉取 | PA 定时任务 `backup_db --keep 30`，本机 `scripts/pull_backup_from_pa.py` 拉到 U 盘；Settings → Tools 可手动下载。见 [BACKUP.md](./BACKUP.md) |
 | 错误日志 | ✅ Settings → Audit → Errors | 500 崩溃、安全警告、Cloudinary/Shopify 警告写入 `ErrorLog` 与 PA 错误日志 |
@@ -73,7 +73,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
-- 2026-11-04: **记住每位客人的批发优惠。** 从客人上一次成交算出比批发价便宜多少（不存数字，新接口 `api/customer_wholesale_discount/`），Pedido 新加的产品按"批发价 − 差额"起，"Aplicar a todos" 应用到已有行；产品列表导出加 Customer 搜索，自动填折扣并切到 Wholesale。只作用于 60–120ml 香水（原有规则，`discount_applies` 移到 `services/wholesale_discount.py`）。新增 9 个测试。
+- 2026-11-04: **记住每位客人的批发优惠。** 从客人上一次成交算出比批发价便宜多少（新接口 `api/customer_wholesale_discount/`），客人页面显示并可手动设置（迁移 0071，手动值和上次成交谁新用谁），Pedido 新加的产品按"批发价 − 差额"起，"Aplicar a todos" 应用到已有行；产品列表导出加 Customer 搜索，自动填折扣并切到 Wholesale。只作用于 60–120ml 香水（原有规则，`discount_applies` 移到 `services/wholesale_discount.py`）。新增 14 个测试。
 - 2026-11-02: **入库供应商必填 + Orders → Purchases 可回滚。** 不选供应商的入库会直接进库存、而且没地方撤销：Inbound 的 Supplier 改为必填（前端拦下，后端拒绝），所有进货都走暂定单 → 确认收货。Orders → Purchases 的记录面板加 **Roll back**：已收货的进货单回到待收货（保留各店分配），以前的无供应商直接入库（同一次保存的批次）整条删除；卖过或调过店的拒绝并写明原因。新增 4 个测试，改写 3 个依赖无供应商入库的旧测试。
 - 2026-11-02: **Today 加零售 / 批发。** Sales、Items Sold 后面两格 Retail、Revenda：金额、单数、件数（按客户类型），点开是当天 Orders 筛到该渠道。新增 1 个测试。
 - 2026-11-02: **进货记录按到货 / 付款切换 + 30 天范围 + 修 Sell 弹窗数量。** (1) Orders → Purchases 加 "Date: Received | Paid"：默认按到货日（之前付款、今天到货的单子在今天），Paid 按付款日并列出在途单（On the way）；每行写另一个日期。(2) 范围快捷加 "30 days"。(3) Sell 弹窗：两家店都只剩样品时以前可以选很多数量——数量上限改为跟着价格类型（Sample 1；正价 = 正价可卖件数 − 购物车已有）。(4) 手机上进货记录的分店那行改为换行，不再截断。新增 4 个测试。

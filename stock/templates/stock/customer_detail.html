@@ -17,6 +17,10 @@
   .cd-contact .wa-link{ color:#128c4a; }
   .cd-addr{ margin-top:.25rem; font-size:.88rem; color:var(--app-muted); }
   .cd-note{ margin-top:.45rem; font-size:.88rem; padding:.4rem .6rem; border-radius:var(--app-radius-sm); background:#fff8e6; color:#7a5300; }
+  .cd-disc{ display:flex; flex-wrap:wrap; align-items:center; gap:.35rem .6rem; margin-top:.5rem; }
+  .cd-disc label{ margin:0; font-size:.88rem; font-weight:700; color:var(--app-muted); }
+  .cd-disc-in{ width:7rem; }
+  .cd-disc-src{ font-size:.85rem; color:var(--app-muted); }
   .cd-actions{ display:flex; gap:.4rem; flex-wrap:wrap; }
   .cd-del{ border:0; background:none; color:var(--app-danger); font-size:.85rem; font-weight:700; padding:.25rem .4rem; }
 
@@ -96,6 +100,17 @@
       {% if show_sensitive %}
         {% if customer.address %}<div class="cd-addr">{{ customer.address|linebreaksbr }}</div>{% endif %}
         {% if customer.notes %}<div class="cd-note">{{ customer.notes }}</div>{% endif %}
+        {% if customer.is_revenda and show_sensitive %}
+          <form method="post" action="{% url 'customer_discount_set' customer.id %}" class="cd-disc">
+            {% csrf_token %}
+            <label for="cdDisc">Discount off wholesale</label>
+            <div class="input-group input-group-sm cd-disc-in"><span class="input-group-text">&euro;</span>
+              <input type="text" inputmode="decimal" class="form-control" id="cdDisc" name="amount" value="{% if wholesale_discount %}{{ wholesale_discount.discount|floatformat:2 }}{% endif %}" placeholder="0.00"></div>
+            <button type="submit" class="btn btn-sm btn-outline-primary">Save</button>
+            {% if wholesale_discount.by_hand %}<button type="submit" name="clear" value="1" class="btn btn-sm btn-link">Use last sale</button>{% endif %}
+            <span class="cd-disc-src">{% if not wholesale_discount %}No sale yet{% elif wholesale_discount.by_hand %}Set by hand {{ wholesale_discount.date }}{% else %}From last sale {{ wholesale_discount.date }}{% endif %}</span>
+          </form>
+        {% endif %}
       {% endif %}
     </div>
     {% if show_sensitive %}

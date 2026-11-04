@@ -68,6 +68,7 @@ urlpatterns = [
     path('add_customer_ajax/', views.add_customer, name='add_customer_ajax'),
     path('customers/', views.customer_search_view, name='customer_search'),
     path('customers/<int:customer_id>/', views.customer_detail_view, name='customer_detail'),
+    path('customers/<int:customer_id>/discount/', views.customer_discount_set, name='customer_discount_set'),
     path('customers/<int:customer_id>/panel/', panel_views.customer_panel, name='customer_panel'),
     path('products/<int:pk>/panel/', panel_views.product_panel, name='product_panel'),
     path('suppliers/<int:supplier_id>/panel/', panel_views.supplier_panel, name='supplier_panel'),

@@ -361,7 +361,8 @@
       .then(function (data) {
         if (asked !== custId.value || data.discount == null) return;
         const gap = cents(data.discount);
-        document.getElementById('pd-disc-note').textContent = 'Última venda ' + data.date + ': ' +
+        document.getElementById('pd-disc-note').textContent =
+          (data.source === 'hand' ? 'Definido ' : 'Última venda ') + data.date + ': ' +
           (gap > 0 ? fmt(gap) + ' abaixo do grossista' : 'preço grossista');
         discVal.value = String(data.discount).replace('.', ',');
         discBox.hidden = false;

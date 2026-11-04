@@ -5053,7 +5053,33 @@ def customer_wholesale_discount(request):
     if found is None:
         return JsonResponse({'discount': None})
     return JsonResponse({'discount': f"{found['discount']:.2f}", 'date': found['date'],
-                         'order_id': found['order_id']})
+                         'order_id': found['order_id'], 'source': found['source']})
+
+
+@login_required
+@manager_required
+@require_POST
+def customer_discount_set(request, customer_id):
+    """The customer's page: set the discount off wholesale by hand, or clear it
+    (empty, or "Use last sale") so their last sale decides again."""
+    customer = get_object_or_404(Customer, id=customer_id)
+    raw = (request.POST.get('amount') or '').strip().replace(',', '.').replace('€', '')
+    if request.POST.get('clear') or not raw:
+        Customer.objects.filter(pk=customer.pk).update(wholesale_discount=None, wholesale_discount_set_at=None)
+        messages.success(request, f'{customer.name}: the discount follows their last sale again.')
+        return redirect('customer_detail', customer_id=customer.id)
+    try:
+        amount = Decimal(raw)
+        if amount < 0 or amount > 1000:
+            raise InvalidOperation
+    except (InvalidOperation, ValueError):
+        messages.error(request, 'Enter the discount in euro, e.g. 3 or 2.50.')
+        return redirect('customer_detail', customer_id=customer.id)
+    amount = amount.quantize(Decimal('0.01'))
+    Customer.objects.filter(pk=customer.pk).update(wholesale_discount=amount,
+                                                   wholesale_discount_set_at=timezone.now())
+    messages.success(request, f'{customer.name}: €{amount} off wholesale.')
+    return redirect('customer_detail', customer_id=customer.id)
 
 
 @require_POST
@@ -5700,8 +5726,10 @@ def customer_detail_view(request, customer_id):
         if total_orders else Decimal('0.00')
     )
 
+    from .services.wholesale_discount import last_discount
     return render(request, 'stock/customer_detail.html', {
         'customer': customer,
+        'wholesale_discount': last_discount(customer.id) if customer.is_revenda else None,
         'month_blocks': month_blocks,
         'spend_trend': spend_trend,
         'payment_mix': payment_mix,

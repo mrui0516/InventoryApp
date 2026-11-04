@@ -1,8 +1,9 @@
 """How far below wholesale a customer buys.
 
-Nothing is stored: the figure is read from the customer's last sale, so a
-corrected or deleted order changes it on its own (as ``last_prices`` does).
-It is what the export and Pedido start from, and both can change it.
+Read from the customer's last sale, so a corrected or deleted order changes it
+on its own (as ``last_prices`` does); or set by hand on the customer's page.
+The newer of the two wins. It is what the export and Pedido start from, and
+both can change it for that quote.
 """
 from collections import Counter
 from decimal import Decimal
@@ -41,7 +42,27 @@ def discount_applies(product):
 
 
 def last_discount(customer_id):
-    """``{'discount', 'date', 'order_id'}`` from the customer's last sale that
+    """``{'discount', 'date', 'order_id', 'source', 'by_hand'}`` for a customer:
+    the figure set by hand or the one from their last sale, whichever is newer
+    (``source``: ``'hand'`` / ``'sale'``); None if there is neither.
+    ``by_hand``: a figure set by hand is in force."""
+    from ..models import Customer
+    customer = Customer.objects.filter(pk=customer_id).first() if customer_id else None
+    if customer is None:
+        return None
+    sale = _last_sale_gap(customer.id)
+    set_at = customer.wholesale_discount_set_at
+    if customer.wholesale_discount is not None and set_at and (sale is None or set_at >= sale['at']):
+        return {'discount': customer.wholesale_discount, 'order_id': None, 'source': 'hand', 'by_hand': True,
+                'date': timezone.localtime(set_at).strftime('%d/%m/%Y')}
+    if sale is None:
+        return None
+    return {'discount': sale['discount'], 'order_id': sale['order_id'], 'source': 'sale', 'by_hand': False,
+            'date': timezone.localtime(sale['at']).strftime('%d/%m/%Y')}
+
+
+def _last_sale_gap(customer_id):
+    """``{'discount', 'at', 'order_id'}`` from the customer's last sale that
     had a bottle the discount applies to, or None if they never bought one.
 
     ``discount`` is that sale's gap to the wholesale price: the commonest one
@@ -51,8 +72,6 @@ def last_discount(customer_id):
     the one it was made against.
     """
     from ..models import Sale
-    if not customer_id:
-        return None
     lines = (Sale.objects
              .filter(Q(order__customer_id=customer_id) | Q(order__isnull=True, customer_id=customer_id),
                      is_sample=False)
@@ -74,5 +93,4 @@ def last_discount(customer_id):
         return None
     best = max(gaps.values())
     return {'discount': min(gap for gap, units in gaps.items() if units == best),
-            'order_id': found['order_id'],
-            'date': timezone.localtime(found['date']).strftime('%d/%m/%Y')}
+            'order_id': found['order_id'], 'at': found['date']}

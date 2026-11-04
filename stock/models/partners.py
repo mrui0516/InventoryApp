@@ -52,6 +52,12 @@ class Customer(models.Model):
     # address is what gets copied onto the paperwork, not queried on.
     address = models.TextField(blank=True, default='', verbose_name="Address")
     notes = models.TextField(blank=True, null=True, verbose_name="Notes")
+    # How far below wholesale, set by hand on the customer's page. It counts
+    # until they buy again: the newest of this and their last sale wins (see
+    # services/wholesale_discount). Empty: the last sale alone decides.
+    wholesale_discount = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True,
+                                             verbose_name="Discount off wholesale")
+    wholesale_discount_set_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return f"{self.name} ({self.ident})" if self.ident else self.name
