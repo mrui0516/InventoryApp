@@ -11,7 +11,7 @@
 | 维度 | 状态 | 说明 |
 |---|---|---|
 | 线上运行 | ✅ PythonAnywhere 欧盟区 | `https://scentory.eu.pythonanywhere.com`，两家店（Khan Perfume、Scentory）日常收银、入库都在线上；线上 `db.sqlite3` 是唯一准数据 |
-| 自动化测试 | ✅ 911 个全部通过 | `python manage.py test stock restock_alerts`，在干净导出上跑 |
+| 自动化测试 | ✅ 1000 个全部通过 | `python manage.py test stock restock_alerts`，在干净导出上跑 |
 | 数据库迁移 | ✅ 最新 `0072_finance`，无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
 | 生产配置 | ✅ `DEBUG=False`，密钥只在服务器 `.env` | `settings.py` 的 `if not DEBUG` 块：强制 HTTPS、安全 Cookie、HSTS、防点击劫持 |
 | 数据备份 | ✅ 每日快照 + 本机拉取 | PA 定时任务 `backup_db --keep 30`，本机 `scripts/pull_backup_from_pa.py` 拉到 U 盘；Settings → Tools 可手动下载。见 [BACKUP.md](./BACKUP.md) |
@@ -35,7 +35,7 @@
 
 ## 3. 测试与质量
 
-- `python manage.py test stock restock_alerts` → **911 个测试全部通过**（约 8 分钟）；`python manage.py check` 无问题。
+- `python manage.py test stock restock_alerts` → **1000 个测试全部通过**（约 8 分钟）；`python manage.py check` 无问题。
 - 外部集成（Shopify / Cloudinary）的测试全部 mock，不发真实网络请求。
 - 提交前在 `git archive HEAD` 的干净导出上跑全套：工作区里可能有别的进行中的改动，会让结果失真。
 
@@ -74,7 +74,7 @@
 一条一行，最新在前。细节查 `git log`。
 
 - 2026-11-04: **同名的礼盒和香水分得清。** 显示名带类型（Coffret 等）；Quick import 按文本里的礼盒词匹配。新增 6 个测试。
-- 2026-11-04: **财务系统（Finance，只有管理员）。** 记支出（分利润月份和实际付款日）、固定月费和工资模板、供应商付款（Scentory 付，按各店收货成本分配，其它店的份额进两店余额）、老板投入和取出。Overview 显示净利润、按类别花费、每月现金进出、净投入和生意现值（不含现金）。Today 和客户页的 Net Profit 改名 Profit；Purchases 面板显示 Paid、Owing；Audit 加 Finance 页。迁移 0072，新增约 80 个测试。
+- 2026-11-04: **财务系统（Finance，只有管理员）。** 记支出（分利润月份和实际付款日）、固定月费和工资模板、供应商付款（Scentory 付，按各店收货成本分配，其它店的份额进两店余额）、老板投入和取出。Overview 显示净利润、按类别花费、每月现金进出、净投入和生意现值（不含现金）。Today 和客户页的 Net Profit 改名 Profit；Purchases 面板显示 Paid、Owing；Audit 加 Finance 页。迁移 0072，新增 89 个测试。
 - 2026-11-04: **记住每位客人的批发优惠。** 从客人上一次成交算出比批发价便宜多少（新接口 `api/customer_wholesale_discount/`），客人页面显示并可手动设置（迁移 0071，手动值和上次成交谁新用谁），Pedido 新加的产品按"批发价 − 差额"起，"Aplicar a todos" 应用到已有行；产品列表导出加 Customer 搜索，自动填折扣并切到 Wholesale。只作用于 60–120ml 香水（原有规则，`discount_applies` 移到 `services/wholesale_discount.py`）。新增 14 个测试。
 - 2026-11-02: **入库供应商必填 + Orders → Purchases 可回滚。** 不选供应商的入库会直接进库存、而且没地方撤销：Inbound 的 Supplier 改为必填（前端拦下，后端拒绝），所有进货都走暂定单 → 确认收货。Orders → Purchases 的记录面板加 **Roll back**：已收货的进货单回到待收货（保留各店分配），以前的无供应商直接入库（同一次保存的批次）整条删除；卖过或调过店的拒绝并写明原因。新增 4 个测试，改写 3 个依赖无供应商入库的旧测试。
 - 2026-11-02: **Today 加零售 / 批发。** Sales、Items Sold 后面两格 Retail、Revenda：金额、单数、件数（按客户类型），点开是当天 Orders 筛到该渠道。新增 1 个测试。
