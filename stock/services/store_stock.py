@@ -154,8 +154,8 @@ def _split(batch, used, to_store, line):
         raise _conflict(product)
     moved = Purchase.objects.create(
         product=product, supplier_id=batch.supplier_id, inbound_order_id=batch.inbound_order_id,
-        store=to_store, received_store_id=batch.received_store_id,
-        quantity=used, remaining=used, cost_price=batch.cost_price, transfer_line=line)
+        store=to_store, received_store_id=batch.received_store_id, net_cost=batch.net_cost,
+        iva_rate=batch.iva_rate, quantity=used, remaining=used, cost_price=batch.cost_price, transfer_line=line)
     # date is auto_now_add: the moved units keep the day they were bought
     Purchase.objects.filter(pk=moved.pk).update(date=batch.date)
     return Decimal(used) * (batch.cost_price or Decimal('0.00'))
@@ -278,18 +278,21 @@ def split_for_receipt(raw, quantity, stores, label=''):
     return alloc
 
 
-def receive_batches(*, product, quantity, cost_price, allocation, supplier=None, inbound_order=None):
+def receive_batches(*, product, quantity, cost_price, allocation, supplier=None, inbound_order=None,
+                    net_cost=None, iva_rate=Decimal('0.00')):
     """One batch per shop for a received line."""
+    costs = {'cost_price': cost_price, 'net_cost': cost_price if net_cost is None else net_cost,
+             'iva_rate': iva_rate}
     stores = {s.id: s for s in Store.objects.filter(id__in=list(allocation))}
     made = []
     for store_id, units in allocation.items():
         made.append(Purchase.objects.create(
             product=product, supplier=supplier, inbound_order=inbound_order, store=stores.get(store_id),
-            quantity=units, remaining=units, cost_price=cost_price))
+            quantity=units, remaining=units, **costs))
     if not allocation:          # no shops set up at all
         made.append(Purchase.objects.create(
             product=product, supplier=supplier, inbound_order=inbound_order,
-            quantity=quantity, remaining=quantity, cost_price=cost_price))
+            quantity=quantity, remaining=quantity, **costs))
     if len(made) > 1:
         # one moment for the whole line, so lists show it as one purchase
         Purchase.objects.filter(pk__in=[b.pk for b in made[1:]]).update(date=made[0].date)

@@ -177,6 +177,9 @@
           <div class="text-end">
             <div class="history-amt">&euro;{{ row.amount|floatformat:2 }}</div>
             <div class="sub">{{ row.qty }} units</div>
+            {% if row.invoice_url %}
+              <a href="{{ row.invoice_url }}" class="btn btn-sm btn-outline-secondary mt-2" target="_blank" rel="noopener">Invoice</a>
+            {% endif %}
             {% if row.edit_url %}
               <a href="{{ row.edit_url }}" class="btn btn-sm btn-outline-primary mt-2">Adjust record</a>
             {% endif %}

@@ -359,6 +359,19 @@ Orders → Purchases（`orders_views.load_purchases`）、供应商页、产品�
 最后一家店拿余数，保证加起来等于付款；有一行没分配时返回空。`share_debts()` 并入 `store_stock.balances()`（返回 `parts`），
 `share_margins()` 并入 `transfer_margins()`，所以加价走和调货一样的路径。`store_stock` 里这两处是函数内导入，避免和 `dashboard` 循环。
 
+### 5.8b2 入库成本：IVA、运费、发票（2026-11-04）
+
+`InboundPendingItem.cost_price` 始终是**报价**（不含 IVA），`InboundOrder.iva_rate` / `shipping` 和行上的 `shipping_share` 分开存，
+未收货时可以随便改；`InboundPendingItem.unit_cost` 用 `services/inbound_costs.py::unit_cost` 现算。
+
+确认收货时批次 `Purchase.cost_price` 写**最终成本**，`net_cost` 写报价，`iva_rate` 写税率。这样 FIFO、利润、财务不用知道 IVA 的存在；
+`_split`（调货拆批）会带上这两个字段。`_last_net` 读「上次进价」时优先用 `net_cost`，所以价格提醒比较的是报价，不会因 IVA 误报。
+
+- **运费校验**：`check_shipping` 在创建暂定单和确认收货时都跑，总和不等就拒绝；只存草稿（Save）不校验，方便分几次填。
+- **回滚**：`inbound_rollback` 按（产品，报价）重建暂定行并恢复 `shipping_share`，最后一行拿余数，保证总和等于 `order.shipping`。
+- **财务**：`finance._order_lines` 用 `unit_cost`，运费随行分到各店，所以欠款和两店分摊都已含 IVA 和运费。`payables()` 忽略不足 €1 的差额（`ROUNDING`），分到分的四舍五入不会留下「欠 0.01」。
+- **发票**：`InboundOrder.invoice_file` 用 `PrivateStorage`，文件在 `settings.PRIVATE_MEDIA_ROOT`（`private_media/`，已 gitignore），不走 `/media/`，只能经 `@manager_required` 的 `inbound_invoice` 视图读取。`check_invoice` 限格式和 10 MB。
+
 ### 5.8c 撤销收货（Inbound rollback）
 
 确认收货是一下点击，点错了就凭空多出一批库存。

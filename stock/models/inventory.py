@@ -2,10 +2,27 @@
 """Inventory domain: inbound orders, FIFO purchase batches and stock-adjustment audit."""
 from decimal import Decimal
 
+import os
+
 from django.conf import settings
+from django.core.files.storage import FileSystemStorage
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils import timezone
+from django.utils.deconstruct import deconstructible
+
+
+@deconstructible
+class PrivateStorage(FileSystemStorage):
+    """Files with no public URL: read only through a view that checks who asks."""
+
+    @property
+    def base_location(self):
+        return settings.PRIVATE_MEDIA_ROOT
+
+    @property
+    def location(self):
+        return os.path.abspath(self.base_location)
 
 
 class InboundOrder(models.Model):
@@ -28,6 +45,11 @@ class InboundOrder(models.Model):
     # measured: there is no honest way to invent when they were ordered.
     placed_at = models.DateTimeField(null=True, blank=True, db_index=True)
     received_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    # 23.00 when the supplier's prices are without IVA and it goes on top.
+    iva_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('0.00'))
+    # The whole shipping bill, allocated to the lines by hand (shipping_share).
+    shipping = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    invoice_file = models.FileField(upload_to='invoices/%Y/', storage=PrivateStorage(), blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -74,6 +96,9 @@ class InboundPendingItem(models.Model):
     # How the line is split between the shops: {"<store id>": units}. Set
     # before the goods are received; the receipt makes one batch per shop.
     allocation = models.JSONField(default=dict, blank=True)
+    # This line's part of the order's shipping, for the whole line.
+    shipping_share = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'),
+                                         validators=[MinValueValidator(Decimal('0.00'))])
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -81,6 +106,13 @@ class InboundPendingItem(models.Model):
 
     def __str__(self):
         return f"Pending {self.product.display_name} x {self.quantity}"
+
+    @property
+    def unit_cost(self):
+        """What one unit will cost in stock: ``cost_price`` is the price as quoted."""
+        from ..services.inbound_costs import unit_cost
+        return unit_cost(self.cost_price, self.inbound_order.iva_rate, self.shipping_share, self.quantity)
+
 
 
 class Purchase(models.Model):
@@ -106,6 +138,9 @@ class Purchase(models.Model):
     # inbound record stays what it received.
     received_store = models.ForeignKey('Store', on_delete=models.PROTECT, null=True, blank=True,
                                        related_name='received_batches')
+    # What cost_price was built from: the price as quoted, and the IVA put on it.
+    net_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    iva_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('0.00'))
 
     def __str__(self):
         return f"{self.product.name} - {self.quantity} - {self.date:%Y-%m-%d %H:%M}"

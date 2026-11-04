@@ -3,6 +3,7 @@ import csv
 from decimal import Decimal, InvalidOperation,ROUND_HALF_UP
 import hashlib
 import json
+import os
 import re
 from io import BytesIO
 from collections import defaultdict
@@ -21,7 +22,7 @@ from django.db import transaction
 from django.db.models import Q, Sum, Count, Max, Case, When
 from django.db.models.functions import Coalesce
 from django.http import (
-    HttpResponse, JsonResponse, FileResponse
+    Http404, HttpResponse, JsonResponse, FileResponse
 )
 from django.shortcuts import render, redirect, get_object_or_404
 from django.utils.text import slugify
@@ -65,6 +66,7 @@ from .permissions import (
     admin_required,
     manager_required,
 )
+from .services.inbound_costs import IVA_RATE, check_invoice, check_shipping
 from .services.wholesale_discount import discount_applies
 from .stores import (
     ACTIVE_STORE_SESSION_KEY,
@@ -754,6 +756,17 @@ def inbound_view(request):
         with transaction.atomic():
             submissions.claim(request)      # rolls back with the stock-in if it fails
             order_total = Decimal('0.00')
+            upload = request.FILES.get('invoice_file')
+            check_invoice(upload)
+            iva_rate = IVA_RATE if request.POST.get('add_iva') == '1' else Decimal('0.00')
+            try:
+                shipping = Decimal((request.POST.get('shipping') or '0').strip().replace(',', '.') or '0')
+            except InvalidOperation:
+                raise ValueError('Enter the shipping in euro.')
+            if not shipping.is_finite() or shipping < 0:
+                raise ValueError('Enter the shipping in euro.')
+            shipping = shipping.quantize(Decimal('0.01'))
+            shares = []
 
             if supplier:
                 # 有供应商：创建“暂定（pending_receipt）”入库单，先不入库、不产生库存，
@@ -767,6 +780,9 @@ def inbound_view(request):
                     # the clock the lead time is measured from.
                     placed_at=timezone.now(),
                     total_amount=Decimal('0.00'),
+                    iva_rate=iva_rate,
+                    shipping=shipping,
+                    invoice_file=upload or '',
                 )
 
                 for row in items:
@@ -779,19 +795,24 @@ def inbound_view(request):
 
                     if not barcode or qty < 1 or cost_price <= 0:
                         raise ValueError('Invalid item line.')
+                    try:
+                        share = Decimal(str(row.get('shipping') or 0)).quantize(Decimal('0.01'))
+                    except InvalidOperation:
+                        raise ValueError('Quantity/cost must be numbers.')
 
                     product = Product.objects.get(barcode=barcode)
 
-                    # A split typed already is kept; it is checked on receipt.
-                    from .services.store_stock import clean_allocation
-                    InboundPendingItem.objects.create(
+                    # The split between the shops comes on receipt.
+                    item = InboundPendingItem.objects.create(
                         inbound_order=order,
                         product=product,
                         quantity=qty,
                         cost_price=cost_price,
-                        allocation={str(k): v for k, v in clean_allocation(row.get('alloc'), shops).items()},
+                        shipping_share=share,
                     )
-                    order_total += cost_price * qty
+                    shares.append(share)
+                    order_total += item.unit_cost * qty
+                check_shipping(shipping, shares)
 
                 # 回写整单总额
                 order.total_amount = order_total
@@ -832,8 +853,21 @@ def suppliers_autocomplete(request):
     qs = Supplier.objects.all()
     if q:
         qs = qs.filter(name__icontains=q)
-    results = [{'id': s.id, 'name': s.name} for s in qs.order_by('name')[:10]]
+    results = [{'id': s.id, 'name': s.name, 'adds_iva': s.adds_iva} for s in qs.order_by('name')[:10]]
     return JsonResponse({'results': results})
+
+
+@login_required
+@manager_required
+def inbound_invoice(request, order_id):
+    """The invoice kept with an inbound order: it has no public address."""
+    order = get_object_or_404(InboundOrder, pk=order_id)
+    if not order.invoice_file:
+        raise Http404('No invoice on this order.')
+    try:
+        return FileResponse(order.invoice_file.open('rb'), filename=os.path.basename(order.invoice_file.name))
+    except FileNotFoundError:
+        raise Http404('The invoice file is missing.')
 
 
 @login_required
@@ -871,12 +905,14 @@ def inbound_receive_view(request, order_id):
             messages.success(request, f'Pending order #{deleted_id} cancelled.')
             return redirect('inbound')
 
-        form = InboundReceiveForm(request.POST, instance=order)
+        form = InboundReceiveForm(request.POST, request.FILES, instance=order)
         formset = InboundPendingFormSet(request.POST, instance=order, prefix='lines')
 
         if form.is_valid() and formset.is_valid():
             with transaction.atomic():
-                order = form.save()
+                order = form.save(commit=False)
+                order.iva_rate = IVA_RATE if request.POST.get('add_iva') == '1' else Decimal('0.00')
+                order.save()
                 formset.save()
 
                 remaining_items = list(order.pending_items.select_related('product').all())
@@ -890,10 +926,9 @@ def inbound_receive_view(request, order_id):
                     messages.success(request, f'Pending order #{deleted_id} cancelled (no products left).')
                     return redirect('inbound')
 
-                order.total_amount = sum(
-                    ((it.cost_price or Decimal('0.00')) * it.quantity for it in remaining_items),
-                    Decimal('0.00'),
-                )
+                for it in remaining_items:
+                    it.inbound_order = order
+                order.total_amount = sum((it.unit_cost * it.quantity for it in remaining_items), Decimal('0.00'))
                 order.save(update_fields=['total_amount'])
 
                 # The split between the shops, as typed: kept on save, and
@@ -909,6 +944,8 @@ def inbound_receive_view(request, order_id):
                     splits = ({it.pk: split_for_receipt(it.allocation, it.quantity, shops,
                                                         build_product_label(it.product))
                                for it in remaining_items} if action == 'receive' else {})
+                    if action == 'receive':
+                        check_shipping(order.shipping, [it.shipping_share for it in remaining_items])
                 except ValueError as e:
                     messages.error(request, f'Order #{order.id} not received. {e}')
                     return redirect('inbound')
@@ -916,7 +953,8 @@ def inbound_receive_view(request, order_id):
                 if action == 'receive':
                     now = timezone.now()
                     for it in remaining_items:
-                        receive_batches(product=it.product, quantity=it.quantity, cost_price=it.cost_price,
+                        receive_batches(product=it.product, quantity=it.quantity, cost_price=it.unit_cost,
+                                        net_cost=it.cost_price, iva_rate=order.iva_rate,
                                         allocation=splits[it.pk], supplier=order.supplier, inbound_order=order)
                         _bought_again(it.product)
                     order.mark_received(now)
@@ -953,6 +991,13 @@ def _sell_draft(request, raw_id):
             .filter(id=int(raw_id), store=store, status=PedidoDraft.OPEN).first())
 
 
+def _last_net(purchase):
+    """The price to start a new stock-in at: as quoted, before IVA and shipping."""
+    if purchase is None:
+        return None
+    return float(purchase.cost_price if purchase.net_cost is None else purchase.net_cost)
+
+
 def _sell_line_ctx(product, store=None):
     """A product as the Sell cart knows it - the fields check_barcode returns."""
     from .services.store_stock import till_stock
@@ -979,6 +1024,7 @@ def _sell_line_ctx(product, store=None):
         'retail': float(product.default_price) if product.default_price is not None else None,
         'wholesale': float(product.wholesale_price) if product.wholesale_price is not None else None,
         'lastCost': float(last_purchase.cost_price) if last_purchase else None,
+        'lastNet': _last_net(last_purchase),
         'image_url': image_url,
     }
 
@@ -2953,6 +2999,7 @@ def check_barcode(request):
             'sample_here': shop_stock['sample_here'],
             'shops': shop_stock['shops'],
             'last_cost': float(last_cost) if last_cost is not None else None,
+            'last_net_cost': _last_net(last_purchase),
             'retail_price': float(product.default_price) if product.default_price is not None else None,
             'wholesale_price': float(product.wholesale_price) if product.wholesale_price is not None else None,
             'image_url': image_url,
@@ -3991,6 +4038,7 @@ def supplier_detail_view(request, supplier_id):
             'items': items,
             'note': order.note or '',
             'edit_url': f"{reverse('inbound_order_edit', args=[order.id])}?{urlencode({'next': next_url})}",
+            'invoice_url': reverse('inbound_invoice', args=[order.id]) if order.invoice_file else '',
             # Offered only on orders that were actually received, and only
             # while none of the stock has moved - see services/inbound_rollback.
             'rollback_url': (reverse('inbound_order_rollback', args=[order.id])
@@ -4137,7 +4185,7 @@ def inbound_order_edit_view(request, order_id):
     next_url = request.GET.get('next', '').strip() or request.POST.get('next', '').strip() or reverse('sales_records')
 
     if request.method == 'POST':
-        form = InboundOrderEditForm(request.POST, instance=order)
+        form = InboundOrderEditForm(request.POST, request.FILES, instance=order)
         formset = InboundPurchaseFormSet(request.POST, instance=order, prefix='lines')
 
         if form.is_valid() and formset.is_valid():

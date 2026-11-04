@@ -95,10 +95,16 @@ class InboundSplitTests(PagesMixin, TestCase):
         self.assertFalse(Purchase.objects.exists())
         self.assertFalse(InboundOrder.objects.exists())
 
-    def test_the_page_offers_a_column_per_shop(self):
+    def test_shops_are_chosen_on_receipt_not_in_the_cart(self):
+        # 2026-11-05: the cart asks for no split, the Receive dialog does
         html = self.client.get(reverse("inbound")).content.decode()
-        self.assertIn('class="alloc-th"', html)
-        self.assertIn('"Scentory"', html)
+        self.assertNotIn('id="cartAllocAll"', html)
+        self.assertNotIn("data-store=", html)
+        order = InboundOrder.objects.create(supplier=Supplier.objects.create(name="S"), status="pending_receipt")
+        item = InboundPendingItem.objects.create(inbound_order=order, product=self.product, quantity=2,
+                                                 cost_price=Decimal("5"))
+        html = self.client.get(reverse("inbound")).content.decode()
+        self.assertIn(f'name="alloc-{item.pk}-{self.khan.id}"', html)
 
     def test_receiving_a_pending_order_needs_the_split(self):
         supplier = Supplier.objects.create(name="Sup")

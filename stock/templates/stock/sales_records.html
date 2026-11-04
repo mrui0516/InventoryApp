@@ -351,7 +351,7 @@
           <button type="button" class="op-open" data-layer="pl-{{ group.key }}">
             <span class="c-time">{{ group.created_at|date:"H:i" }}</span>
             <span class="c-id">{{ group.short_ref }}</span>
-            <span class="c-cust">{{ group.supplier_name }}{% if group.pending %}<span class="ch-tag">On the way</span>{% endif %}<span class="c-when">{% if pdate == 'paid' %}{% if group.received_on and group.received_on != group.paid_on %}received {{ group.received_on|date:"j M" }}{% endif %}{% elif group.paid_on != group.received_on %}paid {{ group.paid_on|date:"j M" }}{% endif %}</span>{% if group.matched_items %}<span class="c-hit">{% for item in group.matched_items|slice:":2" %}{{ item.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>{% endif %}{% if group.shops %}<span class="c-shops">{% for s in group.shops %}{{ s.label }} <b>{{ s.qty }}</b> &middot; &euro;{{ s.cost|floatformat:2 }}{% if not forloop.last %}<i>|</i>{% endif %}{% endfor %}</span>{% endif %}</span>
+            <span class="c-cust">{{ group.supplier_name }}{% if group.pending %}<span class="ch-tag">On the way</span>{% endif %}{% if group.iva_rate %}<span class="ch-tag">IVA {{ group.iva_rate|floatformat:0 }}%</span>{% endif %}<span class="c-when">{% if pdate == 'paid' %}{% if group.received_on and group.received_on != group.paid_on %}received {{ group.received_on|date:"j M" }}{% endif %}{% elif group.paid_on != group.received_on %}paid {{ group.paid_on|date:"j M" }}{% endif %}</span>{% if group.matched_items %}<span class="c-hit">{% for item in group.matched_items|slice:":2" %}{{ item.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>{% endif %}{% if group.shops %}<span class="c-shops">{% for s in group.shops %}{{ s.label }} <b>{{ s.qty }}</b> &middot; &euro;{{ s.cost|floatformat:2 }}{% if not forloop.last %}<i>|</i>{% endif %}{% endfor %}</span>{% endif %}</span>
             <span class="c-qty">{{ group.qty }}<small> pcs</small></span>
             <span class="c-amt">EUR {{ group.cost|floatformat:2 }}</span>
             <span class="c-pay">{{ group.invoice_no }}</span>
@@ -367,6 +367,8 @@
             </div>
             <dl class="ol-totals">
               <div><dt>Paid</dt><dd>{{ group.paid_on|date:"j M Y" }}</dd></div>
+              {% if group.iva_rate %}<div><dt>IVA</dt><dd>{{ group.iva_rate|floatformat:0 }}% included</dd></div>{% endif %}
+              {% if group.shipping %}<div><dt>Shipping</dt><dd>EUR {{ group.shipping|floatformat:2 }}</dd></div>{% endif %}
               <div><dt>Received</dt><dd>{% if group.received_on %}{{ group.received_on|date:"j M Y" }}{% else %}not yet{% endif %}</dd></div>
               {% if group.shops %}{% for s in group.shops %}<div><dt>{{ s.label }}</dt><dd>{{ s.qty }} pcs &middot; EUR {{ s.cost|floatformat:2 }}</dd></div>{% endfor %}{% endif %}
               <div><dt>Items</dt><dd>{{ group.qty }}</dd></div>
@@ -378,6 +380,7 @@
             </dl>
           </div>
           <div data-part="foot">
+            {% if group.invoice_url %}<a class="btn btn-outline-secondary" href="{{ group.invoice_url }}" target="_blank" rel="noopener">Invoice</a>{% endif %}
             {% if group.rollback_url or group.rollback_ids %}
               {% if group.can_rollback %}
                 <form method="post" action="{% if group.rollback_url %}{{ group.rollback_url }}{% else %}{% url 'direct_stock_in_rollback' %}{% endif %}"

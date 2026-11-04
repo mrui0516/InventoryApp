@@ -453,6 +453,7 @@ def _pending_lines(order, store):
             if not by_shop.get(store.id):
                 continue
             item.quantity, by_shop = by_shop[store.id], {store.id: by_shop[store.id]}
+        item.cost_price = item.unit_cost    # for this list: what it comes to with IVA and shipping
         item.by_shop, item.shops, item.parts = by_shop, [], []
         item.supplier, item.supplier_id = order.supplier, order.supplier_id
         item.edit_url, item.edit_links = '', []
@@ -509,6 +510,9 @@ def load_purchases(start, end, q, next_url, store=None, by='received', with_paym
         created = paid if by == 'paid' or arrived is None else arrived
         groups.append({
             'pending': pending,
+            'iva_rate': order.iva_rate,
+            'shipping': order.shipping,
+            'invoice_url': reverse('inbound_invoice', args=[order.id]) if order.invoice_file else '',
             'order_paid': paid_so_far,
             'order_owing': None if due is None else due - paid_so_far,
             'paid_on': paid.date(),

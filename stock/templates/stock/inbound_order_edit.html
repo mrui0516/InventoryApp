@@ -34,7 +34,7 @@
     </div>
   </section>
 
-  <form method="post" class="inbound-edit-card inbound-edit-pad">
+  <form method="post" enctype="multipart/form-data" class="inbound-edit-card inbound-edit-pad">
     {% csrf_token %}
     <input type="hidden" name="next" value="{{ next_url }}">
     {{ formset.management_form }}
@@ -61,6 +61,11 @@
         <label class="form-label fw-bold" for="{{ form.invoice_date.id_for_label }}">Invoice date</label>
         {{ form.invoice_date }}
         {% if form.invoice_date.errors %}<div class="text-danger small mt-1">{{ form.invoice_date.errors|join:', ' }}</div>{% endif %}
+      </div>
+      <div class="col-md-4">
+        <label class="form-label fw-bold" for="id_invoice_file">Invoice file{% if order.invoice_file %} &middot; <a href="{% url 'inbound_invoice' order.id %}" target="_blank" rel="noopener">open</a>{% endif %}</label>
+        <input type="file" name="invoice_file" id="id_invoice_file" class="form-control" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic">
+        {% if form.invoice_file.errors %}<div class="text-danger small mt-1">{{ form.invoice_file.errors|join:', ' }}</div>{% endif %}
       </div>
       <div class="col-md-4">
         <label class="form-label fw-bold" for="{{ form.recorded_at.id_for_label }}">Recorded at</label>

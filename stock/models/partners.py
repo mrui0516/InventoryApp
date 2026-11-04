@@ -15,6 +15,9 @@ class Supplier(models.Model):
     # cross-domain reference (catalog.Category) kept as a string to avoid import coupling
     product_types = models.ManyToManyField('Category', blank=True, verbose_name="Supplied Categories")
 
+    # Portuguese suppliers quote without IVA: Inbound adds it for them by default.
+    adds_iva = models.BooleanField(default=False, verbose_name='Prices without IVA (add 23%)')
+
     def __str__(self):
         return self.name
 

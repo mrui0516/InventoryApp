@@ -49,33 +49,37 @@
 
 {% for pr in pending_reviews %}
   <div class="modal fade" id="receive-modal-{{ pr.order.id }}" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
-      <form method="post" action="{% url 'inbound_receive' pr.order.id %}" class="modal-content">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable modal-fullscreen-sm-down">
+      <form method="post" enctype="multipart/form-data" action="{% url 'inbound_receive' pr.order.id %}" class="modal-content rcv" data-rcv>
         {% csrf_token %}
         {{ pr.form.supplier }}
         <div class="modal-header">
-          <h5 class="modal-title">Receive inbound · #{{ pr.order.id }}</h5>
+          <div>
+            <h5 class="modal-title">Receive #{{ pr.order.id }}</h5>
+            <div class="rcv-sub">{{ pr.order.supplier.name }} &middot; {{ pr.lines|length }} product{{ pr.lines|length|pluralize }}</div>
+          </div>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
           <div class="rcv-fields">
             <div class="position-relative">
               <label class="rcv-label">Supplier</label>
-              <input type="text" class="form-control form-control-sm js-supplier-search" value="{{ pr.order.supplier.name }}" autocomplete="off">
+              <input type="text" class="form-control form-control-sm js-supplier-search" value="{{ pr.order.supplier.name }}" autocomplete="off" aria-label="Supplier">
               <div class="list-group position-absolute w-100 shadow-sm d-none js-supplier-suggestions" style="z-index:1080;"></div>
             </div>
-            <div>
-              <label class="rcv-label">Invoice No.</label>
-              {{ pr.form.invoice_no }}
+            <div><label class="rcv-label">Invoice no.</label>{{ pr.form.invoice_no }}</div>
+            <div><label class="rcv-label">Invoice date</label>{{ pr.form.invoice_date }}</div>
+            <div class="rcv-file">
+              <label class="rcv-label">Invoice file{% if pr.order.invoice_file %} &middot; <a href="{% url 'inbound_invoice' pr.order.id %}" target="_blank" rel="noopener">open</a>{% endif %}</label>
+              <input type="file" name="invoice_file" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic" aria-label="Invoice file">
             </div>
-            <div>
-              <label class="rcv-label">Invoice Date</label>
-              {{ pr.form.invoice_date }}
-            </div>
-            <div class="rcv-note">
-              <label class="rcv-label">Note</label>
-              {{ pr.form.note }}
-            </div>
+          </div>
+
+          <div class="rcv-costs">
+            <label class="rcv-iva"><input type="checkbox" name="add_iva" value="1" data-rcv-iva{% if pr.order.iva_rate %} checked{% endif %}> Add IVA 23%</label>
+            <label class="rcv-ship"><span>Shipping &euro;</span>{{ pr.form.shipping }}</label>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-rcv-split>Split by quantity</button>
+            <span class="rcv-left" data-rcv-left></span>
           </div>
 
           {{ pr.formset.management_form }}
@@ -84,15 +88,18 @@
             {% for s in alloc_stores %}<button type="button" class="btn btn-sm btn-outline-secondary" data-alloc-all="{{ forloop.counter0 }}">{{ s.name }}</button>{% endfor %}
           </div>
           {% endif %}
+
           <div class="table-responsive">
-            <table class="table table-sm align-middle mb-0 rcv-table" style="--cols:{{ alloc_stores|length|add:3 }}">
-              <thead class="table-light">
+            <table class="table table-sm align-middle mb-0 rcv-table">
+              <thead>
                 <tr>
                   <th>Product</th>
-                  <th class="text-center" style="width:82px">Qty</th>
-                  {% for s in alloc_stores %}<th class="text-center alloc-th" style="width:84px">{{ s.name }}</th>{% endfor %}
-                  <th class="text-end" style="width:118px">Cost &euro;</th>
-                  <th class="text-center" style="width:56px">Del</th>
+                  <th class="rcv-n">Qty</th>
+                  <th class="rcv-n">Price &euro;</th>
+                  <th class="rcv-n">Shipping&nbsp;&euro;</th>
+                  {% for s in alloc_stores %}<th class="rcv-n">{{ s.name }}</th>{% endfor %}
+                  <th class="text-end">Unit cost</th>
+                  <th class="rcv-del-h"><span class="visually-hidden">Remove</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -113,20 +120,28 @@
                       </div>
                     </td>
                     <td data-label="Qty">{{ line.form.quantity }}</td>
+                    <td data-label="Price &euro;">{{ line.form.cost_price }}</td>
+                    <td data-label="Shipping &euro;">{{ line.form.shipping_share }}</td>
                     {% for a in line.alloc %}<td data-label="{{ a.short }}"><input type="number" min="0" step="1" inputmode="numeric" class="alloc-in" name="alloc-{{ line.item.pk }}-{{ a.store.id }}" value="{{ a.value }}" aria-label="{{ a.store.name }}"></td>{% endfor %}
-                    <td data-label="Cost €">{{ line.form.cost_price }}</td>
-                    <td class="text-center rcv-del" data-label="Del">{{ line.form.DELETE }}</td>
+                    <td class="rcv-final" data-label="Unit cost"><b data-rcv-unit></b><small data-rcv-line></small></td>
+                    <td class="rcv-del"><label class="rcv-del-x" title="Remove this line">{{ line.form.DELETE }}<span aria-hidden="true">&times;</span><span class="visually-hidden">Remove</span></label></td>
                   </tr>
                 {% endfor %}
               </tbody>
             </table>
           </div>
+
+          <details class="rcv-more"{% if pr.order.note %} open{% endif %}>
+            <summary>Note</summary>
+            {{ pr.form.note }}
+          </details>
         </div>
-        <div class="modal-footer flex-wrap">
-          <button type="submit" name="action" value="receive" class="btn btn-primary">Confirm receipt</button>
-          <button type="submit" name="action" value="save" class="btn btn-outline-primary">Save changes</button>
-          <button type="submit" name="action" value="cancel" class="btn btn-outline-danger ms-auto"
+        <div class="modal-footer rcv-foot">
+          <div class="rcv-total"><span>Total</span><b data-rcv-total></b></div>
+          <button type="submit" name="action" value="cancel" class="btn btn-link text-danger"
                   onclick="return confirm('Cancel this pending order? This cannot be undone.');">Cancel order</button>
+          <button type="submit" name="action" value="save" class="btn btn-outline-primary">Save</button>
+          <button type="submit" name="action" value="receive" class="btn btn-primary">Confirm receipt</button>
         </div>
       </form>
     </div>
@@ -197,6 +212,61 @@
 })();
 
 (function () {
+  // The Receive dialog's figures, live: a line's unit cost is its price, plus
+  // IVA, plus its shipping over its quantity (as services/inbound_costs).
+  const cents = (v) => Math.round(v * 100);
+  const num = (input) => {
+    const v = Number(String((input && input.value) || '').replace(',', '.'));
+    return isFinite(v) ? v : 0;
+  };
+  const money = (v) => '€' + v.toFixed(2);
+  document.querySelectorAll('form[data-rcv]').forEach((form) => {
+    const iva = form.querySelector('[data-rcv-iva]');
+    const ship = form.querySelector('input[name="shipping"]');
+    const left = form.querySelector('[data-rcv-left]');
+    const rows = () => Array.from(form.querySelectorAll('.rcv-table tbody tr'))
+      .filter((r) => !r.querySelector('input[name$="-DELETE"]').checked);
+    const field = (row, name) => row.querySelector(`input[name$="-${name}"]`);
+    function update() {
+      const rate = iva.checked ? 0.23 : 0;
+      let total = 0, allocated = 0;
+      form.querySelectorAll('.rcv-table tbody tr').forEach((row) => {
+        const gone = field(row, 'DELETE').checked;
+        row.classList.toggle('rcv-gone', gone);
+        if (gone) return;
+        const qty = num(field(row, 'quantity'));
+        const share = num(field(row, 'shipping_share'));
+        const unit = Math.round((num(field(row, 'cost_price')) * (1 + rate) + (qty ? share / qty : 0)) * 100) / 100;
+        row.querySelector('[data-rcv-unit]').textContent = money(unit);
+        row.querySelector('[data-rcv-line]').textContent = money(unit * qty);
+        total += unit * qty;
+        allocated += share;
+      });
+      const rest = cents(num(ship)) - cents(allocated);
+      form.dataset.shipLeft = String(rest);
+      left.textContent = rest ? `€${(rest / 100).toFixed(2)} still to allocate` : '';
+      left.classList.toggle('bad', rest !== 0);
+      form.querySelector('[data-rcv-total]').textContent = money(total);
+      form.querySelector('[data-rcv-split]').hidden = !num(ship);
+    }
+    form.querySelector('[data-rcv-split]').addEventListener('click', () => {
+      const lines = rows();
+      const units = lines.reduce((t, r) => t + num(field(r, 'quantity')), 0);
+      let rest = cents(num(ship));
+      lines.forEach((row, n) => {
+        const part = n === lines.length - 1 ? rest : Math.min(rest, Math.round(cents(num(ship)) * num(field(row, 'quantity')) / units));
+        rest -= part;
+        field(row, 'shipping_share').value = (part / 100).toFixed(2);
+      });
+      update();
+    });
+    form.addEventListener('input', update);
+    form.addEventListener('change', update);
+    update();
+  });
+})();
+
+(function () {
   // Guard against a double submit, which used to 404 on an order the first
   // request had already received.
   //
@@ -211,6 +281,11 @@
       if (e.submitter && e.submitter.value === 'receive' && !window.allocReady(f)) {
         e.preventDefault();
         alert('Split every line between the shops before receiving: the shop quantities must add up to Qty.');
+        return;
+      }
+      if (e.submitter && e.submitter.value === 'receive' && f.dataset.shipLeft !== '0') {
+        e.preventDefault();
+        alert('Allocate the whole shipping to the lines before receiving.');
         return;
       }
       if (f.dataset.sent === '1') return;
@@ -244,7 +319,11 @@
               b.type = 'button';
               b.className = 'list-group-item list-group-item-action';
               b.textContent = s.name;
-              b.onclick = () => { search.value = s.name; hidden.value = s.id; box.classList.add('d-none'); };
+              b.onclick = () => {
+                search.value = s.name; hidden.value = s.id; box.classList.add('d-none');
+                const iva = form.querySelector('[data-rcv-iva]');
+                if (iva) { iva.checked = !!s.adds_iva; iva.dispatchEvent(new Event('change', { bubbles: true })); }
+              };
               box.appendChild(b);
             });
             box.classList.toggle('d-none', (d.results || []).length === 0);
@@ -313,7 +392,7 @@
 
 <div id="scan-info" class="alert d-none"></div>
 
-<form id="inbound-form" method="post" class="inbound-shell">
+<form id="inbound-form" method="post" enctype="multipart/form-data" class="inbound-shell">
   {% csrf_token %}
   {# recorded once, however often the form is sent (refresh, reopened browser) #}
   {% submit_token %}
@@ -345,6 +424,17 @@
             <label class="form-label">Invoice Date</label>
             <input type="date" name="invoice_date" id="invoice-date" class="form-control" value="{{ today|date:'Y-m-d' }}">
           </div>
+          <div class="col-md-3 col-6">
+            <label class="inb-iva"><input type="checkbox" name="add_iva" id="add-iva" value="1"> Add IVA 23%</label>
+          </div>
+          <div class="col-md-3 col-6">
+            <label class="form-label" for="shipping">Shipping &euro;</label>
+            <input type="text" inputmode="decimal" name="shipping" id="shipping" class="form-control" placeholder="0.00">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label" for="invoice-file">Invoice file</label>
+            <input type="file" name="invoice_file" id="invoice-file" class="form-control" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic">
+          </div>
         </div>
       </section>
 
@@ -360,19 +450,18 @@
           </div>
         </div>
 
-        {% if alloc_stores %}
-        <div class="alloc-all" id="cartAllocAll">Put everything in
-          {% for s in alloc_stores %}<button type="button" class="btn btn-sm btn-outline-secondary" data-alloc-all="{{ forloop.counter0 }}">{{ s.name }}</button>{% endfor %}
+        <div class="ship-bar" id="ship-bar" hidden>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="ship-split">Split shipping by quantity</button>
+          <span id="ship-left"></span>
         </div>
-        {% endif %}
         <div class="table-responsive">
-          <table class="table table-sm align-middle" id="cart-table" style="--cols:{{ alloc_stores|length|add:3 }}">
+          <table class="table table-sm align-middle" id="cart-table" style="--cols:3">
             <thead class="table-light">
               <tr>
                 <th style="width: 40%">Product</th>
                 <th style="width: 110px">Qty</th>
-                {% for s in alloc_stores %}<th class="alloc-th" style="width: 92px">{{ s.name }}</th>{% endfor %}
-                <th style="width: 160px">Unit Cost €</th>
+                <th style="width: 140px">Price €</th>
+                <th class="ship-col" style="width: 120px">Shipping €</th>
                 <th style="width: 140px">Subtotal €</th>
                 <th style="width: 60px"></th>
               </tr>
@@ -380,7 +469,8 @@
             <tbody></tbody>
             <tfoot>
               <tr>
-                <th colspan="{{ alloc_stores|length|add:3 }}" class="text-end">Total:</th>
+                <th colspan="3" class="text-end">Total:</th>
+                <th class="ship-col"></th>
                 <th id="grand_total">€0.00</th>
                 <th></th>
               </tr>
@@ -495,10 +585,46 @@
   .pend-supplier{ margin-left:.45rem; font-weight:700; color:var(--app-text); }
   .pend-meta{ color:var(--app-muted); font-size:.78rem; margin-top:.1rem; }
   .pend-fig{ font-weight:800; color:var(--app-text); font-variant-numeric:tabular-nums; margin-left:auto; }
-  /* Receive dialog: dense enough to fit without hunting for the buttons */
-  .rcv-fields{ display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr); gap:.5rem; margin-bottom:.75rem; }
-  .rcv-note{ grid-column:1 / -1; }
-  .rcv-label{ display:block; font-size:.68rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--app-muted); margin-bottom:.15rem; }
+  /* Inbound: shipping is a column only while there is shipping */
+  .ship-col{ display:none; }
+  #cart-table.has-ship .ship-col{ display:table-cell; }
+  .ship-bar{ display:flex; flex-wrap:wrap; align-items:center; gap:.4rem .8rem; margin:0 0 .5rem; }
+  .ship-bar[hidden]{ display:none; }
+  #ship-left, .rcv-left{ font-size:.88rem; font-weight:700; color:#0f766e; }
+  #ship-left.bad, .rcv-left.bad{ color:#b42318; }
+  .inb-iva, .rcv-iva{ display:flex; align-items:center; gap:.5rem; margin:0; font-weight:700; cursor:pointer; }
+  .inb-iva{ min-height:38px; }
+  .inb-iva input, .rcv-iva input{ width:1.2rem; height:1.2rem; }
+  /* Receive dialog: who and which invoice, then the costs, then the lines;
+     the total and the buttons stay in view */
+  .rcv-sub{ font-size:.88rem; color:var(--app-muted); }
+  .rcv-fields{ display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.4fr); gap:.5rem .7rem; margin-bottom:.8rem; }
+  .rcv-costs{ display:flex; flex-wrap:wrap; align-items:center; gap:.5rem 1.2rem; padding:.55rem .75rem; margin-bottom:.8rem;
+    background:var(--app-surface-2); border-radius:var(--app-radius-sm); }
+  .rcv-ship{ display:inline-flex; align-items:center; gap:.45rem; margin:0; font-weight:700; }
+  .rcv-ship input{ width:6.5rem; padding:.3rem .45rem; text-align:right; border:1px solid var(--app-border); border-radius:var(--app-radius-xs); }
+  .rcv-n{ text-align:center; width:6rem; font-size:.85rem; }
+  .rcv-del-h{ width:2.4rem; }
+  .rcv-table thead th{ font-size:.85rem; font-weight:700; color:var(--app-muted); background:none; }
+  .rcv-final{ text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .rcv-final b{ display:block; }
+  .rcv-final small{ color:var(--app-muted); font-size:.85rem; }
+  .rcv-gone{ opacity:.4; }
+  .rcv-gone .rcv-final b, .rcv-gone .rcv-final small{ visibility:hidden; }
+  .rcv-del-x{ display:inline-grid; place-items:center; width:32px; height:32px; margin:0; border-radius:999px; cursor:pointer;
+    color:var(--app-muted); font-size:1.15rem; }
+  .rcv-del-x:hover{ background:var(--app-surface-2); }
+  .rcv-del-x input{ position:absolute; opacity:0; width:0; height:0; }
+  .rcv-gone .rcv-del-x{ color:#b42318; }
+  .rcv-more{ margin-top:.6rem; }
+  .rcv-more summary{ font-size:.88rem; font-weight:700; color:var(--app-muted); cursor:pointer; }
+  .rcv-more textarea, .rcv-more input{ width:100%; margin-top:.3rem; padding:.35rem .55rem; border:1px solid var(--app-border); border-radius:var(--app-radius-sm); }
+  .rcv-foot{ display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; }
+  .rcv-total{ margin-right:auto; display:flex; align-items:baseline; gap:.5rem; }
+  .rcv-total span{ font-size:.88rem; font-weight:700; color:var(--app-muted); }
+  .rcv-total b{ font-size:1.3rem; font-variant-numeric:tabular-nums; }
+  .rcv-foot .btn{ min-height:40px; }
+  .rcv-label{ display:block; font-size:.85rem; font-weight:700; color:var(--app-muted); margin-bottom:.15rem; }
   .rcv-fields .form-control,.rcv-fields .form-select,.rcv-fields input,.rcv-fields textarea{
     width:100%; padding:.35rem .55rem; font-size:.9rem;
     border:1px solid var(--app-border); border-radius:var(--app-radius-sm);
@@ -512,8 +638,8 @@
     font-weight:600; color:var(--app-muted); }
   @media (max-width:575.98px){
     .rcv-table thead{ display:none; }
-    .rcv-table tbody tr{ display:grid; grid-template-columns:repeat(var(--cols, 3), minmax(0,1fr)); gap:.35rem .45rem;
-      padding:.55rem .1rem; border-bottom:1px solid var(--app-border); position:relative; }
+    .rcv-table tbody tr{ display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:.35rem .45rem;
+      padding:.6rem .1rem; border-bottom:1px solid var(--app-border); position:relative; }
     .rcv-table tbody td{ display:block; padding:0 !important; border:0; min-width:0; }
     .rcv-table tbody td:first-child{ grid-column:1 / -1; padding-right:2.6rem !important; }
     .rcv-table tbody td[data-label]::before{ content:attr(data-label); display:block; font-size:.85rem; font-weight:700;
@@ -521,6 +647,9 @@
     .rcv-table tbody td input{ min-height:40px; }
     .rcv-table tbody td.rcv-del{ position:absolute; top:.45rem; right:.2rem; text-align:center; }
     .rcv-table tbody td.rcv-del::before{ margin-bottom:0; }
+    .rcv-table tbody td.rcv-final{ align-self:end; }
+    .rcv-table tbody td.rcv-final b{ display:inline; }
+    .rcv-table tbody td.rcv-final small{ display:block; }
     #cart-table thead{ display:none; }
     #cart-table tbody tr{ display:grid; grid-template-columns:repeat(var(--cols, 3), minmax(0,1fr)); gap:.35rem .45rem;
       padding:.6rem .4rem; border-bottom:1px solid var(--ds-border, #e7e5e4); position:relative; }
@@ -540,7 +669,13 @@
   .rcv-table .cart-product{ grid-template-columns:34px minmax(0,1fr); gap:.5rem; }
   .rcv-table input{ width:100%; padding:.3rem .45rem; font-size:.9rem; border:1px solid var(--app-border); border-radius:var(--app-radius-xs); }
   @media (max-width:575.98px){
-    .rcv-fields{ grid-template-columns:1fr 1fr; }
+    .rcv-fields{ grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+    .rcv-file{ grid-column:1 / -1; }
+    .rcv-foot .rcv-total{ flex:1 1 100%; }
+    .rcv-foot .btn-primary{ flex:1 1 auto; }
+    #cart-table.has-ship .ship-col{ display:block; }
+    #cart-table tbody td.ship-col{ display:none; }
+    #cart-table.has-ship tbody td.ship-col{ display:block; }
     .pend-card{ padding:.5rem .6rem; }
     .pend-fig{ font-size:.95rem; }
   }
@@ -837,11 +972,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const summaryTotalAmount = document.getElementById('summary-total-amount');
   const summaryLineCount = document.getElementById('summary-line-count');
   const summaryWarningBadge = document.getElementById('summary-warning-badge');
-  document.querySelectorAll('#cartAllocAll [data-alloc-all]').forEach((b) => b.addEventListener('click', () => {
-    window.allocAll(cartBody, Number(b.dataset.allocAll));
-    recalcAndSave();
-  }));
-  const allocStores = [{% for s in alloc_stores %}{id: {{ s.id }}, name: "{{ s.name|escapejs }}"}{% if not forloop.last %}, {% endif %}{% endfor %}];
 
   function hidePreview() {
     previewBox.classList.remove('show');
@@ -1034,13 +1164,16 @@ document.addEventListener('DOMContentLoaded', () => {
       const rowWarnings = evaluateCartRow(tr).warnings;
       warnings.push(...rowWarnings.map((item) => `${tr.dataset.title || tr.dataset.barcode}: ${item}`));
       totalQty += Number(tr.querySelector('.qty').value || 0);
-      total += Number(parseMoney(tr.querySelector('.cost').value) || 0) * Number(tr.querySelector('.qty').value || 0);
+      total += lineTotal(tr);
     });
 
     const invoiceNo = invoiceNoInput.value.trim();
     const invoiceDate = invoiceDateInput.value.trim();
     if ((invoiceNo && !invoiceDate) || (!invoiceNo && invoiceDate)) {
       warnings.push('Invoice number and invoice date should usually be filled together.');
+    }
+    if (shipLeft()) {
+      warnings.push(`Shipping: €${(shipLeft() / 100).toFixed(2)} still to allocate to the lines.`);
     }
     if (!supplierSelect.value) {
       warnings.push('Choose the supplier: every stock-in is recorded with its supplier.');
@@ -1088,8 +1221,8 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="review-line-meta">${escapeHtml(tr.dataset.barcode)} / Qty ${Number(tr.querySelector('.qty').value || 0)}</div>
         </div>
         <div class="text-end">
-          <strong>${formatMoney((parseMoney(tr.querySelector('.cost').value) || 0) * Number(tr.querySelector('.qty').value || 0))}</strong>
-          <div class="review-line-meta">Unit ${formatMoney(parseMoney(tr.querySelector('.cost').value) || 0)}</div>
+          <strong>${formatMoney(lineTotal(tr))}</strong>
+          <div class="review-line-meta">Unit ${formatMoney(unitCost(tr))}</div>
         </div>
       </div>
     `).join('');
@@ -1102,12 +1235,55 @@ document.addEventListener('DOMContentLoaded', () => {
     info.innerHTML = html;
   }
 
+  // A unit costs its price, plus IVA, plus its line's shipping over the quantity.
+  const addIva = document.getElementById('add-iva');
+  const shippingInput = document.getElementById('shipping');
+  const shipBar = document.getElementById('ship-bar');
+  const shipLeftEl = document.getElementById('ship-left');
+  const cartTable = document.getElementById('cart-table');
+  function shippingTotal() { return Math.max(parseMoney(shippingInput.value) || 0, 0); }
+  function shareOf(tr) { return Math.max(parseMoney(tr.querySelector('.ship').value) || 0, 0); }
+  function unitCost(tr) {
+    const qty = Number(tr.querySelector('.qty').value || 0);
+    const cost = parseMoney(tr.querySelector('.cost').value) || 0;
+    const unit = cost * (addIva.checked ? 1.23 : 1) + (qty ? shareOf(tr) / qty : 0);
+    return Math.round(unit * 100) / 100;
+  }
+  function lineTotal(tr) { return unitCost(tr) * Number(tr.querySelector('.qty').value || 0); }
+  function shipLeft() {
+    const given = Array.from(cartBody.querySelectorAll('tr')).reduce((t, tr) => t + Math.round(shareOf(tr) * 100), 0);
+    return Math.round(shippingTotal() * 100) - given;
+  }
+  function renderShipping() {
+    const on = shippingTotal() > 0;
+    shipBar.hidden = !on;
+    cartTable.classList.toggle('has-ship', on);
+    cartTable.style.setProperty('--cols', on ? 4 : 3);
+    const left = shipLeft();
+    shipLeftEl.textContent = left ? `€${(left / 100).toFixed(2)} still to allocate` : 'All allocated';
+    shipLeftEl.classList.toggle('bad', left !== 0);
+  }
+  addIva.addEventListener('change', () => recalcAndSave());
+  shippingInput.addEventListener('input', () => recalcAndSave());
+  document.getElementById('ship-split').addEventListener('click', () => {
+    const rows = Array.from(cartBody.querySelectorAll('tr'));
+    const units = rows.reduce((t, tr) => t + Number(tr.querySelector('.qty').value || 0), 0);
+    const whole = Math.round(shippingTotal() * 100);
+    let rest = whole;
+    rows.forEach((tr, n) => {
+      const part = n === rows.length - 1 ? rest : Math.min(rest, Math.round(whole * Number(tr.querySelector('.qty').value || 0) / units));
+      rest -= part;
+      tr.querySelector('.ship').value = (part / 100).toFixed(2);
+    });
+    recalcAndSave();
+  });
+
   function recalcAndSave() {
     let total = 0, ok = cartBody.children.length>0;
     cartBody.querySelectorAll('tr').forEach(tr=>{
       const qty  = Number(tr.querySelector('.qty').value || 0);
       const cost = parseMoney(tr.querySelector('.cost').value);
-      const sub  = isFinite(cost) ? qty * cost : NaN;
+      const sub  = isFinite(cost) ? lineTotal(tr) : NaN;
       tr.querySelector('.subtotal').textContent = '€' + (isFinite(sub) ? sub.toFixed(2) : '0.00');
       total += isFinite(sub) ? sub : 0;
       evaluateCartRow(tr);
@@ -1115,15 +1291,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     grandTotal.textContent = '€' + total.toFixed(2);
     submitBtn.disabled = !ok;
+    renderShipping();
     const items = [];
     cartBody.querySelectorAll('tr').forEach(tr=>{
-      const alloc = {};
-      tr.querySelectorAll('.alloc-in').forEach((i) => { if (i.value !== '') alloc[i.dataset.store] = Number(i.value); });
       items.push({
         barcode: tr.dataset.barcode,
         qty: Number(tr.querySelector('.qty').value || 0),
         cost_price: parseMoney(tr.querySelector('.cost').value) || 0,
-        alloc: alloc
+        shipping: shareOf(tr)
       });
     });
     itemsJson.value = JSON.stringify(items);
@@ -1162,8 +1337,8 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       </td>
       <td data-label="Qty"><input type="number" min="1" class="form-control form-control-sm qty" value="1"></td>
-      ${allocStores.map((st) => `<td data-label="${escapeHtml(st.name.split(' ')[0])}"><input type="number" min="0" step="1" inputmode="numeric" class="form-control form-control-sm alloc-in" data-store="${st.id}" aria-label="${escapeHtml(st.name)}"></td>`).join('')}
       <td data-label="Unit €"><input type="text" class="form-control form-control-sm cost" placeholder="0.00" value="${lastCost!=null ? Number(lastCost).toFixed(2) : ''}"></td>
+      <td class="ship-col" data-label="Shipping €"><input type="text" inputmode="decimal" class="form-control form-control-sm ship" placeholder="0.00"></td>
       <td class="subtotal" data-label="Subtotal">€0.00</td>
       <td><button type="button" class="btn btn-sm btn-outline-secondary remove" aria-label="Remove">&times;</button></td>
     `;
@@ -1188,8 +1363,7 @@ document.addEventListener('DOMContentLoaded', () => {
       recalcAndSave();
     });
     tr.querySelector('.remove').addEventListener('click', ()=>{ tr.remove(); recalcAndSave(); });
-    window.allocWire(tr);
-    tr.querySelectorAll('.alloc-in').forEach((i) => i.addEventListener('input', recalcAndSave));
+    tr.querySelector('.ship').addEventListener('input', recalcAndSave);
     tr.querySelector('.qty').addEventListener('input', () => setTimeout(recalcAndSave, 0));
     tr.querySelector('.js-preview-product')?.addEventListener('click', () => {
       openPreviewModal(imageUrl, safeTitle);
@@ -1225,11 +1399,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const p = l.product;
       const existing = cartBody.querySelector(`tr[data-barcode="${CSS.escape(p.barcode)}"]`);
       const before = existing ? Number(existing.querySelector('.qty').value || 0) : 0;
-      if (!existing) addToCart(p.title || p.display_name, p.barcode, p.lastCost ?? null, p.image_url || '');
+      if (!existing) addToCart(p.title || p.display_name, p.barcode, p.lastNet ?? p.lastCost ?? null, p.image_url || '');
       const tr = cartBody.querySelector(`tr[data-barcode="${CSS.escape(p.barcode)}"]`);
       if (!tr) return;
       tr.querySelector('.qty').value = before + l.qty;
-      const cost = l.price != null ? l.price : p.lastCost;
+      const cost = l.price != null ? l.price : (p.lastNet ?? p.lastCost);
       if (cost != null) tr.querySelector('.cost').value = Number(cost).toFixed(2);
     });
     recalcAndSave();
@@ -1243,7 +1417,7 @@ document.addEventListener('DOMContentLoaded', () => {
       .then(d=>{
         if (!d.exists) { setInfo('warning', `Barcode ${code} not found.`); return; }
         const line = d.display_name || d.name || `${d.brand}${d.model ? ' - ' + d.model : ''} ${d.product_name || ''}`.trim();
-        addToCart(line, code, d.last_cost ?? null, d.image_url || '');
+        addToCart(line, code, d.last_net_cost ?? d.last_cost ?? null, d.image_url || '');
         setInfo('info', `Added <strong>${line}</strong>${d.last_cost!=null ? ' | Last cost: €'+Number(d.last_cost).toFixed(2) : ''}`);
       })
       .catch(()=> setInfo('warning', 'Lookup failed. Check the connection.'));
@@ -1407,7 +1581,8 @@ document.addEventListener('DOMContentLoaded', () => {
               supplierSearch.value = s.name;
               supplierSelect.value = s.id;
               supplierSuggestions.classList.add('d-none');
-              renderSummary();
+              addIva.checked = !!s.adds_iva;         // a Portuguese supplier quotes without IVA
+              recalcAndSave();
             };
             supplierSuggestions.appendChild(b);
           });
@@ -1446,6 +1621,11 @@ document.addEventListener('DOMContentLoaded', () => {
       bootstrap.Modal.getOrCreateInstance(reviewModalEl).hide();
       alert('Choose the supplier first: every stock-in is recorded with its supplier.');
       supplierSearch.focus();
+      return;
+    }
+    if (shipLeft()) {
+      bootstrap.Modal.getOrCreateInstance(reviewModalEl).hide();
+      alert('Allocate the whole shipping to the lines first.');
       return;
     }
     inboundForm.dataset.confirmed = '1';

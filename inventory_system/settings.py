@@ -247,6 +247,8 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+# Uploads with no public URL (supplier invoices): served by a view that checks access.
+PRIVATE_MEDIA_ROOT = os.path.join(BASE_DIR, 'private_media')
 
 
 # Default primary key field type

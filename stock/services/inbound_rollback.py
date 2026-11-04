@@ -22,6 +22,8 @@ gone and perfume prices are recomputed from what is left. Clearing
 ``received_at`` also takes the order back out of the supplier's lead time,
 which is right: it never actually arrived.
 """
+from decimal import Decimal
+
 from django.db import transaction
 
 from ..models import InboundPendingItem, Purchase
@@ -77,20 +79,35 @@ def roll_back_receipt(order, user=None):
         # One pending line per product and price, with the split between the
         # shops it was received with, so receiving it again needs no retyping.
         lines = {}
+        rate = order.iva_rate or Decimal('0')
         for batch in batches:
-            line = lines.setdefault((batch.product_id, batch.cost_price),
-                                    {'product': batch.product, 'quantity': 0, 'allocation': {}})
+            net = batch.net_cost
+            if net is None:         # changed by hand since: back out of the IVA
+                net = (batch.cost_price / (1 + rate / 100)).quantize(Decimal('0.01'))
+            with_iva = net * (1 + rate / 100)
+            line = lines.setdefault((batch.product_id, net),
+                                    {'product': batch.product, 'quantity': 0, 'allocation': {}, 'shipping': Decimal('0')})
             line['quantity'] += batch.quantity
+            line['shipping'] += max(batch.cost_price - with_iva, Decimal('0')) * batch.quantity
             shop = batch.received_store_id or batch.store_id
             if shop:
                 line['allocation'][str(shop)] = line['allocation'].get(str(shop), 0) + batch.quantity
+        # The shipping came back through rounded unit costs: the lines must
+        # carry the order's whole bill again, so the last takes the cents.
+        rows = list(lines.items())
+        left = order.shipping
+        for n, (_key, line) in enumerate(rows):
+            share = line['shipping'].quantize(Decimal('0.01'))
+            line['shipping'] = left if n == len(rows) - 1 else min(share, left)
+            left -= line['shipping']
         restored = 0
-        for (_product_id, cost_price), line in lines.items():
+        for (_product_id, net), line in rows:
             InboundPendingItem.objects.create(
                 inbound_order=order,
                 product=line['product'],
                 quantity=line['quantity'],
-                cost_price=cost_price,
+                cost_price=net,
+                shipping_share=line['shipping'],
                 allocation=line['allocation'],
             )
             restored += 1

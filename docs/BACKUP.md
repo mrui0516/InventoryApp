@@ -72,5 +72,6 @@ python -c "import sqlite3;c=sqlite3.connect(r'<快照路径>');print(c.execute('
 - **改时间**:PA 的 Scheduled task 触发时间 / Windows 任务计划触发器。
 
 ## 局限 / 可选增强
+- **发票文件(`private_media/`)** 不在 `backup_db` 内,它只备份数据库。服务器文件丢失时这些发票也会丢,原件请自己留一份。
 - **图片(media)** 目前不在此备份内(体积大、且大多能重获)。以后需要可扩展脚本一并拉 media,或让新图上传时镜像到 Cloudinary 作二次副本。
 - **异地加密副本(可选)**:U 盘那个目录可再同步到 Backblaze B2 / 加密云盘,防电脑失窃/失火。库里含客户姓名/电话/NIF,云端务必加密(如 rclone crypt)且不分享。

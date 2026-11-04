@@ -80,6 +80,9 @@ def skip_template(template, period, user):
 
 # --------------------------------------------------------- paying suppliers
 CENT = Decimal('0.01')
+# Unit costs are rounded, so an order with IVA adds up a few cents from the
+# supplier's own total: that is not a debt.
+ROUNDING = Decimal('1.00')
 
 
 def _order_lines(order):
@@ -94,10 +97,10 @@ def _order_lines(order):
     for item in order.pending_items.all():
         split = {int(k): v for k, v in (item.allocation or {}).items() if str(k).isdigit() and v}
         if sum(split.values()) != item.quantity:
-            lines.append((None, item.quantity, (item.cost_price or ZERO) * item.quantity))
+            lines.append((None, item.quantity, item.unit_cost * item.quantity))
             continue
         for shop_id, units in split.items():
-            lines.append((shop_id, units, (item.cost_price or ZERO) * units))
+            lines.append((shop_id, units, item.unit_cost * units))
     return lines
 
 
@@ -121,7 +124,7 @@ def payables():
     groups = {}
     for order in orders:
         due, paid = order_due(order), order_paid(order)
-        if due == paid:
+        if abs(due - paid) < ROUNDING:
             continue
         name = order.supplier.name if order.supplier_id else 'No supplier'
         group = groups.setdefault(name, {'supplier': name, 'orders': [], 'owed': ZERO})

@@ -58,6 +58,9 @@
         {{ form.country }}
         {% if form.country.errors %}<div class="text-danger small mt-1">{{ form.country.errors|join:', ' }}</div>{% endif %}
       </div>
+      <div class="col-12">
+        <label class="form-check-label fw-bold"><input type="checkbox" class="form-check-input me-2" name="adds_iva"{% if form.adds_iva.value %} checked{% endif %}>Prices without IVA (add 23%)</label>
+      </div>
       <div class="col-md-8">
         <label class="form-label fw-bold" for="{{ form.address.id_for_label }}">Address</label>
         {{ form.address }}

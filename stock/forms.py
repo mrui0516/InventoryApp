@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 # stock/forms.py
 from django import forms
 from django.contrib.auth import get_user_model
@@ -235,7 +237,7 @@ class ProductForm(forms.ModelForm):
 class SupplierForm(forms.ModelForm):
     class Meta:
         model = Supplier
-        fields = ['name', 'contact_person', 'phone', 'email', 'website', 'nif', 'country', 'address', 'product_types']
+        fields = ['name', 'contact_person', 'phone', 'email', 'website', 'nif', 'country', 'address', 'product_types', 'adds_iva']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Supplier name'}),
             'contact_person': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Contact person'}),
@@ -249,7 +251,19 @@ class SupplierForm(forms.ModelForm):
         }
 
 
-class InboundOrderEditForm(forms.ModelForm):
+class _InvoiceChecked:
+    def clean_invoice_file(self):
+        upload = self.cleaned_data.get('invoice_file')
+        if getattr(upload, 'content_type', None):        # a new upload, not the stored file
+            from .services.inbound_costs import check_invoice
+            try:
+                check_invoice(upload)
+            except ValueError as e:
+                raise forms.ValidationError(str(e))
+        return upload
+
+
+class InboundOrderEditForm(_InvoiceChecked, forms.ModelForm):
     recorded_at = forms.DateTimeField(
         label='Recorded at',
         input_formats=['%Y-%m-%dT%H:%M'],
@@ -258,7 +272,7 @@ class InboundOrderEditForm(forms.ModelForm):
 
     class Meta:
         model = InboundOrder
-        fields = ['supplier', 'invoice_no', 'invoice_date', 'note']
+        fields = ['supplier', 'invoice_no', 'invoice_date', 'invoice_file', 'note']
         widgets = {
             'supplier': forms.Select(attrs={'class': 'form-select'}),
             'invoice_no': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Invoice number'}),
@@ -308,15 +322,21 @@ InboundPurchaseFormSet = inlineformset_factory(
 )
 
 
-class InboundReceiveForm(forms.ModelForm):
+class InboundReceiveForm(_InvoiceChecked, forms.ModelForm):
     """Edit a pending inbound order before confirming receipt.
 
     ``supplier`` is rendered as a hidden field driven by an autocomplete text
     box in the template (fuzzy search instead of a long dropdown).
     """
+    # Empty means none: the line and the order then carry no shipping.
+    shipping = forms.DecimalField(required=False, min_value=0, max_digits=10, decimal_places=2)
+
+    def clean_shipping(self):
+        return self.cleaned_data.get('shipping') or Decimal('0.00')
+
     class Meta:
         model = InboundOrder
-        fields = ['supplier', 'invoice_no', 'invoice_date', 'note']
+        fields = ['supplier', 'invoice_no', 'invoice_date', 'shipping', 'invoice_file', 'note']
         widgets = {
             'supplier': forms.HiddenInput(),
             'invoice_no': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Invoice number'}),
@@ -330,12 +350,20 @@ class InboundReceiveForm(forms.ModelForm):
 
 
 class InboundPendingLineForm(forms.ModelForm):
+    shipping_share = forms.DecimalField(required=False, min_value=0, max_digits=10, decimal_places=2,
+                                        widget=forms.NumberInput(attrs={'class': 'form-control form-control-sm',
+                                                                        'step': '0.01', 'min': '0'}))
+
+    def clean_shipping_share(self):
+        return self.cleaned_data.get('shipping_share') or Decimal('0.00')
+
     class Meta:
         model = InboundPendingItem
-        fields = ['quantity', 'cost_price']
+        fields = ['quantity', 'cost_price', 'shipping_share']
         widgets = {
             'quantity': forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'min': '1', 'max': '100000'}),
             'cost_price': forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'min': '0.01', 'step': '0.01', 'max': '999999.99'}),
+            'shipping_share': forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'step': '0.01', 'min': '0'}),
         }
 
 
