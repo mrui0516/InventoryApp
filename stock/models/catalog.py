@@ -84,7 +84,10 @@ class ProductSeries(models.Model):
 
 
 class Concentration(models.Model):
-    """Perfume strength: EDT / EDP / Extrait de Parfum / Attar / Oil ...
+    """Perfume strength: EDT / EDP / Extrait de Parfum ...
+
+    Only a perfume or a mini has one (``Product.TAKES_CONCENTRATION``). Oil
+    perfume and body mist are types of their own since 2026-11-04.
 
     A table rather than ``choices`` so the shop can add a new strength itself
     without a code change. ``shopify_tag`` is optional — blank means the value
@@ -193,13 +196,18 @@ class Product(models.Model):
     # What kind of fragrance product (2026-10-29): a bottle of perfume, or one
     # of the other things the perfume shelf carries. Filters and names use it.
     PERFUME, BODY_SPRAY, AIR_FRESHENER, COFFRET, MINI = 'perfume', 'body_spray', 'air_freshener', 'coffret', 'mini'
+    OIL_PERFUME, BODY_MIST = 'oil_perfume', 'body_mist'
     PERFUME_TYPES = [
         (PERFUME, 'Perfume'),
+        (MINI, 'Mini'),
+        (OIL_PERFUME, 'Oil perfume'),
+        (BODY_MIST, 'Body mist / splash'),
         (BODY_SPRAY, 'Body spray / Deo'),
         (AIR_FRESHENER, 'Air freshener'),
         (COFFRET, 'Coffret (gift set)'),
-        (MINI, 'Mini'),
     ]
+    # Only these are asked for a concentration; on the others it stays empty.
+    TAKES_CONCENTRATION = (PERFUME, MINI)
     perfume_type = models.CharField(max_length=16, choices=PERFUME_TYPES, default=PERFUME, db_index=True,
                                     verbose_name='Type')
     fragrance_families = models.ManyToManyField('FragranceFamily', blank=True, related_name='products')
@@ -354,7 +362,8 @@ class Product(models.Model):
         the type (Body spray, Coffret ...)."""
         if self.perfume_type and self.perfume_type != self.PERFUME:
             return {self.BODY_SPRAY: 'Body spray', self.AIR_FRESHENER: 'Air freshener',
-                    self.COFFRET: 'Coffret', self.MINI: 'Mini'}.get(self.perfume_type, '')
+                    self.COFFRET: 'Coffret', self.MINI: 'Mini', self.OIL_PERFUME: 'Oil perfume',
+                    self.BODY_MIST: 'Body mist'}.get(self.perfume_type, '')
         concentration = self.concentration
         return (concentration.short or concentration.name) if concentration else ''
 

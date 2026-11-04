@@ -23,6 +23,8 @@ from stock.services.names import title_case
 TYPE_HINTS = [
     (Product.AIR_FRESHENER, re.compile(r'air\s*fresh', re.I)),
     (Product.BODY_SPRAY, re.compile(r'body\s*spray|\bdeo(dorant)?\b', re.I)),
+    (Product.BODY_MIST, re.compile(r'\bmist\b|\bsplash\b', re.I)),
+    (Product.OIL_PERFUME, re.compile(r'\battar\b|\bperfume\s*oil\b|\bon\s*oil\b|\broll\s*oil\b', re.I)),
     (Product.COFFRET, re.compile(r'gift\s*(pack|set|box)|coffret|\bpack\b|\bset\b', re.I)),
     (Product.MINI, re.compile(r'\bmini\b', re.I)),
 ]

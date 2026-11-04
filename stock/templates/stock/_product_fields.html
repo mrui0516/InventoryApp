@@ -94,7 +94,7 @@
           <label for="{{ form.perfume_type.id_for_label }}">Type</label>
           {% render_field form.perfume_type class="form-select" %}
         </div>
-        <div class="pf-field">
+        <div class="pf-field" id="pfConcField">
           <label for="{{ form.concentration.id_for_label }}">Concentration</label>
           {% render_field form.concentration class="form-select" %}
         </div>
@@ -219,9 +219,13 @@ document.addEventListener('DOMContentLoaded', () => {
       : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
   function preview() {
     const conc = $('concentration'), type = $('perfume_type');
+    // only a perfume or a mini has a concentration
+    const takesConc = ['', 'perfume', 'mini'].includes(type.value);
+    document.getElementById('pfConcField').classList.toggle('d-none', !takesConc);
+    if (!takesConc) conc.value = '';
     const brandName = titled(newBrand.value || '') || label(brand);
     const head = [titled(newSeries.value || '') || label(series), titled($('name').value || '')].filter(Boolean).join(' ');
-    const kind = type.value && type.value !== 'perfume' ? label(type).replace(/ \(.*\)| \/ Deo/, '') : (conc.value ? (label(conc).match(/EDP|EDT|EDC|Extrait|Attar|Mist/) || [label(conc)])[0] : '');
+    const kind = type.value && type.value !== 'perfume' ? label(type).replace(/ \(.*\)| \/ (Deo|splash)/, '') : (conc.value ? (label(conc).match(/EDP|EDT|EDC|Extrait|Attar|Mist/) || [label(conc)])[0] : '');
     const size = $('volume_ml').value ? `${$('volume_ml').value}ml` : '';
     document.getElementById('pfBrand').textContent = brandName || 'Brand';
     document.getElementById('pfName').textContent = [head, kind, size].filter(Boolean).join(' · ') || 'Line · Name · Type · Size';

@@ -20,8 +20,6 @@ CONCENTRATIONS = [
     ('Eau de Parfum', 'EDP', 'Eau de Parfum', 20),
     ('Extrait de Parfum', 'Extrait', 'Extrait de Parfum', 30),
     ('Eau de Cologne', 'EDC', 'Eau de Cologne', 40),
-    ('Attar / Oil', 'Attar', '', 50),
-    ('Body Mist', 'Mist', '', 60),
 ]
 
 FAMILIES = [

@@ -4760,11 +4760,11 @@ class ExportPortugueseAndPricingTests(TestCase):
         self.assertFalse(discount_applies(small))
 
         # A body mist bottled at 100ml would pass the size check, so the
-        # concentration is what keeps it out.
+        # type is what keeps it out.
         mist = self._product("Bruma", "9960000000032", stock=0, wholesale="9.00")
         mist.volume_ml = 100
-        mist.concentration = Concentration.objects.create(name="Body Mist", short="Mist")
-        mist.save(update_fields=['volume_ml', 'concentration'])
+        mist.perfume_type = "body_mist"
+        mist.save(update_fields=['volume_ml', 'perfume_type'])
         self.assertFalse(discount_applies(mist))
 
     def test_a_body_spray_sized_bottle_is_excluded_by_its_size(self):

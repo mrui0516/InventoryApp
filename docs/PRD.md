@@ -272,11 +272,12 @@
 
 - **F2.5.x 只录香水(2026-10-29)**:Accessories 与 Shisha 两个分类(含 Accessories 下 10 个子类)停用并删除(`manage.py remove_categories --name Accessories --name Shisha`,默认只预览;预览列出分类下在售产品的库存与销量;仍有在售产品时拒绝删除,加 `--archive-products` 则先把它们归档(同 App 里的删除:从目录、搜索、收银中消失,销售、进货与利润保留,照片不删);已归档产品保留历史、分类置空;分类属性随之删除,店铺 / 供应商 / 品牌 / 货架样式的关联解除)。新增产品页即香水表单,不再先选分类:
   - **条形码必填**(扫码或输入 EAN,8–13 位数字);编辑时保留原条码(旧的内部条码照旧有效)。**名称可空**。
-  - **类型**(新字段 `Product.perfume_type`,迁移 0066):Perfume(默认)/ Body spray(Deo)/ Air freshener / Coffret(礼盒)/ Mini。
+  - **类型**(新字段 `Product.perfume_type`,迁移 0066):Perfume(默认)/ Mini / Oil perfume / Body mist / splash / Body spray(Deo)/ Air freshener / Coffret(礼盒)。
+  - **Oil perfume 和 Body mist / splash(2026-11-04,迁移 0074)**:原来是浓度里的 Attar / Oil 和 Body Mist,现在是单独类型。**只有 Perfume 和 Mini 选浓度**,其它类型表单不显示,保存时清空。批发优惠的「body mist 不打折」改按类型判断。
   - 分组:Product(条码、品牌 + 新品牌、系列 / 型号 + 新系列、名称、类型、浓度、容量、适用性别)· Price(零售、批发、锁定价格)· Scent(香调家族、前中后调、灵感来源、描述);右侧"产品列表里会显示成"预览与照片(上传前可预览、移除;已有照片点 × 直接删除);底部常驻保存栏。新增与编辑共用一份(`_product_fields.html`)。编辑页另有:库存批次(超管修正剩余)与删除。
   - **大小写统一**:品牌、系列、名称每个词首字母大写(`services/names.py`:EDP / EDT / CDN / YSL / USB / II 等缩写保持大写,含数字的代码不动,容量写作 100ml,iPhone 这类本来就大小写混合的词照写)。新增 / 编辑时自动转换;新品牌、新系列与已有的不分大小写匹配(再输入 LATTAFA 就是已有的 Lattafa)。已有数据用 `manage.py tidy_product_names` 一次转换(默认只预览;转换后同名的品牌合并到产品最多的那个,系列同理;顺带按名称识别 Body spray / Air freshener / Coffret / Mini(只对在售的香水分类产品,配件里的 Mini 数据线、键盘套装不会被误判);按查询更新,不触发 Shopify / Cloudinary 信号,店铺标题在下次同步时跟上)。
   - 列表里的名称(`Product.list_name`):系列 + 名称(相同时只写一次)· 类型(香水写浓度如 EDP)· 容量,品牌单独显示。
-- **F2.5.y 产品列表(2026-10-29)**:分类标签改为**类型标签**(All / Perfume / Body spray / Air freshener / Coffret / Mini,带数量,只显示有产品的类型);Filters 面板增加**浓度**与**适用性别**(加上原有库存、排序、品牌);桌面表头 Product / Sales / Retail-Wholesale / Stock 点一下排序、再点反向(新增 Name Z-A、Stock low-high、Least sold);每行名称为 `list_name`(品牌在上方小标签,名称里已含的类型或容量不再重复),桌面行下只留条码。导出改为两张小卡片:For clients(PVP / Wholesale / Both 三选一、批发折扣、只导有货或在途、含照片、Excel / PDF)与 For Shopify(只导有货、CSV),**按列表当前的全部筛选导出**(含类型 / 浓度 / 性别)。
+- **F2.5.y 产品列表(2026-10-29)**:分类标签改为**类型标签**(All 加每种类型,带数量,只显示有产品的类型);Filters 面板增加**浓度**与**适用性别**(加上原有库存、排序、品牌);桌面表头 Product / Sales / Retail-Wholesale / Stock 点一下排序、再点反向(新增 Name Z-A、Stock low-high、Least sold);每行名称为 `list_name`(品牌在上方小标签,名称里已含的类型或容量不再重复),桌面行下只留条码。导出改为两张小卡片:For clients(PVP / Wholesale / Both 三选一、批发折扣、只导有货或在途、含照片、Excel / PDF)与 For Shopify(只导有货、CSV),**按列表当前的全部筛选导出**(含类型 / 浓度 / 性别)。
 - **F2.5.z 下拉框统一样式(2026-10-29)**:所有页面的下拉框(表单、筛选面板、弹窗)同一种外观:应用字体、40px 高、细箭头、右侧留白、与输入框相同的焦点框;顶栏和侧栏的店铺切换保留深色样式。
 - **F2.5.w 产品详情页重排(2026-10-30)**:顶部:照片、品牌、列表名称、条码、类型 / 浓度 / 容量 / 性别标签、**补货铃铛**(Restocking / Not restocking,一点即切换,与列表同一开关)、Edit / Sync to Shopify / Full history。数字格:库存(在途)、零售、批发、FIFO 成本(经理)、销量(近 30 天与累计)。主栏:近 30 天销售(2026-11-01 起,原为 10 天)与进货(近 3 个月的显示,更早的收在 "N older purchases" 里展开;同一次进货拆到两家店的合并成一条),改为两行一条,不再截断(时间、单号、客户、店铺、数量 × 单价、金额与付款方式;日期、数量、剩余、供应商、单价)。侧栏:资料(系列、名称、香调家族与三层香调、灵感来源、描述可展开)、供应商与成本、多张照片。
 

@@ -187,6 +187,8 @@ class ProductForm(forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
+        if cleaned.get('perfume_type') not in Product.TAKES_CONCENTRATION:
+            cleaned['concentration'] = None
         brand = cleaned.get('brand_master')
         new_brand_name = title_case(cleaned.get('new_brand_name') or '')
         series = cleaned.get('series_master')

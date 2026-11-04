@@ -34,6 +34,13 @@ Inspirado em: Baccarat Rouge 540      ← 只在 app / 批发清单，不上网�
 
 Shopify 走 `composed_description(include_inspiration=False)`。
 
+## 类型和浓度
+
+`Product.perfume_type` 说明这是什么东西，`concentration` 只回答「香水有多浓」。
+所以只有 `Product.TAKES_CONCENTRATION`（Perfume、Mini）才有浓度。
+Oil perfume 和 Body mist / splash 2026-11-04 从浓度移到类型（迁移 0074）；其它类型上的浓度在迁移时清空，
+名称和 Shopify 标题里也就不再带 EDP。表单不显示这个字段，`ProductForm.clean` 保存时清空。
+
 ## 香水名怎么拼
 
 `Product.title_parts()`：**品牌 + 系列 + 名称（可空）+ 浓度 + 容量**。

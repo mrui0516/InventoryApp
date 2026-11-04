@@ -37,8 +37,7 @@ def discount_applies(product):
         return False
     # Size already excludes the 200ml sprays; this catches a body mist that
     # happens to be bottled at 100ml.
-    strength = getattr(getattr(product, 'concentration', None), 'name', '') or ''
-    return 'mist' not in strength.lower()
+    return getattr(product, 'perfume_type', '') != 'body_mist'
 
 
 def last_discount(customer_id):
