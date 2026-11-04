@@ -35,6 +35,7 @@ from django.views.decorators.http import require_POST
 
 from .models import Customer, PedidoDraft, PrintProfile, Product
 from .permissions import manager_required
+from .services.wholesale_discount import discount_applies
 from .services import pedido as pedido_math
 from .services import pedido_pdf
 from .services import shopify_sync
@@ -179,6 +180,7 @@ def _form_rows(lines):
              'availability': _availability_label(line['product'], on_order_ids),
              'wholesale_price': (float(line['product'].wholesale_price)
                                  if line['product'].wholesale_price is not None else None),
+             'discount_ok': discount_applies(line['product']),
              'quantity': line['quantity'],
              'unit_price': str(line['unit_price'])}
             for line in lines]

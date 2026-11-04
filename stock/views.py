@@ -65,6 +65,7 @@ from .permissions import (
     admin_required,
     manager_required,
 )
+from .services.wholesale_discount import discount_applies
 from .stores import (
     ACTIVE_STORE_SESSION_KEY,
     ALL_STORES,
@@ -251,35 +252,6 @@ def pvp_price(retail):
     if retail is None:
         return None
     return (Decimal(retail) + PVP_UPLIFT).quantize(Decimal('0.01'))
-
-
-# A wholesale discount is margin off a normal bottle of perfume. A 50ml is
-# already cheap, so the same few euros off would take most of its margin; a
-# 200ml is a body spray, priced by the litre rather than by the fragrance.
-# Both ends of the range matter - this is not "big bottles", it is "the size a
-# bottle of perfume comes in".
-DISCOUNT_MIN_VOLUME_ML = 60
-DISCOUNT_MAX_VOLUME_ML = 120
-
-
-def discount_applies(product):
-    """Whether an export discount may come off this product's wholesale price.
-
-    Normal bottles of perfume only - 60ml to 120ml. A product with no volume
-    recorded is left out on purpose: quoting a discount we did not mean costs
-    the shop margin quietly, while missing one is visible and easily
-    corrected.
-    """
-    category = getattr(product.category, 'name', '') if product.category_id else ''
-    if 'perfum' not in (category or '').lower():
-        return False
-    volume = getattr(product, 'volume_ml', None)
-    if volume is None or not (DISCOUNT_MIN_VOLUME_ML <= volume <= DISCOUNT_MAX_VOLUME_ML):
-        return False
-    # Size already excludes the 200ml sprays; this catches a body mist that
-    # happens to be bottled at 100ml.
-    strength = getattr(getattr(product, 'concentration', None), 'name', '') or ''
-    return 'mist' not in strength.lower()
 
 
 def discounted_wholesale(wholesale, discount):
@@ -5041,6 +5013,7 @@ def _quick_import_product(product):
         'id': product.id,
         'display_name': product.display_name,
         'wholesale_price': ctx['wholesale'],
+        'discount_ok': discount_applies(product),
         'availability': _availability_label(product, _on_order_ids()),
     })
     return ctx
@@ -5067,6 +5040,20 @@ def customer_last_prices(request):
                 'date': timezone.localtime(info['date']).strftime('%d/%m/%Y') if info['date'] else ''}
                for product_id, info in found.items()]
     return JsonResponse({'results': results})
+
+
+@login_required
+@manager_required
+def customer_wholesale_discount(request):
+    """How far below wholesale a customer bought last time: the export and
+    Pedido start from it once the customer is picked."""
+    from .services.wholesale_discount import last_discount
+    raw = (request.GET.get('customer') or '').strip()
+    found = last_discount(int(raw)) if raw.isdigit() else None
+    if found is None:
+        return JsonResponse({'discount': None})
+    return JsonResponse({'discount': f"{found['discount']:.2f}", 'date': found['date'],
+                         'order_id': found['order_id']})
 
 
 @require_POST
@@ -5869,6 +5856,7 @@ def products_autocomplete(request):
             'barcode': p.barcode,
             'retail_price': float(p.default_price) if p.default_price is not None else None,
             'wholesale_price': float(p.wholesale_price) if p.wholesale_price is not None else None,
+            'discount_ok': discount_applies(p),
             'image_url': get_product_image_url(p),
         })
     return JsonResponse({'results': results})

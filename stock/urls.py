@@ -53,6 +53,7 @@ urlpatterns = [
     path('check_customer/', views.check_customer, name='check_customer'),
     path('api/customers_autocomplete/', views.customers_autocomplete, name='customers_autocomplete'),
     path('api/customer_last_prices/', views.customer_last_prices, name='customer_last_prices'),
+    path('api/customer_wholesale_discount/', views.customer_wholesale_discount, name='customer_wholesale_discount'),
     path('api/quick-import/', views.quick_import, name='quick_import'),
     path('alerts/low-stock/', views.alerts_low_stock, name='alerts_low_stock'),
     path('settings/business/', views.business_settings_view, name='business_settings'),

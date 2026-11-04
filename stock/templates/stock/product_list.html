@@ -208,9 +208,17 @@
             </div>
           </div>
           <div class="xp-row">
-            <label class="xp-label" for="exportDiscount">Discount off wholesale</label>
-            <div class="xp-money"><span>&euro;</span><input type="number" name="discount" id="exportDiscount" min="0" step="0.10" placeholder="0.00" inputmode="decimal"></div>
+            <label class="xp-label" for="exportCust">Customer</label>
+            <div class="xp-cust">
+              <input type="text" id="exportCust" class="form-control form-control-sm" autocomplete="off" placeholder="Revenda customer">
+              <div class="xp-sugg" id="exportCustSugg" hidden></div>
+            </div>
           </div>
+          <div class="xp-row">
+            <label class="xp-label" for="exportDiscount">Discount off wholesale</label>
+            <div class="xp-money"><span>&euro;</span><input type="number" name="discount" id="exportDiscount" min="0" step="0.01" placeholder="0.00" inputmode="decimal"></div>
+          </div>
+          <div class="xp-last" id="exportDiscLast" hidden></div>
           <label class="xp-check"><input type="checkbox" name="only_in_stock" value="1"{% if export_defaults.only_in_stock %} checked{% endif %}> Only with stock or on the way</label>
           <label class="xp-check"><input type="checkbox" name="include_images" value="1"{% if export_defaults.include_images %} checked{% endif %}> Include photos</label>
           <div class="xp-actions">
@@ -386,6 +394,13 @@
   td .transit-pill{ display:flex; width:max-content; margin:.3rem auto 0; }
   .pm-fig .transit-pill{ margin-top:.2rem; }
   .product-block.has-bell{ grid-template-columns:32px 64px minmax(0,1fr); gap:.75rem; }
+  .xp-cust{ position:relative; flex:1 1 12rem; min-width:0; max-width:18rem; }
+  .xp-sugg{ position:absolute; z-index:30; left:0; right:0; top:100%; margin-top:.15rem; max-height:14rem; overflow:auto;
+    background:var(--app-surface); border:1px solid var(--app-border-strong); border-radius:var(--app-radius); box-shadow:0 6px 18px rgba(0,0,0,.12); }
+  .xp-sugg button{ display:block; width:100%; padding:.5rem .65rem; border:0; background:none; text-align:left; font-size:.9rem; }
+  .xp-sugg button:hover{ background:var(--app-surface-2); }
+  .xp-sugg small{ display:block; color:var(--app-muted); font-size:.85rem; }
+  .xp-last{ font-size:.88rem; font-weight:600; color:var(--app-muted); margin:-.1rem 0 .3rem; }
   /* two shops: the pill is this shop's units (all shops: the total), the
      other shop - or each shop - in small type under it */
   .shop-other{ display:block; font-size:.85rem; color:var(--app-muted); white-space:nowrap; line-height:1.25; margin-top:.2rem; }
@@ -421,6 +436,61 @@
   .price-main,.price-sub,.sales-main,.sales-sub{ white-space:nowrap; }
 </style>
 <script>
+// Export for a customer: picking one fills in how far below wholesale they last bought.
+(function () {
+  const input = document.getElementById('exportCust');
+  if (!input) return;
+  const list = document.getElementById('exportCustSugg');
+  const field = document.getElementById('exportDiscount');
+  const note = document.getElementById('exportDiscLast');
+  let timer = null;
+  function close() { list.hidden = true; list.textContent = ''; }
+  function pick(c) {
+    input.value = c.name;
+    close();
+    fetch('{% url "customer_wholesale_discount" %}?customer=' + encodeURIComponent(c.id))
+      .then((r) => r.json())
+      .then((d) => {
+        field.value = d.discount != null && Number(d.discount) > 0 ? d.discount : '';
+        // the discount is off wholesale: a PVP list would not show it
+        const form = input.closest('form');
+        if (form.querySelector('input[name="price_mode"]:checked')?.value === 'retail') {
+          form.querySelector('input[name="price_mode"][value="wholesale"]').checked = true;
+        }
+        note.textContent = d.discount == null ? 'No earlier sale to this customer'
+          : `Last sale ${d.date}: ` + (Number(d.discount) > 0 ? `€${d.discount} below wholesale` : 'at wholesale');
+        note.hidden = false;
+      })
+      .catch(() => { note.hidden = true; });
+  }
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    note.hidden = true;
+    const q = input.value.trim();
+    if (!q) { close(); field.value = ''; return; }
+    timer = setTimeout(() => {
+      fetch('{% url "customers_autocomplete" %}?kind=revenda&q=' + encodeURIComponent(q))
+        .then((r) => r.json())
+        .then((d) => {
+          close();
+          (d.results || []).slice(0, 8).forEach((c) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = c.name;
+            const sub = document.createElement('small');
+            sub.textContent = c.phone || c.nif || '';
+            b.appendChild(sub);
+            b.addEventListener('click', () => pick(c));
+            list.appendChild(b);
+          });
+          list.hidden = !list.children.length;
+        })
+        .catch(close);
+    }, 180);
+  });
+  document.addEventListener('click', (e) => { if (!e.target.closest('.xp-cust')) close(); });
+})();
+
 // The restock bell: off = not buying this again for now, so it leaves low
 // stock. One tap, saved at once; the product and its history stay as they are.
 document.addEventListener('click', (e) => {

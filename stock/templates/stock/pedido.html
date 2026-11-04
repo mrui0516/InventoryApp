@@ -95,6 +95,11 @@
   .pd-draft-btn.is-sell{ background:var(--app-accent); border-color:var(--app-accent); color:#fff; }
   .pd-draft-btn.is-del{ color:var(--danger); }
 
+  .pd-disc{ display:flex; flex-wrap:wrap; align-items:center; gap:.45rem .9rem; margin-top:.7rem; padding-top:.6rem; border-top:1px solid var(--app-border); }
+  .pd-disc-note{ font-size:.9rem; font-weight:600; }
+  .pd-disc-f{ display:inline-flex; align-items:center; gap:.4rem; margin:0; font-size:.88rem; color:var(--app-muted); font-weight:600; }
+  .pd-disc-f input{ width:5rem; min-height:36px; text-align:right; }
+  #pd-disc-all{ min-height:36px; padding:.2rem .8rem; border:1px solid var(--app-border-strong); border-radius:999px; background:var(--app-surface); font-weight:600; font-size:.88rem; cursor:pointer; }
   /* what this customer paid last time, under the price box */
   .pd-last{ display:block; margin-top:.2rem; font-size:.82rem; font-weight:700; color:var(--accent); white-space:nowrap; }
   .pd-last button{ border:0; background:none; padding:0 0 0 .3rem; font:inherit; color:var(--accent);
@@ -175,6 +180,13 @@
           <label for="pd-cust-address">Endereço</label>
           <textarea id="pd-cust-address" name="customer_address" rows="2">{% if draft %}{{ draft.customer_address }}{% else %}{{ prefill.address|default:'' }}{% endif %}</textarea>
         </div>
+      </div>
+      {# how far below wholesale this customer last bought: new lines start there #}
+      <div class="pd-disc" id="pd-disc" hidden>
+        <span class="pd-disc-note" id="pd-disc-note"></span>
+        <label class="pd-disc-f">Desconto sobre grossista
+          <input type="text" inputmode="decimal" id="pd-disc-val" aria-label="Desconto sobre grossista"></label>
+        <button type="button" id="pd-disc-all">Aplicar a todos</button>
       </div>
     </div>
 
@@ -331,8 +343,42 @@
   // rows already on the form only get a hint, never a silent change.
   const custId = document.getElementById('pd-cust-id');
   let lastPrices = {};
+  // How far below wholesale they last bought. Lines added from now on start
+  // there; lines already on the form change only with "Aplicar a todos".
+  const discBox = document.getElementById('pd-disc');
+  const discVal = document.getElementById('pd-disc-val');
+  function discount() { return Math.max(Number(String(discVal.value).replace(',', '.')) || 0, 0); }
+  function discounted(p) {
+    return Math.max(Number(p.wholesale_price) - discount(), 0).toFixed(2);
+  }
+  function loadDiscount() {
+    discBox.hidden = true;
+    discVal.value = '';
+    if (!custId.value) return;
+    const asked = custId.value;
+    fetch('/api/customer_wholesale_discount/?customer=' + encodeURIComponent(asked))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (asked !== custId.value || data.discount == null) return;
+        const gap = cents(data.discount);
+        document.getElementById('pd-disc-note').textContent = 'Última venda ' + data.date + ': ' +
+          (gap > 0 ? fmt(gap) + ' abaixo do grossista' : 'preço grossista');
+        discVal.value = String(data.discount).replace('.', ',');
+        discBox.hidden = false;
+      })
+      .catch(function () { /* a convenience; quoting still works */ });
+  }
+  document.getElementById('pd-disc-all').addEventListener('click', function () {
+    rows.querySelectorAll('tr.pd-row').forEach(function (tr) {
+      if (tr.dataset.discountOk !== '1') return;
+      tr.querySelector('input.price').value = discounted({ wholesale_price: tr.dataset.wholesale }).replace('.', ',');
+    });
+    recalc();
+    refreshHints();
+  });
   function loadLastPrices() {
     lastPrices = {};
+    loadDiscount();
     if (!custId.value) { refreshHints(); return; }
     fetch('/api/customer_last_prices/?customer=' + encodeURIComponent(custId.value))
       .then(function (r) { return r.json(); })
@@ -405,8 +451,13 @@
     const last = lastPrices[p.id];
     let startPrice = '';
     if (quoted) startPrice = String(quoted.unit_price);
+    else if (discount() > 0 && p.discount_ok && p.wholesale_price != null) startPrice = discounted(p);
     else if (last) startPrice = String(last.price);
     else if (p.wholesale_price != null) startPrice = p.wholesale_price.toFixed(2);
+    if (p.discount_ok && p.wholesale_price != null) {
+      tr.dataset.discountOk = '1';
+      tr.dataset.wholesale = p.wholesale_price;
+    }
     tr.innerHTML =
       '<td><div class="pd-name">' + esc(p.display_name) + '</div>' +
       '<div class="pd-ean">' + esc(p.barcode || '') + '</div>' +
@@ -586,7 +637,8 @@
     lines.forEach(function (l) {
       const p = l.product;
       const last = lastPrices[p.id];
-      let price = l.price != null ? l.price : (last ? Number(last.price) : p.wholesale_price);
+      const off = discount() > 0 && p.discount_ok && p.wholesale_price != null;
+      let price = l.price != null ? l.price : (off ? discounted(p) : (last ? Number(last.price) : p.wholesale_price));
       addRow(p, { quantity: l.qty, unit_price: price != null ? Number(price).toFixed(2) : '' });
     });
     recalc();
