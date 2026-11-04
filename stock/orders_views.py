@@ -39,6 +39,7 @@ from .models import InboundOrder, Purchase, Sale, SaleOrder
 from .permissions import (has_admin_access, has_manager_access,
                           has_order_reconciliation_access,
                           has_sales_sensitive_access)
+from .services import finance
 from .services.store_stock import merge_batches
 from .services.inbound_rollback import can_roll_back
 from .services.dashboard import (build_yearly_sales_overview,
@@ -459,7 +460,7 @@ def _pending_lines(order, store):
     return lines
 
 
-def load_purchases(start, end, q, next_url, store=None, by='received'):
+def load_purchases(start, end, q, next_url, store=None, by='received', with_payments=False):
     """Inbound orders and direct purchases in the range, newest first.
 
     ``by='received'``: an order counts on the day its goods came in (its
@@ -472,7 +473,7 @@ def load_purchases(start, end, q, next_url, store=None, by='received'):
     quantities and cost. Without: everything, with each shop's part
     (``shops``: quantity and cost) on every line and delivery.
     """
-    from .models import Store
+    from .models import BusinessSettings, Store
     shop_names = dict(Store.objects.values_list("id", "name"))
 
     def lines_of(batches):
@@ -480,10 +481,11 @@ def load_purchases(start, end, q, next_url, store=None, by='received'):
         return _scope_to_shop(items, store) if store is not None else items
 
     groups = []
+    cut_off = BusinessSettings.get().payables_from if with_payments else None
     inbound = (InboundOrder.objects
                .select_related('supplier')
                .prefetch_related('items__product', 'items__product__images',
-                                 'items__supplier', 'pending_items__product__images')
+                                 'items__supplier', 'pending_items__product__images', 'payments')
                .order_by('-created_at'))
     if by == 'paid':
         inbound = inbound.filter(created_at__date__gte=start, created_at__date__lte=end)
@@ -499,11 +501,16 @@ def load_purchases(start, end, q, next_url, store=None, by='received'):
             continue
         supplier = order.supplier or next((i.supplier for i in items if i.supplier_id), None)
         rollback_ok, rollback_reason = can_roll_back(order) if batches else (False, '')
+        due = paid_so_far = None
+        if with_payments and (cut_off and order.created_at.date() >= cut_off or order.payments.exists()):
+            due, paid_so_far = finance.order_due(order), finance.order_paid(order)
         paid = timezone.localtime(order.created_at)
         arrived = timezone.localtime(min(b.date for b in batches)) if batches else None
         created = paid if by == 'paid' or arrived is None else arrived
         groups.append({
             'pending': pending,
+            'order_paid': paid_so_far,
+            'order_owing': None if due is None else due - paid_so_far,
             'paid_on': paid.date(),
             'received_on': arrived.date() if arrived else None,
             'key': f'in-{order.id}',
@@ -743,7 +750,8 @@ def orders_page(request):
 
     elif view == 'purchases':
         purchases = load_purchases(start, end, params['q'], request.get_full_path(),
-                                   store=None if store_is_all else active_store, by=params['pdate'])
+                                   store=None if store_is_all else active_store, by=params['pdate'],
+                                   with_payments=has_admin_access(request.user))
         context['pdate'] = params['pdate']
         context['pdate_urls'] = [{'label': label, 'on': params['pdate'] == value,
                                   'url': page_url(params, pdate=None if value == 'received' else value)}

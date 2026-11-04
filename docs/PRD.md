@@ -555,6 +555,17 @@
 - **F2.20.5 Top 产品**：当日按销售额排序的畅销榜（含相对条形，链接产品详情）。
 - **F2.20.6** 提供跳转当日"Full records"（`sales_records?start=end=当天`）与**打印**（`@media print` 隐藏侧栏与操作按钮）。金额受 `has_order_reconciliation_access` 门控，利润受 `is_superuser` 门控。
 
+### 模块 2.20a — 财务（Finance，2026-11-04）
+
+入口：侧栏 **Finance**，只有管理员（`is_superuser`）能看到和访问。设计见 `docs/superpowers/specs/2026-11-04-expenses-design.md`。
+
+- **F2.20a.1 Expenses**：一笔费用属于一家店、一个类别，有两个日期：`period`（算哪个月的利润）和 `paid_on`（钱哪天出去，空 = 未付）。付款方式：现金、银行、老板自己的钱。类别可增加、停用，用过的不能删。两家共同的费用自己拆成两笔。
+- **F2.20a.2 Monthly costs**：固定月费和工资设成模板，每月出现在 To confirm，金额可改，Confirm 记账，Skip 略过这个月；过去的月份也能补。工资就是类别 Salaries 的费用，`payee` 写员工姓名。
+- **F2.20a.3 Suppliers**：按供应商列出没付清的进货单（待收货的也能付款）；`payables_from` 之前的单子不算欠款。默认由 Scentory 付（Shop settings 可改）。一笔付款按这张单各店收到的成本比例分配，其它店欠付款店的部分进 Transfers 页的两店余额，用 Settle 结账。分配不存表，每次现算，收货、改单、撤销收货后自动跟着变。Purchase share markup 默认 €0，打开后付款时记下，只在两店之间移动利润。有付款的进货单不能取消或删除。
+- **F2.20a.4 Overview**：净利润 = 毛利（所有分类、所有渠道，已扣刷卡手续费；单店含调货加价）+ 向客人收的运费杂费 − 费用。进货付款不扣利润。按类别和上月对比。现金流按实际日期分现金、银行，不显示余额；两店结账算现金，只在单店时显示；老板自己付的不进现金和银行。
+- **F2.20a.5 Owner funds**：记录老板投入和取出的钱，可补录以前的；老板自己付的支出和进货款自动算投入。Overview 显示净投入、Finance 开始以来的累计净利润；选全部店铺时显示生意现值 = 库存成本 + IOU 应收 − 欠供应商 − 未付费用，不含手上的现金和银行存款。
+- **F2.20a.6** Today、客户页原来的 "Net Profit"（毛利减刷卡手续费）改名 **Profit**。Orders → Purchases 的面板对管理员显示 Paid、Owing。Settings → Audit 增加 Finance 页。
+
 ### 模块 2.21 — 报价单（Pedido）
 
 入口：`/pedido/`(`pedido_views.pedido_view`,侧栏 **Sell → Pedido**),`@manager_required`。给批发客户快速出一张报价单 PDF。**定位(2026-10-25 老板确认):Sell 是零售,Pedido 专为 Revenda。**代码在 `stock/pedido_views.py` + `stock/services/pedido.py`(金额) + `stock/services/pedido_pdf.py`(渲染),不在 `views.py` 里。

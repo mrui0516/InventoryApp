@@ -577,3 +577,29 @@ class OwnerMoneyTests(FinanceMixin, TestCase):
         SaleOrder.objects.filter(pk=early.pk).update(created_at=timezone.now() - timedelta(days=200))
         self.expense("10", period=self.today.replace(day=1))
         self.assertEqual(finance.profit_to_date(self.today), Decimal("50.00"))
+
+
+class ExistingPagesTests(FinanceMixin, TestCase):
+    def test_today_and_customer_pages_say_profit(self):
+        from .models import Customer
+        customer = Customer.objects.create(name="C")
+        self.assertNotContains(self.client.get(reverse("daily_summary")), "Net Profit")
+        self.assertNotContains(self.client.get(reverse("customer_detail", args=[customer.id])), "Net Profit")
+
+    def test_purchases_panel_shows_paid_to_admins_only(self):
+        order = InboundOrder.objects.create(status="received")
+        store_stock.receive_batches(product=self.product, quantity=2, cost_price=Decimal("50"),
+                                    allocation={self.khan.id: 2}, inbound_order=order)
+        finance.add_payment(order, store=self.scentory, amount=Decimal("30"), paid_on=self.today, method="bank",
+                            note="", user=self.admin)
+        url = reverse("sales_records")
+        self.assertContains(self.client.get(url, {"view": "purchases"}), "<dt>Owing</dt><dd>EUR 70.00</dd>", html=False)
+        manager = get_user_model().objects.create_user("fin_mgr2", password="pw123456", is_staff=True)
+        self.client.force_login(manager)
+        self.assertNotContains(self.client.get(url, {"view": "purchases"}), "<dt>Owing</dt>")
+
+    def test_audit_lists_finance_changes(self):
+        finance.log(self.admin, "deleted", "expense", 1, "Khan Perfume · Rent · 2026-11 · €900")
+        page = self.client.get(reverse("audit_finance"))
+        self.assertContains(page, "Rent")
+        self.assertContains(page, "Deleted")

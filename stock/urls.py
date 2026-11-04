@@ -74,6 +74,7 @@ urlpatterns = [
     path('settings/audit/orders/', views.audit_orders_view, name='audit_orders'),
     path('settings/audit/stock/', views.audit_stock_view, name='audit_stock'),
     path('settings/audit/deliveries/', views.audit_deliveries_view, name='audit_deliveries'),
+    path('settings/audit/finance/', views.audit_finance_view, name='audit_finance'),
     path('settings/audit/admin/', views.audit_admin_view, name='audit_admin'),
     path('settings/audit/accounts/', views.audit_accounts_view, name='audit_accounts'),
     path('settings/audit/errors/', views.audit_errors_view, name='audit_errors'),

@@ -52,6 +52,7 @@ InventoryApp/
     │   ├── hr.py                     # AttendanceRecord
     │   ├── submissions.py            # FormSubmission（表单只记一次）
     │   ├── transfers.py              # StockTransfer / StockTransferLine / StoreSettlement（两店之间的货与钱）
+    │   ├── expenses.py               # ExpenseCategory / Expense / ExpenseTemplate / SupplierPayment / OwnerFunding / FinanceLog
     │   └── system.py                 # ErrorLog（错误日志）
     ├── views.py                      # 大部分页面视图（单文件，正按路线图逐步拆分）
     ├── orders_views.py               # 经理 Orders 页：Sales | Purchases | Analysis
@@ -68,6 +69,7 @@ InventoryApp/
     ├── services/                     # 业务逻辑（视图之外可复用、可单测的部分）
     │   ├── profit.py                 # FIFO 利润重放 sale_profit_map_for_sale_ids（扣除刷卡手续费）
     │   ├── stock_ops.py              # FIFO 库存原子条件更新：consume_stock_fifo / restore_stock_fifo（按店）
+    │   ├── finance.py                # Finance 的数字：费用、月费模板、供应商欠款、两店分配、月度利润、现金流、老板资金、现值
     │   ├── wholesale_discount.py     # discount_applies（哪些产品能打折）、last_discount（客人比批发价便宜多少：手动值 Customer.wholesale_discount 与上次成交谁新用谁）
     │   ├── store_stock.py            # 按店库存：各店数量、拆批调货、收银自动调货、收货分配、两店余额与结账
     │   ├── stock_ledger.py           # 单品库存流水（入库 / 销售 / 手动调整合并成一条时间线，只读）
@@ -344,6 +346,18 @@ Orders → Purchases（`orders_views.load_purchases`）、供应商页、产品�
 
 **期初**：`manage.py split_opening_stock --to Scentory --units 2 [--apply]`：每款从默认店给目标店 N 件（不足 N 件全给，
 已归档产品不动），一张 `OPENING` 调拨，不记欠款；第二次执行被拒绝。
+
+### 5.9d 财务（Finance，2026-11-04）
+
+视图在 `stock/finance_views.py`（全部 `admin_required`），数字都在 `services/finance.py`。
+净利润 = `compute_period_headline(start, end, [], True, store)` 的毛利 + `SaleOrderCharge` − 按 `period` 的 `Expense`；
+不读看板快照，因为看板默认只筛香水。现金流按实际日期：`SaleOrderPayment`（旧订单用 `Sale.payment_method`）、`ARPayment`、
+`SaleOrder.card_fee`、`OwnerFunding`、`Expense.paid_on`、`SupplierPayment.paid_on`、`StoreSettlement`（只在单店时）。
+`method='owner'` 不进现金和银行，算进 `owner_summary`。
+
+**进货款分配不存表**：`purchase_shares(payment)` 按批次的 `received_store`（待收货按 `allocation`）的成本比例现算，
+最后一家店拿余数，保证加起来等于付款；有一行没分配时返回空。`share_debts()` 并入 `store_stock.balances()`（返回 `parts`），
+`share_margins()` 并入 `transfer_margins()`，所以加价走和调货一样的路径。`store_stock` 里这两处是函数内导入，避免和 `dashboard` 循环。
 
 ### 5.8c 撤销收货（Inbound rollback）
 

@@ -135,7 +135,7 @@
         {% endif %}
 
         {# Settings stay folded: weekly work at most, and it was half the menu. #}
-        <details class="erp-nav-fold" {% if current_url in 'attendance,tools,employee_list,employee_create,employee_edit,store_list,store_create,store_edit,print_profile_edit,business_settings,audit,audit_orders,audit_stock,audit_deliveries,audit_admin,audit_accounts,audit_errors,sale_order_correction_center,sale_order_correction_create,sale_order_correction_edit' %}open{% endif %}>
+        <details class="erp-nav-fold" {% if current_url in 'attendance,tools,employee_list,employee_create,employee_edit,store_list,store_create,store_edit,print_profile_edit,business_settings,audit,audit_orders,audit_stock,audit_deliveries,audit_finance,audit_admin,audit_accounts,audit_errors,sale_order_correction_center,sale_order_correction_create,sale_order_correction_edit' %}open{% endif %}>
           <summary class="erp-nav-group">Settings</summary>
           <a class="erp-nav-link {% if current_url == 'attendance' %}active{% endif %}" href="{% url 'attendance' %}">Attendance</a>
           <a class="erp-nav-link {% if current_url == 'tools' %}active{% endif %}" href="{% url 'tools' %}">Tools</a>

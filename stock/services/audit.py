@@ -24,6 +24,7 @@ PAGES = (
     ('audit_orders', 'Orders'),
     ('audit_stock', 'Stock'),
     ('audit_deliveries', 'Deliveries'),
+    ('audit_finance', 'Finance'),
     ('audit_admin', 'Admin edits'),
     ('audit_accounts', 'Accounts'),
     ('audit_errors', 'Errors'),
@@ -207,6 +208,20 @@ def admin_edits(since, query):
             'link': '' if deleted else (e.get_admin_url() or ''),
         })
     return rows
+
+
+def finance_changes(since, query):
+    """Who added, changed or deleted what in Finance."""
+    from ..models import FinanceLog
+    entries = FinanceLog.objects.select_related('user')
+    if since:
+        entries = entries.filter(created_at__gte=since)
+    if query:
+        entries = entries.filter(Q(summary__icontains=query) | Q(user__username__icontains=query)
+                                 | Q(kind__icontains=query))
+    return [{'when': e.created_at, 'tone': 'danger' if e.action == 'deleted' else 'info',
+             'tag': e.action.capitalize(), 'title': e.kind.capitalize(), 'detail': e.summary,
+             'reason': '', 'changes': [], 'who': _who(e.user), 'link': ''} for e in entries]
 
 
 def accounts():

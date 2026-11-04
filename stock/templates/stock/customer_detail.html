@@ -143,7 +143,7 @@
     {% endif %}
     <div class="sp-kpi"><span>Orders</span><b>{{ total_orders }}</b><small>{{ total_items }} item{{ total_items|pluralize }}</small></div>
     {% if show_profit %}
-      <div class="sp-kpi{% if total_profit < 0 %} neg{% endif %}"><span>Net Profit</span><b>&euro;{{ total_profit|floatformat:"2g" }}</b></div>
+      <div class="sp-kpi{% if total_profit < 0 %} neg{% endif %}"><span>Profit</span><b>&euro;{{ total_profit|floatformat:"2g" }}</b></div>
     {% endif %}
     <div class="sp-kpi"><span>Last order</span><b>{% if last_order_at %}{{ last_order_at|date:"Y-m-d" }}{% else %}&mdash;{% endif %}</b>{% if cadence.avg_gap_days is not None %}<small>every {{ cadence.avg_gap_days }} days</small>{% endif %}</div>
     {% if show_ar and ar_totals.balance > 0 %}
@@ -189,7 +189,7 @@
                   <div class="grand"><dt>Total</dt><dd>&euro;{{ order.display_total_amount|floatformat:2 }}</dd></div>
                   {% for pay in order.display_pay_break %}<div><dt>{{ pay.label }}</dt><dd>&euro;{{ pay.amount|floatformat:2 }}</dd></div>{% endfor %}
                 {% endif %}
-                {% if show_profit %}<div><dt>Net Profit</dt><dd{% if order.display_total_profit < 0 %} class="neg"{% endif %}>&euro;{{ order.display_total_profit|floatformat:2 }}</dd></div>{% endif %}
+                {% if show_profit %}<div><dt>Profit</dt><dd{% if order.display_total_profit < 0 %} class="neg"{% endif %}>&euro;{{ order.display_total_profit|floatformat:2 }}</dd></div>{% endif %}
               </dl>
             </div>
             <div data-part="foot">

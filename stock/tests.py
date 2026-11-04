@@ -685,7 +685,7 @@ class CustomerDetailViewTests(TestCase):
         self.assertContains(response, "Timeline Customer")
         self.assertContains(response, "Order #")
         self.assertTrue(response.context["show_profit"])
-        self.assertContains(response, "Net Profit")
+        self.assertContains(response, "<span>Profit</span>")
 
     def test_customer_detail_shows_profit_for_admin_only(self):
         self.client.login(username="customer_timeline_admin", password="pw123456")
@@ -695,7 +695,7 @@ class CustomerDetailViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.context["show_profit"])
         self.assertEqual(response.context["total_profit"], Decimal("64.00"))
-        self.assertContains(response, "Net Profit")
+        self.assertContains(response, "<span>Profit</span>")
 
     def test_customer_detail_builds_visual_context(self):
         self.client.login(username="customer_timeline_admin", password="pw123456")

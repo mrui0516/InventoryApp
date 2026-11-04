@@ -371,6 +371,10 @@
               {% if group.shops %}{% for s in group.shops %}<div><dt>{{ s.label }}</dt><dd>{{ s.qty }} pcs &middot; EUR {{ s.cost|floatformat:2 }}</dd></div>{% endfor %}{% endif %}
               <div><dt>Items</dt><dd>{{ group.qty }}</dd></div>
               <div class="grand"><dt>Cost</dt><dd>EUR {{ group.cost|floatformat:2 }}</dd></div>
+              {% if group.order_owing is not None %}
+                <div><dt>Paid</dt><dd>EUR {{ group.order_paid|floatformat:2 }}</dd></div>
+                <div><dt>Owing</dt><dd>EUR {{ group.order_owing|floatformat:2 }}</dd></div>
+              {% endif %}
             </dl>
           </div>
           <div data-part="foot">

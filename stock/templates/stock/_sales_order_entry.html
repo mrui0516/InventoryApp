@@ -59,7 +59,7 @@
               <th>Subtotal</th>
             {% endif %}
             {% if show_profit %}
-              <th>Net Profit</th>
+              <th>Profit</th>
             {% endif %}
           </tr>
         </thead>
@@ -95,7 +95,7 @@
                 <td data-label="Subtotal"><span class="num">EUR {{ item.line_total|floatformat:2 }}</span></td>
               {% endif %}
               {% if show_profit %}
-                <td data-label="Net Profit">
+                <td data-label="Profit">
                   <span class="num {% if item.line_profit < 0 %}text-danger{% endif %}">EUR {{ item.line_profit|floatformat:2 }}</span>
                 </td>
               {% endif %}

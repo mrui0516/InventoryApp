@@ -3125,6 +3125,15 @@ def audit_orders_view(request):
 
 @login_required
 @admin_required
+def audit_finance_view(request):
+    from .services import audit
+    period, since, query = _audit_filters(request)
+    return _audit_page(request, 'audit_finance', 'stock/audit_feed.html', audit.finance_changes(since, query),
+                       period=period, query=query, search_hint='Shop, category, amount, user')
+
+
+@login_required
+@admin_required
 def audit_admin_view(request):
     from .services import audit
     period, since, query = _audit_filters(request)
