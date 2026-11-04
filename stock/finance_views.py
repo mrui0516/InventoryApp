@@ -13,7 +13,7 @@ from django.utils.dateparse import parse_date
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
-from .models import Expense, ExpenseCategory, ExpenseTemplate
+from .models import BusinessSettings, Expense, ExpenseCategory, ExpenseTemplate, InboundOrder, SupplierPayment
 from .models.expenses import PAID_METHODS
 from .permissions import admin_required
 from .services import finance
@@ -244,3 +244,52 @@ def template_skip(request, template_id):
     if period is not None:
         finance.skip_template(template, period, request.user)
     return _back(request, 'finance_templates')
+
+
+@login_required
+@admin_required
+def payables_view(request):
+    groups = finance.payables()
+    return render(request, 'stock/finance_payables.html', {
+        'tab': 'payables',
+        'groups': groups,
+        'owed': sum((g['owed'] for g in groups), finance.ZERO),
+        'recent': finance.recent_payments(),
+        'shops': active_stores(),
+        'shop': _shop(request),
+        'payer_id': BusinessSettings.get().purchasing_store_id,
+        'methods': PAID_METHODS,
+        'last_method': request.session.get('finance_method', 'bank'),
+        'today': timezone.localdate(),
+    })
+
+
+@login_required
+@admin_required
+@require_POST
+def payment_add(request, order_id):
+    order = get_object_or_404(InboundOrder, pk=order_id)
+    by_id = {s.id: s for s in active_stores()}
+    method = (request.POST.get('method') or '').strip()
+    try:
+        finance.add_payment(order, store=by_id.get(int(request.POST.get('store') or 0)),
+                            amount=_money(request.POST.get('amount')),
+                            paid_on=parse_date(request.POST.get('paid_on') or ''), method=method,
+                            note=request.POST.get('note'), user=request.user)
+        request.session['finance_method'] = method
+        messages.success(request, f'Payment saved on inbound #{order.id}.')
+    except ValidationError as e:
+        messages.error(request, '; '.join(e.messages))
+    return redirect('finance_payables')
+
+
+@login_required
+@admin_required
+@require_POST
+def payment_delete(request, payment_id):
+    payment = get_object_or_404(SupplierPayment, pk=payment_id)
+    finance.log(request.user, 'deleted', 'supplier payment', payment.id,
+                f'Inbound #{payment.inbound_order_id} · {payment.store.name} · €{payment.amount}')
+    payment.delete()
+    messages.success(request, 'Payment deleted.')
+    return redirect('finance_payables')

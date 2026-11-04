@@ -37,6 +37,19 @@
       </div>
     </section>
 
+    <section class="page-card pad" aria-label="Supplier payments">
+      <h2 class="ss-h">Supplier payments</h2>
+      <div class="ss-grid">
+        <label class="ss-f"><span>Paid by</span>
+          <select class="form-select" name="purchasing_store" aria-label="Paid by">
+            {% for s in shops %}<option value="{{ s.shop.id }}"{% if s.shop.id == settings_row.purchasing_store_id %} selected{% endif %}>{{ s.shop.name }}</option>{% endfor %}
+          </select></label>
+        <label class="ss-f"><span>Share markup, &euro; per unit</span>
+          <div class="input-group"><span class="input-group-text">&euro;</span>
+            <input type="text" inputmode="decimal" class="form-control" name="purchase_share_markup" value="{{ settings_row.purchase_share_markup }}" aria-label="Purchase share markup"></div></label>
+      </div>
+    </section>
+
     <section class="page-card pad" aria-label="Transfer markup">
       <h2 class="ss-h">Transfer markup</h2>
       <label class="ss-f" style="max-width:12rem;"><span>&euro; per unit</span>

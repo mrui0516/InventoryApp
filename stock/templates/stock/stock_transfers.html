@@ -13,7 +13,8 @@
         <input type="hidden" name="payer" value="{{ b.debtor.id }}">
         <input type="hidden" name="payee" value="{{ b.creditor.id }}">
         <div class="tr-owe-text"><b>{{ b.debtor.name }}</b> owes <b>{{ b.creditor.name }}</b>
-          <span class="tr-owe-amount">&euro;{{ b.amount|floatformat:2 }}</span></div>
+          <span class="tr-owe-amount">&euro;{{ b.amount|floatformat:2 }}</span>
+          {% if b.parts.purchases %}<span class="tr-owe-parts">Transfers &euro;{{ b.parts.transfers|floatformat:2 }} &middot; Purchases &euro;{{ b.parts.purchases|floatformat:2 }} &middot; Settled &euro;{{ b.parts.settled|floatformat:2 }}</span>{% endif %}</div>
         <div class="tr-owe-pay">
           <div class="input-group input-group-sm"><span class="input-group-text">&euro;</span>
             <input type="text" inputmode="decimal" class="form-control" name="amount" value="{{ b.amount|floatformat:2 }}" aria-label="Amount paid"></div>
@@ -116,6 +117,7 @@
     padding:.2rem 0 .7rem; border-bottom:1px solid var(--app-border); margin-bottom:.6rem; }
   .tr-owe-text{ font-size:1.02rem; }
   .tr-owe-amount{ display:block; font-size:1.6rem; font-weight:800; font-variant-numeric:tabular-nums; margin-top:.1rem; }
+  .tr-owe-parts{ display:block; font-size:.85rem; color:var(--app-muted); font-variant-numeric:tabular-nums; }
   .tr-owe-pay{ display:grid; grid-template-columns:8.5rem 9.5rem auto; gap:.4rem; align-items:center; }
   .tr-even{ font-size:1.05rem; font-weight:700; color:#0f766e; padding:.2rem 0 .6rem; }
   .tr-rate{ font-size:.85rem; color:var(--app-muted); }

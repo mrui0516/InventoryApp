@@ -328,6 +328,9 @@ def transfer_margins(start, end, *, category_ids=(), channel=''):
         day = timezone.localtime(row['transfer__created_at']).date()
         out.append((row['transfer__from_store'], day, markup))
         out.append((row['transfer__to_store'], day, -markup))
+    if not channel:                 # a supplier payment belongs to no channel
+        from .finance import share_margins
+        out.extend(share_margins(start, end))
     return out
 
 
@@ -342,24 +345,40 @@ def transfer_margin(store, start, end, *, category_ids=(), channel=''):
 
 # --------------------------------------------------------------- the money
 def balances():
-    """What each pair of shops owes, netted: ``[{debtor, creditor, amount}]``."""
-    owed = defaultdict(Decimal)          # (debtor_id, creditor_id) -> amount
+    """What each pair of shops owes, netted: ``[{debtor, creditor, amount, parts}]``.
+
+    Transfers, each shop's share of the supplier payments another shop made,
+    less settlements. ``parts`` is that sum from the debtor's side: a transfer
+    the creditor took shows as a negative."""
+    from .finance import share_debts
+    transfers = defaultdict(Decimal)     # (debtor_id, creditor_id) -> amount
+    purchases = defaultdict(Decimal)
+    settled = defaultdict(Decimal)
     for row in (StockTransferLine.objects.exclude(transfer__reason=StockTransfer.OPENING)
                 .values('transfer__from_store', 'transfer__to_store').annotate(total=Sum('amount'))):
-        owed[(row['transfer__to_store'], row['transfer__from_store'])] += row['total'] or Decimal('0.00')
+        transfers[(row['transfer__to_store'], row['transfer__from_store'])] += row['total'] or Decimal('0.00')
+    for debtor, creditor, amount in share_debts():
+        purchases[(debtor, creditor)] += amount
     for row in StoreSettlement.objects.values('payer', 'payee').annotate(total=Sum('amount')):
-        owed[(row['payer'], row['payee'])] -= row['total'] or Decimal('0.00')
+        settled[(row['payer'], row['payee'])] += row['total'] or Decimal('0.00')
     stores = {s.id: s for s in Store.objects.all()}
+
+    def side(book, a, b):
+        return book.get((a, b), Decimal('0.00')) - book.get((b, a), Decimal('0.00'))
+
     out, seen = [], set()
-    for (a, b) in list(owed):
+    for (a, b) in set(transfers) | set(purchases) | set(settled):
         if (a, b) in seen or (b, a) in seen:
             continue
         seen.add((a, b))
-        net = owed[(a, b)] - owed.get((b, a), Decimal('0.00'))
+        net = side(transfers, a, b) + side(purchases, a, b) - side(settled, a, b)
         if net == 0:
             continue
         debtor, creditor = (a, b) if net > 0 else (b, a)
-        out.append({'debtor': stores.get(debtor), 'creditor': stores.get(creditor), 'amount': abs(net)})
+        out.append({'debtor': stores.get(debtor), 'creditor': stores.get(creditor), 'amount': abs(net),
+                    'parts': {'transfers': side(transfers, debtor, creditor),
+                              'purchases': side(purchases, debtor, creditor),
+                              'settled': -side(settled, debtor, creditor)}})
     return out
 
 

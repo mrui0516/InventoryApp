@@ -66,6 +66,7 @@
   <nav class="fin-tabs" aria-label="Finance">
     <a class="{% if tab == 'expenses' %}on{% endif %}" href="{% url 'finance_expenses' %}">Expenses</a>
     <a class="{% if tab == 'monthly' %}on{% endif %}" href="{% url 'finance_templates' %}">Monthly costs</a>
+    <a class="{% if tab == 'payables' %}on{% endif %}" href="{% url 'finance_payables' %}">Suppliers</a>
   </nav>
   {% block finance %}{% endblock %}
 </div>

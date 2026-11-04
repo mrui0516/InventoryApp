@@ -1,0 +1,55 @@
+{% extends 'stock/finance_base.html' %}
+{% block finance %}
+<div class="fin-kpis">
+  <div class="fin-kpi hi"><span class="k">Owed to suppliers</span><span class="v">&euro;{{ owed|floatformat:2 }}</span></div>
+</div>
+
+{% for g in groups %}
+  <section class="fin-card" aria-label="{{ g.supplier }}">
+    <h2>{{ g.supplier }} &middot; &euro;{{ g.owed|floatformat:2 }}</h2>
+    {% for o in g.orders %}
+      <button type="button" class="fin-row" data-layer="pay-{{ o.order.id }}">
+        <span class="main">#{{ o.order.id }}{% if o.order.invoice_no %} &middot; {{ o.order.invoice_no }}{% endif %}</span>
+        <span class="amt{% if o.owed < 0 %} neg{% endif %}">&euro;{{ o.owed|floatformat:2 }}</span>
+        <span class="sub">{{ o.order.created_at|date:"j M Y" }}{% if o.order.status == 'pending_receipt' %} &middot; on the way{% endif %}</span>
+        <span class="sub">of &euro;{{ o.due|floatformat:2 }}</span>
+      </button>
+      <template id="pay-{{ o.order.id }}">
+        <div data-part="title">Pay #{{ o.order.id }} &middot; {{ g.supplier }}</div>
+        <div data-part="body">
+          <form method="post" action="{% url 'finance_payment_add' o.order.id %}" class="fin-form">
+            {% csrf_token %}
+            <label>Amount &euro;<input type="text" inputmode="decimal" name="amount" class="form-control" value="{{ o.owed|floatformat:2 }}" required></label>
+            <label>Paid on<input type="date" name="paid_on" class="form-control" value="{{ today|date:'Y-m-d' }}" required></label>
+            <label>Paid by
+              <select name="store" class="form-select" required>{% for s in shops %}<option value="{{ s.id }}"{% if s.id == payer_id %} selected{% endif %}>{{ s.name }}</option>{% endfor %}</select></label>
+            <label>How
+              <select name="method" class="form-select">{% for v, l in methods %}<option value="{{ v }}"{% if v == last_method %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></label>
+            <label class="wide">Note<input type="text" name="note" class="form-control" maxlength="200"></label>
+            <div class="wide"><button type="submit" class="btn btn-primary">Save payment</button></div>
+          </form>
+        </div>
+        <div data-part="foot"></div>
+      </template>
+    {% endfor %}
+  </section>
+{% empty %}
+  <section class="fin-card"><p class="fin-empty">Nothing owed to suppliers.</p></section>
+{% endfor %}
+
+<section class="fin-card" aria-label="Payments">
+  <h2>Payments</h2>
+  {% for p in recent %}
+    <div class="fin-row">
+      <span class="main">#{{ p.inbound_order_id }}{% if p.inbound_order.supplier %} &middot; {{ p.inbound_order.supplier.name }}{% endif %}</span>
+      <span class="amt">&euro;{{ p.amount|floatformat:2 }}</span>
+      <span class="sub">{{ p.paid_on|date:"j M" }} &middot; {{ p.store.name }} &middot; {{ p.get_method_display }}{% for s in p.shares %} &middot; {{ s.label }} &euro;{{ s.cost|floatformat:2 }}{% endfor %}</span>
+      <form method="post" action="{% url 'finance_payment_delete' p.id %}" onsubmit="return confirm('Delete this payment of €{{ p.amount|floatformat:2 }}?');" style="justify-self:end">
+        {% csrf_token %}<button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+      </form>
+    </div>
+  {% empty %}
+    <p class="fin-empty">No payments yet.</p>
+  {% endfor %}
+</section>
+{% endblock %}

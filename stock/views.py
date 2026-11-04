@@ -863,6 +863,9 @@ def inbound_receive_view(request, order_id):
         action = (request.POST.get('action') or 'save').strip()
 
         if action == 'cancel':
+            if order.payments.exists():
+                messages.error(request, f'Order #{order.id} has supplier payments: delete them on Finance first.')
+                return redirect('inbound')
             deleted_id = order.id
             order.delete()
             messages.success(request, f'Pending order #{deleted_id} cancelled.')
@@ -878,6 +881,10 @@ def inbound_receive_view(request, order_id):
 
                 remaining_items = list(order.pending_items.select_related('product').all())
                 if not remaining_items:
+                    if order.payments.exists():
+                        transaction.set_rollback(True)
+                        messages.error(request, f'Order #{order.id} has supplier payments: delete them on Finance first.')
+                        return redirect('inbound')
                     deleted_id = order.id
                     order.delete()
                     messages.success(request, f'Pending order #{deleted_id} cancelled (no products left).')
@@ -3218,6 +3225,11 @@ def business_settings_view(request):
             markup = number(request.POST.get('transfer_markup'), 0, 1000)
         except (InvalidOperation, ValueError):
             errors.append('Enter the transfer markup in euro, e.g. 3.')
+        share_markup = None
+        try:
+            share_markup = number(request.POST.get('purchase_share_markup'), 0, 1000)
+        except (InvalidOperation, ValueError):
+            errors.append('Enter the purchase share markup in euro, e.g. 0.')
         if not errors:
             with transaction.atomic():
                 for shop in shops:
@@ -3226,7 +3238,13 @@ def business_settings_view(request):
                         shop.save(update_fields=['card_fee_pct'])
                 if markup is not None:
                     settings_row.transfer_markup = markup
-                    settings_row.save(update_fields=['transfer_markup', 'updated_at'])
+                if share_markup is not None:
+                    settings_row.purchase_share_markup = share_markup
+                payer = next((s for s in shops if str(s.id) == request.POST.get('purchasing_store')), None)
+                if payer is not None:
+                    settings_row.purchasing_store = payer
+                settings_row.save(update_fields=['transfer_markup', 'purchase_share_markup', 'purchasing_store',
+                                                 'updated_at'])
                 for (store_id, cat_id), amount in new_targets.items():
                     row = targets.get((store_id, cat_id))
                     if not amount:
@@ -4143,6 +4161,10 @@ def inbound_order_edit_view(request, order_id):
 
                 remaining_items = list(order.items.all())
                 if not remaining_items:
+                    if order.payments.exists():
+                        transaction.set_rollback(True)
+                        messages.error(request, f'Order #{order.id} has supplier payments: delete them on Finance first.')
+                        return redirect(next_url)
                     deleted_order_id = order.id
                     order.delete()
                     transaction.on_commit(rebuild_all_daily_summaries)

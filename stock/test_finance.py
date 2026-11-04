@@ -55,7 +55,7 @@ class FinanceModelTests(FinanceMixin, TestCase):
             self.expense(template=template)
 
 
-FINANCE_URLS = ['finance_expenses', 'finance_templates']
+FINANCE_URLS = ['finance', 'finance_expenses', 'finance_templates', 'finance_payables']
 
 
 class ExpensesPageTests(FinanceMixin, TestCase):
@@ -197,3 +197,291 @@ class TemplateTests(FinanceMixin, TestCase):
         self.assertEqual(Expense.objects.get().amount, Decimal("950.00"))
         self.client.post(reverse("finance_template_skip", args=[self.template.id]), {"month": "2026-03"})
         self.assertEqual(finance.due_templates(date(2026, 3, 1)), [])
+
+
+class SupplierPaymentTests(FinanceMixin, TestCase):
+    def setUp(self):
+        super().setUp()
+        self.supplier = Supplier.objects.create(name="Naypes")
+        self.order = InboundOrder.objects.create(supplier=self.supplier, status="received")
+        store_stock.receive_batches(product=self.product, quantity=10, cost_price=Decimal("100"),
+                                    allocation={self.khan.id: 6, self.scentory.id: 4},
+                                    supplier=self.supplier, inbound_order=self.order)
+
+    def pay(self, amount="1000", order=None, store=None, **extra):
+        return finance.add_payment(order or self.order, store=store or self.scentory, amount=Decimal(amount),
+                                   paid_on=self.today, method=extra.pop("method", "bank"), note="", user=self.admin)
+
+    def balance(self):
+        rows = store_stock.balances()
+        return (rows[0]["debtor"].name, rows[0]["creditor"].name, rows[0]["amount"]) if rows else None
+
+    def pending(self, allocation=None, cost="10", qty=5):
+        order = InboundOrder.objects.create(supplier=self.supplier, status="pending_receipt")
+        InboundPendingItem.objects.create(inbound_order=order, product=self.product, quantity=qty,
+                                          cost_price=Decimal(cost), allocation=allocation or {})
+        return order
+
+    def test_owing_is_received_cost_or_pending_lines_less_payments(self):
+        self.assertEqual(finance.order_due(self.order), Decimal("1000.00"))
+        self.pay("300")
+        self.assertEqual(finance.order_paid(self.order), Decimal("300.00"))
+        self.assertEqual(finance.order_due(self.pending()), Decimal("50.00"))
+        owed = finance.payables()
+        self.assertEqual((owed[0]["supplier"], owed[0]["owed"]), ("Naypes", Decimal("750.00")))
+
+    def test_orders_before_the_cut_off_owe_nothing(self):
+        InboundOrder.objects.filter(pk=self.order.pk).update(created_at=timezone.now() - timedelta(days=90))
+        self.assertEqual(finance.payables(), [])
+
+    def test_a_paid_order_leaves_the_list(self):
+        self.pay()
+        self.assertEqual(finance.payables(), [])
+
+    def test_paying_over_shows_negative(self):
+        self.pay("1100")
+        self.assertEqual(finance.payables()[0]["owed"], Decimal("-100.00"))
+
+    def test_khan_owes_its_share_of_what_scentory_paid(self):
+        self.pay()
+        self.assertEqual(self.balance(), ("Khan Perfume", "Scentory", Decimal("600.00")))
+
+    def test_a_part_payment_splits_the_same_way(self):
+        self.pay("500")
+        self.assertEqual(self.balance(), ("Khan Perfume", "Scentory", Decimal("300.00")))
+
+    def test_transfers_do_not_change_the_share(self):
+        Purchase.objects.filter(store=self.khan).update(remaining=6)
+        BusinessSettings.objects.update(transfer_markup=Decimal("0"))
+        self.pay()
+        before = finance.purchase_shares(self.order.payments.get())
+        store_stock.move_units(self.product, 2, self.khan, self.scentory, reason="count")
+        self.assertEqual(finance.purchase_shares(self.order.payments.get()), before)
+
+    def test_share_nets_against_transfer_debt_and_settlement(self):
+        self.pay()
+        # Scentory took 2 bottles from Khan: 2 x (100 + 3) = 206 the other way
+        store_stock.move_units(self.product, 2, self.khan, self.scentory)
+        self.assertEqual(self.balance(), ("Khan Perfume", "Scentory", Decimal("394.00")))
+        store_stock.settle(self.khan, self.scentory, Decimal("394.00"), settled_on=self.today)
+        self.assertIsNone(self.balance())
+
+    def test_the_balance_says_what_it_is_made_of(self):
+        self.pay()
+        store_stock.move_units(self.product, 2, self.khan, self.scentory)
+        store_stock.settle(self.khan, self.scentory, Decimal("100.00"), settled_on=self.today)
+        self.assertEqual(store_stock.balances()[0]["parts"],
+                         {"transfers": Decimal("-206.00"), "purchases": Decimal("600.00"),
+                          "settled": Decimal("-100.00")})
+
+    def test_no_split_yet_no_debt_until_received(self):
+        order = self.pending()
+        self.pay("50", order=order)
+        self.assertIsNone(self.balance())
+        order.pending_items.all().delete()
+        store_stock.receive_batches(product=self.product, quantity=5, cost_price=Decimal("10"),
+                                    allocation={self.khan.id: 5}, inbound_order=order)
+        self.assertEqual(self.balance(), ("Khan Perfume", "Scentory", Decimal("50.00")))
+
+    def test_a_pending_split_counts(self):
+        order = self.pending({str(self.khan.id): 4, str(self.scentory.id): 1})
+        self.pay("50", order=order)
+        self.assertEqual(self.balance(), ("Khan Perfume", "Scentory", Decimal("40.00")))
+
+    def test_rollback_returns_to_the_pending_split(self):
+        from .services.inbound_rollback import roll_back_receipt
+        self.pay()
+        ok, _message = roll_back_receipt(self.order, self.admin)
+        self.assertTrue(ok)
+        self.assertEqual(self.balance(), ("Khan Perfume", "Scentory", Decimal("600.00")))
+
+    def test_zero_cost_order_owes_nothing(self):
+        order = self.pending(cost="0", allocation={str(self.khan.id): 5})
+        self.pay("10", order=order)
+        self.assertEqual(finance.purchase_shares(order.payments.get()), {})
+        self.assertIsNone(self.balance())
+
+    def test_shares_add_up_to_the_payment(self):
+        third = Store.objects.create(name="Third", code="T3")
+        order = InboundOrder.objects.create(status="received")
+        store_stock.receive_batches(product=self.product, quantity=3, cost_price=Decimal("10"),
+                                    allocation={self.khan.id: 1, self.scentory.id: 1, third.id: 1},
+                                    inbound_order=order)
+        shares = finance.purchase_shares(self.pay("100", order=order))
+        self.assertEqual(sum(v["cost"] for v in shares.values()), Decimal("100.00"))
+
+    def test_the_shop_that_received_all_of_it_owes_nothing_to_itself(self):
+        order = InboundOrder.objects.create(status="received")
+        store_stock.receive_batches(product=self.product, quantity=2, cost_price=Decimal("10"),
+                                    allocation={self.scentory.id: 2}, inbound_order=order)
+        self.pay("20", order=order)
+        self.assertIsNone(self.balance())
+
+    def test_markup_defaults_to_nothing(self):
+        self.assertEqual(self.pay().share_markup, Decimal("0.00"))
+
+    def test_markup_is_kept_on_the_payment_when_the_setting_changes(self):
+        BusinessSettings.objects.update(purchase_share_markup=Decimal("2.00"))
+        self.pay()
+        self.assertEqual(self.balance(), ("Khan Perfume", "Scentory", Decimal("612.00")))    # 600 + 6 x 2
+        BusinessSettings.objects.update(purchase_share_markup=Decimal("9.00"))
+        self.assertEqual(self.balance(), ("Khan Perfume", "Scentory", Decimal("612.00")))
+
+    def test_markup_moves_profit_between_shops_and_nets_to_zero(self):
+        BusinessSettings.objects.update(purchase_share_markup=Decimal("2.00"))
+        self.pay()
+        rows = store_stock.transfer_margins(self.today, self.today)
+        self.assertEqual(sorted((s, a) for s, _d, a in rows),
+                         sorted([(self.scentory.id, Decimal("12.00")), (self.khan.id, Decimal("-12.00"))]))
+
+    def test_an_order_with_payments_cannot_be_cancelled_or_deleted(self):
+        order = self.pending()
+        self.pay("10", order=order)
+        self.client.post(reverse("inbound_receive", args=[order.id]), {"action": "cancel"})
+        self.assertTrue(InboundOrder.objects.filter(pk=order.pk).exists())
+
+    def test_the_page_pays_and_deletes(self):
+        url = reverse("finance_payment_add", args=[self.order.id])
+        self.client.post(url, {"amount": "1000", "paid_on": self.today.isoformat(), "method": "bank",
+                               "store": self.scentory.id})
+        payment = SupplierPayment.objects.get()
+        self.assertEqual(payment.store, self.scentory)
+        self.assertEqual(self.client.get(reverse("finance_payables")).context["groups"], [])
+        self.client.post(reverse("finance_payment_delete", args=[payment.id]))
+        self.assertFalse(SupplierPayment.objects.exists())
+        self.assertEqual(len(self.client.get(reverse("finance_payables")).context["groups"]), 1)
+
+    def test_shop_settings_set_who_pays_and_the_markup(self):
+        self.client.post(reverse("business_settings"), {"purchasing_store": self.khan.id,
+                                                        "purchase_share_markup": "1,50"})
+        row = BusinessSettings.get()
+        self.assertEqual((row.purchasing_store, row.purchase_share_markup), (self.khan, Decimal("1.50")))
+
+
+class MonthFiguresTests(FinanceMixin, TestCase):
+    def setUp(self):
+        super().setUp()
+        self.start = self.month
+        self.end = self.today
+        self.drinks = Category.objects.create(name="Other goods")
+        self.other = Product.objects.create(name="Mist", brand="B", barcode="9960000000002", category=self.drinks,
+                                            default_price=Decimal("10"))
+
+    def sale(self, store=None, price="100", cost="40", method="cash", product=None, charge=None, fee=None):
+        order = SaleOrder.objects.create(store=store or self.khan)
+        Sale.objects.create(order=order, product=product or self.product, quantity=1, unit_price=Decimal(price),
+                            cost_basis=Decimal(cost), store=order.store, payment_method=method)
+        extra = Decimal(charge or "0")
+        SaleOrderPayment.objects.create(order=order, method=method, amount=Decimal(price) + extra)
+        if charge:
+            SaleOrderCharge.objects.create(order=order, label="Shipping", amount=extra)
+        if fee:
+            SaleOrder.objects.filter(pk=order.pk).update(card_fee=Decimal(fee))
+        return order
+
+    def profit(self, store=None):
+        return finance.month_profit(self.start, self.end, store)
+
+    def cash(self, store=None):
+        return finance.month_cash(self.start, self.end, store)
+
+    def test_net_is_gross_plus_charges_less_expenses(self):
+        self.sale(charge="7.50")
+        self.expense("20")
+        figures = self.profit()
+        self.assertEqual((figures["gross"], figures["charges"], figures["expenses"], figures["net"]),
+                         (Decimal("60.00"), Decimal("7.50"), Decimal("20.00"), Decimal("47.50")))
+
+    def test_supplier_payments_do_not_touch_net(self):
+        order = InboundOrder.objects.create(status="received")
+        store_stock.receive_batches(product=self.product, quantity=1, cost_price=Decimal("500"),
+                                    allocation={self.scentory.id: 1}, inbound_order=order)
+        finance.add_payment(order, store=self.scentory, amount=Decimal("500"), paid_on=self.today, method="bank",
+                            note="", user=self.admin)
+        self.assertEqual(self.profit()["net"], Decimal("0.00"))
+
+    def test_gross_counts_every_category_not_just_perfumes(self):
+        self.sale(price="10", cost="4", product=self.other)
+        self.assertEqual(self.profit()["gross"], Decimal("6.00"))
+
+    def test_a_shops_net_includes_the_transfer_markup(self):
+        Purchase.objects.create(product=self.product, store=self.khan, quantity=5, remaining=5,
+                                cost_price=Decimal("10"))
+        store_stock.move_units(self.product, 2, self.khan, self.scentory)
+        self.assertEqual(self.profit(self.khan)["net"], Decimal("6.00"))
+        self.assertEqual(self.profit(self.scentory)["net"], Decimal("-6.00"))
+
+    def test_all_shops_equal_the_sum_of_each(self):
+        self.sale(self.khan)
+        self.sale(self.scentory, price="50", cost="20")
+        self.expense("10", store=self.khan)
+        self.expense("5", store=self.scentory)
+        self.assertEqual(self.profit()["net"], self.profit(self.khan)["net"] + self.profit(self.scentory)["net"])
+
+    def test_rent_paid_next_month_splits_profit_and_cash(self):
+        last_month = (self.month - timedelta(days=1)).replace(day=1)
+        self.expense("300", period=last_month, paid_on=self.month, method="bank")
+        self.assertEqual(self.profit()["expenses"], Decimal("0.00"))
+        self.assertEqual(finance.month_profit(last_month, self.month - timedelta(days=1), None)["expenses"],
+                         Decimal("300.00"))
+        self.assertEqual(self.cash()["bank"]["out"], Decimal("300.00"))
+
+    def test_categories_compare_with_last_month(self):
+        last_month = (self.month - timedelta(days=1)).replace(day=1)
+        self.expense("300", period=last_month)
+        self.expense("350")
+        rows = {r["category"]: r for r in self.profit()["by_category"]}
+        self.assertEqual((rows["Rent"]["amount"], rows["Rent"]["previous"]), (Decimal("350.00"), Decimal("300.00")))
+
+    def test_cash_flow_by_tender(self):
+        self.sale(price="100", method="cash")
+        self.sale(price="60", method="card")
+        self.sale(price="40", method="mbway")
+        self.expense("30", paid_on=self.today, method="cash")
+        figures = self.cash()
+        self.assertEqual((figures["cash"]["in"], figures["cash"]["out"], figures["bank"]["in"]),
+                         (Decimal("100.00"), Decimal("30.00"), Decimal("100.00")))
+        self.assertEqual(figures["net"], Decimal("170.00"))
+
+    def test_card_fees_come_off_bank(self):
+        self.sale(price="100", method="card", fee="1.00")
+        self.assertEqual(self.cash()["bank"]["net"], Decimal("99.00"))
+
+    def test_iou_payments_count_in_cash_not_profit(self):
+        from .models import ARInvoice, ARPayment, Customer
+        invoice = ARInvoice.objects.create(customer=Customer.objects.create(name="C"), store=self.khan,
+                                           total_amount=Decimal("80"))
+        ARPayment.objects.create(invoice=invoice, amount=Decimal("80"), method="bank")
+        self.assertEqual(self.cash()["bank"]["in"], Decimal("80.00"))
+        self.assertEqual(self.profit()["net"], Decimal("0.00"))
+
+    def test_an_unpaid_expense_is_not_cash(self):
+        self.expense("30")
+        self.assertEqual(self.cash()["net"], Decimal("0.00"))
+        self.assertEqual(finance.unpaid()["expenses"], Decimal("30.00"))
+
+    def test_settlements_show_per_shop_and_not_in_all_shops(self):
+        store_stock.settle(self.khan, self.scentory, Decimal("600"), settled_on=self.today)
+        self.assertEqual(self.cash(self.khan)["cash"]["out"], Decimal("600.00"))
+        self.assertEqual(self.cash(self.scentory)["cash"]["in"], Decimal("600.00"))
+        self.assertEqual(self.cash()["net"], Decimal("0.00"))
+
+    def test_owner_paid_stays_out_of_cash_and_bank(self):
+        self.expense("30", paid_on=self.today, method="owner")
+        figures = self.cash()
+        self.assertEqual((figures["net"], figures["owner_paid"]), (Decimal("0.00"), Decimal("30.00")))
+
+    def test_a_month_with_nothing_shows_zeros(self):
+        page = self.client.get(reverse("finance"), {"month": "2024-01"})
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.context["profit"]["net"], Decimal("0.00"))
+
+    def test_the_page_shows_a_column_per_shop_for_all_stores(self):
+        session = self.client.session
+        session["active_store_id"] = "all"
+        session.save()
+        self.sale(self.khan)
+        self.expense("20", store=self.scentory)
+        page = self.client.get(reverse("finance"))
+        self.assertEqual([c["shop"].name for c in page.context["columns"]], ["Khan Perfume", "Scentory"])
+        self.assertContains(page, "60.00")
