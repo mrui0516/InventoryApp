@@ -11,7 +11,7 @@
 | 维度 | 状态 | 说明 |
 |---|---|---|
 | 线上运行 | ✅ PythonAnywhere 欧盟区 | `https://scentory.eu.pythonanywhere.com`，两家店（Khan Perfume、Scentory）日常收银、入库都在线上；线上 `db.sqlite3` 是唯一准数据 |
-| 自动化测试 | ✅ 1032 个全部通过 | `python manage.py test stock restock_alerts`，在干净导出上跑 |
+| 自动化测试 | ✅ 1045 个全部通过 | `python manage.py test stock restock_alerts`，在干净导出上跑 |
 | 数据库迁移 | ✅ 最新 `0074_oil_perfume_body_mist_types`，无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
 | 生产配置 | ✅ `DEBUG=False`，密钥只在服务器 `.env` | `settings.py` 的 `if not DEBUG` 块：强制 HTTPS、安全 Cookie、HSTS、防点击劫持 |
 | 数据备份 | ✅ 每日快照 + 本机拉取 | PA 定时任务 `backup_db --keep 30`，本机 `scripts/pull_backup_from_pa.py` 拉到 U 盘；Settings → Tools 可手动下载。见 [BACKUP.md](./BACKUP.md) |
@@ -73,7 +73,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
-- 2026-11-05: **没有产品的品牌和系列自动删除。** 产品改品牌/系列、删除、归档时检查它离开的那个；`prune_empty_brands` 清理旧的配件品牌（默认只列出）。
+- 2026-11-05: **没有产品的品牌和系列自动删除。** 产品改品牌/系列、删除、归档时检查它离开的那个；`prune_empty_brands` 清理旧的配件品牌（默认只列出）。新增 13 个测试。
 - 2026-11-04: **Oil perfume、Body mist / splash 成为单独类型。** 从浓度里移出（迁移 0074），只有 Perfume 和 Mini 选浓度；body mist 不打批发优惠改按类型判断。新增 6 个测试。
 - 2026-11-04: **入库加 IVA 23%、运费、发票。** 报价不含 IVA，开启后 +23% 并标注这批带 IVA，供应商可设默认开启；运费手动分到每行（或按数量分），不加 IVA，算在欠供应商的钱里；每张单可传发票（迁移 0073，文件在 `private_media/`，不在 `backup_db` 内）。购物车不再分配店铺，只在确认收货时分配；重新设计收货弹窗。新增 26 个测试。
 - 2026-11-04: **同名的礼盒和香水分得清。** 显示名带类型（Coffret 等）；Quick import 按文本里的礼盒词匹配。新增 6 个测试。
