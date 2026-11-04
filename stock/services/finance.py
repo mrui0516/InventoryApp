@@ -5,14 +5,14 @@ from decimal import ROUND_DOWN, Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Sum
+from django.db.models import DecimalField, ExpressionWrapper, F, Sum
 from django.db.models.functions import Coalesce
 
-from ..models import (ARPayment, BusinessSettings, Expense, ExpenseTemplate, ExpenseTemplateSkip, FinanceLog,
-                      InboundOrder, Sale, SaleOrder, SaleOrderCharge, SaleOrderPayment, Store, StoreSettlement,
-                      SupplierPayment)
+from ..models import (ARInvoice, ARPayment, BusinessSettings, Expense, ExpenseTemplate, ExpenseTemplateSkip,
+                      FinanceLog, InboundOrder, OwnerFunding, Purchase, Sale, SaleOrder, SaleOrderCharge,
+                      SaleOrderPayment, Store, StoreSettlement, SupplierPayment)
 from .dashboard import compute_period_headline
-from ..models.expenses import PAID_METHODS
+from ..models.expenses import PAID_METHODS, SHOP_METHODS
 
 ZERO = Decimal('0.00')
 
@@ -304,6 +304,13 @@ def month_cash(start, end, store=None):
         if paid.get('cash') or paid.get('bank'):
             line(label, -paid.get('cash', ZERO), -paid.get('bank', ZERO))
 
+    funding = _in_shop(OwnerFunding.objects.filter(date__gte=start, date__lte=end), store)
+    for kind, label, sign in ((OwnerFunding.IN, 'Owner put in', 1), (OwnerFunding.OUT, 'Owner took out', -1)):
+        moved = {row['method']: row['total'] for row in
+                 funding.filter(kind=kind).values('method').annotate(total=Sum('amount'))}
+        if moved:
+            line(label, sign * moved.get('cash', ZERO), sign * moved.get('bank', ZERO))
+
     spent('Expenses', _in_shop(Expense.objects.filter(paid_on__gte=start, paid_on__lte=end), store))
     spent('Supplier payments', _in_shop(SupplierPayment.objects.filter(paid_on__gte=start, paid_on__lte=end), store))
 
@@ -349,3 +356,64 @@ def profit_rows(profit, columns):
                          'shops': [-spent_in(c, row['category']) for c in columns], 'kind': ''})
     rows.append({'label': 'Net profit', 'total': profit['net'], 'shops': rows_of('net'), 'kind': 'total'})
     return rows
+
+
+# ------------------------------------------------------- the owner's money
+def save_funding(*, store, kind, amount, date, method, note, user, row=None):
+    if store is None:
+        raise ValidationError('Choose the shop.')
+    if kind not in (OwnerFunding.IN, OwnerFunding.OUT):
+        raise ValidationError('Choose put in or taken out.')
+    if amount is None or amount <= 0:
+        raise ValidationError('Enter the amount.')
+    if date is None:
+        raise ValidationError('Choose the day.')
+    if method not in dict(SHOP_METHODS):
+        raise ValidationError('Choose cash or bank.')
+    changed = row is not None
+    row = row or OwnerFunding(created_by=user)
+    row.store, row.kind, row.amount, row.date = store, kind, amount.quantize(CENT), date
+    row.method, row.note = method, (note or '')[:200]
+    row.save()
+    log(user, 'changed' if changed else 'added', 'owner money', row.id,
+        f'{row.get_kind_display()} · {store.name} · €{row.amount} · {date}')
+    return row
+
+
+def owner_summary(until, store=None):
+    """``{in, out, paid_by_owner, invested, net}`` up to ``until``. What the
+    owner paid straight from their pocket counts as money put in."""
+    funding = _in_shop(OwnerFunding.objects.filter(date__lte=until), store)
+    put_in, taken = _sum(funding.filter(kind=OwnerFunding.IN)), _sum(funding.filter(kind=OwnerFunding.OUT))
+    paid = (_sum(_in_shop(Expense.objects.filter(method='owner', paid_on__lte=until), store))
+            + _sum(_in_shop(SupplierPayment.objects.filter(method='owner', paid_on__lte=until), store)))
+    invested = put_in + paid
+    return {'in': put_in, 'out': taken, 'paid_by_owner': paid, 'invested': invested, 'net': invested - taken}
+
+
+def business_value():
+    """What the business holds and owes now, for all shops:
+    ``{stock, receivable, owed_suppliers, unpaid_expenses, value}``. Stock is at
+    cost. Cash in hand and in the bank are not recorded, so they are left out."""
+    line_cost = ExpressionWrapper(F('remaining') * F('cost_price'),
+                                  output_field=DecimalField(max_digits=14, decimal_places=2))
+    stock = (Purchase.objects.filter(remaining__gt=0, product__archived_at__isnull=True)
+             .aggregate(total=Sum(line_cost))['total'] or ZERO)
+    receivable = sum((i.total_amount - i.amount_paid for i in ARInvoice.objects.exclude(status='paid')), ZERO)
+    owed = unpaid()
+    value = stock + receivable - owed['suppliers'] - owed['expenses']
+    return {'stock': stock, 'receivable': receivable, 'owed_suppliers': owed['suppliers'],
+            'unpaid_expenses': owed['expenses'], 'value': value}
+
+
+def profit_to_date(until, store=None):
+    """Net profit from the day Finance started (``payables_from``), the first
+    day expenses exist for, to ``until``. Expenses count from that whole month."""
+    start = BusinessSettings.get().payables_from
+    if start is None or until < start:
+        return ZERO
+    gross = compute_period_headline(start, until, [], True, store)['profit']
+    charges = _sum(_in_shop(SaleOrderCharge.objects.filter(order__created_at__date__gte=start,
+                                                           order__created_at__date__lte=until), store, 'order__store'))
+    spent = _sum(_in_shop(Expense.objects.filter(period__gte=start.replace(day=1), period__lte=until), store))
+    return gross + charges - spent

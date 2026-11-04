@@ -61,4 +61,33 @@
   </table>
   {% if cash.owner_paid %}<p class="fin-empty">Paid by the owner: &euro;{{ cash.owner_paid|floatformat:2 }}</p>{% endif %}
 </section>
+
+<section class="fin-card" aria-label="Owner's money">
+  <h2>Owner's money</h2>
+  <table class="fin-table">
+    <tbody>
+      <tr><td>Put in</td><td>{{ owner.in|floatformat:2 }}</td></tr>
+      {% if owner.paid_by_owner %}<tr><td>Paid from own pocket</td><td>{{ owner.paid_by_owner|floatformat:2 }}</td></tr>{% endif %}
+      <tr><td>Taken out</td><td class="{% if owner.out %}neg{% endif %}">{% if owner.out %}-{% endif %}{{ owner.out|floatformat:2 }}</td></tr>
+      <tr class="total"><td>Still invested</td><td>{{ owner.net|floatformat:2 }}</td></tr>
+      <tr><td>Net profit since Finance started</td><td class="{% if profit_to_date < 0 %}neg{% endif %}">{{ profit_to_date|floatformat:2 }}</td></tr>
+    </tbody>
+  </table>
+</section>
+
+{% if value %}
+<section class="fin-card" aria-label="Business value">
+  <h2>What the business is worth today</h2>
+  <table class="fin-table">
+    <tbody>
+      <tr><td>Stock at cost</td><td>{{ value.stock|floatformat:2 }}</td></tr>
+      <tr><td>IOUs owed to us</td><td>{{ value.receivable|floatformat:2 }}</td></tr>
+      <tr><td>Owed to suppliers</td><td class="{% if value.owed_suppliers %}neg{% endif %}">{% if value.owed_suppliers %}-{% endif %}{{ value.owed_suppliers|floatformat:2 }}</td></tr>
+      <tr><td>Unpaid expenses</td><td class="{% if value.unpaid_expenses %}neg{% endif %}">{% if value.unpaid_expenses %}-{% endif %}{{ value.unpaid_expenses|floatformat:2 }}</td></tr>
+      <tr class="total"><td>Total</td><td>{{ value.value|floatformat:2 }}</td></tr>
+    </tbody>
+  </table>
+  <p class="fin-empty">Leaves out cash in hand and in the bank.</p>
+</section>
+{% endif %}
 {% endblock %}

@@ -1,0 +1,38 @@
+{% extends 'stock/finance_base.html' %}
+{% block finance %}
+<div class="fin-kpis">
+  <div class="fin-kpi hi"><span class="k">Still invested</span><span class="v">&euro;{{ summary.net|floatformat:2 }}</span></div>
+  <div class="fin-kpi"><span class="k">Put in</span><span class="v">&euro;{{ summary.invested|floatformat:2 }}</span>{% if summary.paid_by_owner %}<span class="s">&euro;{{ summary.paid_by_owner|floatformat:2 }} from own pocket</span>{% endif %}</div>
+  <div class="fin-kpi"><span class="k">Taken out</span><span class="v">&euro;{{ summary.out|floatformat:2 }}</span></div>
+</div>
+
+<div class="fin-bar"><span></span><button type="button" class="btn btn-sm btn-primary" data-layer="own-new">+ Add</button></div>
+
+<section class="fin-card" aria-label="Owner funds">
+  {% for r in rows %}
+    <button type="button" class="fin-row" data-layer="own-{{ r.id }}">
+      <span class="main">{{ r.get_kind_display }}{% if r.note %} &middot; {{ r.note }}{% endif %}</span>
+      <span class="amt{% if r.kind == 'out' %} neg{% endif %}">{% if r.kind == 'out' %}-{% endif %}&euro;{{ r.amount|floatformat:2 }}</span>
+      <span class="sub">{{ r.date|date:"j M Y" }}{% if not shop %} &middot; {{ r.store.name }}{% endif %}</span>
+      <span class="sub">{{ r.get_method_display }}</span>
+    </button>
+    <template id="own-{{ r.id }}">
+      <div data-part="title">{{ r.get_kind_display }} &middot; {{ r.date|date:"j M Y" }}</div>
+      <div data-part="body">{% include "stock/_finance_owner_form.html" with row=r %}</div>
+      <div data-part="foot">
+        <form method="post" action="{% url 'finance_owner_delete' r.id %}" onsubmit="return confirm('Delete this entry of €{{ r.amount|floatformat:2 }}?');">
+          {% csrf_token %}<button type="submit" class="btn btn-outline-danger">Delete</button>
+        </form>
+      </div>
+    </template>
+  {% empty %}
+    <p class="fin-empty">Nothing recorded yet.</p>
+  {% endfor %}
+</section>
+
+<template id="own-new">
+  <div data-part="title">Owner funds</div>
+  <div data-part="body">{% include "stock/_finance_owner_form.html" with row=None %}</div>
+  <div data-part="foot"></div>
+</template>
+{% endblock %}

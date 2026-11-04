@@ -55,7 +55,7 @@ class FinanceModelTests(FinanceMixin, TestCase):
             self.expense(template=template)
 
 
-FINANCE_URLS = ['finance', 'finance_expenses', 'finance_templates', 'finance_payables']
+FINANCE_URLS = ['finance', 'finance_expenses', 'finance_templates', 'finance_payables', 'finance_owner']
 
 
 class ExpensesPageTests(FinanceMixin, TestCase):
@@ -485,3 +485,95 @@ class MonthFiguresTests(FinanceMixin, TestCase):
         page = self.client.get(reverse("finance"))
         self.assertEqual([c["shop"].name for c in page.context["columns"]], ["Khan Perfume", "Scentory"])
         self.assertContains(page, "60.00")
+
+
+class OwnerMoneyTests(FinanceMixin, TestCase):
+    def fund(self, amount="1000", kind="in", when=None, store=None, method="bank"):
+        return OwnerFunding.objects.create(store=store or self.khan, kind=kind, amount=Decimal(amount),
+                                           date=when or self.today, method=method)
+
+    def test_invested_counts_funding_and_what_the_owner_paid(self):
+        self.fund("1000")
+        self.expense("30", paid_on=self.today, method="owner")
+        order = InboundOrder.objects.create(status="received")
+        finance.add_payment(order, store=self.scentory, amount=Decimal("200"), paid_on=self.today, method="owner",
+                            note="", user=self.admin)
+        summary = finance.owner_summary(self.today)
+        self.assertEqual((summary["in"], summary["paid_by_owner"], summary["invested"]),
+                         (Decimal("1000.00"), Decimal("230.00"), Decimal("1230.00")))
+
+    def test_taking_money_out_lowers_net(self):
+        self.fund("1000")
+        self.fund("300", kind="out")
+        summary = finance.owner_summary(self.today)
+        self.assertEqual((summary["out"], summary["net"]), (Decimal("300.00"), Decimal("700.00")))
+
+    def test_it_counts_up_to_the_month_shown(self):
+        self.fund("1000", when=date(2026, 1, 15))
+        self.fund("500", when=date(2026, 3, 15))
+        self.assertEqual(finance.owner_summary(date(2026, 2, 28))["net"], Decimal("1000.00"))
+
+    def test_a_shop_sees_its_own(self):
+        self.fund("1000")
+        self.fund("500", store=self.scentory)
+        self.assertEqual(finance.owner_summary(self.today, self.scentory)["net"], Decimal("500.00"))
+
+    def test_funding_shows_in_cash_flow_by_method(self):
+        self.fund("1000", method="bank")
+        self.fund("100", kind="out", method="cash")
+        figures = finance.month_cash(self.month, self.today, None)
+        self.assertEqual((figures["bank"]["in"], figures["cash"]["out"]), (Decimal("1000.00"), Decimal("100.00")))
+
+    def test_funding_is_not_profit(self):
+        self.fund("1000")
+        self.assertEqual(finance.month_profit(self.month, self.today, None)["net"], Decimal("0.00"))
+
+    def test_past_funding_can_be_entered_edited_and_deleted(self):
+        self.client.post(reverse("finance_owner"), {"store": self.khan.id, "kind": "in", "amount": "5000,50",
+                                                    "date": "2025-06-01", "method": "bank", "note": "start"})
+        row = OwnerFunding.objects.get()
+        self.assertEqual((row.amount, row.date, row.created_by), (Decimal("5000.50"), date(2025, 6, 1), self.admin))
+        self.client.post(reverse("finance_owner"), {"id": row.id, "store": self.khan.id, "kind": "in", "amount": "4000",
+                                                    "date": "2025-06-01", "method": "cash"})
+        row.refresh_from_db()
+        self.assertEqual((row.amount, row.method), (Decimal("4000.00"), "cash"))
+        self.client.post(reverse("finance_owner_delete", args=[row.id]))
+        self.assertFalse(OwnerFunding.objects.exists())
+        self.assertEqual(FinanceLog.objects.filter(kind="owner money").count(), 3)
+
+    def test_value_is_stock_plus_owed_to_us_less_owed_by_us(self):
+        from .models import ARInvoice, Customer
+        Purchase.objects.create(product=self.product, store=self.khan, quantity=10, remaining=4,
+                                cost_price=Decimal("25"))
+        ARInvoice.objects.create(customer=Customer.objects.create(name="C"), total_amount=Decimal("80"),
+                                 amount_paid=Decimal("30"), status="partial")
+        order = InboundOrder.objects.create(status="pending_receipt")
+        InboundPendingItem.objects.create(inbound_order=order, product=self.product, quantity=2,
+                                          cost_price=Decimal("15"))
+        self.expense("20")
+        value = finance.business_value()
+        self.assertEqual((value["stock"], value["receivable"], value["owed_suppliers"], value["unpaid_expenses"],
+                          value["value"]),
+                         (Decimal("100.00"), Decimal("50.00"), Decimal("30.00"), Decimal("20.00"), Decimal("100.00")))
+
+    def test_value_is_for_all_shops_only(self):
+        session = self.client.session
+        session["active_store_id"] = self.khan.id
+        session.save()
+        self.assertIsNone(self.client.get(reverse("finance")).context["value"])
+        session["active_store_id"] = "all"
+        session.save()
+        page = self.client.get(reverse("finance"))
+        self.assertEqual(page.context["value"]["value"], Decimal("0.00"))
+        self.assertContains(page, "cash in hand")
+
+    def test_profit_to_date_starts_at_the_cut_off(self):
+        order = SaleOrder.objects.create(store=self.khan)
+        Sale.objects.create(order=order, product=self.product, quantity=1, unit_price=Decimal("100"),
+                            cost_basis=Decimal("40"), store=self.khan, payment_method="cash")
+        early = SaleOrder.objects.create(store=self.khan)
+        Sale.objects.create(order=early, product=self.product, quantity=1, unit_price=Decimal("999"),
+                            cost_basis=Decimal("1"), store=self.khan, payment_method="cash")
+        SaleOrder.objects.filter(pk=early.pk).update(created_at=timezone.now() - timedelta(days=200))
+        self.expense("10", period=self.today.replace(day=1))
+        self.assertEqual(finance.profit_to_date(self.today), Decimal("50.00"))

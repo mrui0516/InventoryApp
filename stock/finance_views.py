@@ -13,8 +13,9 @@ from django.utils.dateparse import parse_date
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
-from .models import BusinessSettings, Expense, ExpenseCategory, ExpenseTemplate, InboundOrder, SupplierPayment
-from .models.expenses import PAID_METHODS
+from .models import (BusinessSettings, Expense, ExpenseCategory, ExpenseTemplate, InboundOrder, OwnerFunding,
+                     SupplierPayment)
+from .models.expenses import PAID_METHODS, SHOP_METHODS
 from .permissions import admin_required
 from .services import finance
 from .services.dashboard import resolve_dashboard_month
@@ -72,6 +73,9 @@ def overview_view(request):
         'unpaid': finance.unpaid(shop),
         'columns': columns,
         'rows': finance.profit_rows(profit, columns),
+        'owner': finance.owner_summary(month['month_end'], shop),
+        'profit_to_date': finance.profit_to_date(month['month_end'], shop),
+        'value': None if shop is not None else finance.business_value(),
         'due': finance.due_templates(start, shop),
         'methods': PAID_METHODS,
         'last_method': request.session.get('finance_method', 'bank'),
@@ -321,3 +325,50 @@ def payment_delete(request, payment_id):
     payment.delete()
     messages.success(request, 'Payment deleted.')
     return redirect('finance_payables')
+
+
+@login_required
+@admin_required
+def owner_view(request):
+    shops = active_stores()
+    if request.method == 'POST':
+        by_id = {s.id: s for s in shops}
+        row = OwnerFunding.objects.filter(pk=request.POST.get('id') or 0).first()
+        try:
+            finance.save_funding(store=by_id.get(int(request.POST.get('store') or 0)),
+                                 kind=request.POST.get('kind'), amount=_money(request.POST.get('amount')),
+                                 date=parse_date(request.POST.get('date') or ''),
+                                 method=(request.POST.get('method') or '').strip(), note=request.POST.get('note'),
+                                 user=request.user, row=row)
+            messages.success(request, 'Saved.')
+        except ValidationError as e:
+            messages.error(request, '; '.join(e.messages))
+        return redirect('finance_owner')
+
+    shop = _shop(request)
+    today = timezone.localdate()
+    rows = OwnerFunding.objects.select_related('store')
+    if shop is not None:
+        rows = rows.filter(store=shop)
+    return render(request, 'stock/finance_owner.html', {
+        'tab': 'owner',
+        'shop': shop,
+        'rows': rows,
+        'summary': finance.owner_summary(today, shop),
+        'shops': shops,
+        'kinds': OwnerFunding.KIND_CHOICES,
+        'methods': SHOP_METHODS,
+        'today': today,
+    })
+
+
+@login_required
+@admin_required
+@require_POST
+def owner_delete(request, funding_id):
+    row = get_object_or_404(OwnerFunding, pk=funding_id)
+    finance.log(request.user, 'deleted', 'owner money', row.id,
+                f'{row.get_kind_display()} · {row.store.name} · €{row.amount} · {row.date}')
+    row.delete()
+    messages.success(request, 'Deleted.')
+    return redirect('finance_owner')
