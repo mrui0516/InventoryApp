@@ -554,7 +554,7 @@ class OwnerMoneyTests(FinanceMixin, TestCase):
         value = finance.business_value()
         self.assertEqual((value["stock"], value["receivable"], value["owed_suppliers"], value["unpaid_expenses"],
                           value["value"]),
-                         (Decimal("100.00"), Decimal("50.00"), Decimal("30.00"), Decimal("20.00"), Decimal("100.00")))
+                         (Decimal("100.00"), Decimal("50.00"), Decimal("30.00"), Decimal("20.00"), Decimal("130.00")))   # 30 on the way
 
     def test_value_is_for_all_shops_only(self):
         session = self.client.session
@@ -620,3 +620,113 @@ class OverviewDetailsTests(FinanceMixin, TestCase):
         self.expense("10")
         html = self.client.get(reverse("finance")).content.decode()
         self.assertIn(f'{reverse("finance_expenses")}?category={self.rent.id}', html)
+
+
+class ReviewFindingsTests(FinanceMixin, TestCase):
+    TOKEN = "a" * 32
+
+    def pending(self, allocation, qty=10, cost="10"):
+        order = InboundOrder.objects.create(status="pending_receipt")
+        InboundPendingItem.objects.create(inbound_order=order, product=self.product, quantity=qty,
+                                          cost_price=Decimal(cost), allocation=allocation)
+        return order
+
+    def pay(self, order, amount="100"):
+        return finance.add_payment(order, store=self.scentory, amount=Decimal(amount), paid_on=self.today,
+                                   method="bank", note="", user=self.admin)
+
+    def test_a_line_split_part_way_is_not_split(self):
+        order = self.pending({str(self.khan.id): 6})
+        self.assertEqual(finance.order_due(order), Decimal("100.00"))
+        self.pay(order)
+        self.assertEqual(store_stock.balances(), [])
+
+    def test_a_line_split_past_its_quantity_is_not_split(self):
+        order = self.pending({str(self.khan.id): 12})
+        self.assertEqual(finance.order_due(order), Decimal("100.00"))
+        self.pay(order)
+        self.assertEqual(store_stock.balances(), [])
+
+    def test_the_same_payment_sent_twice_is_recorded_once(self):
+        order = self.pending({})
+        data = {"amount": "50", "paid_on": self.today.isoformat(), "method": "bank", "store": self.scentory.id,
+                "submit_token": self.TOKEN}
+        url = reverse("finance_payment_add", args=[order.id])
+        self.client.post(url, data)
+        self.client.post(url, data)
+        self.assertEqual(SupplierPayment.objects.count(), 1)
+
+    def test_the_same_expense_sent_twice_is_recorded_once(self):
+        data = {"store": self.khan.id, "category": self.rent.id, "amount": "10",
+                "month": self.month.strftime("%Y-%m"), "submit_token": self.TOKEN}
+        self.client.post(reverse("finance_expenses"), data)
+        self.client.post(reverse("finance_expenses"), data)
+        self.assertEqual(Expense.objects.count(), 1)
+
+    def test_the_same_funding_sent_twice_is_recorded_once(self):
+        data = {"store": self.khan.id, "kind": "in", "amount": "10", "date": self.today.isoformat(),
+                "method": "bank", "submit_token": self.TOKEN}
+        self.client.post(reverse("finance_owner"), data)
+        self.client.post(reverse("finance_owner"), data)
+        self.assertEqual(OwnerFunding.objects.count(), 1)
+
+    def test_the_forms_carry_a_token(self):
+        self.pending({})
+        for name in ("finance_expenses", "finance_payables", "finance_owner"):
+            self.assertContains(self.client.get(reverse(name)), 'name="submit_token"')
+
+    def test_value_counts_goods_on_the_way(self):
+        self.pending({}, qty=10, cost="500")
+        value = finance.business_value()
+        self.assertEqual((value["on_the_way"], value["owed_suppliers"], value["value"]),
+                         (Decimal("5000.00"), Decimal("5000.00"), Decimal("0.00")))
+
+    def test_amount_with_thousands(self):
+        self.client.post(reverse("finance_expenses"), {"store": self.khan.id, "category": self.rent.id,
+                                                       "amount": "1.234,56", "month": self.month.strftime("%Y-%m")})
+        self.assertEqual(Expense.objects.get().amount, Decimal("1234.56"))
+
+    def test_a_bad_amount_is_refused_not_replaced(self):
+        template = ExpenseTemplate.objects.create(store=self.khan, category=self.rent, amount=Decimal("700"))
+        url = reverse("finance_template_confirm", args=[template.id])
+        for bad in ("abc", "0", "NaN", "Infinity"):
+            self.client.post(url, {"month": self.month.strftime("%Y-%m"), "amount": bad})
+            self.assertFalse(Expense.objects.exists(), bad)
+
+    def test_nan_is_not_a_server_error(self):
+        response = self.client.post(reverse("finance_expenses"), {
+            "store": self.khan.id, "category": self.rent.id, "amount": "NaN", "month": self.month.strftime("%Y-%m")})
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Expense.objects.exists())
+
+    def test_moving_a_monthly_expense_onto_a_month_it_has(self):
+        template = ExpenseTemplate.objects.create(store=self.khan, category=self.rent, amount=Decimal("700"))
+        self.expense("700", template=template)
+        other = self.expense("700", template=template, period=date(2026, 1, 1))
+        response = self.client.post(reverse("finance_expenses"), {
+            "id": other.id, "store": self.khan.id, "category": self.rent.id, "amount": "700",
+            "month": self.month.strftime("%Y-%m")})
+        self.assertEqual(response.status_code, 302)
+        other.refresh_from_db()
+        self.assertEqual(other.period, date(2026, 1, 1))
+
+    def test_unpaid_opens_every_month(self):
+        session = self.client.session
+        session["active_store_id"] = "all"
+        session.save()
+        old = self.expense("10", period=date(2026, 1, 1))
+        new = self.expense("20")
+        overview = self.client.get(reverse("finance"))
+        self.assertContains(overview, "status=unpaid&amp;scope=all")
+        page = self.client.get(reverse("finance_expenses"), {"status": "unpaid", "scope": "all"})
+        self.assertEqual(set(page.context["expenses"]), {old, new})
+
+    def test_a_manager_is_not_sent_to_finance(self):
+        manager = get_user_model().objects.create_user("fin_mgr3", password="pw123456", is_staff=True)
+        order = self.pending({})
+        self.pay(order, "10")
+        self.client.force_login(manager)
+        response = self.client.post(reverse("inbound_receive", args=[order.id]), {"action": "cancel"}, follow=True)
+        self.assertTrue(InboundOrder.objects.filter(pk=order.pk).exists())
+        self.assertNotContains(response, "supplier payments")
+        self.assertContains(response, "ask an admin")

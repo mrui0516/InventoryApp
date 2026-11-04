@@ -17,7 +17,7 @@ from .models import (BusinessSettings, Expense, ExpenseCategory, ExpenseTemplate
                      SupplierPayment)
 from .models.expenses import PAID_METHODS, SHOP_METHODS
 from .permissions import admin_required
-from .services import finance
+from .services import finance, submissions
 from .services.dashboard import resolve_dashboard_month
 from .services.store_stock import active_stores
 from .stores import resolve_active_store
@@ -38,10 +38,25 @@ def _back(request, default):
 
 
 def _money(raw):
+    """An amount typed either way: 1234.56, 1234,56 or 1.234,56. None if it is
+    not a number."""
+    text = (raw or '').strip().replace('€', '').replace(' ', '')
+    if ',' in text:
+        text = text.replace('.', '').replace(',', '.')
     try:
-        return Decimal((raw or '').strip().replace(',', '.').replace('€', ''))
+        value = Decimal(text)
     except InvalidOperation:
         return None
+    return value if value.is_finite() else None
+
+
+def _sent_before(request):
+    """This form was already recorded: a double tap, or Back and send again."""
+    try:
+        submissions.claim(request)
+    except submissions.AlreadySubmitted:
+        return True
+    return False
 
 
 def _month(raw):
@@ -101,6 +116,8 @@ def expenses_view(request):
     shops = active_stores()
     by_id = {s.id: s for s in shops}
     if request.method == 'POST':
+        if _sent_before(request):
+            return _back(request, 'finance_expenses')
         category = ExpenseCategory.objects.filter(pk=request.POST.get('category') or 0).first()
         expense = Expense.objects.filter(pk=request.POST.get('id') or 0).first()
         paid = request.POST.get('paid') == '1'
@@ -123,9 +140,11 @@ def expenses_view(request):
     shop = _shop(request)
     category_id = (request.GET.get('category') or '').strip()
     status = (request.GET.get('status') or '').strip()
+    every_month = status == 'unpaid' and request.GET.get('scope') == 'all'
     month = _months_bar(request, 'finance_expenses', category=category_id, status=status)
-    rows = (Expense.objects.filter(period=month['month_start'])
-            .select_related('store', 'category').order_by('-paid_on', '-id'))
+    rows = Expense.objects.select_related('store', 'category').order_by('-paid_on', '-period', '-id')
+    if not every_month:
+        rows = rows.filter(period=month['month_start'])
     if shop is not None:
         rows = rows.filter(store=shop)
     if category_id.isdigit():
@@ -139,6 +158,7 @@ def expenses_view(request):
     return render(request, 'stock/finance_expenses.html', {
         'tab': 'expenses',
         'month': month,
+        'every_month': every_month,
         'expenses': expenses,
         'total': sum((e.amount for e in expenses), finance.ZERO),
         'categories': ExpenseCategory.objects.all(),
@@ -258,7 +278,7 @@ def template_confirm(request, template_id):
     paid = request.POST.get('paid') == '1'
     method = (request.POST.get('method') or '').strip()
     try:
-        finance.confirm_template(template, period, amount=_money(request.POST.get('amount')) or template.amount,
+        finance.confirm_template(template, period, amount=_money(request.POST.get('amount')),
                                  paid_on=timezone.localdate() if paid else None, method=method, user=request.user)
         if paid:
             request.session['finance_method'] = method
@@ -301,6 +321,8 @@ def payables_view(request):
 @require_POST
 def payment_add(request, order_id):
     order = get_object_or_404(InboundOrder, pk=order_id)
+    if _sent_before(request):
+        return redirect('finance_payables')
     by_id = {s.id: s for s in active_stores()}
     method = (request.POST.get('method') or '').strip()
     try:
@@ -332,6 +354,8 @@ def payment_delete(request, payment_id):
 def owner_view(request):
     shops = active_stores()
     if request.method == 'POST':
+        if _sent_before(request):
+            return redirect('finance_owner')
         by_id = {s.id: s for s in shops}
         row = OwnerFunding.objects.filter(pk=request.POST.get('id') or 0).first()
         try:

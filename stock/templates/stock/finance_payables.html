@@ -1,4 +1,5 @@
 {% extends 'stock/finance_base.html' %}
+{% load submissions %}
 {% block finance %}
 <div class="fin-kpis">
   <div class="fin-kpi hi"><span class="k">Owed to suppliers</span><span class="v">&euro;{{ owed|floatformat:2 }}</span></div>
@@ -19,6 +20,7 @@
         <div data-part="body">
           <form method="post" action="{% url 'finance_payment_add' o.order.id %}" class="fin-form">
             {% csrf_token %}
+            {% submit_token %}
             <label>Amount &euro;<input type="text" inputmode="decimal" name="amount" class="form-control" value="{{ o.owed|floatformat:2 }}" required></label>
             <label>Paid on<input type="date" name="paid_on" class="form-control" value="{{ today|date:'Y-m-d' }}" required></label>
             <label>Paid by

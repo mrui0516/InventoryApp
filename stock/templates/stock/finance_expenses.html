@@ -2,9 +2,11 @@
 {% block finance %}
 <div class="fin-bar">
   <div class="fin-month">
+    {% if every_month %}<span>All months</span>{% else %}
     <a href="{{ month.prev_url }}" aria-label="Previous month">&lsaquo;</a>
     <span>{{ month.month_label }}</span>
     <a class="{% if not month.next_url %}off{% endif %}" href="{{ month.next_url }}" aria-label="Next month">&rsaquo;</a>
+    {% endif %}
   </div>
   <form method="get" class="fin-actions">
     <input type="hidden" name="month" value="{{ month.month_value }}">
@@ -27,7 +29,7 @@
     <button type="button" class="fin-row" data-layer="exp-{{ e.id }}">
       <span class="main">{{ e.category.name }}{% if e.payee %} &middot; {{ e.payee }}{% endif %}</span>
       <span class="amt">&euro;{{ e.amount|floatformat:2 }}</span>
-      <span class="sub">{% if not shop %}{{ e.store.name }}{% endif %}{% if not shop and e.note %} &middot; {% endif %}{{ e.note }}</span>
+      <span class="sub">{% if every_month %}{{ e.period|date:"M Y" }} &middot; {% endif %}{% if not shop %}{{ e.store.name }}{% endif %}{% if not shop and e.note %} &middot; {% endif %}{{ e.note }}</span>
       <span class="fin-tag{% if not e.paid_on %} due{% endif %}">{% if e.paid_on %}{{ e.paid_on|date:"j M" }} &middot; {{ e.get_method_display }}{% else %}Unpaid{% endif %}</span>
     </button>
     <template id="exp-{{ e.id }}">

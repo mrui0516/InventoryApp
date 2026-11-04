@@ -1,6 +1,7 @@
-{# add (row=None) or change an expense #}
+{% load submissions %}{# add (row=None) or change an expense #}
 <form method="post" action="{% url 'finance_expenses' %}" class="fin-form">
   {% csrf_token %}
+  {% submit_token %}
   <input type="hidden" name="next" value="{{ request.get_full_path }}">
   {% if row %}<input type="hidden" name="id" value="{{ row.id }}">{% endif %}
   <label>Shop

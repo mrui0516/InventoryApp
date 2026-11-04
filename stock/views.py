@@ -864,7 +864,7 @@ def inbound_receive_view(request, order_id):
 
         if action == 'cancel':
             if order.payments.exists():
-                messages.error(request, f'Order #{order.id} has supplier payments: delete them on Finance first.')
+                messages.error(request, f'Order #{order.id} cannot be removed: ask an admin.')
                 return redirect('inbound')
             deleted_id = order.id
             order.delete()
@@ -883,7 +883,7 @@ def inbound_receive_view(request, order_id):
                 if not remaining_items:
                     if order.payments.exists():
                         transaction.set_rollback(True)
-                        messages.error(request, f'Order #{order.id} has supplier payments: delete them on Finance first.')
+                        messages.error(request, f'Order #{order.id} cannot be removed: ask an admin.')
                         return redirect('inbound')
                     deleted_id = order.id
                     order.delete()
@@ -4172,7 +4172,7 @@ def inbound_order_edit_view(request, order_id):
                 if not remaining_items:
                     if order.payments.exists():
                         transaction.set_rollback(True)
-                        messages.error(request, f'Order #{order.id} has supplier payments: delete them on Finance first.')
+                        messages.error(request, f'Order #{order.id} cannot be removed: ask an admin.')
                         return redirect(next_url)
                     deleted_order_id = order.id
                     order.delete()

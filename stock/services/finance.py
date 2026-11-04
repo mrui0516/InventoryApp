@@ -38,6 +38,8 @@ def save_expense(*, store, category, amount, period, paid_on, method, payee, not
     row.period = period.replace(day=1)
     row.paid_on, row.method = paid_on, (method if paid_on else '')
     row.payee, row.note = (payee or '')[:120], (note or '')[:200]
+    if row.template_id and Expense.objects.filter(template_id=row.template_id, period=row.period).exclude(pk=row.pk).exists():
+        raise ValidationError('This monthly cost already has an expense for that month.')
     row.save()
     change = f'{before} -> ' if before else ''
     log(user, 'changed' if expense else 'added', 'expense', row.id,
@@ -83,15 +85,17 @@ CENT = Decimal('0.01')
 def _order_lines(order):
     """``[(shop_id, units, cost)]``: what was received, by the shop it was
     delivered to, or what is on its way, by the split saved on each line
-    (a line with no split yet gives no shop)."""
+    (a line whose split is missing or does not add up gives no shop: the
+    Receive page saves a split as typed, and it is checked on receipt)."""
     batches = list(order.items.all())
     if batches:
         return [(b.received_store_id, b.quantity, (b.cost_price or ZERO) * b.quantity) for b in batches]
     lines = []
     for item in order.pending_items.all():
         split = {int(k): v for k, v in (item.allocation or {}).items() if str(k).isdigit() and v}
-        if not split:
+        if sum(split.values()) != item.quantity:
             lines.append((None, item.quantity, (item.cost_price or ZERO) * item.quantity))
+            continue
         for shop_id, units in split.items():
             lines.append((shop_id, units, (item.cost_price or ZERO) * units))
     return lines
@@ -393,16 +397,20 @@ def owner_summary(until, store=None):
 
 def business_value():
     """What the business holds and owes now, for all shops:
-    ``{stock, receivable, owed_suppliers, unpaid_expenses, value}``. Stock is at
-    cost. Cash in hand and in the bank are not recorded, so they are left out."""
+    ``{stock, on_the_way, receivable, owed_suppliers, unpaid_expenses, value}``.
+    Stock is at cost. Goods on the way count, at cost: what is owed for them is
+    counted against, and what was paid ahead would otherwise vanish. Cash in hand
+    and in the bank are not recorded, so they are left out."""
     line_cost = ExpressionWrapper(F('remaining') * F('cost_price'),
                                   output_field=DecimalField(max_digits=14, decimal_places=2))
     stock = (Purchase.objects.filter(remaining__gt=0, product__archived_at__isnull=True)
              .aggregate(total=Sum(line_cost))['total'] or ZERO)
+    pending = InboundOrder.objects.filter(status='pending_receipt').prefetch_related('items', 'pending_items')
+    on_the_way = sum((order_due(order) for order in pending), ZERO)
     receivable = sum((i.total_amount - i.amount_paid for i in ARInvoice.objects.exclude(status='paid')), ZERO)
     owed = unpaid()
-    value = stock + receivable - owed['suppliers'] - owed['expenses']
-    return {'stock': stock, 'receivable': receivable, 'owed_suppliers': owed['suppliers'],
+    value = stock + on_the_way + receivable - owed['suppliers'] - owed['expenses']
+    return {'stock': stock, 'on_the_way': on_the_way, 'receivable': receivable, 'owed_suppliers': owed['suppliers'],
             'unpaid_expenses': owed['expenses'], 'value': value}
 
 

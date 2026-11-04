@@ -73,7 +73,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
-- 2026-11-04: **财务系统（Finance，只有管理员）。** 记支出（分利润月份和实际付款日）、固定月费和工资模板、供应商付款（Scentory 付，按各店收货成本分配，其它店的份额进两店余额）、老板投入和取出。Overview 显示净利润、按类别花费、每月现金进出、净投入和生意现值（不含现金）。Today 和客户页的 Net Profit 改名 Profit；Purchases 面板显示 Paid、Owing；Audit 加 Finance 页。迁移 0072，新增约 70 个测试。
+- 2026-11-04: **财务系统（Finance，只有管理员）。** 记支出（分利润月份和实际付款日）、固定月费和工资模板、供应商付款（Scentory 付，按各店收货成本分配，其它店的份额进两店余额）、老板投入和取出。Overview 显示净利润、按类别花费、每月现金进出、净投入和生意现值（不含现金）。Today 和客户页的 Net Profit 改名 Profit；Purchases 面板显示 Paid、Owing；Audit 加 Finance 页。迁移 0072，新增约 80 个测试。
 - 2026-11-04: **记住每位客人的批发优惠。** 从客人上一次成交算出比批发价便宜多少（新接口 `api/customer_wholesale_discount/`），客人页面显示并可手动设置（迁移 0071，手动值和上次成交谁新用谁），Pedido 新加的产品按"批发价 − 差额"起，"Aplicar a todos" 应用到已有行；产品列表导出加 Customer 搜索，自动填折扣并切到 Wholesale。只作用于 60–120ml 香水（原有规则，`discount_applies` 移到 `services/wholesale_discount.py`）。新增 14 个测试。
 - 2026-11-02: **入库供应商必填 + Orders → Purchases 可回滚。** 不选供应商的入库会直接进库存、而且没地方撤销：Inbound 的 Supplier 改为必填（前端拦下，后端拒绝），所有进货都走暂定单 → 确认收货。Orders → Purchases 的记录面板加 **Roll back**：已收货的进货单回到待收货（保留各店分配），以前的无供应商直接入库（同一次保存的批次）整条删除；卖过或调过店的拒绝并写明原因。新增 4 个测试，改写 3 个依赖无供应商入库的旧测试。
 - 2026-11-02: **Today 加零售 / 批发。** Sales、Items Sold 后面两格 Retail、Revenda：金额、单数、件数（按客户类型），点开是当天 Orders 筛到该渠道。新增 1 个测试。

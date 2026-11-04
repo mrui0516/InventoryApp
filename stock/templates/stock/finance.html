@@ -14,7 +14,7 @@
   <div class="fin-kpi"><span class="k">Gross profit</span><span class="v">&euro;{{ profit.gross|floatformat:"2g" }}</span></div>
   <div class="fin-kpi"><span class="k">Expenses</span><span class="v">&euro;{{ profit.expenses|floatformat:"2g" }}</span><span class="s">last month &euro;{{ prior.expenses|floatformat:"2g" }}</span></div>
   <div class="fin-kpi"><span class="k">Net cash</span><span class="v{% if cash.net < 0 %} neg{% endif %}">&euro;{{ cash.net|floatformat:"2g" }}</span></div>
-  <a class="fin-kpi" href="{% url 'finance_expenses' %}?status=unpaid" style="text-decoration:none;color:inherit"><span class="k">Unpaid</span><span class="v">&euro;{{ unpaid.total|floatformat:"2g" }}</span>{% if unpaid.suppliers %}<span class="s">suppliers &euro;{{ unpaid.suppliers|floatformat:"2g" }}</span>{% endif %}</a>
+  <a class="fin-kpi" href="{% url 'finance_expenses' %}?status=unpaid&amp;scope=all" style="text-decoration:none;color:inherit"><span class="k">Unpaid</span><span class="v">&euro;{{ unpaid.total|floatformat:"2g" }}</span>{% if unpaid.suppliers %}<span class="s">suppliers &euro;{{ unpaid.suppliers|floatformat:"2g" }}</span>{% endif %}</a>
 </div>
 
 {% if due %}
@@ -81,6 +81,7 @@
   <table class="fin-table">
     <tbody>
       <tr><td>Stock at cost</td><td>{{ value.stock|floatformat:"2g" }}</td></tr>
+      {% if value.on_the_way %}<tr><td>Goods on the way</td><td>{{ value.on_the_way|floatformat:"2g" }}</td></tr>{% endif %}
       <tr><td>IOUs owed to us</td><td>{{ value.receivable|floatformat:"2g" }}</td></tr>
       <tr><td>Owed to suppliers</td><td class="{% if value.owed_suppliers %}neg{% endif %}">{% if value.owed_suppliers %}-{% endif %}{{ value.owed_suppliers|floatformat:"2g" }}</td></tr>
       <tr><td>Unpaid expenses</td><td class="{% if value.unpaid_expenses %}neg{% endif %}">{% if value.unpaid_expenses %}-{% endif %}{{ value.unpaid_expenses|floatformat:"2g" }}</td></tr>
