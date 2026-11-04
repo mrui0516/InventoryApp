@@ -8232,10 +8232,10 @@ class RoundANavigationTests(TestCase):
         links, nav = self._menu(self.admin, store=self.store_a)
         self.assertEqual(links, ["Today", "Dashboard", "Orders", "Sell", "Pedido",
                                  "Products", "Catalog View",
-                                 "Customers", "IOU", "Inbound", "Transfers", "Suppliers",
+                                 "Customers", "IOU", "Inbound", "Transfers", "Suppliers", "Finance",
                                  "Attendance", "Tools", "Team", "Stores", "Print Header",
                                  "Shop settings", "Correct orders", "Audit"])
-        for group in ("Sell", "Products", "Customers", "Purchasing", "Settings"):
+        for group in ("Sell", "Products", "Customers", "Purchasing", "Finance", "Settings"):
             self.assertIn(f">{group}<", nav)
 
     def test_the_old_names_are_gone(self):
