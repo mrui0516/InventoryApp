@@ -22,6 +22,8 @@ from .hr import AttendanceRecord
 from .submissions import FormSubmission
 from .system import ErrorLog
 from .transfers import StockTransfer, StockTransferLine, StoreSettlement
+from .expenses import (Expense, ExpenseCategory, ExpenseTemplate, ExpenseTemplateSkip, FinanceLog,
+                       OwnerFunding, SupplierPayment)
 
 __all__ = [
     # core
@@ -42,6 +44,9 @@ __all__ = [
     'StockTransfer', 'StockTransferLine', 'StoreSettlement',
     # finance
     'ARInvoice', 'ARItem', 'ARPayment',
+    # expenses
+    'Expense', 'ExpenseCategory', 'ExpenseTemplate', 'ExpenseTemplateSkip', 'FinanceLog',
+    'OwnerFunding', 'SupplierPayment',
     # reporting
     'DailySalesSummary', 'SalesTarget',
     # hr

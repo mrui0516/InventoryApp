@@ -143,6 +143,14 @@ class BusinessSettings(models.Model):
     # between them. Each transfer line keeps the markup it was made with.
     transfer_markup = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal('3.00'),
                                           verbose_name='Transfer markup (€ per unit)')
+    # Inbound orders from before this day never count as owed to a supplier:
+    # there is no record of what was paid for them.
+    payables_from = models.DateField(null=True, blank=True)
+    # The shop that pays the suppliers; the other shops pay it their share.
+    purchasing_store = models.ForeignKey(Store, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    # € per unit on top of cost for that share. Each payment keeps its own.
+    purchase_share_markup = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal('0.00'),
+                                                verbose_name='Purchase share markup (€ per unit)')
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
