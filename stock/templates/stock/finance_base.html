@@ -1,0 +1,72 @@
+{% extends 'stock/base.html' %}
+{% block title %}Finance{% endblock %}
+{% block content %}
+<style>
+  .fin{ display:grid; gap:.9rem; grid-template-columns:minmax(0,1fr); }
+  .fin-head{ display:flex; flex-wrap:wrap; align-items:center; gap:.5rem .8rem; }
+  .fin-head h1{ margin:0; font-size:1.4rem; font-weight:800; }
+  .fin-store{ font-size:.85rem; font-weight:700; padding:.12rem .55rem; border-radius:999px; background:var(--app-surface-2); color:var(--app-primary); }
+  .fin-tabs{ display:flex; gap:1.1rem; overflow-x:auto; border-bottom:1px solid var(--app-border); }
+  .fin-tabs a{ padding:.45rem 0; font-weight:700; font-size:.95rem; color:var(--app-muted); text-decoration:none; white-space:nowrap; border-bottom:2px solid transparent; margin-bottom:-1px; }
+  .fin-tabs a.on{ color:var(--app-text); border-bottom-color:var(--app-accent); }
+  .fin-card{ background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius); padding:.85rem 1rem; }
+  .fin-card h2{ font-size:1rem; font-weight:800; margin:0 0 .55rem; }
+  .fin-month{ display:flex; align-items:center; gap:.5rem; font-weight:700; }
+  .fin-month a{ display:grid; place-items:center; width:36px; height:36px; border:1px solid var(--app-border-strong); border-radius:999px; text-decoration:none; color:var(--app-text); }
+  .fin-month a.off{ visibility:hidden; }
+  .fin-bar{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.5rem .8rem; }
+  .fin-row{ display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.15rem .9rem; width:100%; padding:.55rem .1rem; border:0; border-top:1px solid var(--app-border); background:none; text-align:left; color:inherit; }
+  .fin-row:first-of-type{ border-top:0; }
+  button.fin-row:hover{ background:var(--app-accent-soft); }
+  .fin-row .main{ font-weight:700; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .fin-row .sub{ font-size:.85rem; color:var(--app-muted); min-width:0; }
+  .fin-row .amt{ font-weight:800; font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
+  .fin-tag{ font-size:.85rem; font-weight:700; text-align:right; color:#0f766e; white-space:nowrap; }
+  .fin-tag.due{ color:#b42318; }
+  .fin-empty{ color:var(--app-muted); margin:.3rem 0; }
+  .fin-form{ display:grid; grid-template-columns:repeat(auto-fill, minmax(10rem, 1fr)); gap:.55rem .7rem; align-items:end; }
+  .fin-form label{ display:grid; gap:.2rem; margin:0; min-width:0; font-size:.85rem; font-weight:700; color:var(--app-muted); }
+  .fin-form .wide{ grid-column:1 / -1; }
+  .fin-check{ display:flex !important; align-items:center; gap:.45rem; color:var(--app-text) !important; min-height:38px; }
+  .fin-check input{ width:1.1rem; height:1.1rem; }
+  .fin-actions{ display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; }
+  .fin-actions .btn{ min-height:38px; }
+  .fin-due{ display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.3rem .8rem; align-items:center; padding:.5rem 0; border-top:1px solid var(--app-border); margin:0; }
+  .fin-due:first-of-type{ border-top:0; }
+  .fin-due-what small{ display:block; font-size:.85rem; color:var(--app-muted); }
+  .fin-due-do{ display:flex; flex-wrap:wrap; align-items:center; gap:.4rem .5rem; }
+  .fin-due-do input[type=text]{ width:6rem; text-align:right; }
+  .fin-due-do select{ width:auto; }
+  .fin-kpis{ display:grid; grid-template-columns:repeat(auto-fit, minmax(9.5rem, 1fr)); gap:.5rem; }
+  .fin-kpi{ background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius); padding:.55rem .7rem; }
+  .fin-kpi .k{ display:block; font-size:.85rem; font-weight:700; color:var(--app-muted); }
+  .fin-kpi .v{ display:block; font-size:1.25rem; font-weight:800; font-variant-numeric:tabular-nums; }
+  .fin-kpi .s{ display:block; font-size:.85rem; color:var(--app-muted); }
+  .fin-kpi.hi{ background:var(--app-text); border-color:var(--app-text); color:var(--app-surface); }
+  .fin-kpi.hi .k, .fin-kpi.hi .s{ color:inherit; opacity:.75; }
+  .neg{ color:#b42318; }
+  .fin-kpi.hi .neg{ color:#fecaca; }
+  .fin-table{ width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+  .fin-table th{ font-size:.85rem; font-weight:700; color:var(--app-muted); text-align:right; padding:.25rem .4rem; }
+  .fin-table th:first-child, .fin-table td:first-child{ text-align:left; padding-left:0; }
+  .fin-table td{ padding:.35rem .4rem; border-top:1px solid var(--app-border); text-align:right; white-space:nowrap; }
+  .fin-table td:first-child{ white-space:normal; }
+  .fin-table tr.total td{ font-weight:800; border-top:2px solid var(--app-border-strong); }
+  .fin-scroll{ overflow-x:auto; }
+  @media (max-width:575.98px){
+    .fin-due{ grid-template-columns:minmax(0,1fr); }
+    .fin-due-do .btn{ min-height:38px; }
+    .fin-form{ grid-template-columns:repeat(2, minmax(0,1fr)); }
+    .fin-kpis{ grid-template-columns:repeat(2, minmax(0,1fr)); }
+    .fin-form input, .fin-form select{ min-height:42px; }
+  }
+</style>
+<div class="fin">
+  <div class="fin-head"><h1>Finance</h1><span class="fin-store">{% if shop %}{{ shop.name }}{% else %}All stores{% endif %}</span></div>
+  <nav class="fin-tabs" aria-label="Finance">
+    <a class="{% if tab == 'expenses' %}on{% endif %}" href="{% url 'finance_expenses' %}">Expenses</a>
+    <a class="{% if tab == 'monthly' %}on{% endif %}" href="{% url 'finance_templates' %}">Monthly costs</a>
+  </nav>
+  {% block finance %}{% endblock %}
+</div>
+{% endblock %}

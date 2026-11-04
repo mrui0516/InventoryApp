@@ -1,0 +1,17 @@
+{# add (row=None) or change a monthly cost #}
+<form method="post" action="{% url 'finance_templates' %}" class="fin-form">
+  {% csrf_token %}
+  {% if row %}<input type="hidden" name="id" value="{{ row.id }}">{% endif %}
+  <label>Shop
+    <select name="store" class="form-select" required>
+      {% for s in shops %}<option value="{{ s.id }}"{% if row and row.store_id == s.id or not row and shop and shop.id == s.id %} selected{% endif %}>{{ s.name }}</option>{% endfor %}
+    </select></label>
+  <label>Category
+    <select name="category" class="form-select" required>
+      {% for c in categories %}<option value="{{ c.id }}"{% if row and row.category_id == c.id %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
+    </select></label>
+  <label>Amount &euro;<input type="text" inputmode="decimal" name="amount" class="form-control" value="{% if row %}{{ row.amount }}{% endif %}" required></label>
+  <label>Paid to<input type="text" name="payee" class="form-control" maxlength="120" value="{% if row %}{{ row.payee }}{% endif %}"></label>
+  <label class="wide">Note<input type="text" name="note" class="form-control" maxlength="200" value="{% if row %}{{ row.note }}{% endif %}"></label>
+  <div class="wide"><button type="submit" class="btn btn-primary">Save</button></div>
+</form>

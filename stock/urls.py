@@ -4,7 +4,7 @@ from django.contrib.auth import views as auth_views
 from django.conf import settings
 from django.conf.urls.static import static
 
-from . import panel_views, pedido_views, views
+from . import finance_views, panel_views, pedido_views, views
 
 
 urlpatterns = [
@@ -44,6 +44,13 @@ urlpatterns = [
     path('sales-records/', views.record_view, name='sales_records'),
     path('today/', views.daily_summary_view, name='daily_summary'),
     path('stores/switch/', views.set_active_store, name='set_active_store'),
+    path('finance/expenses/', finance_views.expenses_view, name='finance_expenses'),
+    path('finance/expenses/<int:expense_id>/delete/', finance_views.expense_delete, name='finance_expense_delete'),
+    path('finance/expenses/<int:expense_id>/paid/', finance_views.expense_paid, name='finance_expense_paid'),
+    path('finance/categories/', finance_views.category_view, name='finance_category'),
+    path('finance/monthly/', finance_views.templates_view, name='finance_templates'),
+    path('finance/monthly/<int:template_id>/confirm/', finance_views.template_confirm, name='finance_template_confirm'),
+    path('finance/monthly/<int:template_id>/skip/', finance_views.template_skip, name='finance_template_skip'),
     path('stores/', views.store_list_view, name='store_list'),
     path('stores/new/', views.store_create_view, name='store_create'),
     path('stores/<int:store_id>/edit/', views.store_edit_view, name='store_edit'),

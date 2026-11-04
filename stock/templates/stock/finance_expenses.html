@@ -1,0 +1,83 @@
+{% extends 'stock/finance_base.html' %}
+{% block finance %}
+<div class="fin-bar">
+  <div class="fin-month">
+    <a href="{{ month.prev_url }}" aria-label="Previous month">&lsaquo;</a>
+    <span>{{ month.month_label }}</span>
+    <a class="{% if not month.next_url %}off{% endif %}" href="{{ month.next_url }}" aria-label="Next month">&rsaquo;</a>
+  </div>
+  <form method="get" class="fin-actions">
+    <input type="hidden" name="month" value="{{ month.month_value }}">
+    <select name="category" class="form-select form-select-sm" style="width:auto" aria-label="Category" onchange="this.form.submit()">
+      <option value="">All categories</option>
+      {% for c in categories %}<option value="{{ c.id }}"{% if category_id == c.id|stringformat:"d" %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
+    </select>
+    <select name="status" class="form-select form-select-sm" style="width:auto" aria-label="Paid" onchange="this.form.submit()">
+      <option value="">Paid and unpaid</option>
+      <option value="paid"{% if status == 'paid' %} selected{% endif %}>Paid</option>
+      <option value="unpaid"{% if status == 'unpaid' %} selected{% endif %}>Unpaid</option>
+    </select>
+    <button type="button" class="btn btn-sm btn-primary" data-layer="exp-new">+ Add expense</button>
+  </form>
+</div>
+
+<section class="fin-card" aria-label="Expenses">
+  <h2>{{ expenses|length }} expense{{ expenses|length|pluralize }} &middot; &euro;{{ total|floatformat:2 }}</h2>
+  {% for e in expenses %}
+    <button type="button" class="fin-row" data-layer="exp-{{ e.id }}">
+      <span class="main">{{ e.category.name }}{% if e.payee %} &middot; {{ e.payee }}{% endif %}</span>
+      <span class="amt">&euro;{{ e.amount|floatformat:2 }}</span>
+      <span class="sub">{% if not shop %}{{ e.store.name }}{% endif %}{% if not shop and e.note %} &middot; {% endif %}{{ e.note }}</span>
+      <span class="fin-tag{% if not e.paid_on %} due{% endif %}">{% if e.paid_on %}{{ e.paid_on|date:"j M" }} &middot; {{ e.get_method_display }}{% else %}Unpaid{% endif %}</span>
+    </button>
+    <template id="exp-{{ e.id }}">
+      <div data-part="title">{{ e.category.name }} &middot; {{ e.period|date:"F Y" }}</div>
+      <div data-part="body">
+        {% include "stock/_finance_expense_form.html" with row=e %}
+        {% if not e.paid_on %}
+          <hr>
+          <form method="post" action="{% url 'finance_expense_paid' e.id %}" class="fin-form">
+            {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <label>Paid on<input type="date" name="paid_on" class="form-control" value="{{ today|date:'Y-m-d' }}"></label>
+            <label>How<select name="method" class="form-select">{% for v, l in methods %}<option value="{{ v }}"{% if v == last_method %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></label>
+            <div class="wide"><button type="submit" class="btn btn-outline-primary">Mark as paid</button></div>
+          </form>
+        {% endif %}
+      </div>
+      <div data-part="foot">
+        <form method="post" action="{% url 'finance_expense_delete' e.id %}" onsubmit="return confirm('Delete this expense of €{{ e.amount|floatformat:2 }}?');">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <button type="submit" class="btn btn-outline-danger">Delete</button>
+        </form>
+      </div>
+    </template>
+  {% empty %}
+    <p class="fin-empty">No expenses for {{ month.month_label }}.</p>
+  {% endfor %}
+</section>
+
+<template id="exp-new">
+  <div data-part="title">Add expense</div>
+  <div data-part="body">{% include "stock/_finance_expense_form.html" with row=None %}</div>
+  <div data-part="foot"></div>
+</template>
+
+<details class="fin-card">
+  <summary><b>Categories</b></summary>
+  {% for c in categories %}
+    <div class="fin-row">
+      <span class="main">{{ c.name }}{% if not c.is_active %} <small class="fin-empty">off</small>{% endif %}</span>
+      <form method="post" action="{% url 'finance_category' %}" class="fin-actions">
+        {% csrf_token %}<input type="hidden" name="id" value="{{ c.id }}">
+        <button type="submit" name="action" value="toggle" class="btn btn-sm btn-outline-secondary">{% if c.is_active %}Turn off{% else %}Turn on{% endif %}</button>
+        {% if c.id not in used_categories %}<button type="submit" name="action" value="delete" class="btn btn-sm btn-outline-danger">Delete</button>{% endif %}
+      </form>
+    </div>
+  {% endfor %}
+  <form method="post" action="{% url 'finance_category' %}" class="fin-actions mt-2">
+    {% csrf_token %}<input type="hidden" name="action" value="add">
+    <input type="text" name="name" class="form-control form-control-sm" style="max-width:14rem" maxlength="60" placeholder="New category" aria-label="New category" required>
+    <button type="submit" class="btn btn-sm btn-outline-primary">Add</button>
+  </form>
+</details>
+{% endblock %}

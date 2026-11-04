@@ -1,0 +1,47 @@
+{% extends 'stock/finance_base.html' %}
+{% block finance %}
+<div class="fin-bar">
+  <div class="fin-month">
+    <a href="{{ month.prev_url }}" aria-label="Previous month">&lsaquo;</a>
+    <span>{{ month.month_label }}</span>
+    <a class="{% if not month.next_url %}off{% endif %}" href="{{ month.next_url }}" aria-label="Next month">&rsaquo;</a>
+  </div>
+  <button type="button" class="btn btn-sm btn-primary" data-layer="tpl-new">+ Add monthly cost</button>
+</div>
+
+<section class="fin-card" aria-label="To confirm">
+  <h2>To confirm &middot; {{ month.month_label }}</h2>
+  {% include "stock/_finance_due.html" %}
+  {% if not due %}<p class="fin-empty">Nothing to confirm.</p>{% endif %}
+</section>
+
+<section class="fin-card" aria-label="Monthly costs">
+  <h2>Monthly costs</h2>
+  {% for t in templates %}
+    <button type="button" class="fin-row" data-layer="tpl-{{ t.id }}">
+      <span class="main">{{ t.category.name }}{% if t.payee %} &middot; {{ t.payee }}{% endif %}</span>
+      <span class="amt">&euro;{{ t.amount|floatformat:2 }}</span>
+      <span class="sub">{% if not shop %}{{ t.store.name }}{% endif %}</span>
+      <span class="fin-tag{% if not t.is_active %} due{% endif %}">{% if t.is_active %}On{% else %}Off{% endif %}</span>
+    </button>
+    <template id="tpl-{{ t.id }}">
+      <div data-part="title">{{ t.category.name }}{% if t.payee %} &middot; {{ t.payee }}{% endif %}</div>
+      <div data-part="body">{% include "stock/_finance_template_form.html" with row=t %}</div>
+      <div data-part="foot">
+        <form method="post" action="{% url 'finance_templates' %}">
+          {% csrf_token %}<input type="hidden" name="id" value="{{ t.id }}"><input type="hidden" name="action" value="toggle">
+          <button type="submit" class="btn btn-outline-secondary">{% if t.is_active %}Turn off{% else %}Turn on{% endif %}</button>
+        </form>
+      </div>
+    </template>
+  {% empty %}
+    <p class="fin-empty">No monthly costs yet.</p>
+  {% endfor %}
+</section>
+
+<template id="tpl-new">
+  <div data-part="title">Add monthly cost</div>
+  <div data-part="body">{% include "stock/_finance_template_form.html" with row=None %}</div>
+  <div data-part="foot"></div>
+</template>
+{% endblock %}
