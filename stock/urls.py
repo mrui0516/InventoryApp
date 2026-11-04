@@ -44,6 +44,7 @@ urlpatterns = [
     path('sales-records/', views.record_view, name='sales_records'),
     path('today/', views.daily_summary_view, name='daily_summary'),
     path('stores/switch/', views.set_active_store, name='set_active_store'),
+    path('finance/', finance_views.overview_view, name='finance'),
     path('finance/expenses/', finance_views.expenses_view, name='finance_expenses'),
     path('finance/expenses/<int:expense_id>/delete/', finance_views.expense_delete, name='finance_expense_delete'),
     path('finance/expenses/<int:expense_id>/paid/', finance_views.expense_paid, name='finance_expense_paid'),

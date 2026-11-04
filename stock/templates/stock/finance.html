@@ -1,0 +1,64 @@
+{% extends 'stock/finance_base.html' %}
+{% block finance %}
+<div class="fin-bar">
+  <div class="fin-month">
+    <a href="{{ month.prev_url }}" aria-label="Previous month">&lsaquo;</a>
+    <span>{{ month.month_label }}</span>
+    <a class="{% if not month.next_url %}off{% endif %}" href="{{ month.next_url }}" aria-label="Next month">&rsaquo;</a>
+  </div>
+  <span class="fin-store">{{ month.scope_label }}</span>
+</div>
+
+<div class="fin-kpis">
+  <div class="fin-kpi hi"><span class="k">Net profit</span><span class="v{% if profit.net < 0 %} neg{% endif %}">&euro;{{ profit.net|floatformat:2 }}</span><span class="s">last month &euro;{{ prior.net|floatformat:2 }}</span></div>
+  <div class="fin-kpi"><span class="k">Gross profit</span><span class="v">&euro;{{ profit.gross|floatformat:2 }}</span></div>
+  <div class="fin-kpi"><span class="k">Expenses</span><span class="v">&euro;{{ profit.expenses|floatformat:2 }}</span><span class="s">last month &euro;{{ prior.expenses|floatformat:2 }}</span></div>
+  <div class="fin-kpi"><span class="k">Net cash</span><span class="v{% if cash.net < 0 %} neg{% endif %}">&euro;{{ cash.net|floatformat:2 }}</span></div>
+  <a class="fin-kpi" href="{% url 'finance_expenses' %}?status=unpaid" style="text-decoration:none;color:inherit"><span class="k">Unpaid</span><span class="v">&euro;{{ unpaid.total|floatformat:2 }}</span>{% if unpaid.suppliers %}<span class="s">suppliers &euro;{{ unpaid.suppliers|floatformat:2 }}</span>{% endif %}</a>
+</div>
+
+{% if due %}
+<section class="fin-card" aria-label="To confirm">
+  <h2>To confirm</h2>
+  {% include "stock/_finance_due.html" %}
+</section>
+{% endif %}
+
+<section class="fin-card" aria-label="Profit">
+  <h2>Profit</h2>
+  <div class="fin-scroll">
+    <table class="fin-table">
+      <thead><tr><th></th>{% for c in columns %}<th>{{ c.shop.name }}</th>{% endfor %}<th>{% if columns %}Total{% endif %}</th></tr></thead>
+      <tbody>
+        {% for r in rows %}
+          <tr class="{{ r.kind }}"><td>{{ r.label }}</td>{% for v in r.shops %}<td class="{% if v < 0 %}neg{% endif %}">{{ v|floatformat:2 }}</td>{% endfor %}<td class="{% if r.total < 0 %}neg{% endif %}">{{ r.total|floatformat:2 }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="fin-card" aria-label="Spending by category">
+  <h2>Spending by category</h2>
+  {% if profit.by_category %}
+    <table class="fin-table">
+      <thead><tr><th></th><th>{{ month.month_label }}</th><th>Last month</th></tr></thead>
+      <tbody>{% for r in profit.by_category %}<tr><td>{{ r.category }}</td><td>{{ r.amount|floatformat:2 }}</td><td>{{ r.previous|floatformat:2 }}</td></tr>{% endfor %}</tbody>
+    </table>
+  {% else %}
+    <p class="fin-empty">No expenses for {{ month.month_label }}.</p>
+  {% endif %}
+</section>
+
+<section class="fin-card" aria-label="Cash in and out">
+  <h2>Cash in and out</h2>
+  <table class="fin-table">
+    <thead><tr><th></th><th>Cash</th><th>Bank</th></tr></thead>
+    <tbody>
+      {% for l in cash.lines %}<tr><td>{{ l.label }}</td><td class="{% if l.cash < 0 %}neg{% endif %}">{{ l.cash|floatformat:2 }}</td><td class="{% if l.bank < 0 %}neg{% endif %}">{{ l.bank|floatformat:2 }}</td></tr>{% endfor %}
+      <tr class="total"><td>Net</td><td class="{% if cash.cash.net < 0 %}neg{% endif %}">{{ cash.cash.net|floatformat:2 }}</td><td class="{% if cash.bank.net < 0 %}neg{% endif %}">{{ cash.bank.net|floatformat:2 }}</td></tr>
+    </tbody>
+  </table>
+  {% if cash.owner_paid %}<p class="fin-empty">Paid by the owner: &euro;{{ cash.owner_paid|floatformat:2 }}</p>{% endif %}
+</section>
+{% endblock %}

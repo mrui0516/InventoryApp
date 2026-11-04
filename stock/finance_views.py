@@ -1,5 +1,5 @@
 """The Finance section: admins only. The figures live in services/finance."""
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
 
@@ -48,6 +48,34 @@ def _month(raw):
         return datetime.strptime((raw or '').strip(), '%Y-%m').date()
     except ValueError:
         return None
+
+
+@login_required
+@admin_required
+def overview_view(request):
+    shop = _shop(request)
+    month = _months_bar(request, 'finance')
+    start, end = month['month_start'], month['period_end']
+    prior_start = finance.previous_month(start)
+    profit = finance.month_profit(start, end, shop)
+    prior = finance.month_profit(prior_start, start - timedelta(days=1), shop)
+    shops = active_stores()
+    columns = [] if shop is not None or len(shops) < 2 else [
+        {'shop': s, 'profit': finance.month_profit(start, end, s)} for s in shops]
+    return render(request, 'stock/finance.html', {
+        'tab': 'overview',
+        'month': month,
+        'shop': shop,
+        'profit': profit,
+        'prior': prior,
+        'cash': finance.month_cash(start, end, shop),
+        'unpaid': finance.unpaid(shop),
+        'columns': columns,
+        'rows': finance.profit_rows(profit, columns),
+        'due': finance.due_templates(start, shop),
+        'methods': PAID_METHODS,
+        'last_method': request.session.get('finance_method', 'bank'),
+    })
 
 
 def _months_bar(request, url_name, **keep):

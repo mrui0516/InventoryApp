@@ -131,7 +131,7 @@
 
         {% if user.is_superuser %}
         <div class="erp-nav-group">Finance</div>
-        <a class="erp-nav-link {% if current_url|slice:":7" == 'finance' %}active{% endif %}" href="{% url 'finance_expenses' %}">Finance</a>
+        <a class="erp-nav-link {% if current_url|slice:":7" == 'finance' %}active{% endif %}" href="{% url 'finance' %}">Finance</a>
         {% endif %}
 
         {# Settings stay folded: weekly work at most, and it was half the menu. #}

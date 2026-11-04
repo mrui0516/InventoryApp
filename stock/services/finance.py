@@ -1,12 +1,17 @@
 """The Finance section's figures: what was spent, owed, paid and earned."""
 from collections import defaultdict
+from datetime import timedelta
 from decimal import ROUND_DOWN, Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
+from django.db.models import Sum
+from django.db.models.functions import Coalesce
 
-from ..models import (BusinessSettings, Expense, ExpenseTemplate, ExpenseTemplateSkip, FinanceLog, InboundOrder,
-                      Store, SupplierPayment)
+from ..models import (ARPayment, BusinessSettings, Expense, ExpenseTemplate, ExpenseTemplateSkip, FinanceLog,
+                      InboundOrder, Sale, SaleOrder, SaleOrderCharge, SaleOrderPayment, Store, StoreSettlement,
+                      SupplierPayment)
+from .dashboard import compute_period_headline
 from ..models.expenses import PAID_METHODS
 
 ZERO = Decimal('0.00')
@@ -205,4 +210,142 @@ def recent_payments(limit=30):
     for row in rows:
         row.shares = [{'label': names.get(k, 'No shop'), 'cost': v['cost']}
                       for k, v in purchase_shares(row).items()]
+    return rows
+
+
+# ------------------------------------------------------------ the month
+def _in_shop(queryset, store, field='store'):
+    return queryset if store is None else queryset.filter(**{field: store})
+
+
+def _sum(queryset, field='amount'):
+    return queryset.aggregate(total=Sum(field))['total'] or ZERO
+
+
+def previous_month(start):
+    return (start - timedelta(days=1)).replace(day=1)
+
+
+def _spent_by_category(period_start, period_end, store):
+    rows = (_in_shop(Expense.objects.filter(period__gte=period_start, period__lte=period_end), store)
+            .values('category__name', 'category__sort_order').annotate(total=Sum('amount')))
+    return {row['category__name']: (row['total'], row['category__sort_order']) for row in rows}
+
+
+def month_profit(start, end, store=None):
+    """``{gross, charges, by_category: [{category, amount, previous}], expenses, net}``.
+
+    Gross counts every category and channel, net of card fees and, for one
+    shop, with the transfer markup. Shipping and fees taken from customers are
+    not sales, so they are added here: the carrier's bill is an expense.
+    Expenses count by the month they belong to, paid or not. Supplier payments
+    never appear: the goods reach gross profit as cost of sale.
+    """
+    gross = compute_period_headline(start, end, [], True, store)['profit']
+    charges = _sum(_in_shop(SaleOrderCharge.objects.filter(order__created_at__date__gte=start,
+                                                           order__created_at__date__lte=end), store, 'order__store'))
+    now = _spent_by_category(start, end, store)
+    prior_start = previous_month(start)
+    before = _spent_by_category(prior_start, start - timedelta(days=1), store)
+    names = sorted(set(now) | set(before), key=lambda n: ((now.get(n) or before[n])[1], n))
+    rows = [{'category': name, 'amount': now.get(name, (ZERO,))[0], 'previous': before.get(name, (ZERO,))[0]}
+            for name in names]
+    expenses = sum((row['amount'] for row in rows), ZERO)
+    return {'gross': gross, 'charges': charges, 'by_category': rows, 'expenses': expenses,
+            'net': gross + charges - expenses}
+
+
+def month_cash(start, end, store=None):
+    """The money that moved in the month, by when it moved.
+
+    ``{cash: {in, out, net}, bank: {...}, net, owner_paid, lines: [{label, cash, bank}]}``.
+    Cash tenders are Cash; card, MB WAY and IOU payments other than cash are
+    Bank. A settlement between the shops is Cash and shows for one shop only:
+    over all of them it cancels. What the owner paid personally left neither.
+    """
+    lines = []
+
+    def line(label, cash=ZERO, bank=ZERO):
+        lines.append({'label': label, 'cash': cash, 'bank': bank})
+
+    tenders = (_in_shop(SaleOrderPayment.objects.filter(order__created_at__date__gte=start,
+                                                        order__created_at__date__lte=end), store, 'order__store')
+               .values('method').annotate(total=Sum('amount')))
+    sales = {'cash': ZERO, 'bank': ZERO}
+    for row in tenders:
+        sales['cash' if row['method'] == 'cash' else 'bank'] += row['total']
+    # orders from before payments were recorded, and sales with no order
+    legacy = (_in_shop(Sale.objects.filter(order__payments__isnull=True), store)
+              .annotate(at=Coalesce('order__created_at', 'date'))
+              .filter(at__date__gte=start, at__date__lte=end))
+    for sale in legacy.only('unit_price', 'quantity', 'payment_method'):
+        sales['cash' if sale.payment_method == 'cash' else 'bank'] += sale.unit_price * sale.quantity
+    line('Sales', sales['cash'], sales['bank'])
+
+    collected = {'cash': ZERO, 'bank': ZERO}
+    payments = _in_shop(ARPayment.objects.filter(created_at__date__gte=start, created_at__date__lte=end),
+                        store, 'invoice__store')
+    for row in payments.values('method').annotate(total=Sum('amount')):
+        collected['cash' if row['method'] == 'cash' else 'bank'] += row['total']
+    if any(collected.values()):
+        line('IOU collected', collected['cash'], collected['bank'])
+
+    fees = _sum(_in_shop(SaleOrder.objects.filter(created_at__date__gte=start, created_at__date__lte=end), store),
+                'card_fee')
+    if fees:
+        line('Card fees', ZERO, -fees)
+
+    owner_paid = ZERO
+
+    def spent(label, queryset):
+        nonlocal owner_paid
+        paid = {row['method']: row['total'] for row in queryset.values('method').annotate(total=Sum('amount'))}
+        owner_paid += paid.get('owner', ZERO)
+        if paid.get('cash') or paid.get('bank'):
+            line(label, -paid.get('cash', ZERO), -paid.get('bank', ZERO))
+
+    spent('Expenses', _in_shop(Expense.objects.filter(paid_on__gte=start, paid_on__lte=end), store))
+    spent('Supplier payments', _in_shop(SupplierPayment.objects.filter(paid_on__gte=start, paid_on__lte=end), store))
+
+    if store is not None:
+        settled = StoreSettlement.objects.filter(settled_on__gte=start, settled_on__lte=end)
+        got, gave = _sum(settled.filter(payee=store)), _sum(settled.filter(payer=store))
+        if got or gave:
+            line('Between shops', got - gave)
+
+    def totals(key):
+        came = sum((row[key] for row in lines if row[key] > 0), ZERO)
+        went = -sum((row[key] for row in lines if row[key] < 0), ZERO)
+        return {'in': came, 'out': went, 'net': came - went}
+
+    cash, bank = totals('cash'), totals('bank')
+    return {'cash': cash, 'bank': bank, 'net': cash['net'] + bank['net'], 'owner_paid': owner_paid, 'lines': lines}
+
+
+def unpaid(store=None):
+    """``{expenses, suppliers, total}``. Suppliers are the company's debt, so
+    they count under All stores only."""
+    expenses = _sum(_in_shop(Expense.objects.filter(paid_on__isnull=True), store))
+    suppliers = sum((g['owed'] for g in payables()), ZERO) if store is None else ZERO
+    return {'expenses': expenses, 'suppliers': suppliers, 'total': expenses + suppliers}
+
+
+def profit_rows(profit, columns):
+    """The profit table: ``[{label, total, shops, kind}]``, with a figure for
+    each of ``columns`` (``{shop, profit}``) where All stores shows them."""
+    def rows_of(key):
+        return [c['profit'][key] for c in columns]
+
+    def spent_in(column, name):
+        return next((r['amount'] for r in column['profit']['by_category'] if r['category'] == name), ZERO)
+
+    rows = [{'label': 'Gross profit', 'total': profit['gross'], 'shops': rows_of('gross'), 'kind': ''}]
+    if profit['charges'] or any(rows_of('charges')):
+        rows.append({'label': 'Shipping and fees charged', 'total': profit['charges'],
+                     'shops': rows_of('charges'), 'kind': ''})
+    for row in profit['by_category']:
+        if row['amount']:
+            rows.append({'label': row['category'], 'total': -row['amount'],
+                         'shops': [-spent_in(c, row['category']) for c in columns], 'kind': ''})
+    rows.append({'label': 'Net profit', 'total': profit['net'], 'shops': rows_of('net'), 'kind': 'total'})
     return rows
