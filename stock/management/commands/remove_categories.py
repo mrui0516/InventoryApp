@@ -80,4 +80,8 @@ class Command(BaseCommand):
                 out(f'Archived {count} products.')
             for category in reversed(doomed):          # children before parents
                 category.delete()
+            if archive_products:                       # .update() sends no signal
+                from stock.services.catalog_prune import prune
+                brands, lines = prune()
+                out(f'Deleted {brands} brands and {lines} lines left with no product.')
         out(self.style.SUCCESS(f'Deleted {len(doomed)} categories.'))

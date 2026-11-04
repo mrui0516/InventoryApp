@@ -78,6 +78,7 @@ InventoryApp/
     │   ├── pricing.py                # 香水自动定价：按当前 FIFO 成本得出批发/零售价
     │   ├── lead_time.py              # 供应商到货时效（下单 → 收货）
     │   ├── inbound_rollback.py       # 撤销一次误收货
+    │   ├── catalog_prune.py          # 没有产品的品牌、系列自动删除
     │   ├── barcodes.py               # 无条码商品的内部条码
     │   ├── order_corrections.py      # 历史订单修正/删除 + SaleOrderChangeLog
     │   ├── order_charges.py          # 运费/费用；客户上次售价 last_prices()
@@ -472,6 +473,16 @@ Orders → Purchases（`orders_views.load_purchases`）、供应商页、产品�
 
 **`{% render_field %}`（widget_tweaks）不接受带过滤器的属性值。**
 `id=x|add:"_id"` 会抛 `add requires 2 arguments`。用 `field.id_for_label`。
+
+### 5.13z 空品牌、空系列自动删除（2026-11-05）
+
+`services/catalog_prune.py`。`stock/signals.py` 在产品改品牌/系列、硬删除、归档时，只检查它**离开的那个**品牌和系列，
+不做全表扫描：这样表单里刚新建、还没挂上产品的品牌不会被别的请求删掉。`Product.objects.update()` 不发信号，
+所以 `remove_categories --archive-products` 自己调用一次全量 `prune()`。
+
+- **已归档产品不算产品**：app 里没有恢复入口。它的 `brand_master`、`series_master` 变成空，但 `Product.brand`、`model` 文字还在，销售历史和报表读的都是文字。
+- **只有文字、没有外键的在售产品算产品**，避免删掉老数据还在用的名字。
+- 旧数据用 `manage.py prune_empty_brands`（默认只列出，`--apply` 才删）。
 
 ### 5.14 新增 / 编辑产品（香水表单）
 

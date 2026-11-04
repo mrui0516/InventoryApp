@@ -10,6 +10,7 @@ from django.utils import timezone
 from .models import AttendanceRecord, Product, ProductImage, Purchase, Sale
 from .permissions import has_manager_access
 from .services import schedule_summary_recalc
+from .services.catalog_prune import prune
 from .services.shopify_push import queue_inventory_push
 
 logger = logging.getLogger(__name__)
@@ -166,6 +167,40 @@ def _capture_old_default_price(sender, instance, **kwargs):
         return
     instance._old_default_price = (
         Product.objects.filter(pk=instance.pk).values_list('default_price', flat=True).first())
+
+
+@receiver(pre_save, sender=Product)
+def _capture_old_brand_and_line(sender, instance, update_fields=None, raw=False, **kwargs):
+    instance._old_links = None
+    if raw or not instance.pk:
+        return
+    if update_fields is not None and not {'brand_master', 'series_master'} & set(update_fields):
+        return
+    instance._old_links = (Product.all_objects.filter(pk=instance.pk)
+                           .values_list('brand_master_id', 'series_master_id').first())
+
+
+@receiver(post_save, sender=Product)
+def prune_brand_and_line_left_behind(sender, instance, raw=False, **kwargs):
+    """The product moved to another brand or line, or was archived: what it
+    left may have no product now (services/catalog_prune.py)."""
+    if raw:
+        return
+    old_brand, old_line = getattr(instance, '_old_links', None) or (None, None)
+    brands = {old_brand} if old_brand and old_brand != instance.brand_master_id else set()
+    lines = {old_line} if old_line and old_line != instance.series_master_id else set()
+    if instance.archived_at:
+        brands.add(instance.brand_master_id)
+        lines.add(instance.series_master_id)
+    brands.discard(None)
+    lines.discard(None)
+    if brands or lines:
+        prune(brands, lines)
+
+
+@receiver(post_delete, sender=Product)
+def prune_brand_and_line_of_deleted_product(sender, instance, **kwargs):
+    prune({instance.brand_master_id} - {None}, {instance.series_master_id} - {None})
 
 
 @receiver(post_save, sender=Product)
