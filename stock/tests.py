@@ -10566,7 +10566,9 @@ class SlowMoversAndSellThroughTests(TestCase):
     def setUp(self):
         self.cat = Category.objects.create(name="Perfumes", form_kind="perfume")
         self.today = timezone.localdate()
-        self.now = timezone.now()
+        # Noon: counting back across a clock change late in the evening lands
+        # on the next calendar day, which made idle_days 199 after 23:00.
+        self.now = timezone.localtime().replace(hour=12, minute=0, second=0, microsecond=0)
 
     def _product(self, code, bought, days_ago, sold=()):
         p = Product.objects.create(name=f"P{code}", brand="B", barcode=f"62900000040{code:02d}", category=self.cat)
