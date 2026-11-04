@@ -376,6 +376,10 @@ class Product(models.Model):
     def display_name(self):
         head = " - ".join([part for part in [self.brand, self.model, self.name] if part])
         tail = self.variant_label
+        # A gift set is often named exactly as its perfume: say which this is.
+        kind = self.type_label if self.perfume_type != self.PERFUME else ''
+        if kind and kind.lower() not in head.lower():
+            head = f"{head} {kind}" if head else kind
         if head and tail:
             return f"{head} {tail}"
         return head or tail or (self.barcode or 'Unnamed product')

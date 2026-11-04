@@ -34,6 +34,10 @@ STOPWORDS = {
 }
 
 
+# Words that say a line is a gift set: a set and its perfume share their name.
+GIFT_WORDS = {'gift', 'giftset', 'set', 'coffret', 'kit', 'estojo', 'pack', 'box'}
+
+
 class QuickImportError(ValueError):
     """A message for the person importing."""
 
@@ -205,7 +209,7 @@ def match_products(rows):
     need_names = [r for r in rows if not (r['ean'] and _find_barcode(by_barcode, r['ean']))]
     catalogue = []
     if need_names:
-        for p in Product.objects.only('id', 'brand', 'model', 'name', 'barcode', 'volume_ml', 'spec'):
+        for p in Product.objects.only('id', 'brand', 'model', 'name', 'barcode', 'volume_ml', 'spec', 'perfume_type'):
             words = set(_words(' '.join(filter(None, [p.brand, p.model, p.name, p.spec]))))
             # Initials too, as people write them: "cdn" for CLUB DE NUIT.
             for part in (p.brand, p.model, p.name):
@@ -223,8 +227,11 @@ def match_products(rows):
         volume = _volume(row['name'])
         # Numbers stay ("Rouge 540"), except the volume, which is compared on
         # its own against the product's millilitres.
+        said = set(_words(row['name']))
+        gift = bool(said & GIFT_WORDS)
         wanted = [w for w in _words(row['name'])
-                  if w not in STOPWORDS and not (w.isdigit() and volume and int(w) == volume)
+                  if w not in STOPWORDS and w not in GIFT_WORDS
+                  and not (w.isdigit() and volume and int(w) == volume)
                   and not re.fullmatch(r'\d+ml', w)]
         scored = []
         for p, words in catalogue:
@@ -243,6 +250,8 @@ def match_products(rows):
             # people round (CDN Urban Man Elixir is 105 ml, written "100ml").
             if volume and p.volume_ml:
                 score += 0.15 if p.volume_ml == volume else -0.1
+            # same name, gift set or not: the line's own words decide
+            score += 0.15 if (p.perfume_type == p.COFFRET) == gift else -0.15
             scored.append((score, hits, p))
         # ties go to the product that shares more of the words
         scored.sort(key=lambda s: (-s[0], -s[1]))
