@@ -68,6 +68,7 @@ InventoryApp/
     ├── services/                     # 业务逻辑（视图之外可复用、可单测的部分）
     │   ├── profit.py                 # FIFO 利润重放 sale_profit_map_for_sale_ids（扣除刷卡手续费）
     │   ├── stock_ops.py              # FIFO 库存原子条件更新：consume_stock_fifo / restore_stock_fifo（按店）
+    │   ├── wholesale_discount.py     # discount_applies（哪些产品能打折）、last_discount（客人上次比批发价便宜多少）
     │   ├── store_stock.py            # 按店库存：各店数量、拆批调货、收银自动调货、收货分配、两店余额与结账
     │   ├── stock_ledger.py           # 单品库存流水（入库 / 销售 / 手动调整合并成一条时间线，只读）
     │   ├── inventory.py              # 库存快照
