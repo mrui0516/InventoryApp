@@ -228,8 +228,8 @@ def previous_month(start):
 
 def _spent_by_category(period_start, period_end, store):
     rows = (_in_shop(Expense.objects.filter(period__gte=period_start, period__lte=period_end), store)
-            .values('category__name', 'category__sort_order').annotate(total=Sum('amount')))
-    return {row['category__name']: (row['total'], row['category__sort_order']) for row in rows}
+            .values('category_id', 'category__name', 'category__sort_order').annotate(total=Sum('amount')))
+    return {row['category__name']: (row['total'], row['category__sort_order'], row['category_id']) for row in rows}
 
 
 def month_profit(start, end, store=None):
@@ -248,8 +248,8 @@ def month_profit(start, end, store=None):
     prior_start = previous_month(start)
     before = _spent_by_category(prior_start, start - timedelta(days=1), store)
     names = sorted(set(now) | set(before), key=lambda n: ((now.get(n) or before[n])[1], n))
-    rows = [{'category': name, 'amount': now.get(name, (ZERO,))[0], 'previous': before.get(name, (ZERO,))[0]}
-            for name in names]
+    rows = [{'category': name, 'category_id': (now.get(name) or before[name])[2],
+             'amount': now.get(name, (ZERO,))[0], 'previous': before.get(name, (ZERO,))[0]} for name in names]
     expenses = sum((row['amount'] for row in rows), ZERO)
     return {'gross': gross, 'charges': charges, 'by_category': rows, 'expenses': expenses,
             'net': gross + charges - expenses}
@@ -407,13 +407,14 @@ def business_value():
 
 
 def profit_to_date(until, store=None):
-    """Net profit from the day Finance started (``payables_from``), the first
-    day expenses exist for, to ``until``. Expenses count from that whole month."""
+    """Net profit from the month Finance started (``payables_from``), the first
+    one expenses exist for, to ``until``: its first month is that month's net."""
     start = BusinessSettings.get().payables_from
-    if start is None or until < start:
+    if start is None or until < start.replace(day=1):
         return ZERO
+    start = start.replace(day=1)
     gross = compute_period_headline(start, until, [], True, store)['profit']
     charges = _sum(_in_shop(SaleOrderCharge.objects.filter(order__created_at__date__gte=start,
                                                            order__created_at__date__lte=until), store, 'order__store'))
-    spent = _sum(_in_shop(Expense.objects.filter(period__gte=start.replace(day=1), period__lte=until), store))
+    spent = _sum(_in_shop(Expense.objects.filter(period__gte=start, period__lte=until), store))
     return gross + charges - spent

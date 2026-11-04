@@ -603,3 +603,20 @@ class ExistingPagesTests(FinanceMixin, TestCase):
         page = self.client.get(reverse("audit_finance"))
         self.assertContains(page, "Rent")
         self.assertContains(page, "Deleted")
+
+
+class OverviewDetailsTests(FinanceMixin, TestCase):
+    def test_the_first_month_to_date_equals_that_months_net(self):
+        BusinessSettings.objects.update(payables_from=self.today)
+        order = SaleOrder.objects.create(store=self.khan)
+        Sale.objects.create(order=order, product=self.product, quantity=1, unit_price=Decimal("100"),
+                            cost_basis=Decimal("40"), store=self.khan, payment_method="cash")
+        SaleOrder.objects.filter(pk=order.pk).update(created_at=timezone.now().replace(day=1))
+        self.expense("10")
+        self.assertEqual(finance.profit_to_date(self.today),
+                         finance.month_profit(self.month, self.today, None)["net"])
+
+    def test_a_category_links_to_its_expenses(self):
+        self.expense("10")
+        html = self.client.get(reverse("finance")).content.decode()
+        self.assertIn(f'{reverse("finance_expenses")}?category={self.rent.id}', html)
