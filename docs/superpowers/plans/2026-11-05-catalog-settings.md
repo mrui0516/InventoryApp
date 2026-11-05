@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 店主在 Settings → Catalog 自己管理 Type、品牌、系列、分类、浓度和香调；添加产品先选 Type；Mix 和 Coffret 连接到产品，并在客户 PDF 里互相跳转。
+**Goal:** 店主在 Settings → Catalog 自己管理 Type、品牌、系列、分类、浓度和香调；添加产品先选 Type；Mix、Coffret、Body mist、Body spray、Air freshener 连接到产品，并在客户 PDF 里互相跳转。
 
 **Architecture:** `ProductType` 表取代写死的 `PERFUME_TYPES`，规则变成每个 Type 的开关，名称显示走进程内短缓存，避免逐行查询。管理页集中在新文件 `stock/catalog_views.py`，改名和合并在 `services/catalog_admin.py`，连接在 `services/product_contents.py`。
 
@@ -64,10 +64,11 @@ class ProductTypeTableTests(TestCase):
     def test_the_seeded_switches(self):
         rows = {t.code: t for t in ProductType.objects.all()}
         self.assertEqual({c for c, t in rows.items() if t.takes_concentration}, {"perfume", "mini"})
-        self.assertEqual({c for c, t in rows.items() if t.wholesale_discount}, {"perfume", "coffret"})
+        self.assertEqual({c for c, t in rows.items() if t.wholesale_discount}, {"perfume"})
         self.assertEqual({c for c, t in rows.items() if t.is_gift}, {"coffret"})
-        self.assertEqual({c for c, t in rows.items() if t.has_contents}, {"coffret"})
-        self.assertEqual({c for c, t in rows.items() if not t.shows_scent_details}, {"air_freshener"})
+        no_scent = {"body_mist", "body_spray", "air_freshener", "coffret"}
+        self.assertEqual({c for c, t in rows.items() if t.has_contents}, no_scent)
+        self.assertEqual({c for c, t in rows.items() if not t.shows_scent_details}, no_scent)
         self.assertTrue(all(t.takes_volume for t in rows.values()))
         self.assertEqual(rows["perfume"].name_word, "")
         self.assertEqual(rows["body_mist"].name_word, "Body mist")
@@ -168,8 +169,8 @@ Expected: OK。
 
 ```python
 class DiscountSwitchTests(TestCase):
-    def test_only_perfume_and_coffret(self):
-        cases = (("perfume", True), ("coffret", True), ("mini", False), ("oil_perfume", False),
+    def test_only_perfume(self):
+        cases = (("perfume", True), ("coffret", False), ("mini", False), ("oil_perfume", False),
                  ("body_mist", False), ("body_spray", False), ("air_freshener", False))
         for n, (code, expected) in enumerate(cases):
             product = make_product(barcode=f"629000007000{n}", product_type_id=code, volume_ml=100)
@@ -179,22 +180,16 @@ class DiscountSwitchTests(TestCase):
         for volume, expected in ((50, False), (60, True), (120, True), (150, False), (None, False)):
             product = make_product(barcode=f"6290000071{volume or 0:03d}", volume_ml=volume)
             self.assertEqual(discount_applies(product), expected, volume)
-
-    def test_a_type_without_volume_skips_the_size(self):
-        ProductType.objects.filter(code="coffret").update(takes_volume=False)
-        clear_type_cache()
-        self.addCleanup(clear_type_cache)
-        self.assertTrue(discount_applies(make_product(product_type_id="coffret", volume_ml=None)))
 ```
 
-- [ ] **Step 2: 运行，确认前两个失败**
+- [ ] **Step 2: 运行，确认第一个失败**
 
 Run: `python manage.py test stock.test_product_type_table.DiscountSwitchTests --noinput`
 Expected: Mini 等断言失败。
 
 - [ ] **Step 3: 实现**
 
-规则按 spec 第 3 节的三条，顺序：分类、`wholesale_discount`、`takes_volume` 决定是否看容量。删除 body_mist 的判断。更新 ARCHITECTURE 5.15b 的规则描述。
+规则按 spec 第 3 节：分类、`wholesale_discount`、容量 60–120ml。删除 body_mist 的判断。更新 ARCHITECTURE 5.15b 的规则描述。
 `test_product_types.py` 里 `test_a_body_mist_gets_no_wholesale_discount_at_any_size` 对 Oil perfume 的断言改成 `assertFalse`。
 
 - [ ] **Step 4: 运行折扣相关测试**
@@ -202,7 +197,7 @@ Expected: Mini 等断言失败。
 Run: `python manage.py test stock.test_product_type_table stock.test_product_types stock.tests.WholesaleDiscountTests --noinput`（类名用 `grep -n "discount_applies" stock/tests.py` 找到所属类）
 Expected: OK。
 
-- [ ] **Step 5: 提交** `feat: wholesale discount follows the type, perfume and coffret only`
+- [ ] **Step 5: 提交** `feat: wholesale discount follows the type, perfume only`
 
 ### Task 3: Settings → Catalog 与 Types 标签
 
@@ -292,7 +287,7 @@ Expected: OK。
 
 - [ ] **Step 6: 提交** `feat: Settings Catalog with types the shop edits itself`
 
-**阶段 1 收尾。** 部署说明要告诉店主：Mini、Oil perfume、Body spray、Air freshener 从现在起不打批发折扣。
+**阶段 1 收尾。** 部署说明要告诉店主：从现在起只有 Perfume 打批发折扣，Coffret 也不打。
 
 ---
 
@@ -341,6 +336,12 @@ class AddByTypeTests(CatalogMixin):
         clear_type_cache()
         self.assertContains(self._get(type="body_spray"), self.brand.name)
 
+    def test_description_sits_outside_the_scent_section(self):
+        html = self._get(type="air_freshener").content.decode()
+        scent = html[html.index('id="pfScent"'):]
+        self.assertNotIn('name="description"', scent[:scent.index("</section>")])
+        self.assertIn('name="description"', html)
+
     def test_hidden_scent_details_stay_in_the_form_so_they_are_kept(self):
         product = make_product(notes_top="Rosa", product_type_id="air_freshener")
         html = self.client.get(reverse("edit_product", args=[product.pk])).content.decode()
@@ -357,7 +358,7 @@ Expected: 卡片断言失败。
 - 卡片页用紧凑网格，手机两列。
 - 表单页有 `Change type` 链接回卡片。
 - 去掉品牌按分类过滤：`forms.py` 的 `brand_filter` 和 `fillBrands()`，因为分类现在由 Type 决定，新分类下品牌列表会是空的。`build_brand_catalog` 不再需要 `category_ids`。
-- `_product_fields.html`：Scent 区块和性别字段加 id，预览脚本按 `pfTypeRules` 用 `d-none` 显示或隐藏容量、浓度、香调信息（香调、三段香调、灵感来源、性别）。香调字段只隐藏不移除，表单照常提交，所以原值保留；容量和浓度由 `clean()` 清空。
+- `_product_fields.html`：Description 移出 Scent 区块，放进自己的 `<section>`，所有 Type 都显示。Scent 区块加 `id="pfScent"`，预览脚本按 `pfTypeRules` 用 `d-none` 显示或隐藏容量、浓度、Scent 区块。性别字段不动。Scent 字段只隐藏不移除，表单照常提交，所以原值保留；容量和浓度由 `clean()` 清空。
 - 编辑页仍显示 Type 下拉。
 
 - [ ] **Step 4: 运行测试**
@@ -412,7 +413,7 @@ class CoffretVolumeTests(CatalogMixin):
 
 - [ ] **Step 5: 提交** `feat: a coffret has no volume`
 
-**阶段 2 收尾。** 部署命令第一步必须是备份，因为这次迁移清空 Coffret 容量。说明里提醒：所有 Coffret 打折不再看容量。
+**阶段 2 收尾。** 部署命令第一步必须是备份，因为这次迁移清空 Coffret 容量。
 
 ---
 
@@ -535,7 +536,7 @@ class LogoTests(TestCase):
 
 ---
 
-## 阶段 4：Mix 和 Coffret 连接
+## 阶段 4：内部连接
 
 ### Task 10: `ProductContent` 和业务逻辑
 
@@ -553,6 +554,7 @@ class LogoTests(TestCase):
   - `save_contents(owner, rows: list[dict]) -> None`：每项 `{'name': str, 'linked_id': int | None}`；替换全部行，名称去空格，空行跳过，同名只留第一个，`linked` 是自己或 Mix 时丢弃连接、保留名称，写回 `name`。
   - `parse_pasted(brand_name: str, text: str) -> list[dict]`：按换行和逗号拆分，同品牌（`brand__iexact`）在售非 Mix 产品的 `scent_name` 完全相同（不分大小写）时自动连接。收品牌名是因为新产品保存前还没有 id。
   - `also_in(product) -> list[Product]`：包含它的在售产品中 `lists_contents` 为真的，按名称排序。
+  - `contents_title(owner) -> str`：`is_gift` 的 Type 返回 `Contains`，其它返回 `Scents`。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -590,9 +592,9 @@ class ContentsTests(TestCase):
   - `products_autocomplete` 新参数 `exclude_mix=1`，返回项增加 `brand`（已有）和 `scent_name`。
   - `POST api/parse-contents/`（`parse_contents`，manager）：`{text, brand}` 返回 `parse_pasted` 的结果，给粘贴用。
 
-- [ ] **Step 1: 写失败测试**：`test_ticking_mix_saves_the_list`、`test_a_coffret_needs_no_tick`、`test_an_ordinary_product_has_no_list`、`test_unticking_mix_keeps_the_rows_hidden`（下次勾选还在，PDF 和详情页不显示）、`test_broken_json_does_not_lose_the_product`（表单报错，不是 500）、`test_autocomplete_skips_mixes_on_request`。
+- [ ] **Step 1: 写失败测试**：`test_ticking_mix_saves_the_list`、`test_a_coffret_needs_no_tick`、`test_a_single_body_spray_links_with_no_tick`、`test_an_ordinary_perfume_has_no_list`、`test_unticking_mix_keeps_the_rows_hidden`（下次勾选还在，PDF 和详情页不显示）、`test_broken_json_does_not_lose_the_product`（表单报错，不是 500）、`test_autocomplete_skips_mixes_on_request`。
 - [ ] **Step 2: 运行，确认失败**
-- [ ] **Step 3: 实现**：勾 `This is a mix` 或 Type 的 `has_contents` 打开时显示清单，标题分别是 `Scents` 和 `Contains`。每行一个输入框，用 `products_autocomplete?scope=stock&exclude_mix=1` 提示，同品牌排前；选中后行上显示 `Linked`，可以取消。下方有 `Paste several`。行内用模板内联脚本和样式。`catalog_types.html` 的表单加 `has_contents` 开关。
+- [ ] **Step 3: 实现**：勾 `This is a mix` 或 Type 的 `has_contents` 打开时显示清单，标题用 `contents_title`。每行一个输入框，用 `products_autocomplete?scope=stock&exclude_mix=1` 提示，同品牌排前；选中后行上显示 `Linked`，可以取消。下方有 `Paste several`。行内用模板内联脚本和样式。`catalog_types.html` 的表单加 `has_contents` 开关。
 - [ ] **Step 4: 运行测试**，Expected: OK。
 - [ ] **Step 5: 提交** `feat: edit a mix or coffret's list on the product form`
 
@@ -607,11 +609,11 @@ class ContentsTests(TestCase):
 
 - [ ] **Step 1: 写失败测试**：`test_a_mix_page_lists_scents_and_links_the_linked_ones`、`test_a_perfume_page_says_also_in_with_stock`、`test_an_archived_mix_is_not_mentioned`、`test_a_product_with_neither_shows_no_section`。
 - [ ] **Step 2: 运行，确认失败**
-- [ ] **Step 3: 实现**：放在页头标签下方，紧凑一行，名称之间用 `·`；文字 `Also in:`，Mix 和 Coffret 的标签用 `type_info.name_word`，Mix 后加 `(Mix)`，后面显示库存数。
+- [ ] **Step 3: 实现**：放在页头标签下方，紧凑一行，名称之间用 `·`；文字 `Also in:`，标签用 `type_info.name_word`，Mix 后加 `(Mix)`，后面显示库存数。
 - [ ] **Step 4: 运行测试**，Expected: OK。
 - [ ] **Step 5: 提交** `feat: mixes, coffrets and perfumes point at each other`
 
-**阶段 4 收尾。** 部署后店主要自己填 Mix 和 Coffret 的清单。
+**阶段 4 收尾。** 部署后店主要自己填这些产品的清单。
 
 ---
 
@@ -653,9 +655,9 @@ class PdfLinkTests(TestCase):
 ```
 
 - [ ] **Step 2: 运行，确认失败**
-- [ ] **Step 3: 实现**：加 `detail` 样式（7.5pt，灰色）；每行 `export_title` 前加 `<a name="p<id>"/>`；有内容时单元格变成 `[Paragraph(title), Paragraph(detail)]`。三种前缀：`Fragrâncias:`（Mix）、`Contém:`（Coffret）、`Também em:`。
+- [ ] **Step 3: 实现**：加 `detail` 样式（7.5pt，灰色）；每行 `export_title` 前加 `<a name="p<id>"/>`；有内容时单元格变成 `[Paragraph(title), Paragraph(detail)]`。三种前缀：`Contém:`（`is_gift` 的 Type）、`Fragrâncias:`（其它有清单的产品）、`Também em:`（被连接的产品）。
 - [ ] **Step 4: 运行测试**，Run: `python manage.py test stock.test_catalog_pdf_links --noinput`，Expected: OK。
 - [ ] **Step 5: 渲染真实导出看一眼**：用演示数据导出 PDF，看长清单的行高和分页。
-- [ ] **Step 6: 提交** `feat: the customer PDF links perfumes, mixes and coffrets`
+- [ ] **Step 6: 提交** `feat: the customer PDF links perfumes and the products tied to them`
 
 **阶段 5 收尾。** 交付时请店主在手机上点一次链接，这是 spec 里唯一还没验证的点。
