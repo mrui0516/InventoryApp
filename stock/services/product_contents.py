@@ -3,8 +3,9 @@ a product. Display only: nothing here touches stock."""
 import re
 
 from django.db import transaction
+from django.db.models import Sum
 
-from ..models import Product, ProductContent
+from ..models import Product, ProductContent, Purchase
 from .names import title_case
 
 
@@ -72,3 +73,21 @@ def also_in(product):
     """The products on sale whose list names this one."""
     owners = Product.objects.filter(contents__linked=product).distinct().order_by('model', 'name')
     return [owner for owner in owners if owner.lists_contents]
+
+
+def product_page_links(product):
+    """What the product page says: its own list, and where it appears."""
+    contents = []
+    if product.lists_contents:
+        for row in product.contents.select_related('linked'):
+            live = row.linked if row.linked and row.linked.archived_at is None else None
+            contents.append({'label': content_label(row), 'product': live})
+    owners = also_in(product)
+    stock = dict(Purchase.objects.filter(product__in=owners).values_list('product')
+                 .annotate(n=Sum('remaining')).order_by())
+    also = [{'product': owner,
+             'label': (owner.type_info.name_word or owner.type_info.name) + (' (Mix)' if owner.is_mix else ''),
+             'stock': stock.get(owner.pk) or 0}
+            for owner in owners]
+    return {'contents': contents, 'contents_title': contents_title(product), 'also_in': also}
+

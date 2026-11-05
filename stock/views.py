@@ -67,6 +67,7 @@ from .permissions import (
     manager_required,
 )
 from .services.inbound_costs import IVA_RATE, check_invoice, check_shipping
+from .services.product_contents import product_page_links
 from .services.wholesale_discount import discount_applies
 from .stores import (
     ACTIVE_STORE_SESSION_KEY,
@@ -2241,6 +2242,7 @@ def product_detail_view(request, pk):
     from .services.store_stock import shop_split
     return render(request, 'stock/product_detail.html', {
         'product': product,
+        'links': product_page_links(product),
         'shop_split': shop_split([product.id]).get(product.id, []),
         # The perfume rows (volume, notes, family) mean nothing for other
         # goods; shown there they would all read "-".

@@ -21,6 +21,8 @@
   .pdp-title{ font-size:1.35rem; font-weight:800; margin:.3rem 0 .2rem; color:var(--app-text); line-height:1.25; overflow-wrap:anywhere; }
   .pdp-code{ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:var(--app-muted); font-size:.92rem; }
   .pdp-tags{ display:flex; flex-wrap:wrap; gap:.35rem; margin-top:.5rem; }
+  .pdp-links{ display:grid; gap:.15rem; margin-top:.5rem; font-size:.88rem; overflow-wrap:anywhere; }
+  .pdp-links .n{ color:var(--app-muted); font-variant-numeric:tabular-nums; }
   .pdp-tags span{ font-size:.78rem; font-weight:700; padding:.12rem .55rem; border-radius:999px; border:1px solid var(--app-border-strong); color:var(--app-primary); }
   .pdp-tags .archived{ border-color:#f1c7c7; color:#b42318; }
   .pdp-actions{ display:flex; flex-direction:column; gap:.4rem; align-items:stretch; }
@@ -97,6 +99,12 @@
         {% if product.gender %}<span>{{ product.get_gender_display }}</span>{% endif %}
         {% if product.archived_at %}<span class="archived">Deleted {{ product.archived_at|date:"Y-m-d" }}</span>{% endif %}
       </div>
+      {% if links.contents or links.also_in %}
+      <div class="pdp-links">
+        {% if links.contents %}<div><b>{{ links.contents_title }}:</b> {% for c in links.contents %}{% if c.product %}<a href="{% url 'product_detail' c.product.id %}">{{ c.label }}</a>{% else %}{{ c.label }}{% endif %}{% if not forloop.last %} &middot; {% endif %}{% endfor %}</div>{% endif %}
+        {% if links.also_in %}<div><b>Also in:</b> {% for a in links.also_in %}<a href="{% url 'product_detail' a.product.id %}">{{ a.label }}</a> <span class="n">{{ a.stock }}</span>{% if not forloop.last %} &middot; {% endif %}{% endfor %}</div>{% endif %}
+      </div>
+      {% endif %}
       {% if show_sensitive %}
         <div class="mt-2">
           <button type="button" class="pdp-bell{% if not product.restock %} is-off{% endif %}" data-url="{% url 'toggle_restock' product.id %}"

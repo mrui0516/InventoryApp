@@ -285,3 +285,53 @@ class FormTests(ContentsMixin):
         html = self.client.get(reverse("add_product"), {"type": "coffret"}).content.decode()
         self.assertIn('"contents": true', html)
         self.assertIn('"gift": true', html)
+
+
+class DetailPageTests(ContentsMixin):
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        from django.contrib.auth.models import User
+        cls.boss = User.objects.create_superuser("boss2", password="pw")
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.boss)
+
+    def _page(self, product):
+        return self.client.get(reverse("product_detail", args=[product.pk])).content.decode()
+
+    def test_a_mix_page_lists_scents_and_links_the_linked_ones(self):
+        save_contents(self.mix, [{"name": "", "linked_id": self.yara.id}, {"name": "Oud Novo", "linked_id": None}])
+        html = self._page(self.mix)
+        section = html[html.index('class="pdp-links"'):]
+        self.assertIn("Scents", section)
+        self.assertIn(f'href="{reverse("product_detail", args=[self.yara.pk])}"', section)
+        self.assertIn("Oud Novo", section)
+
+    def test_a_coffret_says_contains(self):
+        save_contents(self.gift, [{"name": "", "linked_id": self.yara.id}])
+        self.assertIn("Contains", self._page(self.gift))
+
+    def test_a_perfume_page_says_also_in_with_stock(self):
+        save_contents(self.mix, [{"name": "", "linked_id": self.yara.id}])
+        Purchase.objects.create(product=self.mix, quantity=7, remaining=7, cost_price=Decimal("2"))
+        html = self._page(self.yara)
+        section = html[html.index('class="pdp-links"'):]
+        self.assertIn("Also in", section)
+        self.assertIn("Body spray (Mix)", section)
+        self.assertIn(f'href="{reverse("product_detail", args=[self.mix.pk])}"', section)
+        self.assertIn(">7<", section)
+
+    def test_an_archived_mix_is_not_mentioned(self):
+        save_contents(self.mix, [{"name": "", "linked_id": self.yara.id}])
+        Product.objects.filter(pk=self.mix.pk).update(archived_at=timezone.now())
+        self.assertNotIn('class="pdp-links"', self._page(self.yara))
+
+    def test_an_unticked_mix_shows_no_list(self):
+        save_contents(self.mix, [{"name": "Oud Novo", "linked_id": None}])
+        Product.objects.filter(pk=self.mix.pk).update(is_mix=False, product_type_id="perfume")
+        self.assertNotIn("Oud Novo", self._page(self.mix))
+
+    def test_a_product_with_neither_shows_no_section(self):
+        self.assertNotIn('class="pdp-links"', self._page(self.yara))
