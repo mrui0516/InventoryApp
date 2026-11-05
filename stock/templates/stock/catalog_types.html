@@ -12,7 +12,10 @@
       <div data-part="title">{{ row.name }}</div>
       <div data-part="body">{% include "stock/_catalog_type_form.html" with row=row %}</div>
       <div data-part="foot">
+        <button type="submit" form="type-form-{{ row.id }}" class="btn btn-primary w-100">Save</button>
         {% if row.code != 'perfume' %}
+        <details class="cat-more">
+        <summary>Delete type</summary>
         <form method="post" action="{% url 'catalog_types' %}" class="cat-danger">
           {% csrf_token %}
           <input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="{{ row.id }}">
@@ -25,6 +28,7 @@
           {% endif %}
           <button type="submit" class="btn btn-outline-danger">Delete type</button>
         </form>
+        </details>
         {% endif %}
       </div>
     </template>
@@ -33,6 +37,6 @@
 <template id="type-new">
   <div data-part="title">Add type</div>
   <div data-part="body">{% include "stock/_catalog_type_form.html" with row=None %}</div>
-  <div data-part="foot"></div>
+  <div data-part="foot"><button type="submit" form="type-form-new" class="btn btn-primary w-100">Add type</button></div>
 </template>
 {% endblock %}

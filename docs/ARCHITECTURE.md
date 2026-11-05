@@ -474,6 +474,16 @@ Orders → Purchases（`orders_views.load_purchases`）、供应商页、产品�
 **`{% render_field %}`（widget_tweaks）不接受带过滤器的属性值。**
 `id=x|add:"_id"` 会抛 `add requires 2 arguments`。用 `field.id_for_label`。
 
+### 5.13y 产品类型（`ProductType`，2026-11-05）
+
+`models/product_types.py`。Type 是表，规则是行上的开关；`Product.product_type` 是指向 `code` 的外键，所以字符串筛选
+`filter(product_type='coffret')` 仍然可用，代码里要原始值就读 `product_type_id`。`code` 创建后不变，改名只改文字。
+
+产品名称每行都要读 Type，为了不在所有页面加 `select_related`，`ProductType.for_code()` 读一份进程内副本，
+有效期 30 秒（`TTL`）。同一进程保存时立刻清空，其它 worker 最多晚 30 秒。测试改了行要 `addCleanup(clear_type_cache)`。
+
+管理页在 `catalog_views.py`，逻辑在 `services/catalog_admin.py`。
+
 ### 5.13z 空品牌、空系列自动删除（2026-11-05）
 
 `services/catalog_prune.py`。`stock/signals.py` 在产品改品牌/系列、硬删除、归档时，只检查它**离开的那个**品牌和系列，

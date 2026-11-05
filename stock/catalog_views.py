@@ -40,7 +40,8 @@ def _save_type(request, row):
         return
     if row is None:
         last = ProductType.objects.order_by('-sort_order').first()
-        row = ProductType(code=new_type_code(name), sort_order=(last.sort_order if last else 0) + 10)
+        row = ProductType(code=new_type_code(name), sort_order=(last.sort_order if last else 0) + 10,
+                          shows_scent_details=False, has_contents=True)
     row.name, row.default_category = name, category
     row.name_word = _text(request, 'name_word', 40)
     row.customer_label = _text(request, 'customer_label', 60)

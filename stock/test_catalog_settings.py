@@ -110,3 +110,17 @@ class TypesTabTests(CatalogMixin):
         html = self.client.get(reverse("catalog_types")).content.decode()
         link = html[:html.index(f'href="{reverse("catalog_settings")}"')].rsplit("<a ", 1)[1]
         self.assertIn("active", link)
+
+    def test_a_new_type_gets_links_and_a_description_not_the_scent_section(self):
+        self._post(action="add", name="Creme", default_category=self.perfumes.id)
+        row = ProductType.objects.get(name="Creme")
+        self.assertFalse(row.shows_scent_details)
+        self.assertTrue(row.has_contents)
+
+    def test_save_stays_on_screen_in_the_panel_foot(self):
+        html = self.client.get(reverse("catalog_types")).content.decode()
+        row = ProductType.objects.get(code="mini")
+        foot = html[html.index(f'id="type-{row.id}"'):]
+        foot = foot[foot.index('data-part="foot"'):foot.index("</template>")]
+        self.assertIn(f'form="type-form-{row.id}"', foot)
+        self.assertIn("<details", foot)

@@ -20,5 +20,4 @@
     <label class="cat-check"><input type="checkbox" name="is_gift"{% if row.is_gift %} checked{% endif %}>Gift set</label>
     <label>Order<input class="form-control" type="number" min="0" name="sort_order" value="{{ row.sort_order }}"></label>
   {% endif %}
-  <button type="submit" class="btn btn-primary">{% if row %}Save{% else %}Add type{% endif %}</button>
 </form>

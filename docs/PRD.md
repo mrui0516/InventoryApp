@@ -273,6 +273,8 @@
 - **F2.5.x 只录香水(2026-10-29)**:Accessories 与 Shisha 两个分类(含 Accessories 下 10 个子类)停用并删除(`manage.py remove_categories --name Accessories --name Shisha`,默认只预览;预览列出分类下在售产品的库存与销量;仍有在售产品时拒绝删除,加 `--archive-products` 则先把它们归档(同 App 里的删除:从目录、搜索、收银中消失,销售、进货与利润保留,照片不删);已归档产品保留历史、分类置空;分类属性随之删除,店铺 / 供应商 / 品牌 / 货架样式的关联解除)。新增产品页即香水表单,不再先选分类:
   - **条形码必填**(扫码或输入 EAN,8–13 位数字);编辑时保留原条码(旧的内部条码照旧有效)。**名称可空**。
   - **类型**(新字段 `Product.perfume_type`,迁移 0066):Perfume(默认)/ Mini / Oil perfume / Body mist / splash / Body spray(Deo)/ Air freshener / Coffret(礼盒)。
+  - **Type 自己管理(2026-11-05,迁移 0075)**:Settings → Catalog → Types 可以添加、改名、排序、删除 Type,每个 Type 有开关:浓度、容量、Scent 区块、批发折扣、礼盒。新 Type 默认不打折、不显示 Scent。有产品的 Type 删除前要选一个 Type 转移产品;Perfume 是默认值,不能删。只有管理员能用。
+  - **批发折扣只用于 Perfume(2026-11-05)**:Mini、Oil perfume、Body spray、Air freshener、Coffret 都不再打折,Perfume 仍要求 60–120ml。
   - **Oil perfume 和 Body mist / splash(2026-11-04,迁移 0074)**:原来是浓度里的 Attar / Oil 和 Body Mist,现在是单独类型。**只有 Perfume 和 Mini 选浓度**,其它类型表单不显示,保存时清空。批发优惠的「body mist 不打折」改按类型判断。
   - 分组:Product(条码、品牌 + 新品牌、系列 / 型号 + 新系列、名称、类型、浓度、容量、适用性别)· Price(零售、批发、锁定价格)· Scent(香调家族、前中后调、灵感来源、描述);右侧"产品列表里会显示成"预览与照片(上传前可预览、移除;已有照片点 × 直接删除);底部常驻保存栏。新增与编辑共用一份(`_product_fields.html`)。编辑页另有:库存批次(超管修正剩余)与删除。
   - **大小写统一**:品牌、系列、名称每个词首字母大写(`services/names.py`:EDP / EDT / CDN / YSL / USB / II 等缩写保持大写,含数字的代码不动,容量写作 100ml,iPhone 这类本来就大小写混合的词照写)。新增 / 编辑时自动转换;新品牌、新系列与已有的不分大小写匹配(再输入 LATTAFA 就是已有的 Lattafa)。已有数据用 `manage.py tidy_product_names` 一次转换(默认只预览;转换后同名的品牌合并到产品最多的那个,系列同理;顺带按名称识别 Body spray / Air freshener / Coffret / Mini(只对在售的香水分类产品,配件里的 Mini 数据线、键盘套装不会被误判);按查询更新,不触发 Shopify / Cloudinary 信号,店铺标题在下次同步时跟上)。
