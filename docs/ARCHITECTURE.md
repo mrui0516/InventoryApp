@@ -484,6 +484,13 @@ Orders → Purchases（`orders_views.load_purchases`）、供应商页、产品�
 
 管理页在 `catalog_views.py`，逻辑在 `services/catalog_admin.py`。
 
+**改名和合并**（`rename_brand`、`rename_line`、`merge_brands`、`merge_lines`）在同一事务里重写 `Product.brand`、`Product.model`，包括已归档产品，
+因为名称和报表读的是文字。名字被占用抛 `NameTaken`，页面提示合并。`tidy_product_names` 用同一组函数。
+
+**品牌 logo**：`services/brand_logo.py::clean_logo` 用 Pillow 打开校验（不信扩展名，不收 SVG），转成最长边 256px 的 PNG，存 `media/brand_logos/`。
+模板用 `{% load brands %}{% brand_logo brand size=28 fallback=name %}`，`brand` 可以是 None，样式写在标签里，不需要 `collectstatic`。
+PDF 的 `_brand_logo` 文件缺失时跳过。`empty_brands` 默认不包括有 logo 的品牌，手动删除传 `keep_logos=False`。
+
 ### 5.13z 空品牌、空系列自动删除（2026-11-05）
 
 `services/catalog_prune.py`。`stock/signals.py` 在产品改品牌/系列、硬删除、归档时，只检查它**离开的那个**品牌和系列，

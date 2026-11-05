@@ -5,7 +5,7 @@
   .cat{ display:grid; gap:.9rem; grid-template-columns:minmax(0,1fr); }
   .cat-head{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.5rem .8rem; }
   .cat-head h1{ margin:0; font-size:1.4rem; font-weight:800; }
-  .cat-tabs{ display:flex; gap:1.1rem; overflow-x:auto; border-bottom:1px solid var(--app-border); }
+  .cat-tabs{ display:flex; flex-wrap:wrap; gap:0 1.1rem; border-bottom:1px solid var(--app-border); }
   .cat-tabs a{ padding:.45rem 0; font-weight:700; font-size:.95rem; color:var(--app-muted); text-decoration:none; white-space:nowrap; border-bottom:2px solid transparent; }
   .cat-tabs a.on{ color:var(--app-text); border-bottom-color:var(--app-accent); }
   .cat-card{ background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius); padding:.35rem 1rem; }
@@ -39,7 +39,7 @@
     <a class="{% if tab == 'lines' %}on{% endif %}" href="{% url 'catalog_lines' %}">Lines</a>
     <a class="{% if tab == 'categories' %}on{% endif %}" href="{% url 'catalog_categories' %}">Categories</a>
     <a class="{% if tab == 'strengths' %}on{% endif %}" href="{% url 'catalog_strengths' %}">Concentrations</a>
-    <a class="{% if tab == 'families' %}on{% endif %}" href="{% url 'catalog_families' %}">Fragrance families</a>
+    <a class="{% if tab == 'families' %}on{% endif %}" href="{% url 'catalog_families' %}">Families</a>
   </nav>
   {% block catalog %}{% endblock %}
 </div>
