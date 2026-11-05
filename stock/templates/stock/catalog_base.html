@@ -35,6 +35,9 @@
     <a class="{% if tab == 'types' %}on{% endif %}" href="{% url 'catalog_types' %}">Types</a>
     <a class="{% if tab == 'brands' %}on{% endif %}" href="{% url 'catalog_brands' %}">Brands</a>
     <a class="{% if tab == 'lines' %}on{% endif %}" href="{% url 'catalog_lines' %}">Lines</a>
+    <a class="{% if tab == 'categories' %}on{% endif %}" href="{% url 'catalog_categories' %}">Categories</a>
+    <a class="{% if tab == 'strengths' %}on{% endif %}" href="{% url 'catalog_strengths' %}">Concentrations</a>
+    <a class="{% if tab == 'families' %}on{% endif %}" href="{% url 'catalog_families' %}">Fragrance families</a>
   </nav>
   {% block catalog %}{% endblock %}
 </div>

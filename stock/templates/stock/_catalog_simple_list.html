@@ -1,0 +1,28 @@
+<section class="cat-card" aria-label="{{ title }}">
+  {% for row in rows %}
+    <button type="button" class="cat-row" data-layer="row-{{ row.id }}">
+      <span class="main">{{ row.name }}</span>
+      <span class="n">{{ row.live_count }}</span>
+      <span class="sub">{% if row.short %}{{ row.short }} &middot; {% endif %}{% if row.shopify_tag %}Shopify: {{ row.shopify_tag }}{% else %}Not on Shopify{% endif %}</span>
+    </button>
+    <template id="row-{{ row.id }}">
+      <div data-part="title">{{ row.name }}</div>
+      <div data-part="body">{% include "stock/_catalog_simple_form.html" with row=row %}</div>
+      <div data-part="foot">
+        <button type="submit" form="row-form-{{ row.id }}" class="btn btn-primary w-100">Save</button>
+        {% if not row.live_count %}
+        <form method="post" action="{{ url }}" class="cat-danger">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="{{ row.id }}">
+          <button type="submit" class="btn btn-outline-danger">Delete</button>
+        </form>
+        {% endif %}
+      </div>
+    </template>
+  {% endfor %}
+</section>
+<template id="row-new">
+  <div data-part="title">Add</div>
+  <div data-part="body">{% include "stock/_catalog_simple_form.html" with row=None %}</div>
+  <div data-part="foot"><button type="submit" form="row-form-new" class="btn btn-primary w-100">Add</button></div>
+</template>

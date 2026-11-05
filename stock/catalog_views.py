@@ -5,7 +5,8 @@ from django.db.models import Count, Q
 from django.shortcuts import redirect, render
 from django.urls import reverse
 
-from .models import Brand, Category, Product, ProductSeries, ProductType
+from .models import (Brand, Category, Concentration, FragranceFamily, Product, ProductSeries, ProductType)
+from .models.catalog import PERFUME
 from .permissions import admin_required
 from .services.catalog_admin import (NameTaken, delete_type, merge_brands, merge_lines, new_type_code, rename_brand,
                                      rename_line)
@@ -204,4 +205,101 @@ def catalog_lines(request):
 def _chosen_brand(request):
     value = request.GET.get('brand') or ''
     return Brand.objects.filter(pk=int(value)).first() if value.isdigit() else None
+
+
+def _category_block(row):
+    """Why a category cannot go, or '' if it can."""
+    if Product.objects.filter(category=row).exists():
+        return f'{row.name} still has products.'
+    if Category.objects.filter(parent=row).exists():
+        return f'{row.name} has subcategories.'
+    kind = row.product_types.first()
+    return f'{row.name} is the category of {kind.name}.' if kind else ''
+
+
+@login_required
+@admin_required
+def catalog_categories(request):
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        row = Category.objects.filter(pk=_number(request, 'id') or 0).first()
+        name = _text(request, 'name', 50)
+        taken = Category.objects.filter(name__iexact=name).exclude(pk=row.pk if row else None).exists()
+        if action in ('add', 'save') and not name:
+            messages.error(request, 'Give the category a name.')
+        elif action in ('add', 'save') and taken:
+            messages.error(request, f'{name} already exists.')
+        elif action == 'add':
+            Category.objects.create(name=name, form_kind=PERFUME, sync_to_shopify=request.POST.get('sync_to_shopify') == 'on')
+            messages.success(request, f'{name} added.')
+        elif row is None:
+            messages.error(request, 'That category no longer exists.')
+        elif action == 'save':
+            row.name, row.sync_to_shopify = name, request.POST.get('sync_to_shopify') == 'on'
+            row.save(update_fields=['name', 'sync_to_shopify'])
+            messages.success(request, f'{name} saved.')
+        elif action == 'delete':
+            block = _category_block(row)
+            if block:
+                messages.error(request, block)
+            else:
+                row.delete()
+                messages.success(request, f'{row.name} deleted.')
+        return redirect('catalog_categories')
+
+    categories = list(Category.objects.select_related('parent').annotate(
+        live_count=Count('product', filter=Q(product__archived_at__isnull=True))).order_by('name'))
+    return render(request, 'stock/catalog_categories.html', {'tab': 'categories', 'categories': categories})
+
+
+def _simple_list(request, model, fields, url_name):
+    """Add, save and delete for a list of names with a few text fields and an order."""
+    action = request.POST.get('action')
+    row = model.objects.filter(pk=_number(request, 'id') or 0).first()
+    name = _text(request, 'name', 60)
+    taken = model.objects.filter(name__iexact=name).exclude(pk=row.pk if row else None).exists()
+    if action in ('add', 'save') and not name:
+        messages.error(request, 'Give it a name.')
+    elif action in ('add', 'save') and taken:
+        messages.error(request, f'{name} already exists.')
+    elif action == 'add' or (action == 'save' and row is not None):
+        row = row if action == 'save' else model()
+        row.name = name
+        for field, limit in fields:
+            setattr(row, field, _text(request, field, limit))
+        order = _number(request, 'sort_order')
+        if order is not None:
+            row.sort_order = order
+        row.save()
+        messages.success(request, f'{name} saved.')
+    elif row is None:
+        messages.error(request, 'That row no longer exists.')
+    elif action == 'delete':
+        count = row.products.count()
+        if count:
+            messages.error(request, f'{row.name} stays: {count} product{" uses" if count == 1 else "s use"} it.')
+        else:
+            row.delete()
+            messages.success(request, f'{row.name} deleted.')
+    return redirect(url_name)
+
+
+@login_required
+@admin_required
+def catalog_strengths(request):
+    if request.method == 'POST':
+        return _simple_list(request, Concentration, (('short', 12), ('shopify_tag', 60)), 'catalog_strengths')
+    rows = Concentration.objects.annotate(
+        live_count=Count('products', filter=Q(products__archived_at__isnull=True)))
+    return render(request, 'stock/catalog_strengths.html', {'tab': 'strengths', 'rows': rows})
+
+
+@login_required
+@admin_required
+def catalog_families(request):
+    if request.method == 'POST':
+        return _simple_list(request, FragranceFamily, (('shopify_tag', 60),), 'catalog_families')
+    rows = FragranceFamily.objects.annotate(
+        live_count=Count('products', filter=Q(products__archived_at__isnull=True)))
+    return render(request, 'stock/catalog_families.html', {'tab': 'families', 'rows': rows})
 

@@ -1,0 +1,46 @@
+{% extends 'stock/catalog_base.html' %}
+{% block catalog_action %}<button type="button" class="btn btn-sm btn-primary" data-layer="cat-new">+ Add category</button>{% endblock %}
+{% block catalog %}
+<section class="cat-card" aria-label="Categories">
+  {% for row in categories %}
+    <button type="button" class="cat-row" data-layer="cat-{{ row.id }}">
+      <span class="main">{% if row.parent %}{{ row.parent.name }} &middot; {% endif %}{{ row.name }}</span>
+      <span class="n">{{ row.live_count }}</span>
+      <span class="sub">{% if row.sync_to_shopify %}On Shopify{% else %}Shop only{% endif %}</span>
+    </button>
+    <template id="cat-{{ row.id }}">
+      <div data-part="title">{{ row.name }}</div>
+      <div data-part="body">
+        <form method="post" action="{% url 'catalog_categories' %}" class="cat-form" id="cat-form-{{ row.id }}">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="save"><input type="hidden" name="id" value="{{ row.id }}">
+          <label>Name<input class="form-control" name="name" maxlength="50" required value="{{ row.name }}"></label>
+          <label class="cat-check"><input type="checkbox" name="sync_to_shopify"{% if row.sync_to_shopify %} checked{% endif %}>Sync to Shopify</label>
+        </form>
+      </div>
+      <div data-part="foot">
+        <button type="submit" form="cat-form-{{ row.id }}" class="btn btn-primary w-100">Save</button>
+        {% if not row.live_count %}
+        <form method="post" action="{% url 'catalog_categories' %}" class="cat-danger">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="{{ row.id }}">
+          <button type="submit" class="btn btn-outline-danger">Delete category</button>
+        </form>
+        {% endif %}
+      </div>
+    </template>
+  {% endfor %}
+</section>
+<template id="cat-new">
+  <div data-part="title">Add category</div>
+  <div data-part="body">
+    <form method="post" action="{% url 'catalog_categories' %}" class="cat-form" id="cat-form-new">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="add">
+      <label>Name<input class="form-control" name="name" maxlength="50" required></label>
+      <label class="cat-check"><input type="checkbox" name="sync_to_shopify">Sync to Shopify</label>
+    </form>
+  </div>
+  <div data-part="foot"><button type="submit" form="cat-form-new" class="btn btn-primary w-100">Add category</button></div>
+</template>
+{% endblock %}

@@ -4,7 +4,8 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from stock.models import Brand, Category, Product, ProductSeries, ProductType
+from stock.models import (Brand, Category, Concentration, FragranceFamily, Product, ProductSeries,
+                          ProductType)
 from stock.models.product_types import clear_type_cache
 
 
@@ -247,3 +248,119 @@ class LinesTabTests(BrandsMixin):
         response = self.client.post(reverse("catalog_lines") + f"?brand={self.armaf.id}",
                                     {"action": "rename", "id": self.cdn.id, "name": "CDN"})
         self.assertIn(f"brand={self.armaf.id}", response["Location"])
+
+
+class CategoriesTabTests(BrandsMixin):
+    def _post_to(self, **data):
+        return self.client.post(reverse("catalog_categories"), data, follow=True)
+
+    def test_adding_a_category(self):
+        self._post_to(action="add", name="Body care")
+        row = Category.objects.get(name="Body care")
+        self.assertEqual(row.form_kind, "perfume")
+        self.assertFalse(row.sync_to_shopify)
+
+    def test_a_name_taken_is_refused(self):
+        response = self._post_to(action="add", name="PERFUMES")
+        self.assertEqual(Category.objects.filter(name__iexact="perfumes").count(), 1)
+        self.assertContains(response, "already exists")
+
+    def test_renaming_and_the_shopify_switch_save(self):
+        row = Category.objects.create(name="Body care", form_kind="perfume")
+        self._post_to(action="save", id=row.id, name="Skin care", sync_to_shopify="on")
+        row.refresh_from_db()
+        self.assertEqual((row.name, row.sync_to_shopify), ("Skin care", True))
+        self._post_to(action="save", id=row.id, name="Skin care")
+        row.refresh_from_db()
+        self.assertFalse(row.sync_to_shopify)
+
+    def test_a_category_in_use_stays(self):
+        response = self._post_to(action="delete", id=self.perfumes.id)
+        self.assertTrue(Category.objects.filter(pk=self.perfumes.id).exists())
+        self.assertContains(response, "still has products")
+
+    def test_a_category_with_a_subcategory_stays(self):
+        parent = Category.objects.create(name="Parent")
+        Category.objects.create(name="Child", parent=parent)
+        response = self._post_to(action="delete", id=parent.id)
+        self.assertTrue(Category.objects.filter(pk=parent.id).exists())
+        self.assertContains(response, "has subcategories")
+
+    def test_the_default_of_a_type_stays(self):
+        row = Category.objects.create(name="Body care")
+        ProductType.objects.filter(code="mini").update(default_category=row)
+        response = self._post_to(action="delete", id=row.id)
+        self.assertTrue(Category.objects.filter(pk=row.id).exists())
+        self.assertContains(response, "is the category of Mini")
+
+    def test_an_unused_category_goes(self):
+        row = Category.objects.create(name="Old")
+        self._post_to(action="delete", id=row.id)
+        self.assertFalse(Category.objects.filter(pk=row.id).exists())
+
+    def test_the_counts_ignore_archived_products(self):
+        row = Category.objects.create(name="Old")
+        Product.objects.create(barcode="6290000076010", brand="L", category=row, archived_at=timezone.now())
+        rows = {c.name: c for c in self.client.get(reverse("catalog_categories")).context["categories"]}
+        self.assertEqual(rows["Old"].live_count, 0)
+        self.assertEqual(rows["Perfumes"].live_count, 2)
+
+
+class StrengthsTabTests(BrandsMixin):
+    def _post_to(self, **data):
+        return self.client.post(reverse("catalog_strengths"), data, follow=True)
+
+    def test_new_rows_appear_in_the_product_form(self):
+        self._post_to(action="add", name="Parfum", short="PAR", shopify_tag="Parfum", sort_order="15")
+        row = Concentration.objects.get(name="Parfum")
+        self.assertEqual((row.short, row.shopify_tag, row.sort_order), ("PAR", "Parfum", 15))
+        self.assertContains(self.client.get(reverse("add_product"), {"type": "perfume"}), "PAR")
+
+    def test_saving_changes_every_field(self):
+        row = Concentration.objects.create(name="Eau de Parfum", short="EDP")
+        self._post_to(action="save", id=row.id, name="EdP", short="E", shopify_tag="T", sort_order="9")
+        row.refresh_from_db()
+        self.assertEqual((row.name, row.short, row.shopify_tag, row.sort_order), ("EdP", "E", "T", 9))
+
+    def test_a_strength_in_use_stays_and_says_how_many(self):
+        row = Concentration.objects.create(name="Eau de Parfum", short="EDP")
+        Product.objects.filter(pk=self.product.pk).update(concentration=row)
+        response = self._post_to(action="delete", id=row.id)
+        self.assertTrue(Concentration.objects.filter(pk=row.id).exists())
+        self.assertContains(response, "1 product uses it")
+
+    def test_an_unused_strength_goes(self):
+        row = Concentration.objects.create(name="Old")
+        self._post_to(action="delete", id=row.id)
+        self.assertFalse(Concentration.objects.filter(pk=row.id).exists())
+
+    def test_a_name_taken_is_refused(self):
+        Concentration.objects.create(name="Eau de Parfum")
+        response = self._post_to(action="add", name="eau de parfum")
+        self.assertEqual(Concentration.objects.count(), 1)
+        self.assertContains(response, "already exists")
+
+
+class FamiliesTabTests(BrandsMixin):
+    def _post_to(self, **data):
+        return self.client.post(reverse("catalog_families"), data, follow=True)
+
+    def test_adding_and_saving(self):
+        self._post_to(action="add", name="Oud", shopify_tag="Oriental", sort_order="5")
+        row = FragranceFamily.objects.get(name="Oud")
+        self.assertEqual((row.shopify_tag, row.sort_order), ("Oriental", 5))
+        self._post_to(action="save", id=row.id, name="Oud Rich", shopify_tag="", sort_order="6")
+        row.refresh_from_db()
+        self.assertEqual((row.name, row.shopify_tag, row.sort_order), ("Oud Rich", "", 6))
+
+    def test_a_family_in_use_stays(self):
+        row = FragranceFamily.objects.create(name="Oud")
+        self.product.fragrance_families.add(row)
+        response = self._post_to(action="delete", id=row.id)
+        self.assertTrue(FragranceFamily.objects.filter(pk=row.id).exists())
+        self.assertContains(response, "1 product uses it")
+
+    def test_an_unused_family_goes(self):
+        row = FragranceFamily.objects.create(name="Old")
+        self._post_to(action="delete", id=row.id)
+        self.assertFalse(FragranceFamily.objects.filter(pk=row.id).exists())

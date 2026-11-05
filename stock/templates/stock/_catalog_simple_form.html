@@ -1,0 +1,9 @@
+<form method="post" action="{{ url }}" class="cat-form" id="row-form-{{ row.id|default:'new' }}">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="{% if row %}save{% else %}add{% endif %}">
+  {% if row %}<input type="hidden" name="id" value="{{ row.id }}">{% endif %}
+  <label>Name<input class="form-control" name="name" maxlength="60" required value="{{ row.name|default:'' }}"></label>
+  {% if with_short %}<label>Short<input class="form-control" name="short" maxlength="12" value="{{ row.short|default:'' }}"></label>{% endif %}
+  <label>Shopify tag<input class="form-control" name="shopify_tag" maxlength="60" value="{{ row.shopify_tag|default:'' }}"></label>
+  <label>Order<input class="form-control" type="number" min="0" name="sort_order" value="{% if row %}{{ row.sort_order }}{% else %}100{% endif %}"></label>
+</form>

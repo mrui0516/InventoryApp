@@ -1,0 +1,6 @@
+{% extends 'stock/catalog_base.html' %}
+{% block catalog_action %}<button type="button" class="btn btn-sm btn-primary" data-layer="row-new">+ Add</button>{% endblock %}
+{% block catalog %}
+{% url 'catalog_families' as url %}
+{% include "stock/_catalog_simple_list.html" with title="Fragrance families" url=url %}
+{% endblock %}
