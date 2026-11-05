@@ -11,7 +11,7 @@ Domain dependency order (acyclic): core → catalog → partners → inventory
 """
 from .core import BusinessSettings, PrintProfile, Store, StoreProfile
 from .product_types import ProductType
-from .catalog import (Category, Brand, ProductSeries, Product, ProductImage,
+from .catalog import (Category, Brand, ProductSeries, Product, ProductContent, ProductImage,
                       Concentration, FragranceFamily, Inspiration)
 from .partners import Supplier, Customer
 from .inventory import InboundOrder, InboundPendingItem, Purchase, StockAdjustmentLog
@@ -30,7 +30,7 @@ __all__ = [
     # core
     'BusinessSettings', 'PrintProfile', 'Store', 'StoreProfile',
     # catalog
-    'Category', 'Brand', 'ProductSeries', 'Product', 'ProductImage', 'ProductType',
+    'Category', 'Brand', 'ProductSeries', 'Product', 'ProductContent', 'ProductImage', 'ProductType',
     'Concentration', 'FragranceFamily', 'Inspiration',
     # partners
     'Supplier', 'Customer',

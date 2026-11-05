@@ -201,6 +201,8 @@ class Product(models.Model):
     OIL_PERFUME, BODY_MIST = 'oil_perfume', 'body_mist'
     product_type = models.ForeignKey(ProductType, to_field='code', default=PERFUME, on_delete=models.PROTECT,
                                      related_name='products', verbose_name='Type')
+    # One product for many scents, sold and counted as one; ProductContent lists them.
+    is_mix = models.BooleanField(default=False)
     fragrance_families = models.ManyToManyField('FragranceFamily', blank=True, related_name='products')
     inspired_by = models.ForeignKey('Inspiration', on_delete=models.SET_NULL,
                                     null=True, blank=True, related_name='products')
@@ -352,6 +354,18 @@ class Product(models.Model):
         return ProductType.for_code(self.product_type_id)
 
     @property
+    def lists_contents(self):
+        return self.is_mix or self.type_info.has_contents
+
+    @property
+    def scent_name(self):
+        """The name alone, for a list of scents: line and name, said once."""
+        line, name = (self.model or '').strip(), (self.name or '').strip()
+        if line.lower() == name.lower():
+            return line
+        return ' '.join(part for part in [line, name] if part)
+
+    @property
     def type_label(self):
         """The kind in a few letters: a perfume's concentration (EDP), otherwise
         the type (Body spray, Coffret ...)."""
@@ -399,6 +413,25 @@ class Product(models.Model):
     def last_known_cost_price(self):
         purchases = self.purchase_set.order_by('date')
         return purchases.last().cost_price if purchases.exists() else Decimal('0.00')
+
+
+class ProductContent(models.Model):
+    """One name on a product's list: a scent in a mix, what a coffret holds, the
+    perfume a body spray goes with. Display only: stock never moves by it.
+
+    ``name`` is kept even with a link, so the row outlives the linked product.
+    """
+    owner = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='contents')
+    name = models.CharField(max_length=120)
+    linked = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, blank=True,
+                               related_name='contained_in')
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['sort_order', 'id']
+
+    def __str__(self):
+        return self.name
 
 
 class ProductImage(models.Model):
