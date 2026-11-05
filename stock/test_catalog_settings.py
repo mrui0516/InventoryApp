@@ -50,7 +50,7 @@ class TypesTabTests(CatalogMixin):
         self.assertFalse(row.takes_concentration)
         self.assertTrue(row.takes_volume)
         self.assertGreater(row.sort_order, ProductType.objects.get(code="coffret").sort_order)
-        self.assertIn('value="creme"', self.client.get(reverse("add_product")).content.decode())
+        self.assertIn('?type=creme"', self.client.get(reverse("add_product")).content.decode())
 
     def test_a_name_that_makes_the_same_code_still_gets_its_own(self):
         self._post(action="add", name="Mini!", default_category=self.perfumes.id)

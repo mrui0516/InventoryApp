@@ -101,8 +101,12 @@ class ProductForm(forms.ModelForm):
             }),
         }
 
-    def __init__(self, *args, can_edit_prices=True, **kwargs):
+    def __init__(self, *args, can_edit_prices=True, add_type=None, **kwargs):
         super().__init__(*args, **kwargs)
+        # Adding: the type was chosen first, and it decides the category.
+        self.add_type = add_type
+        if add_type and add_type.default_category_id:
+            self.fields['category'].required = False
         self.fields['volume_ml'].label = 'Volume (ml)'
         self.fields['concentration'].label = 'Concentration'
         self.fields['concentration'].empty_label = 'Not set'
@@ -119,20 +123,9 @@ class ProductForm(forms.ModelForm):
             except (TypeError, ValueError):
                 return None
 
-        selected_category_id = parse_pk(self.data.get('category'))
         selected_brand_id = parse_pk(self.data.get('brand_master'))
-        if not selected_category_id and getattr(self.instance, 'category_id', None):
-            selected_category_id = self.instance.category_id
 
-        brand_qs = Brand.objects.order_by('name')
-        if selected_category_id:
-            brand_filter = Q(categories__id=selected_category_id)
-            if selected_brand_id:
-                brand_filter |= Q(id=selected_brand_id)
-            if getattr(self.instance, 'brand_master_id', None):
-                brand_filter |= Q(id=self.instance.brand_master_id)
-            brand_qs = brand_qs.filter(brand_filter).distinct()
-        self.fields['brand_master'].queryset = brand_qs
+        self.fields['brand_master'].queryset = Brand.objects.order_by('name')
 
         selected_brand = None
         if selected_brand_id:
@@ -192,6 +185,8 @@ class ProductForm(forms.ModelForm):
         kind = cleaned.get('product_type')
         if kind and not kind.takes_concentration:
             cleaned['concentration'] = None
+        if self.add_type and self.add_type.default_category_id:
+            cleaned['category'] = self.add_type.default_category
         brand = cleaned.get('brand_master')
         new_brand_name = title_case(cleaned.get('new_brand_name') or '')
         series = cleaned.get('series_master')

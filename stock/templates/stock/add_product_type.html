@@ -1,0 +1,15 @@
+{% extends 'stock/base.html' %}
+{% block title %}Add product{% endblock %}
+{% block content %}
+<style>
+  .type-pick{ display:grid; grid-template-columns:repeat(auto-fill, minmax(11rem, 1fr)); gap:.6rem; }
+  .type-pick a{ display:flex; align-items:center; min-height:64px; padding:.6rem .9rem; font-weight:700; color:var(--app-text); text-decoration:none;
+    background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius); }
+  .type-pick a:hover, .type-pick a:focus-visible{ border-color:var(--app-accent); background:var(--app-accent-soft); }
+  @media (max-width:575.98px){ .type-pick{ grid-template-columns:repeat(2, minmax(0,1fr)); } }
+</style>
+<h1 class="pos-title mb-3">Add product</h1>
+<nav class="type-pick" aria-label="Product type">
+  {% for t in types %}<a href="{% url 'add_product' %}?type={{ t.code }}">{{ t.name }}</a>{% endfor %}
+</nav>
+{% endblock %}

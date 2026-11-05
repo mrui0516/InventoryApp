@@ -1,10 +1,11 @@
 {% extends 'stock/base.html' %}
-{% block title %}Add perfume{% endblock %}
+{% block title %}Add {{ add_type.name_word|default:add_type.name|default:'product' }}{% endblock %}
 {% block content %}
 <form id="product-form" method="post" enctype="multipart/form-data" novalidate>
   {% csrf_token %}
   <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
-    <h1 class="pos-title mb-0">Add perfume</h1>
+    <h1 class="pos-title mb-0">Add {{ add_type.name_word|default:add_type.name|default:'product' }}</h1>
+    <a href="{% url 'add_product' %}" class="btn btn-sm btn-outline-secondary">Change type</a>
   </div>
   {% include "stock/_product_fields.html" %}
   <div class="pf-bar mt-3">

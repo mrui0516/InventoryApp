@@ -151,11 +151,10 @@ def build_type_rules():
 
 def build_brand_catalog():
     catalog = []
-    for brand in Brand.objects.order_by('name').prefetch_related('categories'):
+    for brand in Brand.objects.order_by('name'):
         catalog.append({
             'id': brand.id,
             'name': brand.name,
-            'category_ids': [str(category.id) for category in brand.categories.all().order_by('name')],
         })
     return catalog
 
@@ -2128,20 +2127,26 @@ def build_category_kind_map():
 @login_required
 @manager_required
 def add_product_view(request):
+    code = request.GET.get('type') or request.POST.get('product_type') or ''
+    add_type = ProductType.objects.select_related('default_category').filter(code=code).first()
+    if request.method != 'POST' and add_type is None:
+        return render(request, 'stock/add_product_type.html', {'types': ProductType.all_cached()})
+
     if request.method == 'POST':
-        form = ProductForm(request.POST, can_edit_prices=has_manager_access(request.user))
+        form = ProductForm(request.POST, can_edit_prices=has_manager_access(request.user), add_type=add_type)
         if form.is_valid():
             product = form.save()
             for img in request.FILES.getlist('images'):
                 ProductImage.objects.create(product=product, image=img)
             return redirect('product_detail', pk=product.pk)
     else:
-        # Perfumes are all the shop adds now (2026-10-29); the form opens on it.
-        perfume = Category.objects.filter(parent__isnull=True, form_kind=PERFUME).order_by('id').first()
-        form = ProductForm(initial={'category': perfume.id if perfume else None},
-                           can_edit_prices=has_manager_access(request.user))
+        category = add_type.default_category or (
+            Category.objects.filter(parent__isnull=True, form_kind=PERFUME).order_by('id').first())
+        form = ProductForm(initial={'category': category.id if category else None, 'product_type': add_type.code},
+                           can_edit_prices=has_manager_access(request.user), add_type=add_type)
     return render(request, 'stock/add_product.html', {
         'form': form,
+        'add_type': add_type,
         'category_groups': build_category_picker(),
         'category_kind_json': json.dumps(build_category_kind_map()),
         'brand_series_map_json': json.dumps(build_brand_series_map()),

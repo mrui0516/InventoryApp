@@ -1045,7 +1045,7 @@ class ProductArchitectureTests(TestCase):
         self.assertTrue(ProductSeries.objects.filter(name="iPhone 15 Pro", brand__name="Baseus").exists())
         self.assertTrue(product.brand_master.categories.filter(id=self.category.id).exists())
 
-    def test_product_form_filters_brands_by_selected_category(self):
+    def test_product_form_offers_every_brand(self):
         perfume_brand = Brand.objects.create(name="Lattafa")
         perfume_brand.categories.add(self.category)
         accessory_brand = Brand.objects.create(name="Ugreen")
@@ -1054,7 +1054,7 @@ class ProductArchitectureTests(TestCase):
         form = ProductForm(data={"category": self.category.id})
 
         self.assertIn(perfume_brand, form.fields["brand_master"].queryset)
-        self.assertNotIn(accessory_brand, form.fields["brand_master"].queryset)
+        self.assertIn(accessory_brand, form.fields["brand_master"].queryset)
 
     def test_existing_brand_can_be_linked_to_another_category_by_saving_product(self):
         brand = Brand.objects.create(name="Baseus")
@@ -5784,11 +5784,11 @@ class AddProductWizardTests(TestCase):
         self.client.force_login(user)
 
     def _html(self):
-        return self.client.get(reverse('add_product')).content.decode()
+        return self.client.get(reverse('add_product') + '?type=perfume').content.decode()
 
     def test_the_picker_knows_each_category_form_kind(self):
         import json
-        response = self.client.get(reverse('add_product'))
+        response = self.client.get(reverse('add_product') + '?type=perfume')
         kinds = json.loads(response.context['category_kind_json'])
         self.assertEqual(kinds[str(self.other.pk)], "general")
         self.assertEqual(kinds[str(self.perfumes.pk)], "perfume")
@@ -5796,7 +5796,7 @@ class AddProductWizardTests(TestCase):
     def test_a_subcategory_inherits_the_form_kind_of_its_parent(self):
         import json
         child = Category.objects.create(name="Minis", parent=self.perfumes)
-        response = self.client.get(reverse('add_product'))
+        response = self.client.get(reverse('add_product') + '?type=perfume')
         kinds = json.loads(response.context['category_kind_json'])
         self.assertEqual(kinds[str(child.pk)], "perfume")
 
@@ -10366,7 +10366,7 @@ class PerfumeFormTests(TestCase):
         return self.client.post(reverse("add_product"), data)
 
     def test_the_page_is_the_perfume_form(self):
-        body = self.client.get(reverse("add_product")).content.decode()
+        body = self.client.get(reverse("add_product") + "?type=perfume").content.decode()
         self.assertIn('name="barcode"', body)
         self.assertIn('name="product_type"', body)
         self.assertIn(f'name="category" value="{self.perfumes.id}"', body)
