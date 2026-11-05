@@ -145,7 +145,8 @@ def build_brand_series_map():
 def build_type_rules():
     """``{code: rules}`` so the product form reshapes without a round trip."""
     return {t.code: {'word': t.name_word, 'conc': t.takes_concentration,
-                     'volume': t.takes_volume, 'scent': t.shows_scent_details}
+                     'volume': t.takes_volume, 'scent': t.shows_scent_details,
+                     'contents': t.has_contents, 'gift': t.is_gift}
             for t in ProductType.all_cached()}
 
 
@@ -5907,6 +5908,9 @@ def products_autocomplete(request):
         .select_related('brand_master', 'series_master')
         .prefetch_related('images'))
 
+    if request.GET.get('exclude_mix') == '1':
+        base_qs = base_qs.filter(is_mix=False)
+
     # Sold out means nothing to sell, so it is noise at the till - but only at
     # the till. Inbound asks the same endpoint for the whole catalogue
     # (?scope=stock), because receiving stock is exactly what you do for a
@@ -5975,6 +5979,7 @@ def products_autocomplete(request):
             'stock_left': int(getattr(p, 'stock_left', 0) or 0),
             'availability': PT_AVAILABILITY.get(state, ''),
             'display_name': p.display_name,
+            'scent_name': p.scent_name,
             'brand': p.brand or '',
             'model': p.model or '',
             'spec': p.spec or '',

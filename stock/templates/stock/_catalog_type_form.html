@@ -16,6 +16,7 @@
     <label class="cat-check"><input type="checkbox" name="takes_concentration"{% if row.takes_concentration %} checked{% endif %}>Concentration</label>
     <label class="cat-check"><input type="checkbox" name="takes_volume"{% if row.takes_volume %} checked{% endif %}>Volume</label>
     <label class="cat-check"><input type="checkbox" name="shows_scent_details"{% if row.shows_scent_details %} checked{% endif %}>Scent section</label>
+    <label class="cat-check"><input type="checkbox" name="has_contents"{% if row.has_contents %} checked{% endif %}>Linked products</label>
     <label class="cat-check"><input type="checkbox" name="wholesale_discount"{% if row.wholesale_discount %} checked{% endif %}>Wholesale discount</label>
     <label class="cat-check"><input type="checkbox" name="is_gift"{% if row.is_gift %} checked{% endif %}>Gift set</label>
     <label>Order<input class="form-control" type="number" min="0" name="sort_order" value="{{ row.sort_order }}"></label>

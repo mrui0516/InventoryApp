@@ -6,7 +6,7 @@
     <button type="button" class="cat-row" data-layer="type-{{ row.id }}">
       <span class="main">{{ row.name }}</span>
       <span class="n">{{ row.live_count }}</span>
-      <span class="sub">{{ row.default_category.name|default:"No category" }}{% if row.takes_concentration %} &middot; Concentration{% endif %}{% if row.takes_volume %} &middot; Volume{% endif %}{% if row.shows_scent_details %} &middot; Scent{% endif %}{% if row.wholesale_discount %} &middot; Discount{% endif %}{% if row.is_gift %} &middot; Gift set{% endif %}</span>
+      <span class="sub">{{ row.default_category.name|default:"No category" }}{% if row.takes_concentration %} &middot; Concentration{% endif %}{% if row.takes_volume %} &middot; Volume{% endif %}{% if row.shows_scent_details %} &middot; Scent{% endif %}{% if row.has_contents %} &middot; Links{% endif %}{% if row.wholesale_discount %} &middot; Discount{% endif %}{% if row.is_gift %} &middot; Gift set{% endif %}</span>
     </button>
     <template id="type-{{ row.id }}">
       <div data-part="title">{{ row.name }}</div>

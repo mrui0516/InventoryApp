@@ -109,6 +109,7 @@ urlpatterns = [
     path('inbound-records/<int:order_id>/edit/', views.inbound_order_edit_view, name='inbound_order_edit'),
     path('direct-purchases/<int:purchase_id>/edit/', views.direct_purchase_edit_view, name='direct_purchase_edit'),
     path('api/products_autocomplete/', views.products_autocomplete, name='products_autocomplete'),
+    path('api/parse-contents/', catalog_views.parse_contents, name='parse_contents'),
 
     path('catalog/', views.catalog_view, name='catalog'),
     path('catalog/export-excel/', views.export_catalog_excel, name='export_catalog_excel'),

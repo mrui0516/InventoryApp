@@ -1,12 +1,15 @@
 """Mix, coffret and single-scent products link to the products they relate to."""
 import importlib
+import json
 from decimal import Decimal
 
 from django.apps import apps
 from django.test import TestCase
+from django.urls import reverse
 from django.utils import timezone
 
-from stock.models import Brand, Category, Product, ProductContent, ProductSeries, Purchase
+from stock.models import Brand, Category, Product, ProductContent, ProductSeries, ProductType, Purchase
+from stock.models.product_types import clear_type_cache
 from stock.services.product_contents import (also_in, content_label, contents_title, parse_pasted, save_contents)
 
 
@@ -168,3 +171,117 @@ class MigrationTests(ContentsMixin):
         named.refresh_from_db()
         self.assertTrue(upper.is_mix)
         self.assertFalse(named.is_mix)
+
+
+class FormTests(ContentsMixin):
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        from django.contrib.auth.models import User
+        cls.boss = User.objects.create_superuser("boss", password="pw")
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(clear_type_cache)
+        ProductType.objects.update(default_category=self.category)
+        clear_type_cache()
+        self.client.force_login(self.boss)
+
+    def _add(self, kind, barcode, **fields):
+        data = {"barcode": barcode, "brand_master": self.lattafa.id, "name": "New", "product_type": kind,
+                "default_price": "4", "wholesale_price": "2"}
+        data.update(fields)
+        return self.client.post(f'{reverse("add_product")}?type={kind}', data)
+
+    def _edit(self, product, **fields):
+        data = {"barcode": product.barcode, "brand_master": self.lattafa.id, "category": self.category.id,
+                "name": product.name, "product_type": product.product_type_id,
+                "default_price": "4", "wholesale_price": "2"}
+        data.update(fields)
+        return self.client.post(reverse("edit_product", args=[product.pk]), data)
+
+    def _rows(self, *rows):
+        return json.dumps([{"name": n, "linked_id": linked} for n, linked in rows])
+
+    def test_ticking_mix_saves_the_list(self):
+        response = self._add("perfume", "6290000081001", is_mix="on",
+                             contents_json=self._rows(("Khamrah", self.khamrah.id), ("Oud Novo", None)))
+        self.assertEqual(response.status_code, 302)
+        product = Product.objects.get(barcode="6290000081001")
+        self.assertTrue(product.is_mix)
+        self.assertEqual([c.name for c in product.contents.all()], ["Khamrah", "Oud Novo"])
+        self.assertEqual(product.contents.first().linked, self.khamrah)
+
+    def test_a_coffret_needs_no_tick(self):
+        self._add("coffret", "6290000081002", contents_json=self._rows(("Yara", self.yara.id)))
+        product = Product.objects.get(barcode="6290000081002")
+        self.assertFalse(product.is_mix)
+        self.assertEqual(product.contents.count(), 1)
+
+    def test_a_single_body_spray_links_with_no_tick(self):
+        self._add("body_spray", "6290000081003", contents_json=self._rows(("Yara", self.yara.id)))
+        self.assertEqual(Product.objects.get(barcode="6290000081003").contents.first().linked, self.yara)
+
+    def test_an_ordinary_perfume_has_no_list(self):
+        self._add("perfume", "6290000081004", contents_json=self._rows(("Yara", None)))
+        self.assertEqual(Product.objects.get(barcode="6290000081004").contents.count(), 0)
+
+    def test_unticking_mix_keeps_the_rows_hidden(self):
+        save_contents(self.mix, [{"name": "Yara", "linked_id": self.yara.id}])
+        Product.objects.filter(pk=self.mix.pk).update(product_type_id="perfume")
+        self.mix.refresh_from_db()
+        self._edit(self.mix, contents_json=self._rows(("Yara", self.yara.id)))
+        self.mix.refresh_from_db()
+        self.assertFalse(self.mix.is_mix)
+        self.assertEqual(self.mix.contents.count(), 1)
+        self.assertEqual(also_in(self.yara), [])
+
+    def test_the_form_comes_back_with_the_list(self):
+        save_contents(self.mix, [{"name": "Yara", "linked_id": self.yara.id}])
+        html = self.client.get(reverse("edit_product", args=[self.mix.pk])).content.decode()
+        self.assertIn('name="contents_json"', html)
+        self.assertIn(f"&quot;linked_id&quot;: {self.yara.id}", html)
+
+    def test_an_edit_without_the_field_keeps_the_list(self):
+        save_contents(self.mix, [{"name": "Yara", "linked_id": None}])
+        self._edit(self.mix, is_mix="on")
+        self.assertEqual(self.mix.contents.count(), 1)
+
+    def test_broken_json_does_not_lose_the_product(self):
+        response = self._add("coffret", "6290000081005", contents_json="{not json")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "could not be read")
+        self.assertFalse(Product.objects.filter(barcode="6290000081005").exists())
+
+    def test_json_of_the_wrong_shape_does_not_crash(self):
+        for bad in ('{"a": 1}', '[1, 2]', '"x"', '[{"linked_id": "abc", "name": "A"}]'):
+            self.assertLess(self._add("coffret", "6290000081006", contents_json=bad).status_code, 500)
+            Product.objects.filter(barcode="6290000081006").delete()
+
+    def test_autocomplete_skips_mixes_on_request(self):
+        url = reverse("products_autocomplete")
+        names = lambda **p: [r["id"] for r in self.client.get(url, {"q": "Mix", "scope": "stock", **p}).json()["results"]]
+        self.assertIn(self.mix.id, names())
+        self.assertNotIn(self.mix.id, names(exclude_mix="1"))
+
+    def test_autocomplete_returns_the_scent_name(self):
+        rows = self.client.get(reverse("products_autocomplete"), {"q": "Khamrah", "scope": "stock"}).json()["results"]
+        self.assertEqual(rows[0]["scent_name"], "Khamrah")
+
+    def test_the_paste_endpoint(self):
+        response = self.client.post(reverse("parse_contents"), {"text": "Khamrah, Oud Novo", "brand": "Lattafa"})
+        rows = response.json()["rows"]
+        self.assertEqual([r["name"] for r in rows], ["Khamrah", "Oud Novo"])
+        self.assertEqual(rows[0]["linked_id"], self.khamrah.id)
+
+    def test_the_types_tab_saves_the_list_switch(self):
+        row = ProductType.objects.get(code="mini")
+        self.client.post(reverse("catalog_types"), {"action": "save", "id": row.id, "name": "Mini",
+                                                    "default_category": self.category.id, "has_contents": "on"})
+        row.refresh_from_db()
+        self.assertTrue(row.has_contents)
+
+    def test_the_form_rules_carry_the_list_switches(self):
+        html = self.client.get(reverse("add_product"), {"type": "coffret"}).content.decode()
+        self.assertIn('"contents": true', html)
+        self.assertIn('"gift": true', html)

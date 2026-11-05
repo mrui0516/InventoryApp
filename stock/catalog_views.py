@@ -2,20 +2,24 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Q
+from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.text import slugify
+from django.views.decorators.http import require_POST
 
 from .models import (Brand, Category, Concentration, FragranceFamily, Product, ProductSeries, ProductType)
 from .models.catalog import PERFUME
-from .permissions import admin_required
+from .permissions import admin_required, manager_required
 from .services.brand_logo import clean_logo
 from .services.catalog_admin import (NameTaken, delete_type, merge_brands, merge_lines, new_type_code, rename_brand,
                                      rename_line)
 from .services.catalog_prune import empty_brands, empty_series
 from .services.names import title_case
+from .services.product_contents import parse_pasted
 
-SWITCHES = ('takes_concentration', 'takes_volume', 'wholesale_discount', 'is_gift', 'shows_scent_details')
+SWITCHES = ('takes_concentration', 'takes_volume', 'wholesale_discount', 'is_gift', 'shows_scent_details',
+            'has_contents')
 
 
 def _text(request, name, limit):
@@ -329,3 +333,10 @@ def catalog_families(request):
         live_count=Count('products', filter=Q(products__archived_at__isnull=True)))
     return render(request, 'stock/catalog_families.html', {'tab': 'families', 'rows': rows})
 
+
+@login_required
+@manager_required
+@require_POST
+def parse_contents(request):
+    """Names pasted into the list on the product form."""
+    return JsonResponse({'rows': parse_pasted(_text(request, 'brand', 80), request.POST.get('text') or '')})

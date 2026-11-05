@@ -1,0 +1,145 @@
+<section class="pf-card d-none" id="pfContents">
+  <style>
+    .pfc-row{ display:flex; align-items:center; gap:.5rem; padding:.35rem 0; border-top:1px solid var(--app-border); }
+    .pfc-row:first-child{ border-top:0; }
+    .pfc-name{ flex:1 1 auto; min-width:0; font-weight:700; overflow-wrap:anywhere; }
+    .pfc-tag{ flex:none; font-size:.85rem; font-weight:700; color:#0f766e; }
+    .pfc-x{ flex:none; width:36px; height:36px; border:0; border-radius:999px; background:none; color:var(--app-muted); font-size:1.1rem; }
+    .pfc-x:hover{ background:var(--app-surface-2); }
+    .pfc-add{ display:flex; gap:.5rem; margin-top:.5rem; }
+    .pfc-add input{ flex:1 1 auto; min-width:0; }
+    .pfc-hits{ display:grid; margin-top:.25rem; border:1px solid var(--app-border); border-radius:var(--app-radius-sm); background:var(--app-surface); }
+    .pfc-hits:empty{ display:none; }
+    .pfc-hits button{ display:block; width:100%; padding:.45rem .6rem; border:0; background:none; color:inherit; text-align:left; }
+    .pfc-hits button:hover, .pfc-hits button:focus-visible{ background:var(--app-accent-soft); }
+    .pfc-hits small{ color:var(--app-muted); font-size:.85rem; }
+    .pfc-paste{ margin-top:.5rem; font-size:.9rem; }
+    .pfc-paste summary{ cursor:pointer; color:var(--app-muted); font-weight:700; }
+    .pfc-paste textarea{ margin:.35rem 0; }
+  </style>
+  <h2 id="pfContentsTitle">Scents</h2>
+  {{ form.contents_json }}
+  {% for e in form.contents_json.errors %}<div class="pf-err">{{ e }}</div>{% endfor %}
+  <div id="pfContentList"></div>
+  <div class="pfc-add">
+    <input class="form-control" id="pfContentSearch" autocomplete="off" aria-label="Add a scent" placeholder="Search a product or type a name">
+    <button type="button" class="btn btn-outline-primary" id="pfContentAdd">Add</button>
+  </div>
+  <div class="pfc-hits" id="pfContentHits"></div>
+  <details class="pfc-paste">
+    <summary>Paste several</summary>
+    <textarea class="form-control" id="pfContentPaste" rows="4" aria-label="Paste names"></textarea>
+    <button type="button" class="btn btn-sm btn-outline-primary" id="pfContentPasteAdd">Add these</button>
+  </details>
+</section>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const form = document.getElementById('product-form');
+  const box = document.getElementById('pfContents');
+  const store = form.querySelector('[name="contents_json"]');
+  const list = document.getElementById('pfContentList');
+  const search = document.getElementById('pfContentSearch');
+  const hits = document.getElementById('pfContentHits');
+  const paste = document.getElementById('pfContentPaste');
+  const kind = form.querySelector('[name="product_type"]');
+  const mix = form.querySelector('[name="is_mix"]');
+  const rules = JSON.parse(document.getElementById('pfTypeRules').textContent);
+  let rows = [];
+  try { rows = JSON.parse(store.value || '[]'); } catch (e) { rows = []; }
+
+  function brandName() {
+    const select = form.querySelector('[name="brand_master"]');
+    const typed = form.querySelector('[name="new_brand_name"]');
+    if (typed && typed.value.trim()) return typed.value.trim();
+    return select && select.value ? select.options[select.selectedIndex].textContent.trim() : '';
+  }
+  function render() {
+    list.textContent = '';
+    rows.forEach((row, index) => {
+      const line = document.createElement('div');
+      line.className = 'pfc-row';
+      const name = document.createElement('span');
+      name.className = 'pfc-name';
+      name.textContent = row.name;
+      line.appendChild(name);
+      if (row.linked_id) {
+        const tag = document.createElement('span');
+        tag.className = 'pfc-tag';
+        tag.textContent = 'Linked';
+        line.appendChild(tag);
+      }
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'pfc-x';
+      remove.setAttribute('aria-label', `Remove ${row.name}`);
+      remove.textContent = '\u00d7';
+      remove.addEventListener('click', () => { rows.splice(index, 1); render(); });
+      line.appendChild(remove);
+      list.appendChild(line);
+    });
+    store.value = JSON.stringify(rows);
+  }
+  function add(name, linkedId) {
+    const clean = (name || '').trim();
+    if (!clean || rows.some((r) => r.name.toLowerCase() === clean.toLowerCase())) return;
+    rows.push({ name: clean, linked_id: linkedId || null });
+    render();
+  }
+  function shown() {
+    const rule = rules[kind.value] || {};
+    box.classList.toggle('d-none', !(rule.contents || mix.checked));
+    document.getElementById('pfContentsTitle').textContent = rule.gift ? 'Contains' : 'Scents';
+  }
+  let timer = null, asked = 0;
+  function find() {
+    const q = search.value.trim();
+    const mine = ++asked;
+    if (q.length < 2) { hits.textContent = ''; return; }
+    fetch(`{% url 'products_autocomplete' %}?scope=stock&exclude_mix=1&q=${encodeURIComponent(q)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (mine !== asked) return;
+        const brand = brandName().toLowerCase();
+        const same = (r) => ((r.brand || '').toLowerCase() === brand ? 0 : 1);
+        hits.textContent = '';
+        data.results.slice().sort((a, b) => same(a) - same(b)).slice(0, 8).forEach((r) => {
+          const pick = document.createElement('button');
+          pick.type = 'button';
+          pick.textContent = r.scent_name || r.display_name;
+          const small = document.createElement('small');
+          small.textContent = ` ${r.brand}`;
+          pick.appendChild(small);
+          pick.addEventListener('click', () => {
+            add(r.scent_name || r.display_name, r.id);
+            search.value = '';
+            hits.textContent = '';
+            search.focus();
+          });
+          hits.appendChild(pick);
+        });
+      })
+      .catch(() => { hits.textContent = ''; });
+  }
+  function typed() {
+    add(search.value);
+    search.value = '';
+    hits.textContent = '';
+  }
+  search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(find, 200); });
+  search.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); typed(); } });
+  document.getElementById('pfContentAdd').addEventListener('click', typed);
+  document.getElementById('pfContentPasteAdd').addEventListener('click', () => {
+    const body = new FormData();
+    body.append('text', paste.value);
+    body.append('brand', brandName());
+    body.append('csrfmiddlewaretoken', form.querySelector('[name="csrfmiddlewaretoken"]').value);
+    fetch("{% url 'parse_contents' %}", { method: 'POST', body })
+      .then((r) => r.json())
+      .then((data) => { data.rows.forEach((row) => add(row.name, row.linked_id)); paste.value = ''; });
+  });
+  kind.addEventListener('change', shown);
+  mix.addEventListener('change', shown);
+  render();
+  shown();
+});
+</script>

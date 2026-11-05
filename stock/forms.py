@@ -1,3 +1,4 @@
+import json
 from decimal import Decimal
 
 # stock/forms.py
@@ -9,6 +10,7 @@ from django.forms import inlineformset_factory
 from django.utils import timezone
 
 from .services.names import title_case
+from .services.product_contents import contents_for_form, save_contents
 from .models import (
     ARInvoice,
     ARItem,
@@ -33,6 +35,7 @@ class BarcodeForm(forms.Form):
     barcode = forms.CharField(label="Scan or Enter Barcode", max_length=13)
 
 
+
 class ProductForm(forms.ModelForm):
     # Every product the shop sells has an EAN on the box (2026-10-29: only
     # perfumes remain); a new product cannot be saved without one.
@@ -44,6 +47,8 @@ class ProductForm(forms.ModelForm):
         empty_label="Select brand",
     )
     new_brand_name = forms.CharField(required=False, label="Or add brand", max_length=80)
+    # The list on a mix or coffret, kept by the page as JSON (_product_contents.html).
+    contents_json = forms.CharField(required=False, widget=forms.HiddenInput)
     series_master = forms.ModelChoiceField(
         queryset=ProductSeries.objects.none(),
         required=False,
@@ -66,6 +71,7 @@ class ProductForm(forms.ModelForm):
             'volume_ml',
             'concentration',
             'product_type',
+            'is_mix',
             'fragrance_families',
             'notes_top',
             'notes_heart',
@@ -108,6 +114,8 @@ class ProductForm(forms.ModelForm):
         if add_type and add_type.default_category_id:
             self.fields['category'].required = False
         self.fields['volume_ml'].label = 'Volume (ml)'
+        if self.instance.pk:
+            self.fields['contents_json'].initial = json.dumps(contents_for_form(self.instance))
         self.fields['concentration'].label = 'Concentration'
         self.fields['concentration'].empty_label = 'Not set'
         # Left out (an older form, a script): an ordinary perfume.
@@ -174,6 +182,19 @@ class ProductForm(forms.ModelForm):
             return self.instance.barcode
         raise forms.ValidationError('Scan or type the barcode.')
 
+    def clean_contents_json(self):
+        """The rows, or None when the page sent no list: then nothing changes."""
+        text = self.cleaned_data.get('contents_json')
+        if not text:
+            return None
+        try:
+            rows = json.loads(text)
+        except ValueError:
+            rows = None
+        if not isinstance(rows, list):
+            raise forms.ValidationError('The list could not be read.')
+        return [row for row in rows if isinstance(row, dict)]
+
     def clean_product_type(self):
         return self.cleaned_data.get('product_type') or ProductType.objects.get(code=Product.PERFUME)
 
@@ -234,6 +255,9 @@ class ProductForm(forms.ModelForm):
             if product.brand_master and product.category_id:
                 product.brand_master.categories.add(product.category)
             self.save_m2m()
+            rows = self.cleaned_data.get('contents_json')
+            if rows is not None and product.lists_contents:
+                save_contents(product, rows)
         return product
 
 

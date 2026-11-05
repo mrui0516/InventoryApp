@@ -26,12 +26,23 @@ def _clean_link(owner, linked_id):
     return Product.objects.filter(pk=linked_id, is_mix=False).exclude(pk=owner.pk).first()
 
 
+def contents_for_form(owner):
+    rows = owner.contents.select_related('linked')
+    return [{'name': content_label(row),
+             'linked_id': row.linked_id if row.linked and row.linked.archived_at is None else None}
+            for row in rows]
+
+
+def _link_id(value):
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
 def save_contents(owner, rows):
     """Replace the list. ``rows`` is ``[{'name': str, 'linked_id': int | None}]``."""
     seen, fresh = set(), []
     for row in rows:
-        linked = _clean_link(owner, row.get('linked_id'))
-        name = (linked.scent_name if linked else '') or (row.get('name') or '').strip()
+        linked = _clean_link(owner, _link_id(row.get('linked_id')))
+        name = (linked.scent_name if linked else '') or str(row.get('name') or '').strip()
         if not name or name.lower() in seen:
             continue
         seen.add(name.lower())
