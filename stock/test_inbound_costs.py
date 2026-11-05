@@ -250,3 +250,47 @@ class FinanceAndRecordsTests(InboundCostsMixin):
         self.receive(order)
         page = self.client.get(reverse("inbound_order_edit", args=[order.id]))
         self.assertContains(page, 'name="invoice_file"')
+
+
+class PendingListTests(InboundCostsMixin):
+    def test_awaiting_receipt_totals_every_pending_order(self):
+        first = self.order((self.a, 2, "10", "0"))
+        second = self.order((self.b, 1, "5.50", "0"))
+        received = self.order((self.b, 1, "99", "0"))
+        InboundOrder.objects.filter(pk=first.pk).update(total_amount=Decimal("100.10"))
+        InboundOrder.objects.filter(pk=second.pk).update(total_amount=Decimal("23.40"))
+        InboundOrder.objects.filter(pk=received.pk).update(total_amount=Decimal("99"), status="received")
+        response = self.client.get(reverse("inbound"))
+        self.assertEqual(response.context["pending_total"], Decimal("123.50"))
+        self.assertContains(response, "\u20ac123.50")
+
+    def test_the_total_is_there_after_a_refused_post_too(self):
+        self.order((self.a, 1, "10", "0"))
+        InboundOrder.objects.update(total_amount=Decimal("10"))
+        response = self.client.post(reverse("inbound"), {"items_json": "[]"})
+        self.assertEqual(response.context["pending_total"], Decimal("10"))
+
+    def test_no_pending_orders_no_list(self):
+        self.assertNotContains(self.client.get(reverse("inbound")), "Awaiting receipt")
+
+
+class WithIvaColumnTests(InboundCostsMixin):
+    def test_the_dialog_has_the_column_and_opens_it_for_an_iva_order(self):
+        order = self.order((self.a, 1, "10", "0"), iva="23")
+        html = self.client.get(reverse("inbound")).content.decode()
+        table = html[html.index(f'id="receive-modal-{order.id}"'):]
+        self.assertIn("With IVA", table)
+        self.assertIn("rcv-table has-iva", table)
+        self.assertIn("data-rcv-with-iva", table)
+
+    def test_the_dialog_keeps_it_closed_without_iva(self):
+        order = self.order((self.a, 1, "10", "0"))
+        html = self.client.get(reverse("inbound")).content.decode()
+        table = html[html.index(f'id="receive-modal-{order.id}"'):]
+        self.assertNotIn("rcv-table has-iva", table)
+
+    def test_the_cart_has_the_column(self):
+        html = self.client.get(reverse("inbound")).content.decode()
+        self.assertIn('class="iva-col"', html)
+        self.assertIn("with-iva", html)
+

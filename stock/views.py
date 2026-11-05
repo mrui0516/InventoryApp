@@ -572,6 +572,12 @@ def _pending_inbound_orders():
     )
 
 
+def _pending_context():
+    reviews = _build_pending_reviews()
+    return {'pending_reviews': reviews,
+            'pending_total': sum((r['order'].total_amount or Decimal('0') for r in reviews), Decimal('0'))}
+
+
 def _build_pending_reviews():
     """For each pending order build the editable review form + formset rendered
     inside a per-order modal on the inbound page."""
@@ -718,7 +724,7 @@ def inbound_view(request):
     shops = active_stores()
     context = {
         'today': today,
-        'pending_reviews': _build_pending_reviews(),
+        **_pending_context(),
         'alloc_stores': shops if len(shops) > 1 else [],
         # the shop's own receipts (all shops: each shop's part), this month
         'records_url': f"{reverse('sales_records')}?"
@@ -849,7 +855,7 @@ def inbound_view(request):
         return redirect('inbound')
 
     # 刷新待收货列表（可能刚新增了一张暂定单）
-    context['pending_reviews'] = _build_pending_reviews()
+    context.update(_pending_context())
     return render(request, 'stock/inbound.html', context)
 
 

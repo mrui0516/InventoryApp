@@ -23,7 +23,10 @@
       <span class="kicker">Awaiting receipt</span>
       <h3>Pending inbound orders</h3>
     </div>
-    <span class="note-pill warn">{{ pending_reviews|length }} pending</span>
+    <div class="pend-sum">
+      <span class="note-pill warn">{{ pending_reviews|length }} pending</span>
+      <span class="pend-total">Total &euro;{{ pending_total|floatformat:2 }}</span>
+    </div>
   </div>
   <div class="pend-list">
     {% for pr in pending_reviews %}
@@ -90,12 +93,13 @@
           {% endif %}
 
           <div class="table-responsive">
-            <table class="table table-sm align-middle mb-0 rcv-table">
+            <table class="table table-sm align-middle mb-0 rcv-table{% if pr.order.iva_rate %} has-iva{% endif %}">
               <thead>
                 <tr>
                   <th>Product</th>
                   <th class="rcv-n">Qty</th>
                   <th class="rcv-n">Price &euro;</th>
+                  <th class="rcv-n rcv-iva-col">With IVA</th>
                   <th class="rcv-n">Shipping&nbsp;&euro;</th>
                   {% for s in alloc_stores %}<th class="rcv-n">{{ s.name }}</th>{% endfor %}
                   <th class="text-end">Unit cost</th>
@@ -121,6 +125,7 @@
                     </td>
                     <td data-label="Qty">{{ line.form.quantity }}</td>
                     <td data-label="Price &euro;">{{ line.form.cost_price }}</td>
+                    <td class="rcv-iva-col" data-label="With IVA"><span data-rcv-with-iva></span></td>
                     <td data-label="Shipping &euro;">{{ line.form.shipping_share }}</td>
                     {% for a in line.alloc %}<td data-label="{{ a.short }}"><input type="number" min="0" step="1" inputmode="numeric" class="alloc-in" name="alloc-{{ line.item.pk }}-{{ a.store.id }}" value="{{ a.value }}" aria-label="{{ a.store.name }}"></td>{% endfor %}
                     <td class="rcv-final" data-label="Unit cost"><b data-rcv-unit></b><small data-rcv-line></small></td>
@@ -229,6 +234,7 @@
     const field = (row, name) => row.querySelector(`input[name$="-${name}"]`);
     function update() {
       const rate = iva.checked ? 0.23 : 0;
+      form.querySelector('.rcv-table').classList.toggle('has-iva', iva.checked);
       let total = 0, allocated = 0;
       form.querySelectorAll('.rcv-table tbody tr').forEach((row) => {
         const gone = field(row, 'DELETE').checked;
@@ -237,6 +243,7 @@
         const qty = num(field(row, 'quantity'));
         const share = num(field(row, 'shipping_share'));
         const unit = Math.round((num(field(row, 'cost_price')) * (1 + rate) + (qty ? share / qty : 0)) * 100) / 100;
+        row.querySelector('[data-rcv-with-iva]').textContent = money(num(field(row, 'cost_price')) * 1.23);
         row.querySelector('[data-rcv-unit]').textContent = money(unit);
         row.querySelector('[data-rcv-line]').textContent = money(unit * qty);
         total += unit * qty;
@@ -461,6 +468,7 @@
                 <th style="width: 40%">Product</th>
                 <th style="width: 110px">Qty</th>
                 <th style="width: 140px">Price €</th>
+                <th class="iva-col" style="width: 110px">With IVA €</th>
                 <th class="ship-col" style="width: 120px">Shipping €</th>
                 <th style="width: 140px">Subtotal €</th>
                 <th style="width: 60px"></th>
@@ -470,6 +478,7 @@
             <tfoot>
               <tr>
                 <th colspan="3" class="text-end">Total:</th>
+                <th class="iva-col"></th>
                 <th class="ship-col"></th>
                 <th id="grand_total">€0.00</th>
                 <th></th>
@@ -587,6 +596,11 @@
   .pend-fig{ font-weight:800; color:var(--app-text); font-variant-numeric:tabular-nums; margin-left:auto; }
   /* Inbound: shipping is a column only while there is shipping */
   .ship-col{ display:none; }
+  #cart-table:not(.has-iva) .iva-col{ display:none !important; }
+  .rcv-table:not(.has-iva) .rcv-iva-col{ display:none !important; }
+  .iva-col, .rcv-iva-col{ font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .pend-sum{ display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:.35rem .6rem; }
+  .pend-total{ font-weight:800; font-variant-numeric:tabular-nums; white-space:nowrap; }
   #cart-table.has-ship .ship-col{ display:table-cell; }
   .ship-bar{ display:flex; flex-wrap:wrap; align-items:center; gap:.4rem .8rem; margin:0 0 .5rem; }
   .ship-bar[hidden]{ display:none; }
@@ -1258,7 +1272,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const on = shippingTotal() > 0;
     shipBar.hidden = !on;
     cartTable.classList.toggle('has-ship', on);
-    cartTable.style.setProperty('--cols', on ? 4 : 3);
+    cartTable.classList.toggle('has-iva', addIva.checked);
+    cartTable.style.setProperty('--cols', 3 + (on ? 1 : 0) + (addIva.checked ? 1 : 0));
     const left = shipLeft();
     shipLeftEl.textContent = left ? `€${(left / 100).toFixed(2)} still to allocate` : 'All allocated';
     shipLeftEl.classList.toggle('bad', left !== 0);
@@ -1285,6 +1300,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const cost = parseMoney(tr.querySelector('.cost').value);
       const sub  = isFinite(cost) ? lineTotal(tr) : NaN;
       tr.querySelector('.subtotal').textContent = '€' + (isFinite(sub) ? sub.toFixed(2) : '0.00');
+      tr.querySelector('.with-iva').textContent = '€' + ((isFinite(cost) ? cost : 0) * 1.23).toFixed(2);
       total += isFinite(sub) ? sub : 0;
       evaluateCartRow(tr);
       if (!(qty>=1 && qty<=100000 && isFinite(cost) && cost>0 && cost<=10000)) ok = false;
@@ -1338,6 +1354,7 @@ document.addEventListener('DOMContentLoaded', () => {
       </td>
       <td data-label="Qty"><input type="number" min="1" class="form-control form-control-sm qty" value="1"></td>
       <td data-label="Unit €"><input type="text" class="form-control form-control-sm cost" placeholder="0.00" value="${lastCost!=null ? Number(lastCost).toFixed(2) : ''}"></td>
+      <td class="iva-col" data-label="With IVA"><span class="with-iva"></span></td>
       <td class="ship-col" data-label="Shipping €"><input type="text" inputmode="decimal" class="form-control form-control-sm ship" placeholder="0.00"></td>
       <td class="subtotal" data-label="Subtotal">€0.00</td>
       <td><button type="button" class="btn btn-sm btn-outline-secondary remove" aria-label="Remove">&times;</button></td>
