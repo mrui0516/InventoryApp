@@ -17,6 +17,7 @@ list to a customer.
 """
 import os
 from io import BytesIO
+from xml.sax.saxutils import escape
 
 from PIL import Image as PILImage
 
@@ -27,6 +28,8 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import (Image, PageBreak, Paragraph, SimpleDocTemplate,
                                 Spacer, Table, TableStyle)
+
+from .product_contents import pdf_links
 
 # Same meaning as the spreadsheet's fills, so the two never disagree.
 STATE_COLOURS = {
@@ -54,6 +57,8 @@ def _styles():
                                   textColor=colors.HexColor('#10213a')),
         'cell': ParagraphStyle('c', parent=base['Normal'], fontSize=8,
                                leading=10, alignment=TA_LEFT),
+        'detail': ParagraphStyle('d', parent=base['Normal'], fontSize=7.5, leading=9.5,
+                                 textColor=colors.HexColor('#5b6675')),
         'head': ParagraphStyle('h', parent=base['Normal'], fontSize=7.5,
                                leading=9, textColor=colors.white),
     }
@@ -83,6 +88,28 @@ def _thumb(product):
                      kind='proportional')
     except Exception:
         return None
+
+
+def _detail_line(prefix, items):
+    """``Fragr\u00e2ncias: Khamrah \u00b7 Yara``, each name a jump when it has a target."""
+    parts = []
+    for label, target in items:
+        text = escape(label)
+        parts.append(f'<a href="#p{target}" color="#1d4ed8"><u>{text}</u></a>' if target else text)
+    return f'{prefix} ' + ' \u00b7 '.join(parts)
+
+
+def _title_cell(product, links, style):
+    title = Paragraph(f'<a name="p{product.pk}"/>{product.export_title}', style['cell'])
+    if not links:
+        return title
+    cell = [title]
+    if links['contents']:
+        prefix = 'Cont\u00e9m:' if product.type_info.is_gift else 'Fragr\u00e2ncias:'
+        cell.append(Paragraph(_detail_line(prefix, links['contents']), style['detail']))
+    if links['also_in']:
+        cell.append(Paragraph(_detail_line('Tamb\u00e9m em:', links['also_in']), style['detail']))
+    return cell
 
 
 def _brand_logo(name):
@@ -128,6 +155,7 @@ def build_catalog_pdf(brand_groups, *, price_mode='retail', include_images=True,
         headers.append('A chegar')
         widths.append(28 * mm)
 
+    links = pdf_links([p for products in brand_groups.values() for p in products])
     for index, (brand_name, products) in enumerate(brand_groups.items()):
         if index:
             story.append(PageBreak())
@@ -155,7 +183,7 @@ def build_catalog_pdf(brand_groups, *, price_mode='retail', include_images=True,
                 row = []
                 if include_images:
                     row.append(_thumb(product) or '')
-                row.append(Paragraph(product.export_title, style['cell']))
+                row.append(_title_cell(product, links.get(product.pk), style))
                 row.append(Paragraph(product.barcode or '-', style['cell']))
                 # The same numbers the spreadsheet prints: PVP is the till
                 # price plus the uplift, wholesale carries this export's

@@ -3,7 +3,7 @@ a product. Display only: nothing here touches stock."""
 import re
 
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Q, Sum
 
 from ..models import Product, ProductContent, Purchase
 from .names import title_case
@@ -90,4 +90,27 @@ def product_page_links(product):
              'stock': stock.get(owner.pk) or 0}
             for owner in owners]
     return {'contents': contents, 'contents_title': contents_title(product), 'also_in': also}
+
+
+def pdf_links(products):
+    """For a PDF of these products: ``{id: {'contents': [...], 'also_in': [...]}}``,
+    each entry ``(label, target_id)``. ``target_id`` is None unless the target is
+    in this PDF: a link to a row that is not there stops reportlab cold."""
+    ids = {p.pk for p in products}
+    links = {}
+    rows = (ProductContent.objects.filter(Q(owner_id__in=ids) | Q(linked_id__in=ids))
+            .select_related('owner', 'linked').order_by('sort_order', 'id'))
+    for row in rows:
+        owner = row.owner
+        if owner.archived_at is not None or not owner.lists_contents:
+            continue
+        if owner.pk in ids:
+            live = row.linked_id in ids and row.linked.archived_at is None
+            entry = links.setdefault(owner.pk, {'contents': [], 'also_in': []})
+            entry['contents'].append((content_label(row), row.linked_id if live else None))
+        if row.linked_id in ids:
+            kind = owner.type_info
+            entry = links.setdefault(row.linked_id, {'contents': [], 'also_in': []})
+            entry['also_in'].append((kind.customer_label or kind.name, owner.pk if owner.pk in ids else None))
+    return links
 
