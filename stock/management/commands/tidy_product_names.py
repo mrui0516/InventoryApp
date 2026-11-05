@@ -18,6 +18,7 @@ from django.db import transaction
 from django.db.models import Count
 
 from stock.models import Brand, Product, ProductSeries, ProductType
+from stock.services.catalog_admin import merge_brands, merge_lines
 from stock.services.names import title_case
 
 TYPE_HINTS = [
@@ -70,17 +71,7 @@ class Command(BaseCommand):
             keeper, others = brands[0], brands[1:]
             for other in others:
                 out(f'  merge "{other.name}" ({other.n} products) into "{keeper.name}" -> "{name}"')
-                Product.all_objects.filter(brand_master=other).update(brand_master=keeper)
-                for series in list(other.series.all()):
-                    same = keeper.series.filter(name__iexact=series.name).first()
-                    if same:
-                        Product.all_objects.filter(series_master=series).update(series_master=same)
-                        series.delete()
-                    else:
-                        series.brand = keeper
-                        series.save(update_fields=['brand'])
-                keeper.categories.add(*other.categories.all())
-                other.delete()
+                merge_brands(keeper, other)
                 merged += 1
             if keeper.name != name:
                 out(f'  "{keeper.name}" -> "{name}"')
@@ -99,8 +90,7 @@ class Command(BaseCommand):
             keeper, others = items[0], items[1:]
             for other in others:
                 out(f'  merge series "{other.name}" into "{keeper.name}" -> "{name}"')
-                Product.all_objects.filter(series_master=other).update(series_master=keeper)
-                other.delete()
+                merge_lines(keeper, other)
                 merged += 1
             if keeper.name != name:
                 out(f'  "{keeper.name}" -> "{name}"')
