@@ -12,7 +12,7 @@
 |---|---|---|
 | 线上运行 | ✅ PythonAnywhere 欧盟区 | `https://scentory.eu.pythonanywhere.com`，两家店（Khan Perfume、Scentory）日常收银、入库都在线上；线上 `db.sqlite3` 是唯一准数据 |
 | 自动化测试 | ✅ 1071 个全部通过 | `python manage.py test stock restock_alerts`，在干净导出上跑 |
-| 数据库迁移 | ✅ 最新 `0077_brand_logo`，无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
+| 数据库迁移 | ✅ 最新 `0078_product_contents`，无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
 | 生产配置 | ✅ `DEBUG=False`，密钥只在服务器 `.env` | `settings.py` 的 `if not DEBUG` 块：强制 HTTPS、安全 Cookie、HSTS、防点击劫持 |
 | 数据备份 | ✅ 每日快照 + 本机拉取 | PA 定时任务 `backup_db --keep 30`，本机 `scripts/pull_backup_from_pa.py` 拉到 U 盘；Settings → Tools 可手动下载。见 [BACKUP.md](./BACKUP.md) |
 | 错误日志 | ✅ Settings → Audit → Errors | 500 崩溃、安全警告、Cloudinary/Shopify 警告写入 `ErrorLog` 与 PA 错误日志 |
@@ -73,6 +73,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-11-05: **产品连接和 PDF 跳转。** Mix、Coffret、Body mist、Body spray、Air freshener 有清单，连接到香水或只写名称（迁移 0078），只用于显示；产品页和客户 PDF 互相跳转。
 - 2026-11-05: **Settings → Catalog 完整。** 品牌、系列、分类、浓度、香调都能自己管理，改名和合并同步产品文字；品牌 logo（迁移 0077）。
 - 2026-11-05: **Inbound 显示加税后单价和待收货总额。** 开 IVA 时多一列 With IVA；Awaiting receipt 旁显示总金额。
 - 2026-11-05: **添加产品先选 Type。** 表单按 Type 变化，Description 移出 Scent，Coffret 不要容量（迁移 0076 清空现有容量）。

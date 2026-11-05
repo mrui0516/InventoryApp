@@ -491,6 +491,16 @@ Orders → Purchases（`orders_views.load_purchases`）、供应商页、产品�
 模板用 `{% load brands %}{% brand_logo brand size=28 fallback=name %}`，`brand` 可以是 None，样式写在标签里，不需要 `collectstatic`。
 PDF 的 `_brand_logo` 文件缺失时跳过。`empty_brands` 默认不包括有 logo 的品牌，手动删除传 `keep_logos=False`。
 
+### 5.13y2 产品之间的连接（`ProductContent`，2026-11-05）
+
+`services/product_contents.py`。一行是一个名称，`linked` 可空；`name` 总是存着，所以被连接的产品归档或删除后名称还在。
+`Product.lists_contents`（`is_mix` 或 Type 的 `has_contents`）决定这份清单是否生效：取消勾选 Mix 时行留着，只是不再显示，也不会被保存改动。
+
+**只用于显示，任何地方都不看它来动库存。** 不能连接到自己或 Mix（`_clean_link`）。
+
+客户 PDF 用 `pdf_links(products)` 一次取齐，`target_id` 只在目标也在这份 PDF 时才有值：reportlab 碰到不存在的锚点会直接抛错，导出失败。
+锚点是 `p<id>`，名称过 `xml.sax.saxutils.escape`。
+
 ### 5.13z 空品牌、空系列自动删除（2026-11-05）
 
 `services/catalog_prune.py`。`stock/signals.py` 在产品改品牌/系列、硬删除、归档时，只检查它**离开的那个**品牌和系列，

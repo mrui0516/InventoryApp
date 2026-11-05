@@ -140,3 +140,8 @@
 - 因此：**新页面按本文写即可**；旧页面要逐个把内联样式并入 app.css 才能真正统一，需逐页目视确认，属于渐进任务。
 
 优先清理顺序（按内联体积）：`outbound` 22KB → `sales_records` 20KB → `customer_detail` 16KB → `inbound` 10KB → `customer_search` 9KB → `catalog` 9KB。
+
+## 品牌 logo
+
+`{% load brands %}{% brand_logo brand size=28 fallback=product.brand %}`。`brand` 可以是 None，没有 logo 时显示首字母，样式都在标签里。
+
