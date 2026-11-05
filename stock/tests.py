@@ -8236,7 +8236,7 @@ class RoundANavigationTests(TestCase):
                                  "Products", "Catalog View",
                                  "Customers", "IOU", "Inbound", "Transfers", "Suppliers", "Finance",
                                  "Attendance", "Tools", "Team", "Stores", "Print Header",
-                                 "Shop settings", "Correct orders", "Audit"])
+                                 "Shop settings", "Catalog", "Correct orders", "Audit"])
         for group in ("Sell", "Products", "Customers", "Purchasing", "Finance", "Settings"):
             self.assertIn(f">{group}<", nav)
 
