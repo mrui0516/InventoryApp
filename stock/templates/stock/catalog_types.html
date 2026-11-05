@@ -1,0 +1,38 @@
+{% extends 'stock/catalog_base.html' %}
+{% block catalog_action %}<button type="button" class="btn btn-sm btn-primary" data-layer="type-new">+ Add type</button>{% endblock %}
+{% block catalog %}
+<section class="cat-card" aria-label="Types">
+  {% for row in types %}
+    <button type="button" class="cat-row" data-layer="type-{{ row.id }}">
+      <span class="main">{{ row.name }}</span>
+      <span class="n">{{ row.live_count }}</span>
+      <span class="sub">{{ row.default_category.name|default:"No category" }}{% if row.takes_concentration %} &middot; Concentration{% endif %}{% if row.takes_volume %} &middot; Volume{% endif %}{% if row.shows_scent_details %} &middot; Scent{% endif %}{% if row.wholesale_discount %} &middot; Discount{% endif %}{% if row.is_gift %} &middot; Gift set{% endif %}</span>
+    </button>
+    <template id="type-{{ row.id }}">
+      <div data-part="title">{{ row.name }}</div>
+      <div data-part="body">{% include "stock/_catalog_type_form.html" with row=row %}</div>
+      <div data-part="foot">
+        {% if row.code != 'perfume' %}
+        <form method="post" action="{% url 'catalog_types' %}" class="cat-danger">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="{{ row.id }}">
+          {% if row.total_count %}
+            <label class="cat-warn" for="move-{{ row.id }}">{{ row.total_count }} product{{ row.total_count|pluralize }} move to</label>
+            <select class="form-select" id="move-{{ row.id }}" name="move_to" required>
+              <option value="">Choose</option>
+              {% for other in types %}{% if other.id != row.id %}<option value="{{ other.id }}">{{ other.name }}</option>{% endif %}{% endfor %}
+            </select>
+          {% endif %}
+          <button type="submit" class="btn btn-outline-danger">Delete type</button>
+        </form>
+        {% endif %}
+      </div>
+    </template>
+  {% endfor %}
+</section>
+<template id="type-new">
+  <div data-part="title">Add type</div>
+  <div data-part="body">{% include "stock/_catalog_type_form.html" with row=None %}</div>
+  <div data-part="foot"></div>
+</template>
+{% endblock %}

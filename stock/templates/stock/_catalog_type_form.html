@@ -1,0 +1,24 @@
+<form method="post" action="{% url 'catalog_types' %}" class="cat-form" id="type-form-{{ row.id|default:'new' }}">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="{% if row %}save{% else %}add{% endif %}">
+  {% if row %}<input type="hidden" name="id" value="{{ row.id }}">{% endif %}
+  <label>Name<input class="form-control" name="name" maxlength="60" required value="{{ row.name|default:'' }}"></label>
+  <label>Word in product names<input class="form-control" name="name_word" maxlength="40" value="{{ row.name_word|default:'' }}"></label>
+  <label>Name on the customer PDF<input class="form-control" name="customer_label" maxlength="60" value="{{ row.customer_label|default:'' }}"></label>
+  <label>Category
+    <select class="form-select" name="default_category" required>
+      <option value="">Choose</option>
+      {% for c in categories %}<option value="{{ c.id }}"{% if row.default_category_id == c.id %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <div class="cat-warn">Perfumes: auto pricing and the wholesale discount apply.</div>
+  {% if row %}
+    <label class="cat-check"><input type="checkbox" name="takes_concentration"{% if row.takes_concentration %} checked{% endif %}>Concentration</label>
+    <label class="cat-check"><input type="checkbox" name="takes_volume"{% if row.takes_volume %} checked{% endif %}>Volume</label>
+    <label class="cat-check"><input type="checkbox" name="shows_scent_details"{% if row.shows_scent_details %} checked{% endif %}>Scent section</label>
+    <label class="cat-check"><input type="checkbox" name="wholesale_discount"{% if row.wholesale_discount %} checked{% endif %}>Wholesale discount</label>
+    <label class="cat-check"><input type="checkbox" name="is_gift"{% if row.is_gift %} checked{% endif %}>Gift set</label>
+    <label>Order<input class="form-control" type="number" min="0" name="sort_order" value="{{ row.sort_order }}"></label>
+  {% endif %}
+  <button type="submit" class="btn btn-primary">{% if row %}Save{% else %}Add type{% endif %}</button>
+</form>

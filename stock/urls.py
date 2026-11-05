@@ -4,7 +4,7 @@ from django.contrib.auth import views as auth_views
 from django.conf import settings
 from django.conf.urls.static import static
 
-from . import finance_views, panel_views, pedido_views, views
+from . import catalog_views, finance_views, panel_views, pedido_views, views
 
 
 urlpatterns = [
@@ -71,6 +71,8 @@ urlpatterns = [
     path('api/quick-import/', views.quick_import, name='quick_import'),
     path('alerts/low-stock/', views.alerts_low_stock, name='alerts_low_stock'),
     path('settings/business/', views.business_settings_view, name='business_settings'),
+    path('settings/catalog/', catalog_views.catalog_settings, name='catalog_settings'),
+    path('settings/catalog/types/', catalog_views.catalog_types, name='catalog_types'),
     path('settings/audit/', views.audit_view, name='audit'),
     path('settings/audit/orders/', views.audit_orders_view, name='audit_orders'),
     path('settings/audit/stock/', views.audit_stock_view, name='audit_stock'),
