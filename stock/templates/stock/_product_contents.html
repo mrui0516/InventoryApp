@@ -3,7 +3,7 @@
     .pfc-row{ display:flex; align-items:center; gap:.5rem; padding:.35rem 0; border-top:1px solid var(--app-border); }
     .pfc-row:first-child{ border-top:0; }
     .pfc-name{ flex:1 1 auto; min-width:0; font-weight:700; overflow-wrap:anywhere; }
-    .pfc-tag{ flex:none; font-size:.85rem; font-weight:700; color:#0f766e; }
+    .pfc-tag{ display:block; font-size:.85rem; font-weight:700; color:#0f766e; }
     .pfc-x{ flex:none; width:36px; height:36px; border:0; border-radius:999px; background:none; color:var(--app-muted); font-size:1.1rem; }
     .pfc-x:hover{ background:var(--app-surface-2); }
     .pfc-add{ display:flex; gap:.5rem; margin-top:.5rem; }
@@ -12,7 +12,6 @@
     .pfc-hits:empty{ display:none; }
     .pfc-hits button{ display:block; width:100%; padding:.45rem .6rem; border:0; background:none; color:inherit; text-align:left; }
     .pfc-hits button:hover, .pfc-hits button:focus-visible{ background:var(--app-accent-soft); }
-    .pfc-hits small{ color:var(--app-muted); font-size:.85rem; }
     .pfc-paste{ margin-top:.5rem; font-size:.9rem; }
     .pfc-paste summary{ cursor:pointer; color:var(--app-muted); font-weight:700; }
     .pfc-paste textarea{ margin:.35rem 0; }
@@ -61,13 +60,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const name = document.createElement('span');
       name.className = 'pfc-name';
       name.textContent = row.name;
-      line.appendChild(name);
       if (row.linked_id) {
-        const tag = document.createElement('span');
+        const tag = document.createElement('small');
         tag.className = 'pfc-tag';
-        tag.textContent = 'Linked';
-        line.appendChild(tag);
+        tag.textContent = row.linked_label ? `Linked: ${row.linked_label}` : 'Linked';
+        name.appendChild(tag);
       }
+      line.appendChild(name);
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'pfc-x';
@@ -79,10 +78,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     store.value = JSON.stringify(rows);
   }
-  function add(name, linkedId) {
+  function add(name, linkedId, linkedLabel) {
     const clean = (name || '').trim();
     if (!clean || rows.some((r) => r.name.toLowerCase() === clean.toLowerCase())) return;
-    rows.push({ name: clean, linked_id: linkedId || null });
+    rows.push({ name: clean, linked_id: linkedId || null, linked_label: linkedLabel || '' });
     render();
   }
   function shown() {
@@ -105,12 +104,9 @@ document.addEventListener('DOMContentLoaded', () => {
         data.results.slice().sort((a, b) => same(a) - same(b)).slice(0, 8).forEach((r) => {
           const pick = document.createElement('button');
           pick.type = 'button';
-          pick.textContent = r.scent_name || r.display_name;
-          const small = document.createElement('small');
-          small.textContent = ` ${r.brand}`;
-          pick.appendChild(small);
+          pick.textContent = r.display_name;
           pick.addEventListener('click', () => {
-            add(r.scent_name || r.display_name, r.id);
+            add(r.scent_name || r.display_name, r.id, r.display_name);
             search.value = '';
             hits.textContent = '';
             search.focus();
@@ -135,7 +131,7 @@ document.addEventListener('DOMContentLoaded', () => {
     body.append('csrfmiddlewaretoken', form.querySelector('[name="csrfmiddlewaretoken"]').value);
     fetch("{% url 'parse_contents' %}", { method: 'POST', body })
       .then((r) => r.json())
-      .then((data) => { data.rows.forEach((row) => add(row.name, row.linked_id)); paste.value = ''; });
+      .then((data) => { data.rows.forEach((row) => add(row.name, row.linked_id, row.linked_label)); paste.value = ''; });
   });
   kind.addEventListener('change', shown);
   mix.addEventListener('change', shown);

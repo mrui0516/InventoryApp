@@ -237,6 +237,13 @@ def _chosen_brand(request):
     return Brand.objects.filter(pk=int(value)).first() if value.isdigit() else None
 
 
+def _breaks_the_perfume_rules(old, new):
+    """Auto pricing wants a category called exactly Perfumes, the wholesale discount
+    and Shopify one with "perfum" in its name (services/pricing, wholesale_discount)."""
+    old, new = old.strip().lower(), new.strip().lower()
+    return (old == 'perfumes' and new != old) or ('perfum' in old and 'perfum' not in new)
+
+
 def _category_block(row):
     """Why a category cannot go, or '' if it can."""
     if Product.objects.filter(category=row).exists():
@@ -264,6 +271,8 @@ def catalog_categories(request):
             messages.success(request, f'{name} added.')
         elif row is None:
             messages.error(request, 'That category no longer exists.')
+        elif action == 'save' and _breaks_the_perfume_rules(row.name, name):
+            messages.error(request, f'{row.name} keeps its name: auto pricing and the wholesale discount read it.')
         elif action == 'save':
             row.name, row.sync_to_shopify = name, request.POST.get('sync_to_shopify') == 'on'
             row.save(update_fields=['name', 'sync_to_shopify'])

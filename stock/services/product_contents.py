@@ -29,9 +29,12 @@ def _clean_link(owner, linked_id):
 
 def contents_for_form(owner):
     rows = owner.contents.select_related('linked')
-    return [{'name': content_label(row),
-             'linked_id': row.linked_id if row.linked and row.linked.archived_at is None else None}
-            for row in rows]
+    result = []
+    for row in rows:
+        live = row.linked if row.linked and row.linked.archived_at is None else None
+        result.append({'name': content_label(row), 'linked_id': live.pk if live else None,
+                       'linked_label': live.list_name if live else ''})
+    return result
 
 
 def _link_id(value):
@@ -55,8 +58,17 @@ def save_contents(owner, rows):
 
 def parse_pasted(brand_name, text):
     """Names one per line or comma separated, linked where a product of this brand
-    has exactly that name. Takes the brand's name since a new product has no id."""
-    catalogue = {p.scent_name.lower(): p for p in Product.objects.filter(brand__iexact=brand_name, is_mix=False)}
+    has exactly that name. Takes the brand's name since a new product has no id.
+
+    One name often means several products. The list links to the scent itself, so
+    the perfume wins, the biggest bottle first; a product with a list of its own
+    (a coffret, a body spray) is never the scent."""
+    catalogue = {}
+    products = Product.objects.filter(brand__iexact=brand_name, is_mix=False)
+    candidates = [p for p in products if not p.type_info.has_contents]
+    candidates.sort(key=lambda p: (p.product_type_id != Product.PERFUME, -(p.volume_ml or 0), p.pk))
+    for product in candidates:
+        catalogue.setdefault(product.scent_name.lower(), product)
     seen, rows = set(), []
     for part in re.split(r'[\n,]', text or ''):
         name = part.strip()
@@ -65,7 +77,8 @@ def parse_pasted(brand_name, text):
         seen.add(name.lower())
         match = catalogue.get(name.lower())
         rows.append({'name': match.scent_name if match else title_case(name),
-                     'linked_id': match.pk if match else None})
+                     'linked_id': match.pk if match else None,
+                     'linked_label': match.list_name if match else ''})
     return rows
 
 

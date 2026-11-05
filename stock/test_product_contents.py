@@ -10,7 +10,8 @@ from django.utils import timezone
 
 from stock.models import Brand, Category, Product, ProductContent, ProductSeries, ProductType, Purchase
 from stock.models.product_types import clear_type_cache
-from stock.services.product_contents import (also_in, content_label, contents_title, parse_pasted, save_contents)
+from stock.services.product_contents import (also_in, content_label, contents_for_form, contents_title,
+                                             parse_pasted, save_contents)
 
 
 class ContentsMixin(TestCase):
@@ -335,3 +336,35 @@ class DetailPageTests(ContentsMixin):
 
     def test_a_product_with_neither_shows_no_section(self):
         self.assertNotIn('class="pdp-links"', self._page(self.yara))
+
+
+class PasteChoosesTheRightProductTests(ContentsMixin):
+    def setUp(self):
+        super().setUp()
+        self.small = self._product("6290000080011", model="Oud", name="", volume_ml=50)
+        self.big = self._product("6290000080012", model="Oud", name="", volume_ml=100)
+        self.mini = self._product("6290000080013", model="Oud", name="", product_type_id="mini", volume_ml=10)
+        self.gift2 = self._product("6290000080014", model="Oud", name="", product_type_id="coffret")
+        self.spray = self._product("6290000080015", model="Oud", name="", product_type_id="body_spray")
+        self.mist = self._product("6290000080016", model="Oud", name="", product_type_id="body_mist")
+
+    def test_the_perfume_wins_over_every_other_type(self):
+        self.assertEqual(parse_pasted("Lattafa", "oud")[0]["linked_id"], self.big.id)
+
+    def test_with_no_perfume_a_mini_is_next(self):
+        Product.objects.filter(pk__in=[self.small.pk, self.big.pk]).delete()
+        self.assertEqual(parse_pasted("Lattafa", "oud")[0]["linked_id"], self.mini.id)
+
+    def test_a_product_with_its_own_list_is_never_matched(self):
+        Product.objects.filter(pk__in=[self.small.pk, self.big.pk, self.mini.pk]).delete()
+        row = parse_pasted("Lattafa", "oud")[0]
+        self.assertIsNone(row["linked_id"])
+        self.assertEqual(row["name"], "Oud")
+
+    def test_the_row_says_which_product_it_linked(self):
+        row = parse_pasted("Lattafa", "oud")[0]
+        self.assertIn("100ml", row["linked_label"])
+
+    def test_the_form_list_says_which_product_it_linked(self):
+        save_contents(self.mix, [{"name": "", "linked_id": self.big.id}])
+        self.assertIn("100ml", contents_for_form(self.mix)[0]["linked_label"])

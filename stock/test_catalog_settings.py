@@ -364,3 +364,37 @@ class FamiliesTabTests(BrandsMixin):
         row = FragranceFamily.objects.create(name="Old")
         self._post_to(action="delete", id=row.id)
         self.assertFalse(FragranceFamily.objects.filter(pk=row.id).exists())
+
+
+class CategoryNamesTheRulesReadTests(BrandsMixin):
+    def _post_to(self, **data):
+        return self.client.post(reverse("catalog_categories"), data, follow=True)
+
+    def test_perfumes_cannot_lose_the_name_the_rules_read(self):
+        from stock.services.pricing import is_perfume
+        from stock.services.wholesale_discount import discount_applies
+        Product.objects.filter(pk=self.product.pk).update(volume_ml=100)
+        self.product.refresh_from_db()
+        response = self._post_to(action="save", id=self.perfumes.id, name="Fragrances")
+        self.perfumes.refresh_from_db()
+        self.assertEqual(self.perfumes.name, "Perfumes")
+        self.assertContains(response, "auto pricing")
+        self.product.refresh_from_db()
+        self.assertTrue(is_perfume(self.product))
+        self.assertTrue(discount_applies(self.product))
+
+    def test_its_shopify_switch_still_saves(self):
+        self._post_to(action="save", id=self.perfumes.id, name="Perfumes", sync_to_shopify="on")
+        self.perfumes.refresh_from_db()
+        self.assertTrue(self.perfumes.sync_to_shopify)
+
+    def test_changing_the_case_is_fine(self):
+        self._post_to(action="save", id=self.perfumes.id, name="PERFUMES")
+        self.perfumes.refresh_from_db()
+        self.assertEqual(self.perfumes.name, "PERFUMES")
+
+    def test_another_category_renames_freely(self):
+        row = Category.objects.create(name="Body care")
+        self._post_to(action="save", id=row.id, name="Skin care")
+        row.refresh_from_db()
+        self.assertEqual(row.name, "Skin care")
