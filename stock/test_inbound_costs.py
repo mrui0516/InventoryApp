@@ -262,7 +262,7 @@ class PendingListTests(InboundCostsMixin):
         InboundOrder.objects.filter(pk=received.pk).update(total_amount=Decimal("99"), status="received")
         response = self.client.get(reverse("inbound"))
         self.assertEqual(response.context["pending_total"], Decimal("123.50"))
-        self.assertContains(response, "\u20ac123.50")
+        self.assertContains(response, "Total &euro;123.50")
 
     def test_the_total_is_there_after_a_refused_post_too(self):
         self.order((self.a, 1, "10", "0"))
@@ -271,7 +271,7 @@ class PendingListTests(InboundCostsMixin):
         self.assertEqual(response.context["pending_total"], Decimal("10"))
 
     def test_no_pending_orders_no_list(self):
-        self.assertNotContains(self.client.get(reverse("inbound")), "Awaiting receipt")
+        self.assertNotContains(self.client.get(reverse("inbound")), "Pending inbound orders")
 
 
 class WithIvaColumnTests(InboundCostsMixin):
