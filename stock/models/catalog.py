@@ -6,6 +6,8 @@ from decimal import Decimal
 from django.db import models
 from django.db.models import Sum
 
+from .product_types import ProductType
+
 
 def product_image_upload_to(instance, filename):
     """Store product photos under product_images/<brand>/<filename>.
@@ -86,8 +88,8 @@ class ProductSeries(models.Model):
 class Concentration(models.Model):
     """Perfume strength: EDT / EDP / Extrait de Parfum ...
 
-    Only a perfume or a mini has one (``Product.TAKES_CONCENTRATION``). Oil
-    perfume and body mist are types of their own since 2026-11-04.
+    Only some product types have one (``ProductType.takes_concentration``).
+    Oil perfume and body mist are types of their own since 2026-11-04.
 
     A table rather than ``choices`` so the shop can add a new strength itself
     without a code change. ``shopify_tag`` is optional — blank means the value
@@ -193,23 +195,11 @@ class Product(models.Model):
     volume_ml = models.PositiveIntegerField(null=True, blank=True, db_index=True)
     concentration = models.ForeignKey('Concentration', on_delete=models.SET_NULL,
                                       null=True, blank=True, related_name='products')
-    # What kind of fragrance product (2026-10-29): a bottle of perfume, or one
-    # of the other things the perfume shelf carries. Filters and names use it.
+    # What kind of product this is: the rows and their rules are in ProductType.
     PERFUME, BODY_SPRAY, AIR_FRESHENER, COFFRET, MINI = 'perfume', 'body_spray', 'air_freshener', 'coffret', 'mini'
     OIL_PERFUME, BODY_MIST = 'oil_perfume', 'body_mist'
-    PERFUME_TYPES = [
-        (PERFUME, 'Perfume'),
-        (MINI, 'Mini'),
-        (OIL_PERFUME, 'Oil perfume'),
-        (BODY_MIST, 'Body mist / splash'),
-        (BODY_SPRAY, 'Body spray / Deo'),
-        (AIR_FRESHENER, 'Air freshener'),
-        (COFFRET, 'Coffret (gift set)'),
-    ]
-    # Only these are asked for a concentration; on the others it stays empty.
-    TAKES_CONCENTRATION = (PERFUME, MINI)
-    perfume_type = models.CharField(max_length=16, choices=PERFUME_TYPES, default=PERFUME, db_index=True,
-                                    verbose_name='Type')
+    product_type = models.ForeignKey(ProductType, to_field='code', default=PERFUME, on_delete=models.PROTECT,
+                                     related_name='products', verbose_name='Type')
     fragrance_families = models.ManyToManyField('FragranceFamily', blank=True, related_name='products')
     inspired_by = models.ForeignKey('Inspiration', on_delete=models.SET_NULL,
                                     null=True, blank=True, related_name='products')
@@ -357,13 +347,16 @@ class Product(models.Model):
         return " ".join([part for part in [size, self.color] if part])
 
     @property
+    def type_info(self):
+        return ProductType.for_code(self.product_type_id)
+
+    @property
     def type_label(self):
         """The kind in a few letters: a perfume's concentration (EDP), otherwise
         the type (Body spray, Coffret ...)."""
-        if self.perfume_type and self.perfume_type != self.PERFUME:
-            return {self.BODY_SPRAY: 'Body spray', self.AIR_FRESHENER: 'Air freshener',
-                    self.COFFRET: 'Coffret', self.MINI: 'Mini', self.OIL_PERFUME: 'Oil perfume',
-                    self.BODY_MIST: 'Body mist'}.get(self.perfume_type, '')
+        word = self.type_info.name_word
+        if word:
+            return word
         concentration = self.concentration
         return (concentration.short or concentration.name) if concentration else ''
 
@@ -386,7 +379,7 @@ class Product(models.Model):
         head = " - ".join([part for part in [self.brand, self.model, self.name] if part])
         tail = self.variant_label
         # A gift set is often named exactly as its perfume: say which this is.
-        kind = self.type_label if self.perfume_type != self.PERFUME else ''
+        kind = self.type_info.name_word
         if kind and kind.lower() not in head.lower():
             head = f"{head} {kind}" if head else kind
         if head and tail:

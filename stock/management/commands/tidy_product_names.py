@@ -17,7 +17,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.db.models import Count
 
-from stock.models import Brand, Product, ProductSeries
+from stock.models import Brand, Product, ProductSeries, ProductType
 from stock.services.names import title_case
 
 TYPE_HINTS = [
@@ -129,11 +129,11 @@ class Command(BaseCommand):
             # Only perfumes get a type: "Mini cable" or "Keyboard set" are not perfumes.
             is_perfume = (product.archived_at is None and product.category_id
                           and product.category.form_kind == 'perfume')
-            if product.perfume_type == Product.PERFUME and is_perfume:
+            if product.product_type_id == Product.PERFUME and is_perfume:
                 kind = guess_type(product)
                 if kind:
-                    changes['perfume_type'] = kind
-                    out(f'  #{product.id}: type -> {dict(Product.PERFUME_TYPES)[kind]}  ({product.display_name})')
+                    changes['product_type_id'] = kind
+                    out(f'  #{product.id}: type -> {ProductType.for_code(kind).name}  ({product.display_name})')
                     typed += 1
             if changes:
                 Product.all_objects.filter(pk=product.pk).update(**changes)

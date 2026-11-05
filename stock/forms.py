@@ -20,6 +20,7 @@ from .models import (
     PrintProfile,
     Product,
     ProductSeries,
+    ProductType,
     Purchase,
     Sale,
     SaleOrder,
@@ -64,7 +65,7 @@ class ProductForm(forms.ModelForm):
             'gender',
             'volume_ml',
             'concentration',
-            'perfume_type',
+            'product_type',
             'fragrance_families',
             'notes_top',
             'notes_heart',
@@ -78,7 +79,7 @@ class ProductForm(forms.ModelForm):
         widgets = {
             'gender': forms.Select(attrs={'class': 'form-select'}),
             'concentration': forms.Select(attrs={'class': 'form-select'}),
-            'perfume_type': forms.Select(attrs={'class': 'form-select'}),
+            'product_type': forms.Select(attrs={'class': 'form-select'}),
             # a perfume usually sits in several families
             'fragrance_families': forms.CheckboxSelectMultiple(),
             'volume_ml': forms.NumberInput(attrs={
@@ -106,7 +107,8 @@ class ProductForm(forms.ModelForm):
         self.fields['concentration'].label = 'Concentration'
         self.fields['concentration'].empty_label = 'Not set'
         # Left out (an older form, a script): an ordinary perfume.
-        self.fields['perfume_type'].required = False
+        self.fields['product_type'].required = False
+        self.fields['product_type'].empty_label = None
         self.fields['gender'].choices = [('', 'Not set')] + [c for c in self.fields['gender'].choices if c[0]]
         self.fields['fragrance_families'].label = 'Fragrance family'
         def parse_pk(value):
@@ -179,15 +181,16 @@ class ProductForm(forms.ModelForm):
             return self.instance.barcode
         raise forms.ValidationError('Scan or type the barcode.')
 
-    def clean_perfume_type(self):
-        return self.cleaned_data.get('perfume_type') or Product.PERFUME
+    def clean_product_type(self):
+        return self.cleaned_data.get('product_type') or ProductType.objects.get(code=Product.PERFUME)
 
     def clean_name(self):
         return title_case(self.cleaned_data.get('name') or '')
 
     def clean(self):
         cleaned = super().clean()
-        if cleaned.get('perfume_type') not in Product.TAKES_CONCENTRATION:
+        kind = cleaned.get('product_type')
+        if kind and not kind.takes_concentration:
             cleaned['concentration'] = None
         brand = cleaned.get('brand_master')
         new_brand_name = title_case(cleaned.get('new_brand_name') or '')

@@ -90,7 +90,7 @@
       <h1 class="pdp-title">{{ product.list_name }}</h1>
       <div class="pdp-code">{{ product.barcode }}</div>
       <div class="pdp-tags">
-        {% if product.perfume_type != 'perfume' %}<span>{{ product.get_perfume_type_display }}</span>{% endif %}
+        {% if product.product_type_id != 'perfume' %}<span>{{ product.type_info.name }}</span>{% endif %}
         {% if product.concentration %}<span>{{ product.concentration.name }}</span>{% endif %}
         {% if product.volume_ml %}<span>{{ product.volume_ml }} ml</span>{% endif %}
         {% if product.gender %}<span>{{ product.get_gender_display }}</span>{% endif %}

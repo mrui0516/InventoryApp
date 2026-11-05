@@ -91,8 +91,8 @@
           {% render_field form.name class="form-control" placeholder="e.g. Iconic, Intense Man" %}
         </div>
         <div class="pf-field">
-          <label for="{{ form.perfume_type.id_for_label }}">Type</label>
-          {% render_field form.perfume_type class="form-select" %}
+          <label for="{{ form.product_type.id_for_label }}">Type</label>
+          {% render_field form.product_type class="form-select" %}
         </div>
         <div class="pf-field" id="pfConcField">
           <label for="{{ form.concentration.id_for_label }}">Concentration</label>
@@ -173,11 +173,13 @@
 
 {{ brand_catalog_json|json_script:"pfBrandCatalog" }}
 {{ brand_series_map_json|json_script:"pfSeriesMap" }}
+{{ type_rules|json_script:"pfTypeRules" }}
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('product-form');
   const brandCatalog = JSON.parse(JSON.parse(document.getElementById('pfBrandCatalog').textContent) || '[]');
   const seriesMap = JSON.parse(JSON.parse(document.getElementById('pfSeriesMap').textContent) || '{}');
+  const typeRules = JSON.parse(document.getElementById('pfTypeRules').textContent);
   const $ = (name) => form.querySelector(`[name="${name}"]`);
   const category = $('category'), brand = $('brand_master'), series = $('series_master');
   const newBrand = $('new_brand_name'), newSeries = $('new_series_name');
@@ -218,14 +220,12 @@ document.addEventListener('DOMContentLoaded', () => {
     /\d/.test(w) || /^(EDP|EDT|EDC|II|III|IV)$/i.test(w) || (/[A-Z]/.test(w.slice(1)) && /[a-z]/.test(w)) ? w
       : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
   function preview() {
-    const conc = $('concentration'), type = $('perfume_type');
-    // only a perfume or a mini has a concentration
-    const takesConc = ['', 'perfume', 'mini'].includes(type.value);
-    document.getElementById('pfConcField').classList.toggle('d-none', !takesConc);
-    if (!takesConc) conc.value = '';
+    const conc = $('concentration'), rule = typeRules[$('product_type').value] || {};
+    document.getElementById('pfConcField').classList.toggle('d-none', !rule.conc);
+    if (!rule.conc) conc.value = '';
     const brandName = titled(newBrand.value || '') || label(brand);
     const head = [titled(newSeries.value || '') || label(series), titled($('name').value || '')].filter(Boolean).join(' ');
-    const kind = type.value && type.value !== 'perfume' ? label(type).replace(/ \(.*\)| \/ (Deo|splash)/, '') : (conc.value ? (label(conc).match(/EDP|EDT|EDC|Extrait|Attar|Mist/) || [label(conc)])[0] : '');
+    const kind = rule.word || (conc.value ? (label(conc).match(/EDP|EDT|EDC|Extrait|Attar|Mist/) || [label(conc)])[0] : '');
     const size = $('volume_ml').value ? `${$('volume_ml').value}ml` : '';
     document.getElementById('pfBrand').textContent = brandName || 'Brand';
     document.getElementById('pfName').textContent = [head, kind, size].filter(Boolean).join(' · ') || 'Line · Name · Type · Size';

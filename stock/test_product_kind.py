@@ -14,7 +14,7 @@ class SameNameTests(TestCase):
         common = {"brand": "Lattafa", "model": "Yara", "name": "", "category": cat, "volume_ml": 100,
                   "default_price": Decimal("30")}
         self.bottle = Product.objects.create(barcode="9970000000001", **common)
-        self.gift = Product.objects.create(barcode="9970000000002", perfume_type=Product.COFFRET, **common)
+        self.gift = Product.objects.create(barcode="9970000000002", product_type_id=Product.COFFRET, **common)
 
     def rows(self, name):
         return match_products([{"ean": "", "name": name, "qty": 1, "unit_price": None, "total": None}])
@@ -28,7 +28,7 @@ class SameNameTests(TestCase):
         self.assertEqual(self.gift.display_name, "Lattafa - Yara Coffret 100ml")
 
     def test_every_kind_but_a_plain_perfume_is_named(self):
-        self.bottle.perfume_type = Product.BODY_SPRAY
+        self.bottle.product_type_id = Product.BODY_SPRAY
         self.assertEqual(self.bottle.display_name, "Lattafa - Yara Body spray 100ml")
 
     def test_a_plain_line_finds_the_bottle(self):

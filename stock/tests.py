@@ -4763,8 +4763,8 @@ class ExportPortugueseAndPricingTests(TestCase):
         # type is what keeps it out.
         mist = self._product("Bruma", "9960000000032", stock=0, wholesale="9.00")
         mist.volume_ml = 100
-        mist.perfume_type = "body_mist"
-        mist.save(update_fields=['volume_ml', 'perfume_type'])
+        mist.product_type_id = "body_mist"
+        mist.save(update_fields=['volume_ml', 'product_type'])
         self.assertFalse(discount_applies(mist))
 
     def test_a_body_spray_sized_bottle_is_excluded_by_its_size(self):
@@ -6614,6 +6614,8 @@ class ProductDetailRecentSalesTests(TestCase):
 
 
 class DownloadDbBackupViewTests(TransactionTestCase):
+    serialized_rollback = True      # the seeded product types
+
     # TransactionTestCase (not TestCase): the view runs SQLite's online backup on
     # the live connection. Under TestCase, the outer atomic block leaves the
     # test-created user uncommitted, and backing up an in-memory DB with a pending
@@ -10359,14 +10361,14 @@ class PerfumeFormTests(TestCase):
 
     def _post(self, **fields):
         data = {"category": self.perfumes.id, "barcode": "6291108730000", "brand_master": self.brand.id,
-                "name": "", "perfume_type": "perfume", "default_price": "40", "wholesale_price": "28"}
+                "name": "", "product_type": "perfume", "default_price": "40", "wholesale_price": "28"}
         data.update(fields)
         return self.client.post(reverse("add_product"), data)
 
     def test_the_page_is_the_perfume_form(self):
         body = self.client.get(reverse("add_product")).content.decode()
         self.assertIn('name="barcode"', body)
-        self.assertIn('name="perfume_type"', body)
+        self.assertIn('name="product_type"', body)
         self.assertIn(f'name="category" value="{self.perfumes.id}"', body)
         self.assertNotIn('id="step-pick"', body)
 
@@ -10393,12 +10395,12 @@ class PerfumeFormTests(TestCase):
 
     def test_the_type_is_kept_and_named_in_lists(self):
         from stock.models import Concentration
-        self._post(perfume_type="body_spray", name="Asad", volume_ml="200")
+        self._post(product_type="body_spray", name="Asad", volume_ml="200")
         product = Product.objects.get()
-        self.assertEqual(product.perfume_type, "body_spray")
+        self.assertEqual(product.product_type_id, "body_spray")
         self.assertEqual(product.list_name, "Asad · Body spray · 200ml")
         edp = Concentration.objects.create(name="Eau de Parfum", short="EDP")
-        Product.objects.filter(pk=product.pk).update(perfume_type="perfume", concentration=edp)
+        Product.objects.filter(pk=product.pk).update(product_type_id="perfume", concentration=edp)
         product.refresh_from_db()
         self.assertEqual(product.list_name, "Asad · EDP · 200ml")
         Product.objects.filter(pk=product.pk).update(name="Asad EDP 200ml")
@@ -10452,7 +10454,7 @@ class TidyProductNamesCommandTests(TestCase):
         cable = Product.objects.create(name="USB MINI CABLE", brand="China", barcode="6290000001009", category=acc)
         self._run("--apply")
         cable.refresh_from_db()
-        self.assertEqual(cable.perfume_type, "perfume")          # untouched
+        self.assertEqual(cable.product_type_id, "perfume")          # untouched
         self.assertEqual(cable.name, "USB Mini Cable")
 
     def test_apply_merges_capitalises_and_types(self):
@@ -10462,7 +10464,7 @@ class TidyProductNamesCommandTests(TestCase):
         self.p1.refresh_from_db()
         self.assertEqual(self.p1.brand_master_id, self.title.id)          # merged into the bigger one
         self.assertEqual((self.p1.brand, self.p1.model, self.p1.name), ("Lattafa", "Mix", "Body Spray"))
-        self.assertEqual(self.p1.perfume_type, "body_spray")
+        self.assertEqual(self.p1.product_type_id, "body_spray")
         self.assertIn("products renamed 0", self._run())                  # nothing left to do
 
 
@@ -10520,9 +10522,9 @@ class ProductListTypeTests(TestCase):
         mk = lambda **kw: Product.objects.create(category=cat, brand="Lattafa", **kw)
         self.asad = mk(name="Asad", model="Asad Line", barcode="6290000003001", volume_ml=100,
                        concentration=self.edp, gender="men", default_price=Decimal("30"))
-        self.spray = mk(name="Asad", barcode="6290000003002", volume_ml=200, perfume_type="body_spray",
+        self.spray = mk(name="Asad", barcode="6290000003002", volume_ml=200, product_type_id="body_spray",
                         gender="men", default_price=Decimal("8"))
-        self.mini = mk(name="Yara", barcode="6290000003003", volume_ml=10, perfume_type="mini",
+        self.mini = mk(name="Yara", barcode="6290000003003", volume_ml=10, product_type_id="mini",
                        gender="women", default_price=Decimal("12"))
         Purchase.objects.create(product=self.mini, quantity=9, remaining=9, cost_price=Decimal("3"))
 

@@ -84,7 +84,7 @@ class AutomaticPruneTests(CatalogPruneMixin):
         self.client.force_login(self.boss)
         response = self.client.post(reverse("add_product"), {
             "category": self.category.id, "barcode": "6290000008009", "new_brand_name": "Rasasi",
-            "new_series_name": "Hawas", "name": "", "perfume_type": "perfume",
+            "new_series_name": "Hawas", "name": "", "product_type": "perfume",
             "default_price": "40", "wholesale_price": "28"})
         self.assertEqual(response.status_code, 302)
         self.assertTrue(Brand.objects.filter(name="Rasasi").exists())

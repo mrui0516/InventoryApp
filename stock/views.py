@@ -53,7 +53,7 @@ from .models import (
     Category, SaleOrder, InboundOrder, InboundPendingItem, ARInvoice, ARItem,
     Brand, SaleOrderChangeLog, AttendanceRecord, PrintProfile,
     StockAdjustmentLog, SaleOrderPayment, Store, StoreProfile,
-    PedidoDraft, Concentration,
+    PedidoDraft, Concentration, ProductType,
 )
 from .services import order_charges
 from .services import submissions
@@ -140,6 +140,13 @@ def build_brand_series_map():
             for series in brand.series.all().order_by('name')
         ]
     return mapping
+
+
+def build_type_rules():
+    """``{code: rules}`` so the product form reshapes without a round trip."""
+    return {t.code: {'word': t.name_word, 'conc': t.takes_concentration,
+                     'volume': t.takes_volume, 'scent': t.shows_scent_details}
+            for t in ProductType.all_cached()}
 
 
 def build_brand_catalog():
@@ -1328,9 +1335,8 @@ def product_list_view(request):
         'perfume_type': state['perfume_type'],
         'concentration': state['concentration'],
         'gender': state['gender'],
-        'type_tabs': [{'value': value, 'label': {'body_spray': 'Body spray', 'coffret': 'Coffret'}.get(value, label),
-                       'n': state['type_counts'].get(value, 0)}
-                      for value, label in Product.PERFUME_TYPES if state['type_counts'].get(value)],
+        'type_tabs': [{'value': t.code, 'label': t.name_word or t.name, 'n': state['type_counts'][t.code]}
+                      for t in ProductType.all_cached() if state['type_counts'].get(t.code)],
         'type_total': sum(state['type_counts'].values()),
         'concentrations': Concentration.objects.order_by('sort_order', 'name'),
         'genders': [c for c in Product.GENDER_CHOICES if c[0]],
@@ -1496,9 +1502,9 @@ def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_cat
 
     # Counted before the type itself is applied, so every type tab shows its own number.
     type_counts = dict(Product.objects.filter(id__in=products_qs.values('id'))
-                       .values_list('perfume_type').annotate(n=Count('id')).order_by())
-    if perfume_type in dict(Product.PERFUME_TYPES):
-        products_qs = products_qs.filter(perfume_type=perfume_type)
+                       .values_list('product_type').annotate(n=Count('id')).order_by())
+    if perfume_type in {t.code for t in ProductType.all_cached()}:
+        products_qs = products_qs.filter(product_type=perfume_type)
     else:
         perfume_type = ''
 
@@ -2140,6 +2146,7 @@ def add_product_view(request):
         'category_kind_json': json.dumps(build_category_kind_map()),
         'brand_series_map_json': json.dumps(build_brand_series_map()),
         'brand_catalog_json': json.dumps(build_brand_catalog()),
+        'type_rules': build_type_rules(),
     })
 
 
@@ -2659,6 +2666,7 @@ def edit_product_view(request, pk):
         'sale_count': sale_count,
         'brand_series_map_json': json.dumps(build_brand_series_map()),
         'brand_catalog_json': json.dumps(build_brand_catalog()),
+        'type_rules': build_type_rules(),
     })
 
 
