@@ -1,6 +1,6 @@
 # 产品目录设置（Catalog）与 Mix 产品设计
 
-> 日期：2026-11-05。状态：等待确认，尚未开始实现。
+> 日期：2026-11-05。状态：已确认，尚未开始实现。
 
 ## 1. 为什么做
 
@@ -62,17 +62,21 @@
 | Type | 浓度 | 容量 | 批发折扣 | 礼盒 | 内含清单 | 香调信息 |
 |---|---|---|---|---|---|---|
 | Perfume | 是 | 是 | 是 | 否 | 否 | 是 |
-| Mini | 是 | 是 | 是 | 否 | 否 | 是 |
-| Oil perfume | 否 | 是 | 是 | 否 | 否 | 是 |
+| Mini | 是 | 是 | 否 | 否 | 否 | 是 |
+| Oil perfume | 否 | 是 | 否 | 否 | 否 | 是 |
 | Body mist / splash | 否 | 是 | 否 | 否 | 否 | 是 |
-| Body spray / Deo | 否 | 是 | 是 | 否 | 否 | 是 |
-| Air freshener | 否 | 是 | 是 | 否 | 否 | 否 |
-| Coffret | 否 | **否** | 见下 | 是 | **是** | 是 |
+| Body spray / Deo | 否 | 是 | 否 | 否 | 否 | 是 |
+| Air freshener | 否 | 是 | 否 | 否 | 否 | 否 |
+| Coffret | 否 | **否** | 是 | 是 | **是** | 是 |
 
-批发折扣开关和现有的 60–120ml、Perfumes 分类规则是“并且”的关系，不取代它们。
+**批发折扣只用于 Perfume 和 Coffret**（店主确认）。以前没有细分 Type，所以规则只看分类和容量；
+这张表是对现有行为唯一有意的改变：Mini、Oil perfume、Body spray、Air freshener 即使容量在 60–120ml 也不再打折。
 
-**Coffret 的折扣待店主确认。** 现有规则要求容量在 60–120ml，没有容量就不打折。
-所以 Coffret 去掉容量后默认不再打折；如果要继续打，`takes_volume` 关闭的 Type 就跳过容量判断，只看折扣开关。
+判断规则（`discount_applies`，导出和 Pedido 共用）：
+
+1. 产品在 Perfumes 分类，**并且** Type 的 `wholesale_discount` 打开。
+2. `takes_volume` 打开的 Type（Perfume）还要容量在 60–120ml，没有容量不打折，和现在一样。
+3. `takes_volume` 关闭的 Type（Coffret）不看容量。
 
 新建 Type 时批发折扣默认关闭：漏打折一眼能看出来，多打折会悄悄损失利润。
 
@@ -173,8 +177,8 @@
 
 每阶段都能单独上线，并跑完整测试：
 
-1. **Type 表**：`ProductType`、数据迁移、替换写死的规则、Settings 的 Types 标签。上线后行为不变，Creme 可以自己加。这一步 Coffret 仍是 `takes_volume` 打开。
-2. **添加产品先选 Type**：卡片页、按开关显示表单，Coffret 去掉容量。这一步开始 Coffret 的折扣行为会变（第 3 节）。
+1. **Type 表**：`ProductType`、数据迁移、替换写死的规则、Settings 的 Types 标签。除批发折扣外行为不变，Creme 可以自己加。这一步 Coffret 仍是 `takes_volume` 打开，Mini、Oil perfume、Body spray、Air freshener 不再打批发折扣（第 3 节）。
+2. **添加产品先选 Type**：卡片页、按开关显示表单，Coffret 去掉容量。这一步起 Coffret 打折不再看容量，以前因容量不符不打折的 Coffret 也会打折。
 3. **Catalog 其余标签和 logo**：Brands、Lines、Categories、Concentrations、Fragrance families、合并、logo 组件。
 4. **Mix 和 Coffret 连接**：`is_mix`、`ProductContent`、表单、详情页。
 5. **PDF 跳转**。
@@ -195,4 +199,4 @@
 - 外键的具体做法、迁移拆分、标签页的路由结构。
 - 款式清单的前端写法。
 - 排序用数字还是上下按钮。
-- 每阶段的测试组织方式，但必须覆盖：迁移前后行为不变、改名和合并同时更新已归档产品、PDF 目标缺失时仍能生成。
+- 每阶段的测试组织方式，但必须覆盖：迁移前后除批发折扣外行为不变、改名和合并同时更新已归档产品、PDF 目标缺失时仍能生成。
