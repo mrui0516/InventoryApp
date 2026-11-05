@@ -62,6 +62,7 @@ class Category(models.Model):
 class Brand(models.Model):
     name = models.CharField(max_length=80, unique=True, db_index=True)
     categories = models.ManyToManyField(Category, blank=True, related_name='brands')
+    logo = models.ImageField(upload_to='brand_logos/', blank=True, default='')
 
     class Meta:
         ordering = ['name']

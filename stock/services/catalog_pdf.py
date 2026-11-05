@@ -15,6 +15,7 @@ shows them, and the layout cannot be reflowed away by whichever app opens it.
 So: Excel for anyone who wants to sort and filter, PDF for anyone sending a
 list to a customer.
 """
+import os
 from io import BytesIO
 
 from PIL import Image as PILImage
@@ -84,6 +85,15 @@ def _thumb(product):
         return None
 
 
+def _brand_logo(name):
+    """The brand's logo as a flowable, or None: a missing file must not stop an export."""
+    from ..models import Brand
+    brand = Brand.objects.filter(name__iexact=name).exclude(logo='').first()
+    if brand is None or not os.path.exists(brand.logo.path):
+        return None
+    return Image(brand.logo.path, width=12 * mm, height=12 * mm, kind='proportional')
+
+
 def build_catalog_pdf(brand_groups, *, price_mode='retail', include_images=True,
                       legend='', shop_name='KHAN PERFUME'):
     """Render the grouped products to PDF bytes.
@@ -121,7 +131,14 @@ def build_catalog_pdf(brand_groups, *, price_mode='retail', include_images=True,
     for index, (brand_name, products) in enumerate(brand_groups.items()):
         if index:
             story.append(PageBreak())
-        story.append(Paragraph(f'{brand_name} | Lista de Produtos', style['title']))
+        title = Paragraph(f'{brand_name} | Lista de Produtos', style['title'])
+        logo = _brand_logo(brand_name)
+        if logo:
+            head = Table([[logo, title]], colWidths=[14 * mm, None])
+            head.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'MIDDLE'), ('LEFTPADDING', (0, 0), (-1, -1), 0)]))
+            story.append(head)
+        else:
+            story.append(title)
         if legend:
             story.append(Paragraph(legend, style['legend']))
 

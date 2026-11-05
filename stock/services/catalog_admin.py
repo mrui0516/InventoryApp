@@ -97,5 +97,8 @@ def merge_brands(keep, other):
                 line.brand = keep
                 line.save(update_fields=['brand'])
         keep.categories.add(*other.categories.all())
+        if other.logo and not keep.logo:
+            keep.logo = other.logo.name
+            keep.save(update_fields=['logo'])
         other.delete()
     return count

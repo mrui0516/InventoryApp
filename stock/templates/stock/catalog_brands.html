@@ -1,11 +1,12 @@
 {% extends 'stock/catalog_base.html' %}
+{% load brands %}
 {% block catalog_action %}<button type="button" class="btn btn-sm btn-primary" data-layer="brand-new">+ Add brand</button>{% endblock %}
 {% block catalog %}
 <div class="cat-tools"><input class="form-control" type="search" placeholder="Search brands" aria-label="Search brands" data-cat-search></div>
 <section class="cat-card" aria-label="Brands">
   {% for row in brands %}
     <button type="button" class="cat-row" data-layer="brand-{{ row.id }}" data-q="{{ row.name|lower }}">
-      <span class="main">{{ row.name }}</span>
+      <span class="main cat-brand">{% brand_logo row size=28 %}<span>{{ row.name }}</span></span>
       <span class="n">{{ row.live_count }}</span>
       <span class="sub">{{ row.line_count }} line{{ row.line_count|pluralize }}</span>
     </button>
@@ -17,6 +18,20 @@
           <input type="hidden" name="action" value="rename"><input type="hidden" name="id" value="{{ row.id }}">
           <label>Name<input class="form-control" name="name" maxlength="50" required value="{{ row.name }}"></label>
         </form>
+        <form method="post" action="{% url 'catalog_brands' %}" enctype="multipart/form-data" class="cat-form mt-3">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="logo"><input type="hidden" name="id" value="{{ row.id }}">
+          <div class="cat-brand">{% brand_logo row size=48 %}<span class="fw-bold">Logo</span></div>
+          <input class="form-control" type="file" name="logo" accept=".jpg,.jpeg,.png,.webp" required aria-label="Logo">
+          <button type="submit" class="btn btn-outline-primary">Upload logo</button>
+        </form>
+        {% if row.logo %}
+        <form method="post" action="{% url 'catalog_brands' %}" class="mt-2">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="remove_logo"><input type="hidden" name="id" value="{{ row.id }}">
+          <button type="submit" class="btn btn-link btn-sm text-danger p-0">Remove logo</button>
+        </form>
+        {% endif %}
       </div>
       <div data-part="foot">
         <button type="submit" form="brand-form-{{ row.id }}" class="btn btn-primary w-100">Save</button>

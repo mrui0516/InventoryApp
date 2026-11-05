@@ -1,4 +1,5 @@
 {% extends 'stock/base.html' %}
+{% load brands %}
 {% load math_extras %}
 {% block title %}{{ product.list_name }}{% endblock %}
 {% block content %}
@@ -86,7 +87,7 @@
       {% if first %}<img class="pdp-photo js-product-zoom" src="{{ first.image.url }}" data-src="{{ first.image.url }}" alt="">{% else %}<div class="pdp-photo empty">No photo</div>{% endif %}
     {% endwith %}
     <div style="min-width:0;">
-      <span class="pdp-brand">{{ product.brand|default:"No brand" }}</span>
+      <span class="pdp-brand">{% brand_logo product.brand_master size=24 fallback=product.brand %} {{ product.brand|default:"No brand" }}</span>
       <h1 class="pdp-title">{{ product.list_name }}</h1>
       <div class="pdp-code">{{ product.barcode }}</div>
       <div class="pdp-tags">

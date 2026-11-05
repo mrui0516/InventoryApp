@@ -7,6 +7,9 @@ row only clears their link to it.
 
 A live product that carries the name as text but has no link still counts, so
 nothing is removed from under an old row.
+
+A brand with a logo stays until someone deletes it: the logo took work, and the
+brand often comes back with the next delivery.
 """
 from django.db.models import Exists, OuterRef
 
@@ -21,8 +24,10 @@ def empty_series(ids=None):
     return rows.filter(~Exists(linked), ~Exists(by_text))
 
 
-def empty_brands(ids=None):
+def empty_brands(ids=None, keep_logos=True):
     rows = Brand.objects.all() if ids is None else Brand.objects.filter(pk__in=ids)
+    if keep_logos:
+        rows = rows.filter(logo='')
     linked = Product.objects.filter(brand_master=OuterRef('pk'))
     by_series = Product.objects.filter(series_master__brand=OuterRef('pk'))
     by_text = Product.objects.filter(brand_master=None, brand__iexact=OuterRef('name'))

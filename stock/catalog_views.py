@@ -4,10 +4,12 @@ from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Q
 from django.shortcuts import redirect, render
 from django.urls import reverse
+from django.utils.text import slugify
 
 from .models import (Brand, Category, Concentration, FragranceFamily, Product, ProductSeries, ProductType)
 from .models.catalog import PERFUME
 from .permissions import admin_required
+from .services.brand_logo import clean_logo
 from .services.catalog_admin import (NameTaken, delete_type, merge_brands, merge_lines, new_type_code, rename_brand,
                                      rename_line)
 from .services.catalog_prune import empty_brands, empty_series
@@ -120,6 +122,22 @@ def _merged(request, merge, keep, row):
         messages.success(request, f'{row.name} merged: {count} product{"s" if count != 1 else ""} moved to {keep.name}.')
 
 
+def _save_logo(request, row):
+    upload = request.FILES.get('logo')
+    if upload is None:
+        messages.error(request, 'Choose a picture.')
+        return
+    try:
+        cleaned = clean_logo(upload)
+    except ValueError as error:
+        messages.error(request, str(error))
+        return
+    if row.logo:
+        row.logo.delete(save=False)
+    row.logo.save(f'{slugify(row.name) or row.pk}.png', cleaned, save=True)
+    messages.success(request, f'{row.name}: logo saved.')
+
+
 @login_required
 @admin_required
 def catalog_brands(request):
@@ -141,8 +159,16 @@ def catalog_brands(request):
             _rename(request, rename_brand, row, _text(request, 'name', 50))
         elif action == 'merge':
             _merged(request, merge_brands, Brand.objects.filter(pk=_number(request, 'into') or 0).first(), row)
+        elif action == 'logo':
+            _save_logo(request, row)
+        elif action == 'remove_logo':
+            if row.logo:
+                row.logo.delete(save=True)
+            messages.success(request, f'{row.name}: logo removed.')
         elif action == 'delete':
-            if empty_brands([row.pk]).exists():
+            if empty_brands([row.pk], keep_logos=False).exists():
+                if row.logo:
+                    row.logo.delete(save=False)
                 row.delete()
                 messages.success(request, f'{row.name} deleted.')
             else:

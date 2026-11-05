@@ -1,4 +1,5 @@
 {% extends 'stock/base.html' %}
+{% load brands %}
 {% load filterbar %}
 {% block title %}Products{% endblock %}
 
@@ -141,7 +142,7 @@
     {% if query or filters_on %}
       <div class="fchips">
         {% if query %}<a class="fchip" href="{% querystring q=None page=None %}">&ldquo;{{ query }}&rdquo;<span aria-hidden="true">&times;</span></a>{% endif %}
-        {% for b in brands %}{% if b.id == selected_brand %}<a class="fchip" href="{% querystring brand=None page=None %}">{{ b.name }}<span aria-hidden="true">&times;</span></a>{% endif %}{% endfor %}
+        {% for b in brands %}{% if b.id == selected_brand %}<a class="fchip" href="{% querystring brand=None page=None %}">{% brand_logo b size=18 %} {{ b.name }}<span aria-hidden="true">&times;</span></a>{% endif %}{% endfor %}
         {% for c in concentrations %}{% if c.id|stringformat:"s" == concentration %}<a class="fchip" href="{% querystring conc=None page=None %}">{{ c.short|default:c.name }}<span aria-hidden="true">&times;</span></a>{% endif %}{% endfor %}
         {% for value, label in genders %}{% if value == gender %}<a class="fchip" href="{% querystring gender=None page=None %}">{{ label }}<span aria-hidden="true">&times;</span></a>{% endif %}{% endfor %}
         {% if stock_status %}<a class="fchip" href="{% querystring stock_status=None page=None %}">{% if stock_status == 'in_stock' %}In stock{% elif stock_status == 'low_stock' %}Low stock{% else %}Out of stock{% endif %}<span aria-hidden="true">&times;</span></a>{% endif %}
