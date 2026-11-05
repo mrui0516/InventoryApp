@@ -23,6 +23,8 @@
   .cat-danger{ display:grid; gap:.45rem; width:100%; padding-top:.45rem; }
   .cat-more{ width:100%; font-size:.85rem; color:var(--app-muted); }
   .cat-more summary{ cursor:pointer; padding:.35rem 0; }
+  .cat-tools{ display:flex; flex-wrap:wrap; gap:.5rem; }
+  .cat-tools > *{ flex:1 1 12rem; min-width:0; }
 </style>
 <div class="cat">
   <div class="cat-head">
@@ -31,7 +33,16 @@
   </div>
   <nav class="cat-tabs" aria-label="Catalog">
     <a class="{% if tab == 'types' %}on{% endif %}" href="{% url 'catalog_types' %}">Types</a>
+    <a class="{% if tab == 'brands' %}on{% endif %}" href="{% url 'catalog_brands' %}">Brands</a>
+    <a class="{% if tab == 'lines' %}on{% endif %}" href="{% url 'catalog_lines' %}">Lines</a>
   </nav>
   {% block catalog %}{% endblock %}
 </div>
+<script>
+  // Search box above a list: hides the rows that do not match, no reload.
+  document.querySelectorAll('[data-cat-search]').forEach((box) => box.addEventListener('input', () => {
+    const q = box.value.trim().toLowerCase();
+    document.querySelectorAll('.cat-row[data-q]').forEach((row) => { row.hidden = !row.dataset.q.includes(q); });
+  }));
+</script>
 {% endblock %}

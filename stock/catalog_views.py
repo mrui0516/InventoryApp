@@ -1,12 +1,16 @@
 """Settings -> Catalog: the lists behind every product, for admins."""
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.shortcuts import redirect, render
+from django.urls import reverse
 
-from .models import Category, Product, ProductType
+from .models import Brand, Category, Product, ProductSeries, ProductType
 from .permissions import admin_required
-from .services.catalog_admin import delete_type, new_type_code
+from .services.catalog_admin import (NameTaken, delete_type, merge_brands, merge_lines, new_type_code, rename_brand,
+                                     rename_line)
+from .services.catalog_prune import empty_brands, empty_series
+from .services.names import title_case
 
 SWITCHES = ('takes_concentration', 'takes_volume', 'wholesale_discount', 'is_gift', 'shows_scent_details')
 
@@ -90,3 +94,114 @@ def catalog_types(request):
     return render(request, 'stock/catalog_types.html', {
         'tab': 'types', 'types': types, 'categories': Category.objects.order_by('name'),
     })
+
+
+def _rename(request, rename, row, name):
+    try:
+        rename(row, name)
+    except NameTaken as error:
+        messages.error(request, f'{error} Merge them instead.')
+    except ValueError as error:
+        messages.error(request, str(error))
+    else:
+        messages.success(request, f'{row.name} saved.')
+
+
+def _merged(request, merge, keep, row):
+    if keep is None:
+        messages.error(request, 'Choose where to merge it.')
+        return
+    try:
+        count = merge(keep, row)
+    except ValueError as error:
+        messages.error(request, str(error))
+    else:
+        messages.success(request, f'{row.name} merged: {count} product{"s" if count != 1 else ""} moved to {keep.name}.')
+
+
+@login_required
+@admin_required
+def catalog_brands(request):
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        row = Brand.objects.filter(pk=_number(request, 'id') or 0).first()
+        if action == 'add':
+            name = title_case(_text(request, 'name', 50))
+            if not name:
+                messages.error(request, 'Give the brand a name.')
+            elif Brand.objects.filter(name__iexact=name).exists():
+                messages.error(request, f'{name} already exists.')
+            else:
+                Brand.objects.create(name=name)
+                messages.success(request, f'{name} added.')
+        elif row is None:
+            messages.error(request, 'That brand no longer exists.')
+        elif action == 'rename':
+            _rename(request, rename_brand, row, _text(request, 'name', 50))
+        elif action == 'merge':
+            _merged(request, merge_brands, Brand.objects.filter(pk=_number(request, 'into') or 0).first(), row)
+        elif action == 'delete':
+            if empty_brands([row.pk]).exists():
+                row.delete()
+                messages.success(request, f'{row.name} deleted.')
+            else:
+                messages.error(request, f'{row.name} still has products.')
+        return redirect('catalog_brands')
+
+    brands = list(Brand.objects.annotate(
+        live_count=Count('products', filter=Q(products__archived_at__isnull=True), distinct=True),
+        line_count=Count('series', distinct=True)).order_by('name'))
+    return render(request, 'stock/catalog_brands.html', {'tab': 'brands', 'brands': brands})
+
+
+@login_required
+@admin_required
+def catalog_lines(request):
+    chosen = _chosen_brand(request)
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        row = ProductSeries.objects.select_related('brand').filter(pk=_number(request, 'id') or 0).first()
+        if action == 'add':
+            brand = Brand.objects.filter(pk=_number(request, 'brand') or 0).first()
+            name = title_case(_text(request, 'name', 100))
+            if brand is None or not name:
+                messages.error(request, 'Choose a brand and give the line a name.')
+            elif brand.series.filter(name__iexact=name).exists():
+                messages.error(request, f'{name} already exists.')
+            else:
+                ProductSeries.objects.create(brand=brand, name=name)
+                messages.success(request, f'{name} added.')
+        elif row is None:
+            messages.error(request, 'That line no longer exists.')
+        elif action == 'rename':
+            _rename(request, rename_line, row, _text(request, 'name', 100))
+        elif action == 'merge':
+            _merged(request, merge_lines, ProductSeries.objects.filter(pk=_number(request, 'into') or 0).first(), row)
+        elif action == 'delete':
+            if empty_series([row.pk]).exists():
+                row.delete()
+                messages.success(request, f'{row.name} deleted.')
+            else:
+                messages.error(request, f'{row.name} still has products.')
+        url = reverse('catalog_lines')
+        return redirect(f'{url}?brand={chosen.id}' if chosen else url)
+
+    rows = ProductSeries.objects.select_related('brand').annotate(
+        live_count=Count('products', filter=Q(products__archived_at__isnull=True))).order_by('brand__name', 'name')
+    if chosen:
+        rows = rows.filter(brand=chosen)
+    lines = list(rows)
+    by_brand = {}
+    for line in lines:
+        by_brand.setdefault(line.brand_id, []).append(line)
+    for line in lines:
+        line.siblings = [other for other in by_brand[line.brand_id] if other.pk != line.pk]
+    return render(request, 'stock/catalog_lines.html', {
+        'tab': 'lines', 'lines': lines, 'chosen': chosen, 'brands': Brand.objects.order_by('name'),
+    })
+
+
+def _chosen_brand(request):
+    value = request.GET.get('brand') or ''
+    return Brand.objects.filter(pk=int(value)).first() if value.isdigit() else None
+

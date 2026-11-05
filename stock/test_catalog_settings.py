@@ -1,10 +1,10 @@
 """Settings -> Catalog: what the shop edits without a developer."""
-from django.contrib.auth.models import Group, User
+from django.contrib.auth.models import User
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from stock.models import Category, Product, ProductType
+from stock.models import Brand, Category, Product, ProductSeries, ProductType
 from stock.models.product_types import clear_type_cache
 
 
@@ -124,3 +124,126 @@ class TypesTabTests(CatalogMixin):
         foot = foot[foot.index('data-part="foot"'):foot.index("</template>")]
         self.assertIn(f'form="type-form-{row.id}"', foot)
         self.assertIn("<details", foot)
+
+
+class BrandsMixin(CatalogMixin):
+    def setUp(self):
+        super().setUp()
+        self.lattafa = Brand.objects.create(name="Lattafa")
+        self.armaf = Brand.objects.create(name="Armaf")
+        self.khamrah = ProductSeries.objects.create(brand=self.lattafa, name="Khamrah")
+        self.yara = ProductSeries.objects.create(brand=self.lattafa, name="Yara")
+        self.cdn = ProductSeries.objects.create(brand=self.armaf, name="Club De Nuit")
+        self.product = self._branded("6290000076001", self.lattafa, self.khamrah)
+        self.armaf_product = self._branded("6290000076002", self.armaf, self.cdn)
+
+    def _branded(self, barcode, brand, line, **fields):
+        return self._product(barcode, brand_master=brand, series_master=line, model=line.name, **{"brand": brand.name, **fields})
+
+    def _product(self, barcode="6290000072001", **fields):
+        fields.setdefault("name", "Yara")
+        fields.setdefault("brand", "Lattafa")
+        return Product.objects.create(barcode=barcode, category=self.perfumes, **fields)
+
+    def _brands(self, **data):
+        return self.client.post(reverse("catalog_brands"), data, follow=True)
+
+    def _lines(self, **data):
+        return self.client.post(reverse("catalog_lines"), data, follow=True)
+
+
+class BrandsTabTests(BrandsMixin):
+    def test_only_an_admin_gets_in(self):
+        self.client.force_login(self.manager)
+        self.assertEqual(self.client.get(reverse("catalog_brands")).status_code, 302)
+
+    def test_the_counts_ignore_archived_products(self):
+        self._branded("6290000076003", self.lattafa, self.khamrah, archived_at=timezone.now())
+        rows = {b.name: b for b in self.client.get(reverse("catalog_brands")).context["brands"]}
+        self.assertEqual((rows["Lattafa"].live_count, rows["Lattafa"].line_count), (1, 2))
+
+    def test_adding_a_brand(self):
+        self._brands(action="add", name="rasasi")
+        self.assertTrue(Brand.objects.filter(name="Rasasi").exists())
+
+    def test_adding_a_brand_that_exists_is_refused(self):
+        response = self._brands(action="add", name="LATTAFA")
+        self.assertEqual(Brand.objects.filter(name__iexact="lattafa").count(), 1)
+        self.assertContains(response, "already exists")
+
+    def test_renaming_rewrites_the_products(self):
+        self._brands(action="rename", id=self.lattafa.id, name="Lattafa Perfumes")
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.brand, "Lattafa Perfumes")
+
+    def test_a_taken_name_offers_the_merge(self):
+        response = self._brands(action="rename", id=self.armaf.id, name="lattafa")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Merge")
+        self.assertEqual(Brand.objects.get(pk=self.armaf.id).name, "Armaf")
+
+    def test_merge_says_how_many_products_moved(self):
+        response = self._brands(action="merge", id=self.armaf.id, into=self.lattafa.id)
+        self.assertContains(response, "1 product moved to Lattafa")
+        self.assertFalse(Brand.objects.filter(pk=self.armaf.id).exists())
+
+    def test_merge_into_itself_or_nothing_changes_nothing(self):
+        for target in (self.armaf.id, "", 999999):
+            self.assertEqual(self._brands(action="merge", id=self.armaf.id, into=target).status_code, 200)
+            self.assertTrue(Brand.objects.filter(pk=self.armaf.id).exists())
+
+    def test_a_brand_with_products_cannot_be_deleted(self):
+        response = self._brands(action="delete", id=self.lattafa.id)
+        self.assertTrue(Brand.objects.filter(pk=self.lattafa.id).exists())
+        self.assertContains(response, "still has products")
+
+    def test_an_empty_brand_can_be_deleted(self):
+        empty = Brand.objects.create(name="Old")
+        self._brands(action="delete", id=empty.id)
+        self.assertFalse(Brand.objects.filter(pk=empty.id).exists())
+
+    def test_a_row_deleted_meanwhile_is_not_a_crash(self):
+        self.assertEqual(self._brands(action="rename", id=999999, name="X").status_code, 200)
+
+
+class LinesTabTests(BrandsMixin):
+    def test_lines_filter_by_brand(self):
+        rows = self.client.get(reverse("catalog_lines"), {"brand": self.armaf.id}).context["lines"]
+        self.assertEqual([line.name for line in rows], ["Club De Nuit"])
+
+    def test_every_line_shows_without_a_filter(self):
+        rows = self.client.get(reverse("catalog_lines")).context["lines"]
+        self.assertEqual(len(rows), 3)
+
+    def test_adding_a_line_needs_a_brand(self):
+        self._lines(action="add", name="Asad")
+        self.assertFalse(ProductSeries.objects.filter(name="Asad").exists())
+        self._lines(action="add", name="Asad", brand=self.lattafa.id)
+        self.assertTrue(ProductSeries.objects.filter(name="Asad", brand=self.lattafa).exists())
+
+    def test_renaming_and_a_taken_name(self):
+        self._lines(action="rename", id=self.khamrah.id, name="Khamrah Qahwa")
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.model, "Khamrah Qahwa")
+        response = self._lines(action="rename", id=self.khamrah.id, name="yara")
+        self.assertContains(response, "Merge")
+
+    def test_merging_keeps_to_the_brand(self):
+        self._lines(action="merge", id=self.khamrah.id, into=self.cdn.id)
+        self.assertTrue(ProductSeries.objects.filter(pk=self.khamrah.id).exists())
+        self._lines(action="merge", id=self.khamrah.id, into=self.yara.id)
+        self.assertFalse(ProductSeries.objects.filter(pk=self.khamrah.id).exists())
+
+    def test_a_line_with_products_cannot_be_deleted(self):
+        response = self._lines(action="delete", id=self.khamrah.id)
+        self.assertTrue(ProductSeries.objects.filter(pk=self.khamrah.id).exists())
+        self.assertContains(response, "still has products")
+
+    def test_an_empty_line_can_be_deleted(self):
+        self._lines(action="delete", id=self.yara.id)
+        self.assertFalse(ProductSeries.objects.filter(pk=self.yara.id).exists())
+
+    def test_the_filter_survives_a_save(self):
+        response = self.client.post(reverse("catalog_lines") + f"?brand={self.armaf.id}",
+                                    {"action": "rename", "id": self.cdn.id, "name": "CDN"})
+        self.assertIn(f"brand={self.armaf.id}", response["Location"])

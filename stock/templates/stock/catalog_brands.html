@@ -1,0 +1,58 @@
+{% extends 'stock/catalog_base.html' %}
+{% block catalog_action %}<button type="button" class="btn btn-sm btn-primary" data-layer="brand-new">+ Add brand</button>{% endblock %}
+{% block catalog %}
+<div class="cat-tools"><input class="form-control" type="search" placeholder="Search brands" aria-label="Search brands" data-cat-search></div>
+<section class="cat-card" aria-label="Brands">
+  {% for row in brands %}
+    <button type="button" class="cat-row" data-layer="brand-{{ row.id }}" data-q="{{ row.name|lower }}">
+      <span class="main">{{ row.name }}</span>
+      <span class="n">{{ row.live_count }}</span>
+      <span class="sub">{{ row.line_count }} line{{ row.line_count|pluralize }}</span>
+    </button>
+    <template id="brand-{{ row.id }}">
+      <div data-part="title">{{ row.name }}</div>
+      <div data-part="body">
+        <form method="post" action="{% url 'catalog_brands' %}" class="cat-form" id="brand-form-{{ row.id }}">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="rename"><input type="hidden" name="id" value="{{ row.id }}">
+          <label>Name<input class="form-control" name="name" maxlength="50" required value="{{ row.name }}"></label>
+        </form>
+      </div>
+      <div data-part="foot">
+        <button type="submit" form="brand-form-{{ row.id }}" class="btn btn-primary w-100">Save</button>
+        <details class="cat-more">
+          <summary>Merge into another brand</summary>
+          <form method="post" action="{% url 'catalog_brands' %}" class="cat-danger"
+                onsubmit="return confirm('Move {{ row.live_count }} product{{ row.live_count|pluralize }} and delete {{ row.name|escapejs }}?')">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="merge"><input type="hidden" name="id" value="{{ row.id }}">
+            <select class="form-select" name="into" required aria-label="Merge into">
+              <option value="">Choose</option>
+              {% for other in brands %}{% if other.id != row.id %}<option value="{{ other.id }}">{{ other.name }}</option>{% endif %}{% endfor %}
+            </select>
+            <button type="submit" class="btn btn-outline-primary">Merge {{ row.live_count }} product{{ row.live_count|pluralize }}</button>
+          </form>
+        </details>
+        {% if not row.live_count %}
+        <form method="post" action="{% url 'catalog_brands' %}" class="cat-danger">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="{{ row.id }}">
+          <button type="submit" class="btn btn-outline-danger">Delete brand</button>
+        </form>
+        {% endif %}
+      </div>
+    </template>
+  {% endfor %}
+</section>
+<template id="brand-new">
+  <div data-part="title">Add brand</div>
+  <div data-part="body">
+    <form method="post" action="{% url 'catalog_brands' %}" class="cat-form" id="brand-form-new">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="add">
+      <label>Name<input class="form-control" name="name" maxlength="50" required></label>
+    </form>
+  </div>
+  <div data-part="foot"><button type="submit" form="brand-form-new" class="btn btn-primary w-100">Add brand</button></div>
+</template>
+{% endblock %}

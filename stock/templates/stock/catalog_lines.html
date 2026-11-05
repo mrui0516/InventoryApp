@@ -1,0 +1,74 @@
+{% extends 'stock/catalog_base.html' %}
+{% block catalog_action %}<button type="button" class="btn btn-sm btn-primary" data-layer="line-new">+ Add line</button>{% endblock %}
+{% block catalog %}
+<div class="cat-tools">
+  <input class="form-control" type="search" placeholder="Search lines" aria-label="Search lines" data-cat-search>
+  <form method="get">
+    <select class="form-select" name="brand" aria-label="Brand" onchange="this.form.submit()">
+      <option value="">All brands</option>
+      {% for b in brands %}<option value="{{ b.id }}"{% if chosen.id == b.id %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
+    </select>
+  </form>
+</div>
+<section class="cat-card" aria-label="Lines">
+  {% for row in lines %}
+    <button type="button" class="cat-row" data-layer="line-{{ row.id }}" data-q="{{ row.brand.name|lower }} {{ row.name|lower }}">
+      <span class="main">{{ row.name }}</span>
+      <span class="n">{{ row.live_count }}</span>
+      <span class="sub">{{ row.brand.name }}</span>
+    </button>
+    <template id="line-{{ row.id }}">
+      <div data-part="title">{{ row.brand.name }} &middot; {{ row.name }}</div>
+      <div data-part="body">
+        <form method="post" action="{% url 'catalog_lines' %}{% if chosen %}?brand={{ chosen.id }}{% endif %}" class="cat-form" id="line-form-{{ row.id }}">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="rename"><input type="hidden" name="id" value="{{ row.id }}">
+          <label>Name<input class="form-control" name="name" maxlength="100" required value="{{ row.name }}"></label>
+        </form>
+      </div>
+      <div data-part="foot">
+        <button type="submit" form="line-form-{{ row.id }}" class="btn btn-primary w-100">Save</button>
+        {% if row.siblings %}
+        <details class="cat-more">
+          <summary>Merge into another line</summary>
+          <form method="post" action="{% url 'catalog_lines' %}{% if chosen %}?brand={{ chosen.id }}{% endif %}" class="cat-danger"
+                onsubmit="return confirm('Move {{ row.live_count }} product{{ row.live_count|pluralize }} and delete {{ row.name|escapejs }}?')">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="merge"><input type="hidden" name="id" value="{{ row.id }}">
+            <select class="form-select" name="into" required aria-label="Merge into">
+              <option value="">Choose</option>
+              {% for other in row.siblings %}<option value="{{ other.id }}">{{ other.name }}</option>{% endfor %}
+            </select>
+            <button type="submit" class="btn btn-outline-primary">Merge {{ row.live_count }} product{{ row.live_count|pluralize }}</button>
+          </form>
+        </details>
+        {% endif %}
+        {% if not row.live_count %}
+        <form method="post" action="{% url 'catalog_lines' %}{% if chosen %}?brand={{ chosen.id }}{% endif %}" class="cat-danger">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="{{ row.id }}">
+          <button type="submit" class="btn btn-outline-danger">Delete line</button>
+        </form>
+        {% endif %}
+      </div>
+    </template>
+  {% endfor %}
+</section>
+<template id="line-new">
+  <div data-part="title">Add line</div>
+  <div data-part="body">
+    <form method="post" action="{% url 'catalog_lines' %}{% if chosen %}?brand={{ chosen.id }}{% endif %}" class="cat-form" id="line-form-new">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="add">
+      <label>Brand
+        <select class="form-select" name="brand" required>
+          <option value="">Choose</option>
+          {% for b in brands %}<option value="{{ b.id }}"{% if chosen.id == b.id %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Name<input class="form-control" name="name" maxlength="100" required></label>
+    </form>
+  </div>
+  <div data-part="foot"><button type="submit" form="line-form-new" class="btn btn-primary w-100">Add line</button></div>
+</template>
+{% endblock %}
