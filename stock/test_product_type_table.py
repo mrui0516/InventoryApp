@@ -26,7 +26,7 @@ class ProductTypeTableTests(TestCase):
         no_scent = {"body_mist", "body_spray", "air_freshener", "coffret"}
         self.assertEqual({c for c, t in rows.items() if t.has_contents}, no_scent)
         self.assertEqual({c for c, t in rows.items() if not t.shows_scent_details}, no_scent)
-        self.assertTrue(all(t.takes_volume for t in rows.values()))
+        self.assertEqual({c for c, t in rows.items() if not t.takes_volume}, {"coffret"})
         self.assertEqual(rows["perfume"].name_word, "")
         self.assertEqual(rows["body_mist"].name_word, "Body mist")
         self.assertEqual(rows["air_freshener"].customer_label, "Ambientador")

@@ -185,6 +185,9 @@ class ProductForm(forms.ModelForm):
         kind = cleaned.get('product_type')
         if kind and not kind.takes_concentration:
             cleaned['concentration'] = None
+        if kind and not kind.takes_volume:
+            cleaned['volume_ml'] = None
+            cleaned['spec'] = ''
         if self.add_type and self.add_type.default_category_id:
             cleaned['category'] = self.add_type.default_category
         brand = cleaned.get('brand_master')

@@ -494,14 +494,14 @@ Orders → Purchases（`orders_views.load_purchases`）、供应商页、产品�
 - **只有文字、没有外键的在售产品算产品**，避免删掉老数据还在用的名字。
 - 旧数据用 `manage.py prune_empty_brands`（默认只列出，`--apply` 才删）。
 
-### 5.14 新增 / 编辑产品（香水表单）
+### 5.14 新增 / 编辑产品
 
-`add_product.html` 与 `edit_product.html` 共用 `_product_fields.html`，只有香水一种表单
-（分类为隐藏字段，新增时默认 Perfumes）：
+`/add-product/` 先显示 Type 卡片（`add_product_type.html`），`?type=<code>` 进入表单。`add_product.html` 与 `edit_product.html` 共用 `_product_fields.html`，
+浏览器按 `type_rules`（`pfTypeRules`）显示或隐藏字段。分类是隐藏字段，新增时由 `ProductType.default_category` 决定（`ProductForm(add_type=...)`）。
+Scent 字段只隐藏不移除，所以切换 Type 不丢内容；浓度和容量由 `ProductForm.clean` 清空。
 
 - **条码必填**（新增时）；编辑时留空保留原条码（`ProductForm.clean_barcode`）。
 - **名称可空**：很多香水只靠系列名就能认出（"Khamrah"），强制填写会造成重复。
-- **类型** `Product.perfume_type`：香水 / Body spray / Air freshener / Coffret / Mini。
 - 品牌、系列、名称一律 `services/names.title_case`（每个词首字母大写；EDP、YSL 这类缩写保持大写），
   新品牌 / 新系列按不区分大小写匹配已有的，不会再出现 "LATTAFA" 与 "Lattafa" 两个品牌。
 - 页面顶部预览列表里显示的名称：系列 · 名称 · 类型 · 容量（`Product.list_name`）。

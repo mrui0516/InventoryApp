@@ -12,7 +12,7 @@
 |---|---|---|
 | 线上运行 | ✅ PythonAnywhere 欧盟区 | `https://scentory.eu.pythonanywhere.com`，两家店（Khan Perfume、Scentory）日常收银、入库都在线上；线上 `db.sqlite3` 是唯一准数据 |
 | 自动化测试 | ✅ 1071 个全部通过 | `python manage.py test stock restock_alerts`，在干净导出上跑 |
-| 数据库迁移 | ✅ 最新 `0075_product_type_table`，无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
+| 数据库迁移 | ✅ 最新 `0076_coffret_no_volume`，无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
 | 生产配置 | ✅ `DEBUG=False`，密钥只在服务器 `.env` | `settings.py` 的 `if not DEBUG` 块：强制 HTTPS、安全 Cookie、HSTS、防点击劫持 |
 | 数据备份 | ✅ 每日快照 + 本机拉取 | PA 定时任务 `backup_db --keep 30`，本机 `scripts/pull_backup_from_pa.py` 拉到 U 盘；Settings → Tools 可手动下载。见 [BACKUP.md](./BACKUP.md) |
 | 错误日志 | ✅ Settings → Audit → Errors | 500 崩溃、安全警告、Cloudinary/Shopify 警告写入 `ErrorLog` 与 PA 错误日志 |
@@ -73,6 +73,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-11-05: **添加产品先选 Type。** 表单按 Type 变化，Description 移出 Scent，Coffret 不要容量（迁移 0076 清空现有容量）。
 - 2026-11-05: **Type 可以自己管理。** Settings → Catalog → Types（迁移 0075），规则变成每个 Type 的开关；批发折扣只用于 Perfume。
 - 2026-11-05: **没有产品的品牌和系列自动删除。** 产品改品牌/系列、删除、归档时检查它离开的那个；`prune_empty_brands` 清理旧的配件品牌（默认只列出）。新增 13 个测试。
 - 2026-11-04: **Oil perfume、Body mist / splash 成为单独类型。** 从浓度里移出（迁移 0074），只有 Perfume 和 Mini 选浓度；body mist 不打批发优惠改按类型判断。新增 6 个测试。

@@ -1,4 +1,7 @@
 """Adding a product starts from its type; the form then asks only what that type needs."""
+import importlib
+
+from django.apps import apps
 from django.urls import reverse
 
 from stock.models import Brand, Category, Product, ProductType
@@ -11,6 +14,8 @@ class AddByTypeMixin(CatalogMixin):
         super().setUp()
         self.brand = Brand.objects.create(name="Lattafa")
         self.brand.categories.add(self.perfumes)
+        ProductType.objects.update(default_category=self.perfumes)     # no category exists when 0075 seeds
+        clear_type_cache()
 
     def _get(self, **params):
         return self.client.get(reverse("add_product"), params)
@@ -83,3 +88,31 @@ class WhatTheFormAsksTests(AddByTypeMixin):
         self.assertIn('id="pfTypeRules"', html)
         self.assertIn('"scent": false', html)
         self.assertIn('id="pfVolumeField"', html)
+
+
+class CoffretVolumeTests(AddByTypeMixin):
+    def test_the_migration_clears_coffrets_only(self):
+        gift = Product.objects.create(barcode="6290000074001", brand="L", name="Yara", category=self.perfumes,
+                                      product_type_id="coffret", volume_ml=100, spec="100ML")
+        bottle = Product.objects.create(barcode="6290000074002", brand="L", name="Yara", category=self.perfumes,
+                                        volume_ml=100)
+        importlib.import_module("stock.migrations.0076_coffret_no_volume").forward(apps, None)
+        clear_type_cache()
+        gift.refresh_from_db()
+        bottle.refresh_from_db()
+        self.assertEqual((gift.volume_ml, gift.spec), (None, ""))
+        self.assertEqual(bottle.volume_ml, 100)
+        self.assertFalse(ProductType.objects.get(code="coffret").takes_volume)
+        self.assertNotIn("ml", gift.display_name)
+
+    def test_saving_a_type_without_volume_clears_it(self):
+        ProductType.objects.filter(code="coffret").update(takes_volume=False)
+        clear_type_cache()
+        self._save("coffret", "6290000074003", volume_ml="100", spec="100ML")
+        product = Product.objects.get(barcode="6290000074003")
+        self.assertIsNone(product.volume_ml)
+        self.assertFalse(product.spec)
+
+    def test_a_type_with_volume_keeps_it(self):
+        self._save("body_spray", "6290000074004", volume_ml="200")
+        self.assertEqual(Product.objects.get(barcode="6290000074004").volume_ml, 200)

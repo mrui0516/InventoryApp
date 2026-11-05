@@ -274,6 +274,7 @@
   - **条形码必填**(扫码或输入 EAN,8–13 位数字);编辑时保留原条码(旧的内部条码照旧有效)。**名称可空**。
   - **类型**(新字段 `Product.perfume_type`,迁移 0066):Perfume(默认)/ Mini / Oil perfume / Body mist / splash / Body spray(Deo)/ Air freshener / Coffret(礼盒)。
   - **Type 自己管理(2026-11-05,迁移 0075)**:Settings → Catalog → Types 可以添加、改名、排序、删除 Type,每个 Type 有开关:浓度、容量、Scent 区块、批发折扣、礼盒。新 Type 默认不打折、不显示 Scent。有产品的 Type 删除前要选一个 Type 转移产品;Perfume 是默认值,不能删。只有管理员能用。
+  - **添加产品先选 Type(2026-11-05,迁移 0076)**:Add product 先显示 Type 卡片,选中后表单只问这个 Type 需要的:浓度和容量按开关显示,Scent 只有 Perfume、Mini、Oil perfume 显示,分类由 Type 自动带上,所有品牌都可选。Description 所有 Type 都有。Coffret 不填容量,现有 Coffret 的容量已清空。
   - **批发折扣只用于 Perfume(2026-11-05)**:Mini、Oil perfume、Body spray、Air freshener、Coffret 都不再打折,Perfume 仍要求 60–120ml。
   - **Oil perfume 和 Body mist / splash(2026-11-04,迁移 0074)**:原来是浓度里的 Attar / Oil 和 Body Mist,现在是单独类型。**只有 Perfume 和 Mini 选浓度**,其它类型表单不显示,保存时清空。批发优惠的「body mist 不打折」改按类型判断。
   - 分组:Product(条码、品牌 + 新品牌、系列 / 型号 + 新系列、名称、类型、浓度、容量、适用性别)· Price(零售、批发、锁定价格)· Scent(香调家族、前中后调、灵感来源、描述);右侧"产品列表里会显示成"预览与照片(上传前可预览、移除;已有照片点 × 直接删除);底部常驻保存栏。新增与编辑共用一份(`_product_fields.html`)。编辑页另有:库存批次(超管修正剩余)与删除。
