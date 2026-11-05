@@ -499,6 +499,17 @@ PDF 的 `_brand_logo` 文件缺失时跳过。`empty_brands` 默认不包括有 
 
 `services/availability.py` 放“客人能买到什么”：`SAMPLE_RESERVE`、`product_ids_on_order()`、`offerable_ids()`，导出和 PDF 共用一个规则。
 
+### 5.13y1b 批发目录投影（`services/wholesale_catalog.py`，2026-11-05）
+
+为客户门户准备的数据层，现在由内部样板页 `catalog_view` 使用（架构见 2026-11-05 的 wholesale portal 设计文档第 6、7 节）。
+`catalog_rows()` 返回白名单字典：没有件数、成本、零售价，页面拿不到就泄露不了。这个模块不能 import `stock.views`，
+所以 `customer_catalog_case` 移到了 `services/names.py`，`LOW_STOCK_BELOW` 移到了 `services/availability.py`。
+
+可售量 `sellable_units()`：有效门店逐店扣样品，加未分配门店的批次；停用门店不算。客户只看到 `availability()` 的三种状态，在途不算第四种。
+
+`services/product_badges.py::product_badges(products)` 是 PDF 和目录共用的标签：Novidade 看第一批到货日期（`Min(Purchase.date)`，新到一批老产品不算），Mais vendido 看最近 30 天销量。
+只标 `offerable_ids` 里的产品。目录按全部产品排名，所以筛选不会改变标签；PDF 按这份 PDF 里的产品排名。
+
 ### 5.13y2 产品之间的连接（`ProductContent`，2026-11-05）
 
 `services/product_contents.py`。一行是一个名称，`linked` 可空；`name` 总是存着，所以被连接的产品归档或删除后名称还在。

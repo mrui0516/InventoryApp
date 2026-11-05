@@ -41,3 +41,17 @@ def title_case(text):
     text = re.sub(r'\s+', ' ', str(text)).strip()
     return ''.join(part if not part or SEPARATORS.fullmatch(part) else _word(part)
                    for part in SEPARATORS.split(text))
+
+
+def customer_catalog_case(value):
+    """Title case for the customer list, keeping the perfume tokens upright.
+
+    Plain ``.title()`` turns "100ml" into "100Ml" and "EDP" into "Edp", which
+    is how a 20ml bottle came to print as "20Ml" beside the real thing.
+    """
+    value = (value or '').strip()
+    if not value:
+        return ''
+    value = value.title()
+    value = re.sub(r'\b(Edp|Edt|Edc)\b', lambda m: m.group(1).upper(), value)
+    return re.sub(r'(\d)\s*Ml\b', r'\1ml', value)

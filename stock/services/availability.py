@@ -8,6 +8,11 @@ from ..models import InboundPendingItem, Purchase
 # sample either loses the display or disappoints whoever ordered it.
 SAMPLE_RESERVE = 1
 
+# Fewer than three sellable is "low stock": at one or two, a customer ordering
+# a couple can empty the shelf, so it is worth saying so rather than promising
+# availability we may not have by the time they arrive.
+LOW_STOCK_BELOW = 3
+
 
 def product_ids_on_order():
     """Products sitting on an inbound order that has not landed yet.

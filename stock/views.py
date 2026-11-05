@@ -67,9 +67,11 @@ from .permissions import (
     manager_required,
 )
 from .services.inbound_costs import IVA_RATE, check_invoice, check_shipping
-from .services.availability import SAMPLE_RESERVE, product_ids_on_order
+from .services.availability import LOW_STOCK_BELOW, SAMPLE_RESERVE, product_ids_on_order
+from .services.names import customer_catalog_case
 from .services.product_contents import product_page_links
 from .services.product_search import product_search_q
+from .services.wholesale_catalog import PAGE_SIZE, catalog_options, catalog_rows
 from .services.wholesale_discount import discount_applies
 from .stores import (
     ACTIVE_STORE_SESSION_KEY,
@@ -196,20 +198,6 @@ def discount_code(discount):
     return f'D{digits}_'
 
 
-def customer_catalog_case(value):
-    """Title case for the customer list, keeping the perfume tokens upright.
-
-    Plain ``.title()`` turns "100ml" into "100Ml" and "EDP" into "Edp", which
-    is how a 20ml bottle came to print as "20Ml" beside the real thing.
-    """
-    value = (value or '').strip()
-    if not value:
-        return ''
-    value = value.title()
-    value = re.sub(r'\b(Edp|Edt|Edc)\b', lambda m: m.group(1).upper(), value)
-    return re.sub(r'(\d)\s*Ml\b', r'\1ml', value)
-
-
 def build_customer_product_title(product):
     model_part = (getattr(product, 'model', '') or '').strip()
     name_part = (getattr(product, 'name', '') or '').strip()
@@ -219,12 +207,6 @@ def build_customer_product_title(product):
     if name_part and name_part.lower() != model_part.lower():
         title_parts.append(name_part)
     return customer_catalog_case(' - '.join(title_parts) or name_part or build_product_label(product))
-
-
-# Fewer than three sellable is "low stock": at one or two, a customer ordering
-# a couple can empty the shelf, so it is worth saying so rather than promising
-# availability we may not have by the time they arrive.
-LOW_STOCK_BELOW = 3
 
 
 # fill, font - light enough to read black text over, and distinct in greyscale
@@ -5981,144 +5963,25 @@ def products_autocomplete(request):
 @login_required
 @manager_required
 def catalog_view(request):
+    """The wholesale catalogue as a customer will see it: a staff preview until
+    the customer portal exists (see services/wholesale_catalog)."""
     query = request.GET.get('q', '').strip()
-    category_id = request.GET.get('category', '').strip()
-    selected_category_name = ''
-
-    qs = (
-        annotate_catalog_metrics(
-            Product.objects
-            .filter(images__isnull=False)
-            .distinct()
-        )
-        .select_related('category', 'brand_master', 'series_master')
-        .prefetch_related('images')
-    )
-
-    if query:
-        qs = qs.filter(product_search_q(query))
-
-    if category_id:
-        qs = qs.filter(category_id=category_id)
-        selected_category_name = (
-            Category.objects.filter(id=category_id).values_list('name', flat=True).first() or ''
-        )
-        selected_category_name = customer_catalog_case(selected_category_name)
-
-    hot_ids = set(qs.order_by('-total_sold').values_list('id', flat=True)[:5])
-
-    from collections import defaultdict as _dd
-    brand_bucket = _dd(lambda: {
-        'count': 0,
-        'models': _dd(lambda: {'products': [], 'model_sold': 0}),
-        'outro': {'products': [], 'model_sold': 0},
-    })
-
-    all_products = []
-    total_stock_units = 0
-    total_sales_units = 0
-
-    for p in qs:
-        stock_val = int(p.total_stock or 0)
-        p.stock_val = stock_val
-        p.stock_state = 2 if stock_val >= 4 else (1 if stock_val > 0 else 0)
-        p.sales_val = int(p.total_sold or 0)
-        p.primary_image = p.images.first()
-        title_parts = []
-        model_part = (p.model or '').strip()
-        name_part = (p.name or '').strip()
-        if model_part:
-            title_parts.append(model_part)
-        if name_part and name_part.lower() != model_part.lower():
-            title_parts.append(name_part)
-        p.catalog_title = customer_catalog_case(' - '.join(title_parts) or name_part or p.display_name)
-        p.catalog_spec = customer_catalog_case(p.spec)
-        p.catalog_color = customer_catalog_case(p.color)
-        p.catalog_category_name = customer_catalog_case(getattr(p.category, 'name', ''))
-        if stock_val >= 4:
-            p.availability_label = 'Available now'
-            p.availability_class = 'in-stock'
-        elif stock_val > 0:
-            p.availability_label = 'Low stock'
-            p.availability_class = 'low-stock'
-        else:
-            p.availability_label = 'Currently unavailable'
-            p.availability_class = 'out-stock'
-        all_products.append(p)
-        total_stock_units += p.stock_val
-        total_sales_units += p.sales_val
-
-        brand = (p.brand or '').strip() or '—'
-        model_key = (p.model or '').strip()
-
-        if model_key:
-            brand_bucket[brand]['models'][model_key]['products'].append(p)
-            brand_bucket[brand]['models'][model_key]['model_sold'] += p.sales_val
-        else:
-            brand_bucket[brand]['outro']['products'].append(p)
-            brand_bucket[brand]['outro']['model_sold'] += p.sales_val
-
-        brand_bucket[brand]['count'] += 1
-
-    def product_sort_key(prod):
-        return (-prod.stock_state, -prod.stock_val, -prod.sales_val, (prod.display_name or '').lower())
-
-    brands = []
-    for brand_name, data in brand_bucket.items():
-        model_blocks = []
-
-        for model_name, mdata in sorted(
-            data['models'].items(),
-            key=lambda kv: (-kv[1]['model_sold'], kv[0].lower())
-        ):
-            prods = sorted(mdata['products'], key=product_sort_key)
-            model_blocks.append({
-                'model': model_name,
-                'display_model': customer_catalog_case(model_name),
-                'products': prods,
-                'has_stock': any(prod.stock_val > 0 for prod in prods),
-            })
-
-        if data['outro']['products']:
-            outro_sorted = sorted(
-                data['outro']['products'],
-                key=lambda p: (-p.sales_val, -p.stock_state, -p.stock_val, (p.display_name or '').lower())
-            )
-            model_blocks.append({
-                'model': '',
-                'display_model': '',
-                'products': outro_sorted,
-                'has_stock': any(prod.stock_val > 0 for prod in outro_sorted),
-            })
-
-        brands.append({
-            'brand': brand_name,
-            'display_brand': customer_catalog_case(brand_name),
-            'count': data['count'],
-            'models': model_blocks,
-            'has_stock': any(block['has_stock'] for block in model_blocks),
-        })
-
-    brands.sort(key=lambda b: (-b['count'], b['brand'].lower()))
-    categories = Category.objects.all()
-    hot_products = sorted(
-        [product for product in all_products if product.id in hot_ids],
-        key=lambda product: (-(1 if product.stock_val > 0 else 0), -product.sales_val, -product.stock_val, (product.display_name or '').lower()),
-    )
-
+    brand = request.GET.get('brand', '').strip()
+    kind = request.GET.get('type', '').strip()
+    gender = request.GET.get('gender', '').strip()
+    show_all = request.GET.get('stock') == 'all'
+    rows = catalog_rows(query=query, brand=brand, kind=kind, gender=gender, show_all=show_all)
+    page_obj = Paginator(rows, PAGE_SIZE).get_page(request.GET.get('page'))
     return render(request, 'stock/catalog.html', {
-        'brands': brands,
-        'categories': categories,
+        'page_obj': page_obj,
+        'total': len(rows),
         'query': query,
-        'selected_category': category_id,
-        'selected_category_name': selected_category_name,
-        'hot_ids': list(hot_ids),
-        'hot_products': hot_products,
-        'total_catalog_products': len(all_products),
-        'total_catalog_brands': len(brands),
-        'total_catalog_stock': total_stock_units,
-        'total_catalog_sales': total_sales_units,
-        'can_manage': has_manager_access(request.user),
+        'brand': brand,
+        'type': kind,
+        'gender': gender,
+        'show_all': show_all,
+        'filters_on': bool(brand or kind or gender),
+        **catalog_options(),
     })
 
 # -----------------------------

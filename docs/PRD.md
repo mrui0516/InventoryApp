@@ -280,6 +280,8 @@
   - **产品名称带 Type(2026-11-05)**:除 Perfume 外,名称以 Type 开头("Lattafa - Body spray Yara 200ml"),没有名称的产品就叫它的 Type;名称里已经有这个词时不重复。Shopify 标题不变。
   - **搜索(2026-11-05)**:所有产品搜索框都能搜 Type,多个词可以来自不同字段("yara body spray")。Quick import 也读 Type。
   - **客户 PDF 排版(2026-11-05)**:Lattafa 排最前,其余品牌按这份 PDF 里的产品数从多到少;每个品牌先按 Type 分,再按型号。EAN 放在名称上方,不再单独一列;增加性别列(Género)。香水行的 `Também em:` 只显示客人能买到的产品(库存多于样品,或在途)。Excel 除名称外不变。
+  - **PDF 的 Nota 列(2026-11-05)**:Novidade = 第一批到货在最近 14 天内;Mais vendido = 最近 30 天销量进这份 PDF 前 10%,且至少卖出 5 个。都只标有货的产品,两个都符合时显示 Novidade。一个标签都没有时不显示这一列。
+  - **Catalog View 改为批发目录样板(2026-11-05)**:只有经理能看,页面标"Pré-visualização interna"。全部是列表,文字用葡语,显示批发价(没有批发价写 Sob consulta)、Tipo、Género、三种库存状态和 Novidade / Mais vendido,不显示件数和成本。默认只看有货,可以切到 Todos;可按品牌、Type、性别筛选;每页 24 个;没有图片的产品也显示。排序:有货优先,然后 Lattafa、品牌大小、Type、型号。点一行打开详情。这是客户门户的样板,还没有客户入口、购物车和客户专属价。
   - **导出文件名(2026-11-05)**:有批发折扣时文件名带代号,D25 表示 2.50,D30 表示 3.00,客人看不出是折扣;零售清单和没有折扣的清单不带。
   - **客户 PDF 内部跳转(2026-11-05)**:Mix 和其它有清单的产品行下方小字列出名称(`Fragrâncias:`,Coffret 用 `Contém:`),香水行下方显示 `Também em:`,点击跳到这份 PDF 里的对应行。对方不在这份 PDF 里时只显示文字。Excel 不变。
   - **Settings → Catalog(2026-11-05,迁移 0077)**:Types、Brands、Lines、Categories、Concentrations、Families 都能自己管理。品牌和系列可以改名、合并(产品上的文字一起更新,包括已删除的产品),有产品时不能删。Brands 可以上传 logo(JPG、PNG、WebP,2 MB 以内,自动缩到 256px),没有 logo 时显示首字母;logo 显示在 Brands、产品页、Products 的品牌筛选标签和客户 PDF 的品牌标题。有 logo 的品牌不会被自动删除。品牌改名不影响已上架的 Shopify 商品。

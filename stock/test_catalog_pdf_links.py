@@ -9,7 +9,8 @@ from django.urls import reverse
 from django.utils import timezone
 from pypdf import PdfReader
 
-from stock.models import Category, InboundOrder, InboundPendingItem, Product, Purchase, Supplier
+from stock.models import (Category, InboundOrder, InboundPendingItem, Product, Purchase, Sale, SaleOrder,
+                          Supplier)
 from stock.services.catalog_pdf import build_catalog_pdf
 from stock.services.product_contents import pdf_links, save_contents
 
@@ -213,6 +214,25 @@ class PdfLayoutTests(TestCase):
         self.assertIn("Perfume", text)
         self.assertIn("Body spray", text)
         self.assertIn("Coffret", text)
+
+    def test_a_new_product_has_a_note(self):
+        product = self._product("6290000083001", "Yara")
+        Purchase.objects.create(product=product, quantity=5, remaining=5, cost_price=Decimal("2"))
+        text = self._text({"Lattafa": [product]})
+        self.assertIn("Nota", text)
+        self.assertIn("Novidade", text)
+
+    def test_a_best_seller_has_a_note(self):
+        from datetime import timedelta
+        product = self._product("6290000083001", "Yara")
+        batch = Purchase.objects.create(product=product, quantity=9, remaining=9, cost_price=Decimal("2"))
+        Purchase.objects.filter(pk=batch.pk).update(date=timezone.now() - timedelta(days=100))
+        Sale.objects.create(order=SaleOrder.objects.create(), product=product, quantity=6, unit_price=Decimal("9"),
+                            payment_method="cash")
+        self.assertIn("Mais vendido", self._text({"Lattafa": [product]}))
+
+    def test_no_notes_no_column(self):
+        self.assertNotIn("Nota", self._text({"Lattafa": [self._product("6290000083001", "Yara")]}))
 
     def test_a_blank_name_prints_its_type(self):
         text = self._text({"Lattafa": [self._product("6290000083001", "", model="", product_type_id="air_freshener")]})

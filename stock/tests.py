@@ -896,8 +896,7 @@ class DashboardViewTests(TestCase):
         self.client.login(username="dashboard_admin", password="pw123456")
         response = self.client.get(reverse("catalog"))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Fragrance catalogue")
-        self.assertContains(response, "A library of")
+        self.assertContains(response, "Catálogo grossista")
 
     def test_employee_blocked_from_catalog_page(self):
         self.client.login(username="dashboard_user", password="pw123456")

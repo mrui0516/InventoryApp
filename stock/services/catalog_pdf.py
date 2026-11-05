@@ -30,9 +30,9 @@ from reportlab.platypus import (Image, PageBreak, Paragraph, SimpleDocTemplate,
                                 Spacer, Table, TableStyle)
 
 from ..models import Product, ProductType
+from .product_badges import NEW, product_badges
 from .product_contents import pdf_links
-
-FIRST_BRAND = 'lattafa'
+from .wholesale_catalog import brand_sort_key
 
 # Same meaning as the spreadsheet's fills, so the two never disagree.
 STATE_COLOURS = {
@@ -98,9 +98,14 @@ def _thumb(product):
 
 
 def _brands_in_order(brand_groups):
-    """Lattafa, the shop's main brand, then the biggest brands first."""
-    return sorted(brand_groups.items(),
-                  key=lambda item: (item[0].strip().lower() != FIRST_BRAND, -len(item[1]), item[0].lower()))
+    return sorted(brand_groups.items(), key=lambda item: brand_sort_key(item[0], len(item[1])))
+
+
+def _note_cell(note, style):
+    if not note:
+        return ''
+    colour = '#0f766e' if note == NEW else '#b45309'
+    return Paragraph(f'<font color="{colour}"><b>{note}</b></font>', style['cell'])
 
 
 def _sections(products):
@@ -164,8 +169,15 @@ def build_catalog_pdf(brand_groups, *, price_mode='retail', include_images=True,
     style = _styles()
     story = []
 
-    headers = (['Foto'] if include_images else []) + ['Produto', 'Género']
-    widths = ([THUMB_MM * mm + 4 * mm] if include_images else []) + [70 * mm, 18 * mm]
+    everything = [p for products in brand_groups.values() for p in products]
+    notes = product_badges(everything)
+    headers = (['Foto'] if include_images else []) + ['Produto']
+    widths = ([THUMB_MM * mm + 4 * mm] if include_images else []) + [48 * mm if notes else 70 * mm]
+    if notes:
+        headers.append('Nota')
+        widths.append(22 * mm)
+    headers.append('Género')
+    widths.append(18 * mm)
     if price_mode in {'retail', 'both'}:
         headers.append('PVP')
         widths.append(20 * mm)
@@ -181,7 +193,7 @@ def build_catalog_pdf(brand_groups, *, price_mode='retail', include_images=True,
         headers.append('A chegar')
         widths.append(28 * mm)
 
-    links = pdf_links([p for products in brand_groups.values() for p in products])
+    links = pdf_links(everything)
     for index, (brand_name, products) in enumerate(_brands_in_order(brand_groups)):
         if index:
             story.append(PageBreak())
@@ -208,6 +220,8 @@ def build_catalog_pdf(brand_groups, *, price_mode='retail', include_images=True,
                 if include_images:
                     row.append(_thumb(product) or '')
                 row.append(_title_cell(product, links.get(product.pk), style))
+                if notes:
+                    row.append(_note_cell(notes.get(product.pk), style))
                 row.append(Paragraph(Product.GENDER_SHOPIFY_TAGS.get(product.gender, '-'), style['cell']))
                 # The same numbers the spreadsheet prints: PVP is the till
                 # price plus the uplift, wholesale carries this export's

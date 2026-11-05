@@ -1,318 +1,145 @@
 {% extends 'stock/base.html' %}
-{% block title %}Fragrance catalogue{% endblock %}
-
+{% load brands %}
+{% block title %}Catálogo grossista{% endblock %}
 {% block content %}
 <style>
-  /* ===== KHAN PERFUME — fragrance catalogue (editorial index) ===============
-     Porcelain canvas, ink type, one wine accent. Serif for the editorial
-     moments (hero, house names), system sans for prices/meta. The bottle is
-     the hero: a specimen floating on white with a soft product shadow. ======= */
-  .cat{
-    --paper:#f5f4f1;
-    --surface:#ffffff;
-    --ink:#17140f;
-    --ink-soft:#5c554b;
-    --muted:#8b8478;
-    --line:rgba(23,20,15,.12);
-    --line-soft:rgba(23,20,15,.07);
-    --wine:#6e2b3e;
-    --serif:var(--font-display, Georgia, "Times New Roman", serif);
-    color:var(--ink);
-    background:var(--paper);
-    margin:-1.35rem calc(-1 * clamp(1rem,2vw,2rem)) -2rem;   /* bleed to page edges over .erp-content padding */
-    padding:0 0 4rem;
-  }
-  .cat-wrap{ max-width:1320px; margin:0 auto; padding:0 clamp(1rem,3vw,2.6rem); }
-
-  /* ---- hero ---- */
-  .cat-hero{ padding:clamp(2.4rem,6vw,4.6rem) 0 1.6rem; border-bottom:1px solid var(--line); }
-  .cat-eyebrow{
-    font-size:.74rem; font-weight:700; letter-spacing:.28em; text-transform:uppercase; color:var(--wine);
-  }
-  .cat-display{
-    font-family:var(--serif); font-weight:500; color:var(--ink);
-    font-size:clamp(2.6rem,6.2vw,5rem); line-height:1.02; letter-spacing:-.015em;
-    margin:.7rem 0 0; max-width:16ch;
-  }
-  .cat-display em{ font-style:italic; color:var(--wine); }
-  .cat-stats{
-    margin-top:1.4rem; display:flex; flex-wrap:wrap; align-items:baseline; gap:.35rem 1.1rem;
-    color:var(--muted); font-size:.95rem; font-weight:600;
-  }
-  .cat-stats b{ color:var(--ink); font-weight:800; font-variant-numeric:tabular-nums; }
-  .cat-stats .now{ display:inline-flex; align-items:center; gap:.4rem; color:var(--ink-soft); }
-  .cat-stats .now::before{ content:""; width:7px; height:7px; border-radius:999px; background:#2f6b4f; }
-  .cat-filternote{ margin-top:.5rem; color:var(--ink-soft); font-size:.92rem; }
-  .cat-filternote a{ color:var(--wine); text-decoration:none; border-bottom:1px solid currentColor; }
-
-  /* ---- sticky search bar (slim, hairline) ---- */
-  .cat-bar{
-    position:sticky; top:0; z-index:20;
-    background:var(--paper);   /* fallback for browsers without color-mix */
-    background:color-mix(in srgb, var(--paper) 90%, transparent);
-    -webkit-backdrop-filter:saturate(1.2) blur(8px); backdrop-filter:saturate(1.2) blur(8px);
-    border-bottom:1px solid var(--line); padding:.7rem 0;
-  }
-  .cat-bar-inner{ display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; }
-  .cat-bar .field{ flex:1 1 260px; min-width:0; }
-  .cat-bar input,.cat-bar select{
-    width:100%; min-height:46px; border:1px solid var(--line); border-radius:8px; background:#fff;
-    padding:.5rem .85rem; color:var(--ink); font-size:.95rem;
-  }
-  .cat-bar input::placeholder{ color:#a49c8f; }
-  .cat-bar input:focus,.cat-bar select:focus{ outline:none; border-color:var(--wine); box-shadow:0 0 0 3px rgba(110,43,62,.12); }
-  .cat-bar select{ flex:0 0 220px; }
-  .btn-ink{ min-height:46px; border:1px solid var(--ink); background:var(--ink); color:#fff; border-radius:8px; padding:.5rem 1.3rem; font-weight:700; }
-  .btn-ink:hover{ background:#000; color:#fff; }
-  .btn-ghost{ min-height:46px; border:1px solid var(--line); background:transparent; color:var(--ink-soft); border-radius:8px; padding:.5rem 1rem; font-weight:700; text-decoration:none; display:inline-flex; align-items:center; }
-  .btn-ghost:hover{ border-color:var(--ink); color:var(--ink); }
-
-  /* ---- section headers ---- */
-  .cat-section{ padding-top:2.6rem; }
-  .cat-section-head{ display:flex; align-items:baseline; justify-content:space-between; gap:1rem; flex-wrap:wrap; margin-bottom:1.3rem; }
-  .cat-section-title{ font-family:var(--serif); font-weight:500; font-size:clamp(1.5rem,3vw,2.05rem); letter-spacing:-.01em; margin:0; }
-  .house-index{ display:flex; flex-wrap:wrap; gap:.3rem .5rem; }
-  .house-index a{ font-size:.86rem; font-weight:700; color:var(--ink-soft); text-decoration:none; padding:.15rem .1rem; border-bottom:1px solid transparent; }
-  .house-index a:hover{ color:var(--wine); border-color:var(--wine); }
-
-  /* ---- specimen grid + card (shared by best sellers and houses) ---- */
-  .spec-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:1.15rem 1.1rem; }
-  .spec{
-    display:flex; flex-direction:column; background:var(--surface);
-    border:1px solid var(--line); border-radius:10px; overflow:hidden;
-    transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease;
-  }
-  .spec:hover{ transform:translateY(-3px); border-color:rgba(23,20,15,.22); box-shadow:0 18px 34px rgba(23,20,15,.10); }
-  /* Uniform fixed-ratio tiles; the whole bottle shows (contain, never cropped),
-     padded so it sits with breathing room rather than filling edge-to-edge. */
-  .spec-figure{
-    position:relative; aspect-ratio:4/5; background:#fff; display:flex; align-items:center; justify-content:center;
-    padding:1.5rem; overflow:hidden; cursor:zoom-in; border-bottom:1px solid var(--line-soft);
-  }
-  .spec-figure img{ max-width:100%; max-height:100%; object-fit:contain; display:block; filter:drop-shadow(0 12px 10px rgba(23,20,15,.14)); }
-  .spec-figure.empty{ color:#c3bcae; font-size:.78rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; cursor:default; }
-  .spec-rank{
-    position:absolute; top:.55rem; left:.55rem; z-index:1;
-    font-family:var(--serif); font-style:italic; font-size:1rem; color:var(--wine);
-    background:rgba(255,255,255,.9); border:1px solid var(--line); border-radius:6px;
-    min-width:1.7rem; height:1.7rem; display:inline-flex; align-items:center; justify-content:center; padding:0 .35rem;
-  }
-  .spec-body{ display:flex; flex-direction:column; gap:.4rem; padding:.9rem .95rem 1rem; flex:1; }
-  .spec-name{ font-size:.95rem; font-weight:650; line-height:1.28; color:var(--ink); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; min-height:2.4em; }
-  .spec-meta{ color:var(--muted); font-size:.8rem; font-weight:600; letter-spacing:.01em; min-height:1.1em; }
-  .spec-price{ font-size:1.02rem; font-weight:800; color:var(--ink); font-variant-numeric:tabular-nums; }
-  .avail{ display:inline-flex; align-items:center; gap:.42rem; font-size:.78rem; font-weight:700; color:var(--muted); }
-  .avail::before{ content:""; width:7px; height:7px; border-radius:999px; background:currentColor; flex:0 0 auto; }
-  .avail.in-stock{ color:#2f6b4f; }
-  .avail.low-stock{ color:#9a6b1f; }
-  .avail.out-stock{ color:#9a3b3b; }
-  .spec-actions{ margin-top:.55rem; }
-  .spec-details{
-    width:100%; border:1px solid var(--line); background:transparent; color:var(--ink);
-    border-radius:7px; padding:.5rem; font-weight:700; font-size:.86rem;
-  }
-  .spec-details:hover{ border-color:var(--wine); color:var(--wine); }
-
-  /* ---- house (brand) block ---- */
-  .house{ padding-top:2.6rem; scroll-margin-top:70px; }
-  .house-head{ display:flex; align-items:baseline; justify-content:space-between; gap:1rem; flex-wrap:wrap; padding-bottom:.8rem; border-bottom:1px solid var(--ink); margin-bottom:1.4rem; }
-  .house-name{ font-family:var(--serif); font-weight:500; font-size:clamp(1.7rem,3.4vw,2.5rem); letter-spacing:-.01em; margin:0; }
-  .house-count{ color:var(--muted); font-size:.9rem; font-weight:700; }
-  .series{ margin-bottom:1.7rem; }
-  .series-label{
-    display:flex; align-items:center; gap:.9rem; margin:0 0 1rem;
-    font-size:.76rem; font-weight:800; letter-spacing:.18em; text-transform:uppercase; color:var(--muted);
-  }
-  .series-label::after{ content:""; flex:1; height:1px; background:var(--line); }
-
-  /* ---- empty ---- */
-  .cat-empty{ margin-top:3rem; padding:3rem 1rem; text-align:center; border:1px solid var(--line); border-radius:12px; background:#fff; }
-  .cat-empty h2{ font-family:var(--serif); font-weight:500; font-size:1.6rem; margin:0 0 .4rem; }
-  .cat-empty p{ color:var(--muted); margin:0; }
-
-  /* ---- back to top ---- */
-  .back-top{
-    position:fixed; right:20px; bottom:20px; z-index:1060; width:46px; height:46px;
-    border:1px solid var(--line); border-radius:999px; background:#fff; color:var(--ink);
-    display:flex; align-items:center; justify-content:center; box-shadow:0 10px 24px rgba(23,20,15,.14);
-    opacity:0; visibility:hidden; transform:translateY(8px); transition:.2s ease; cursor:pointer;
-  }
-  .back-top.show{ opacity:1; visibility:visible; transform:translateY(0); }
-
-  /* ---- entrance (respecting reduced motion via app.css guard) ---- */
-  .reveal{ opacity:0; transform:translateY(10px); animation:catrise .5s ease forwards; }
-  @keyframes catrise{ to{ opacity:1; transform:none; } }
-
-  @media (max-width:575.98px){
-    .cat-bar select{ flex:1 1 100%; }
-    .spec-grid{ grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:.9rem .8rem; }
+  .wc{ display:grid; gap:.75rem; grid-template-columns:minmax(0,1fr); }
+  .wc-head{ display:flex; flex-wrap:wrap; align-items:center; gap:.4rem .7rem; }
+  .wc-head h1{ margin:0; font-size:1.4rem; font-weight:800; }
+  .wc-tag{ font-size:.85rem; font-weight:700; padding:.1rem .55rem; border-radius:999px; background:var(--app-surface-2); color:var(--app-muted); }
+  .wc-count{ margin-left:auto; font-size:.9rem; color:var(--app-muted); font-variant-numeric:tabular-nums; }
+  .wc-seg{ display:inline-flex; border:1px solid var(--app-border-strong); border-radius:var(--app-radius-sm); overflow:hidden; }
+  .wc-seg a{ padding:.35rem .75rem; font-size:.9rem; font-weight:700; color:var(--app-muted); text-decoration:none; }
+  .wc-seg a.on{ background:var(--app-text); color:var(--app-surface); }
+  .wc-list{ background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius); overflow:hidden; }
+  .wc-row, .wc-headrow{ display:grid; grid-template-columns:48px minmax(0,1fr) 6.5rem 5rem 6.5rem 7.5rem; gap:.75rem; align-items:center; width:100%; padding:.45rem .85rem; }
+  .wc-headrow{ font-size:.85rem; font-weight:700; color:var(--app-muted); background:var(--app-surface-2); }
+  .wc-row{ border:0; border-top:1px solid var(--app-border); background:none; color:inherit; text-align:left; cursor:pointer; }
+  .wc-row:hover{ background:var(--app-accent-soft); }
+  .wc-row:focus-visible{ outline:2px solid var(--app-accent); outline-offset:-2px; }
+  .wc-photo{ display:grid; place-items:center; width:48px; height:48px; border:1px solid var(--app-border); border-radius:var(--app-radius-sm); background:#fff; overflow:hidden; color:var(--app-muted); font-size:.85rem; }
+  .wc-photo img{ width:100%; height:100%; object-fit:contain; }
+  .wc-main{ min-width:0; }
+  .wc-brand{ display:flex; align-items:center; gap:.35rem; font-size:.85rem; color:var(--app-muted); min-width:0; }
+  .wc-brand span:last-child{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .wc-title{ font-weight:700; overflow-wrap:anywhere; }
+  .wc-note{ display:inline-block; margin-left:.35rem; padding:0 .4rem; border-radius:999px; font-size:.85rem; font-weight:700; white-space:nowrap; background:#ccfbf1; color:#115e59; }
+  .wc-note.best{ background:#fef3c7; color:#92400e; }
+  .wc-contents{ font-size:.85rem; color:var(--app-muted); overflow-wrap:anywhere; }
+  .wc-price{ font-weight:800; font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
+  .wc-price.none{ font-weight:600; font-size:.85rem; color:var(--app-muted); }
+  .wc-state{ justify-self:start; padding:.1rem .5rem; border-radius:var(--app-radius-xs); font-size:.85rem; font-weight:700; white-space:nowrap; }
+  .wc-state.in-stock{ background:#dcfce7; color:#166534; }
+  .wc-state.low-stock{ background:#fef3c7; color:#92400e; }
+  .wc-state.out-stock{ background:#fee2e2; color:#991b1b; }
+  .wc-row.is-out .wc-photo img{ opacity:.45; }
+  .wc-row.is-out .wc-title{ color:var(--app-muted); }
+  .wc-empty{ margin:0; padding:1rem; color:var(--app-muted); }
+  .wc-pages{ display:flex; align-items:center; justify-content:center; gap:.75rem; font-size:.9rem; }
+  .wc-panel-photo{ display:grid; place-items:center; height:220px; margin-bottom:.75rem; border:1px solid var(--app-border); border-radius:var(--app-radius-sm); background:#fff; }
+  .wc-panel-photo img{ max-width:100%; max-height:100%; object-fit:contain; }
+  .wc-facts{ display:grid; grid-template-columns:auto minmax(0,1fr); gap:.2rem .8rem; margin:0 0 .75rem; }
+  .wc-facts dt{ font-size:.85rem; font-weight:700; color:var(--app-muted); }
+  .wc-facts dd{ margin:0; font-weight:600; overflow-wrap:anywhere; }
+  .wc-text{ white-space:pre-line; font-size:.92rem; }
+  @media (max-width:767.98px){
+    .wc-headrow{ display:none; }
+    .wc-row{ grid-template-columns:48px minmax(0,1fr) auto; gap:.15rem .6rem; padding:.5rem .7rem; }
+    .wc-photo{ grid-row:span 2; align-self:start; }
+    .wc-kind, .wc-gender{ display:none; }
+    .wc-price{ grid-column:3; grid-row:1; align-self:start; }
+    .wc-state{ grid-column:2 / 4; grid-row:2; }
   }
 </style>
-
-<div class="cat">
-  <div class="cat-wrap">
-
-    <header class="cat-hero reveal">
-      <div class="cat-eyebrow">Fragrance catalogue</div>
-      <h1 class="cat-display">A library of <em>scent</em>.</h1>
-      <div class="cat-stats">
-        <span><b>{{ total_catalog_brands }}</b> houses</span>
-        <span><b>{{ total_catalog_products }}</b> fragrances</span>
-        <span class="now">In store now</span>
-      </div>
-      {% if selected_category_name or query %}
-        <div class="cat-filternote">
-          Showing{% if selected_category_name %} {{ selected_category_name }}{% endif %}{% if query %} · results for “{{ query }}”{% endif %} — <a href="{% url 'catalog' %}">clear</a>
-        </div>
-      {% endif %}
-    </header>
+<div class="wc">
+  <div class="wc-head">
+    <h1>Catálogo grossista</h1>
+    <span class="wc-tag">Pré-visualização interna</span>
+    <span class="wc-count">{{ total }} produto{{ total|pluralize }}</span>
   </div>
 
-  <div class="cat-bar">
-    <div class="cat-wrap">
-      <form method="get" class="cat-bar-inner">
-        <div class="field">
-          <input type="text" name="q" value="{{ query }}" placeholder="Search a scent, house, series, or note">
+  {% include "stock/_fbar.html" with placeholder="Nome, marca, tipo ou EAN" panel="wc-filters" on=filters_on %}
+
+  <div>
+    <span class="wc-seg" role="group" aria-label="Disponibilidade">
+      <a class="{% if not show_all %}on{% endif %}" href="{% querystring stock=None page=None %}">Disponíveis</a>
+      <a class="{% if show_all %}on{% endif %}" href="{% querystring stock='all' page=None %}">Todos</a>
+    </span>
+  </div>
+
+  <section class="wc-list" aria-label="Produtos">
+    <div class="wc-headrow" aria-hidden="true">
+      <span></span><span>Produto</span><span>Tipo</span><span>Género</span>
+      <span class="wc-price">Preço grossista</span><span>Disponibilidade</span>
+    </div>
+    {% for row in page_obj %}
+      <button type="button" class="wc-row{% if row.state == 'out-stock' %} is-out{% endif %}" data-layer="wc-{{ row.pk }}">
+        <span class="wc-photo">{% if row.image_url %}<img src="{{ row.image_url }}" alt="" loading="lazy">{% else %}&mdash;{% endif %}</span>
+        <span class="wc-main">
+          <span class="wc-brand">{% brand_logo row.logo_brand size=16 fallback=row.brand %}<span>{{ row.brand }} &middot; {{ row.ean }}</span></span>
+          <span class="wc-title">{{ row.title }}</span>{% if row.note %}<span class="wc-note{% if row.note == 'Mais vendido' %} best{% endif %}">{{ row.note }}</span>{% endif %}
+          {% if row.contents %}<span class="wc-contents d-block">{{ row.contents|join:" · " }}</span>{% endif %}
+        </span>
+        <span class="wc-kind">{{ row.kind }}</span>
+        <span class="wc-gender">{{ row.gender|default:"-" }}</span>
+        {% if row.price %}<span class="wc-price">&euro;{{ row.price|floatformat:2 }}</span>{% else %}<span class="wc-price none">Sob consulta</span>{% endif %}
+        <span class="wc-state {{ row.state }}">{{ row.state_label }}</span>
+      </button>
+      <template id="wc-{{ row.pk }}">
+        <div data-part="title">{{ row.title }}</div>
+        <div data-part="body">
+          {% if row.image_url %}<div class="wc-panel-photo"><img src="{{ row.image_url }}" alt="{{ row.title }}"></div>{% endif %}
+          <dl class="wc-facts">
+            <dt>Marca</dt><dd>{{ row.brand }}</dd>
+            <dt>EAN</dt><dd>{{ row.ean }}</dd>
+            <dt>Tipo</dt><dd>{{ row.kind }}</dd>
+            {% if row.gender %}<dt>Género</dt><dd>{{ row.gender }}</dd>{% endif %}
+            <dt>Preço grossista</dt><dd>{% if row.price %}&euro;{{ row.price|floatformat:2 }}{% else %}Sob consulta{% endif %}</dd>
+            <dt>Disponibilidade</dt><dd>{{ row.state_label }}</dd>
+            {% if row.contents %}<dt>Fragrâncias</dt><dd>{{ row.contents|join:" · " }}</dd>{% endif %}
+          </dl>
+          {% if row.description %}<div class="wc-text">{{ row.description }}</div>{% endif %}
         </div>
-        <select name="category" onchange="this.form.submit()" aria-label="Category">
-          <option value="">All categories</option>
-          {% for cat in categories %}
-            <option value="{{ cat.id }}" {% if cat.id|stringformat:"s" == selected_category %}selected{% endif %}>{{ cat.name|title }}</option>
-          {% endfor %}
+        <div data-part="foot"></div>
+      </template>
+    {% empty %}
+      <p class="wc-empty">Sem resultados.</p>
+    {% endfor %}
+  </section>
+
+  {% if page_obj.has_other_pages %}
+  <nav class="wc-pages" aria-label="Páginas">
+    {% if page_obj.has_previous %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page_obj.previous_page_number %}">Anterior</a>{% endif %}
+    <span>{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page_obj.next_page_number %}">Seguinte</a>{% endif %}
+  </nav>
+  {% endif %}
+</div>
+
+<template id="wc-filters">
+  <div data-part="title">Filtros</div>
+  <div data-part="body">
+    <div class="fopts">
+      <section><h6>Marca</h6>
+        <select class="form-select" aria-label="Marca" onchange="location.href=this.value">
+          <option value="{% querystring brand=None page=None %}">Todas</option>
+          {% for name in brands %}<option value="{% querystring brand=name page=None %}"{% if name|lower == brand|lower %} selected{% endif %}>{{ name }}</option>{% endfor %}
         </select>
-        <button type="submit" class="btn-ink">Search</button>
-        <a href="{% url 'catalog' %}" class="btn-ghost">Reset</a>
-      </form>
+      </section>
+      <section><h6>Tipo</h6>
+        <select class="form-select" aria-label="Tipo" onchange="location.href=this.value">
+          <option value="{% querystring type=None page=None %}">Todos</option>
+          {% for t in types %}<option value="{% querystring type=t.value page=None %}"{% if t.value == type %} selected{% endif %}>{{ t.label }}</option>{% endfor %}
+        </select>
+      </section>
+      <section><h6>Género</h6>
+        <select class="form-select" aria-label="Género" onchange="location.href=this.value">
+          <option value="{% querystring gender=None page=None %}">Todos</option>
+          {% for g in genders %}<option value="{% querystring gender=g.value page=None %}"{% if g.value == gender %} selected{% endif %}>{{ g.label }}</option>{% endfor %}
+        </select>
+      </section>
     </div>
   </div>
-
-  <div class="cat-wrap">
-
-    {% if hot_products and not query %}
-      <section class="cat-section">
-        <div class="cat-section-head">
-          <h2 class="cat-section-title">Most loved</h2>
-        </div>
-        <div class="spec-grid">
-          {% for product in hot_products %}
-            <article class="spec">
-              <div class="spec-figure {% if not product.primary_image %}empty{% endif %}" {% if product.primary_image %}onclick="openImage('{{ product.primary_image.image.url }}')"{% endif %}>
-                <span class="spec-rank">{{ forloop.counter }}</span>
-                {% if product.primary_image %}<img src="{{ product.primary_image.image.url }}" alt="{{ product.catalog_title }}">{% else %}No bottle photo{% endif %}
-              </div>
-              <div class="spec-body">
-                <div class="spec-name">{{ product.catalog_title }}</div>
-                <div class="spec-meta">{{ product.catalog_spec }}{% if product.catalog_spec and product.catalog_color %} · {% endif %}{{ product.catalog_color }}</div>
-                {% if product.default_price %}<div class="spec-price">EUR {{ product.default_price|floatformat:2 }}</div>{% endif %}
-                <span class="avail {{ product.availability_class }}">{{ product.availability_label }}</span>
-                <div class="spec-actions">
-                  <button type="button" class="spec-details" onclick="openDesc('{{ product.catalog_title|escapejs }}', '{{ product.description|default:'No description available.'|escapejs }}')">Details</button>
-                </div>
-              </div>
-            </article>
-          {% endfor %}
-        </div>
-      </section>
-    {% endif %}
-
-    {% if brands %}
-      <section class="cat-section">
-        <div class="cat-section-head">
-          <h2 class="cat-section-title">By house</h2>
-          <nav class="house-index">
-            {% for brand_block in brands %}<a href="#house-{{ forloop.counter }}">{{ brand_block.display_brand }}</a>{% endfor %}
-          </nav>
-        </div>
-
-        {% for brand_block in brands %}
-          <section class="house" id="house-{{ forloop.counter }}">
-            <div class="house-head">
-              <h3 class="house-name">{{ brand_block.display_brand }}</h3>
-              <span class="house-count">{{ brand_block.count }} piece{{ brand_block.count|pluralize }} · <span class="avail {% if brand_block.has_stock %}in-stock{% else %}out-stock{% endif %}">{% if brand_block.has_stock %}In store{% else %}Sold out{% endif %}</span></span>
-            </div>
-
-            {% for model_block in brand_block.models %}
-              {% if model_block.products %}
-                <div class="series">
-                  {% if model_block.model %}<div class="series-label">{{ model_block.display_model }}</div>{% endif %}
-                  <div class="spec-grid">
-                    {% for product in model_block.products %}
-                      <article class="spec">
-                        <div class="spec-figure {% if not product.primary_image %}empty{% endif %}" {% if product.primary_image %}onclick="openImage('{{ product.primary_image.image.url }}')"{% endif %}>
-                          {% if product.primary_image %}<img src="{{ product.primary_image.image.url }}" alt="{{ product.catalog_title }}">{% else %}No bottle photo{% endif %}
-                        </div>
-                        <div class="spec-body">
-                          <div class="spec-name">{{ product.catalog_title }}</div>
-                          <div class="spec-meta">{{ product.catalog_spec }}{% if product.catalog_spec and product.catalog_color %} · {% endif %}{{ product.catalog_color }}</div>
-                          {% if product.default_price %}<div class="spec-price">EUR {{ product.default_price|floatformat:2 }}</div>{% endif %}
-                          <span class="avail {{ product.availability_class }}">{{ product.availability_label }}</span>
-                          <div class="spec-actions">
-                            <button type="button" class="spec-details" onclick="openDesc('{{ product.catalog_title|escapejs }}', '{{ product.description|default:'No description available.'|escapejs }}')">Details</button>
-                          </div>
-                        </div>
-                      </article>
-                    {% endfor %}
-                  </div>
-                </div>
-              {% endif %}
-            {% endfor %}
-          </section>
-        {% endfor %}
-      </section>
-    {% else %}
-      <section class="cat-empty">
-        <h2>Nothing matches yet</h2>
-        <p>Try a broader search, or switch back to all categories.</p>
-      </section>
-    {% endif %}
-
-  </div>
-</div>
-
-<div class="modal fade" id="imageModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
-    <div class="modal-content" style="background:#0d0a08;border:none;border-radius:14px;">
-      <img id="modalImage" class="img-fluid rounded" style="max-height:84vh; object-fit:contain;">
-    </div>
-  </div>
-</div>
-
-<div class="modal fade" id="descModalGlobal" tabindex="-1" aria-labelledby="descModalGlobalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="descModalGlobalLabel" style="font-family:var(--font-display,serif);font-weight:500;">Product details</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body" id="descModalGlobalBody" style="white-space:pre-line;color:#3a352d;line-height:1.7;"></div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<button id="backToTop" class="back-top" title="Back to top">↑</button>
-
-<script>
-function openImage(url) {
-  document.getElementById('modalImage').src = url;
-  new bootstrap.Modal(document.getElementById('imageModal')).show();
-}
-function openDesc(title, desc) {
-  const modalEl = document.getElementById('descModalGlobal');
-  document.getElementById('descModalGlobalLabel').textContent = title || 'Product details';
-  document.getElementById('descModalGlobalBody').textContent = (desc && desc.trim()) ? desc : 'No description available.';
-  bootstrap.Modal.getOrCreateInstance(modalEl, { backdrop: true, keyboard: true }).show();
-}
-(function () {
-  const btn = document.getElementById('backToTop');
-  const root = document.documentElement;
-  window.addEventListener('scroll', function () {
-    const scrolled = root.scrollTop || document.body.scrollTop;
-    btn.classList.toggle('show', scrolled > 360);
-  });
-  btn.addEventListener('click', function () { window.scrollTo({ top: 0, behavior: 'smooth' }); });
-}());
-</script>
+  <div data-part="foot"><a class="btn btn-outline-secondary" href="{% url 'catalog' %}">Limpar</a></div>
+</template>
 {% endblock %}
