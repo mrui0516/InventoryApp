@@ -67,7 +67,9 @@ from .permissions import (
     manager_required,
 )
 from .services.inbound_costs import IVA_RATE, check_invoice, check_shipping
+from .services.availability import SAMPLE_RESERVE, product_ids_on_order
 from .services.product_contents import product_page_links
+from .services.product_search import product_search_q
 from .services.wholesale_discount import discount_applies
 from .stores import (
     ACTIVE_STORE_SESSION_KEY,
@@ -184,6 +186,16 @@ def annotate_catalog_metrics(queryset):
     )
 
 
+def discount_code(discount):
+    """``D25_`` for a discount of 2.50, for the shop to tell two exports apart.
+    A code rather than a word, because the customer sees the file name."""
+    if not discount:
+        return ''
+    tenths = discount * 10
+    digits = str(int(tenths)) if tenths == int(tenths) else format(tenths.normalize(), 'f').replace('.', '')
+    return f'D{digits}_'
+
+
 def customer_catalog_case(value):
     """Title case for the customer list, keeping the perfume tokens upright.
 
@@ -209,28 +221,10 @@ def build_customer_product_title(product):
     return customer_catalog_case(' - '.join(title_parts) or name_part or build_product_label(product))
 
 
-# The last one on the shelf is the display sample, not something to sell, so
-# it never counts towards what a customer can have. A list that offers the
-# sample either loses the display or disappoints whoever ordered it.
-SAMPLE_RESERVE = 1
-
 # Fewer than three sellable is "low stock": at one or two, a customer ordering
 # a couple can empty the shelf, so it is worth saying so rather than promising
 # availability we may not have by the time they arrive.
 LOW_STOCK_BELOW = 3
-
-
-def product_ids_on_order():
-    """Products sitting on an inbound order that has not landed yet.
-
-    Nothing new is recorded for this - an order placed with a supplier and not
-    yet received *is* the definition of in transit, and the app already tracks
-    it. So "in stock soon" stays true on its own, with nobody maintaining a
-    second flag that would drift out of date.
-    """
-    return set(InboundPendingItem.objects
-               .filter(inbound_order__status='pending_receipt')
-               .values_list('product_id', flat=True))
 
 
 # fill, font - light enough to read black text over, and distinct in greyscale
@@ -1460,14 +1454,7 @@ def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_cat
     )
 
     if query:
-        products_qs = products_qs.filter(
-            Q(name__icontains=query) |
-            Q(barcode__icontains=query) |
-            Q(brand__icontains=query) |
-            Q(model__icontains=query) |
-            Q(spec__icontains=query) |
-            Q(color__icontains=query)
-        )
+        products_qs = products_qs.filter(product_search_q(query))
 
     category_ids = category_with_descendants(selected_category)
     if category_ids:
@@ -1611,6 +1598,7 @@ def export_product_list_excel(request):
 
     if price_mode not in {'retail', 'wholesale', 'both'}:
         price_mode = 'retail'
+    price_code = discount_code(discount) if price_mode in {'wholesale', 'both'} else ''
 
     state = get_filtered_product_list_state(
         show_sales_sensitive=show_sales_sensitive,
@@ -1715,7 +1703,7 @@ def export_product_list_excel(request):
             build_catalog_pdf(brand_groups, price_mode=price_mode,
                               include_images=include_images, legend=legend),
             as_attachment=True,
-            filename=f"Product_List_{timezone.localtime().strftime('%Y%m%d_%H%M')}.pdf")
+            filename=f"Product_List_{price_code}{timezone.localtime().strftime('%Y%m%d_%H%M')}.pdf")
         response['Content-Type'] = 'application/pdf'
         return response
 
@@ -1871,7 +1859,7 @@ def export_product_list_excel(request):
     export_buffer = _BytesIO()
     wb.save(export_buffer)
     export_buffer.seek(0)
-    filename = f'Customer_Product_List_{ts}.xlsx'
+    filename = f'Customer_Product_List_{price_code}{ts}.xlsx'
     response = FileResponse(export_buffer, as_attachment=True, filename=filename)
     response['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     return response
@@ -2301,10 +2289,7 @@ def product_sales_history_view(request):
         matches = []
         if q:
             matches = list(
-                Product.objects.filter(
-                    Q(name__icontains=q) | Q(barcode__icontains=q)
-                    | Q(model__icontains=q) | Q(brand__icontains=q)
-                ).annotate(sold=Coalesce(Sum('sale__quantity'), 0)).order_by('brand', 'name')[:50]
+                Product.objects.filter(product_search_q(q)).annotate(sold=Coalesce(Sum('sale__quantity'), 0)).order_by('brand', 'name')[:50]
             )
         context['matches'] = matches
         return render(request, 'stock/product_sales_history.html', context)
@@ -5941,14 +5926,7 @@ def products_autocomplete(request):
     elif q:
         if selling:
             base_qs = base_qs.filter(stock_left__gt=0)
-        text_match = (
-            Q(name__icontains=q) |
-            Q(brand__icontains=q) |
-            Q(model__icontains=q) |
-            Q(spec__icontains=q) |
-            Q(color__icontains=q) |
-            Q(barcode__icontains=q)
-        )
+        text_match = product_search_q(q)
         # Best sellers first: whoever is at the till is usually reaching for
         # the thing that sells, and a dozen results ordered by brand buries it.
         # A subquery rather than a join, so the text filter above cannot
@@ -6018,14 +5996,7 @@ def catalog_view(request):
     )
 
     if query:
-        qs = qs.filter(
-            Q(name__icontains=query) |
-            Q(brand__icontains=query) |
-            Q(model__icontains=query) |
-            Q(spec__icontains=query) |
-            Q(color__icontains=query) |
-            Q(barcode__icontains=query)
-        )
+        qs = qs.filter(product_search_q(query))
 
     if category_id:
         qs = qs.filter(category_id=category_id)
@@ -6170,14 +6141,7 @@ def export_catalog_excel(request):
     )
 
     if q:
-        qs = qs.filter(
-            Q(name__icontains=q) |
-            Q(brand__icontains=q) |
-            Q(model__icontains=q) |
-            Q(spec__icontains=q) |
-            Q(color__icontains=q) |
-            Q(barcode__icontains=q)
-        )
+        qs = qs.filter(product_search_q(q))
     if category_id:
         qs = qs.filter(category_id=category_id)
 

@@ -289,8 +289,8 @@ class Product(models.Model):
         name = (self.name or '').strip()
         if series and name and series.lower() == name.lower():
             name = ''
-        parts = [(self.brand or '').strip() if include_brand else '', series, name]
-        text = ' '.join(p for p in parts if p)
+        head = self._with_type(' '.join(p for p in [series, name] if p))
+        text = ' '.join(p for p in [(self.brand or '').strip() if include_brand else '', head] if p)
 
         strength = self.strength_label
         if strength and strength.lower() not in text.lower():
@@ -365,6 +365,14 @@ class Product(models.Model):
             return line
         return ' '.join(part for part in [line, name] if part)
 
+    def _with_type(self, text):
+        """The type leads the name, so a body spray with no name of its own still
+        has one, and reads as what it is. A plain perfume has no word to add."""
+        word = self.type_info.name_word
+        if not word or word.lower() in text.lower():
+            return text
+        return f'{word} {text}'.strip()
+
     @property
     def type_label(self):
         """The kind in a few letters: a perfume's concentration (EDP), otherwise
@@ -377,26 +385,25 @@ class Product(models.Model):
 
     @property
     def list_name(self):
-        """Name for lists that already show the brand: model and name, then
-        the kind and the size - ``Club De Nuit Iconic · EDP · 105ml``."""
+        """Name for lists that already show the brand: the type, model and name,
+        then the strength and the size - ``Club De Nuit Iconic · EDP · 105ml``."""
         parts = [self.model, self.name]
         if self.model and self.name and self.model.strip().lower() == self.name.strip().lower():
             parts = [self.model]                      # "Milano 22 Milano 22" says it once
-        head = " ".join(part for part in parts if part) or self.brand or self.barcode
+        head = self._with_type(" ".join(part for part in parts if part)) or self.brand or self.barcode
         words = head.lower().split()
+        strength = '' if self.type_info.name_word else self.type_label
         # "Lyric EDP" already says EDP, "Roll Oil 10ml" already says 10ml
-        extra = [part for part in [self.type_label, self.variant_label]
+        extra = [part for part in [strength, self.variant_label]
                  if part and part.lower() not in words and part.lower() not in head.lower().replace(' ', '')]
         return " · ".join([head] + extra)
 
     @property
     def display_name(self):
-        head = " - ".join([part for part in [self.brand, self.model, self.name] if part])
-        tail = self.variant_label
         # A gift set is often named exactly as its perfume: say which this is.
-        kind = self.type_info.name_word
-        if kind and kind.lower() not in head.lower():
-            head = f"{head} {kind}" if head else kind
+        rest = self._with_type(" - ".join([part for part in [self.model, self.name] if part]))
+        head = " - ".join([part for part in [self.brand, rest] if part])
+        tail = self.variant_label
         if head and tail:
             return f"{head} {tail}"
         return head or tail or (self.barcode or 'Unnamed product')

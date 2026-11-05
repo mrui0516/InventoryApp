@@ -10398,7 +10398,7 @@ class PerfumeFormTests(TestCase):
         self._post(product_type="body_spray", name="Asad", volume_ml="200")
         product = Product.objects.get()
         self.assertEqual(product.product_type_id, "body_spray")
-        self.assertEqual(product.list_name, "Asad · Body spray · 200ml")
+        self.assertEqual(product.list_name, "Body spray Asad · 200ml")
         edp = Concentration.objects.create(name="Eau de Parfum", short="EDP")
         Product.objects.filter(pk=product.pk).update(product_type_id="perfume", concentration=edp)
         product.refresh_from_db()

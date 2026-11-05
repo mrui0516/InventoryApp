@@ -210,7 +210,7 @@ def match_products(rows):
     catalogue = []
     if need_names:
         for p in Product.objects.only('id', 'brand', 'model', 'name', 'barcode', 'volume_ml', 'spec', 'product_type'):
-            words = set(_words(' '.join(filter(None, [p.brand, p.model, p.name, p.spec]))))
+            words = set(_words(' '.join(filter(None, [p.brand, p.model, p.name, p.spec, p.type_info.name_word]))))
             # Initials too, as people write them: "cdn" for CLUB DE NUIT.
             for part in (p.brand, p.model, p.name):
                 parts = _words(part)

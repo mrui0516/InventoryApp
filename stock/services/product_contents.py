@@ -6,6 +6,7 @@ from django.db import transaction
 from django.db.models import Q, Sum
 
 from ..models import Product, ProductContent, Purchase
+from .availability import offerable_ids
 from .names import title_case
 
 
@@ -108,11 +109,13 @@ def product_page_links(product):
 def pdf_links(products):
     """For a PDF of these products: ``{id: {'contents': [...], 'also_in': [...]}}``,
     each entry ``(label, target_id)``. ``target_id`` is None unless the target is
-    in this PDF: a link to a row that is not there stops reportlab cold."""
+    in this PDF: a link to a row that is not there stops reportlab cold. A perfume
+    only points at what the customer can have."""
     ids = {p.pk for p in products}
     links = {}
-    rows = (ProductContent.objects.filter(Q(owner_id__in=ids) | Q(linked_id__in=ids))
-            .select_related('owner', 'linked').order_by('sort_order', 'id'))
+    rows = list(ProductContent.objects.filter(Q(owner_id__in=ids) | Q(linked_id__in=ids))
+                .select_related('owner', 'linked').order_by('sort_order', 'id'))
+    offerable = offerable_ids({row.owner_id for row in rows if row.linked_id in ids})
     for row in rows:
         owner = row.owner
         if owner.archived_at is not None or not owner.lists_contents:
@@ -121,7 +124,7 @@ def pdf_links(products):
             live = row.linked_id in ids and row.linked.archived_at is None
             entry = links.setdefault(owner.pk, {'contents': [], 'also_in': []})
             entry['contents'].append((content_label(row), row.linked_id if live else None))
-        if row.linked_id in ids:
+        if row.linked_id in ids and owner.pk in offerable:
             kind = owner.type_info
             entry = links.setdefault(row.linked_id, {'contents': [], 'also_in': []})
             entry['also_in'].append((kind.customer_label or kind.name, owner.pk if owner.pk in ids else None))

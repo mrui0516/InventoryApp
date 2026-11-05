@@ -29,7 +29,10 @@ from reportlab.lib.units import mm
 from reportlab.platypus import (Image, PageBreak, Paragraph, SimpleDocTemplate,
                                 Spacer, Table, TableStyle)
 
+from ..models import Product, ProductType
 from .product_contents import pdf_links
+
+FIRST_BRAND = 'lattafa'
 
 # Same meaning as the spreadsheet's fills, so the two never disagree.
 STATE_COLOURS = {
@@ -59,6 +62,10 @@ def _styles():
                                leading=10, alignment=TA_LEFT),
         'detail': ParagraphStyle('d', parent=base['Normal'], fontSize=7.5, leading=9.5,
                                  textColor=colors.HexColor('#5b6675')),
+        'ean': ParagraphStyle('e', parent=base['Normal'], fontSize=7, leading=8.5,
+                              textColor=colors.HexColor('#5b6675')),
+        'type': ParagraphStyle('ty', parent=base['Heading2'], fontSize=12, spaceBefore=8, spaceAfter=2,
+                               textColor=colors.HexColor('#10213a')),
         'head': ParagraphStyle('h', parent=base['Normal'], fontSize=7.5,
                                leading=9, textColor=colors.white),
     }
@@ -90,6 +97,25 @@ def _thumb(product):
         return None
 
 
+def _brands_in_order(brand_groups):
+    """Lattafa, the shop's main brand, then the biggest brands first."""
+    return sorted(brand_groups.items(),
+                  key=lambda item: (item[0].strip().lower() != FIRST_BRAND, -len(item[1]), item[0].lower()))
+
+
+def _sections(products):
+    """``(type or None, line, products)`` type by type, then line by line. The type
+    comes only with its first line, which is where its heading goes."""
+    by_type = {}
+    for product in products:
+        by_type.setdefault(product.product_type_id, {}).setdefault(product.export_model, []).append(product)
+    for code in sorted(by_type, key=lambda c: ProductType.for_code(c).sort_order):
+        kind = ProductType.for_code(code)
+        for model_name, rows in by_type[code].items():
+            yield kind, model_name, rows
+            kind = None
+
+
 def _detail_line(prefix, items):
     """``Fragr\u00e2ncias: Khamrah \u00b7 Yara``, each name a jump when it has a target."""
     parts = []
@@ -100,10 +126,10 @@ def _detail_line(prefix, items):
 
 
 def _title_cell(product, links, style):
-    title = Paragraph(f'<a name="p{product.pk}"/>{product.export_title}', style['cell'])
+    cell = [Paragraph(f'<a name="p{product.pk}"/>{product.barcode or "-"}', style['ean']),
+            Paragraph(product.export_title, style['cell'])]
     if not links:
-        return title
-    cell = [title]
+        return cell
     if links['contents']:
         prefix = 'Cont\u00e9m:' if product.type_info.is_gift else 'Fragr\u00e2ncias:'
         cell.append(Paragraph(_detail_line(prefix, links['contents']), style['detail']))
@@ -138,8 +164,8 @@ def build_catalog_pdf(brand_groups, *, price_mode='retail', include_images=True,
     style = _styles()
     story = []
 
-    headers = (['Foto'] if include_images else []) + ['Produto', 'EAN']
-    widths = ([THUMB_MM * mm + 4 * mm] if include_images else []) + [62 * mm, 26 * mm]
+    headers = (['Foto'] if include_images else []) + ['Produto', 'Género']
+    widths = ([THUMB_MM * mm + 4 * mm] if include_images else []) + [70 * mm, 18 * mm]
     if price_mode in {'retail', 'both'}:
         headers.append('PVP')
         widths.append(20 * mm)
@@ -156,7 +182,7 @@ def build_catalog_pdf(brand_groups, *, price_mode='retail', include_images=True,
         widths.append(28 * mm)
 
     links = pdf_links([p for products in brand_groups.values() for p in products])
-    for index, (brand_name, products) in enumerate(brand_groups.items()):
+    for index, (brand_name, products) in enumerate(_brands_in_order(brand_groups)):
         if index:
             story.append(PageBreak())
         title = Paragraph(f'{brand_name} | Lista de Produtos', style['title'])
@@ -170,11 +196,9 @@ def build_catalog_pdf(brand_groups, *, price_mode='retail', include_images=True,
         if legend:
             story.append(Paragraph(legend, style['legend']))
 
-        by_model = {}
-        for product in products:
-            by_model.setdefault(product.export_model, []).append(product)
-
-        for model_name, model_products in by_model.items():
+        for kind, model_name, model_products in _sections(products):
+            if kind is not None:
+                story.append(Paragraph(kind.customer_label or kind.name, style['type']))
             story.append(Paragraph(model_name, style['section']))
 
             rows = [[Paragraph(h, style['head']) for h in headers]]
@@ -184,7 +208,7 @@ def build_catalog_pdf(brand_groups, *, price_mode='retail', include_images=True,
                 if include_images:
                     row.append(_thumb(product) or '')
                 row.append(_title_cell(product, links.get(product.pk), style))
-                row.append(Paragraph(product.barcode or '-', style['cell']))
+                row.append(Paragraph(Product.GENDER_SHOPIFY_TAGS.get(product.gender, '-'), style['cell']))
                 # The same numbers the spreadsheet prints: PVP is the till
                 # price plus the uplift, wholesale carries this export's
                 # discount. Both are worked out before we get here.

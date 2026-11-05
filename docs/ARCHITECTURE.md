@@ -491,6 +491,14 @@ Orders → Purchases（`orders_views.load_purchases`）、供应商页、产品�
 模板用 `{% load brands %}{% brand_logo brand size=28 fallback=name %}`，`brand` 可以是 None，样式写在标签里，不需要 `collectstatic`。
 PDF 的 `_brand_logo` 文件缺失时跳过。`empty_brands` 默认不包括有 logo 的品牌，手动删除传 `keep_logos=False`。
 
+### 5.13y1 产品名称和搜索（2026-11-05）
+
+名称都经过 `Product._with_type()`：`name_word` 放在型号和名称前面，品牌仍在最前（`display_name`、`list_name`、`title_parts`）。Shopify 标题走 `shopify_sync` 自己的拼法，不受影响。
+
+搜索统一用 `services/product_search.py::product_search_q`：按空格拆词，每个词必须出现在某个字段里，字段包括 Type 的 `name_word`、`name`。
+
+`services/availability.py` 放“客人能买到什么”：`SAMPLE_RESERVE`、`product_ids_on_order()`、`offerable_ids()`，导出和 PDF 共用一个规则。
+
 ### 5.13y2 产品之间的连接（`ProductContent`，2026-11-05）
 
 `services/product_contents.py`。一行是一个名称，`linked` 可空；`name` 总是存着，所以被连接的产品归档或删除后名称还在。

@@ -277,6 +277,10 @@
   - **类型**(新字段 `Product.perfume_type`,迁移 0066):Perfume(默认)/ Mini / Oil perfume / Body mist / splash / Body spray(Deo)/ Air freshener / Coffret(礼盒)。
   - **Type 自己管理(2026-11-05,迁移 0075)**:Settings → Catalog → Types 可以添加、改名、排序、删除 Type,每个 Type 有开关:浓度、容量、Scent 区块、批发折扣、礼盒。新 Type 默认不打折、不显示 Scent。有产品的 Type 删除前要选一个 Type 转移产品;Perfume 是默认值,不能删。只有管理员能用。
   - **产品之间的连接(2026-11-05,迁移 0078)**:Mix(表单勾 **This is a mix**,所有 Type 都能用)、Coffret、Body mist、Body spray、Air freshener 有一份清单,每项连接到产品或只写名称。输入时提示产品,也可以一次粘贴多个名称,同品牌名称完全相同的自动连接。只用于显示:库存、进货、销售都按产品本身,卖出 Coffret 不扣香水库存,Mix 不分款式计库存。产品页互相显示("Also in: Body spray (Mix)")。系列名为 Mix 的现有产品自动标记为 Mix,清单由店主自己填。
+  - **产品名称带 Type(2026-11-05)**:除 Perfume 外,名称以 Type 开头("Lattafa - Body spray Yara 200ml"),没有名称的产品就叫它的 Type;名称里已经有这个词时不重复。Shopify 标题不变。
+  - **搜索(2026-11-05)**:所有产品搜索框都能搜 Type,多个词可以来自不同字段("yara body spray")。Quick import 也读 Type。
+  - **客户 PDF 排版(2026-11-05)**:Lattafa 排最前,其余品牌按这份 PDF 里的产品数从多到少;每个品牌先按 Type 分,再按型号。EAN 放在名称上方,不再单独一列;增加性别列(Género)。香水行的 `Também em:` 只显示客人能买到的产品(库存多于样品,或在途)。Excel 除名称外不变。
+  - **导出文件名(2026-11-05)**:有批发折扣时文件名带代号,D25 表示 2.50,D30 表示 3.00,客人看不出是折扣;零售清单和没有折扣的清单不带。
   - **客户 PDF 内部跳转(2026-11-05)**:Mix 和其它有清单的产品行下方小字列出名称(`Fragrâncias:`,Coffret 用 `Contém:`),香水行下方显示 `Também em:`,点击跳到这份 PDF 里的对应行。对方不在这份 PDF 里时只显示文字。Excel 不变。
   - **Settings → Catalog(2026-11-05,迁移 0077)**:Types、Brands、Lines、Categories、Concentrations、Families 都能自己管理。品牌和系列可以改名、合并(产品上的文字一起更新,包括已删除的产品),有产品时不能删。Brands 可以上传 logo(JPG、PNG、WebP,2 MB 以内,自动缩到 256px),没有 logo 时显示首字母;logo 显示在 Brands、产品页、Products 的品牌筛选标签和客户 PDF 的品牌标题。有 logo 的品牌不会被自动删除。品牌改名不影响已上架的 Shopify 商品。
   - **添加产品先选 Type(2026-11-05,迁移 0076)**:Add product 先显示 Type 卡片,选中后表单只问这个 Type 需要的:浓度和容量按开关显示,Scent 只有 Perfume、Mini、Oil perfume 显示,分类由 Type 自动带上,所有品牌都可选。Description 所有 Type 都有。Coffret 不填容量,现有 Coffret 的容量已清空。
