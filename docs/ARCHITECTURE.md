@@ -530,7 +530,7 @@ Foto / Produto / EAN / Categoria / **PVP** / Preco grossista / Disponibilidade�
 | **Preço grossista** | app 批发价 **− 导出时填的折扣**（`discount`），不会低于 0。 |
 
 **折扣只给「一瓶香水该有的容量」**（`discount_applies()`）：
-香水分类 **且 60ml ≤ 容量 ≤ 120ml** **且 不是身体喷雾**。
+香水分类 **且 Type 打开了批发折扣（现在只有 Perfume）** **且 60ml ≤ 容量 ≤ 120ml**。
 
 **两端都要卡**，这不是「大瓶」而是「正常一瓶香水」：
 50ml 本身就便宜，同样减几欧会把利润减掉大半；

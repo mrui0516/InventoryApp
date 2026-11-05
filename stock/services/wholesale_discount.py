@@ -24,20 +24,18 @@ DISCOUNT_MAX_VOLUME_ML = 120
 def discount_applies(product):
     """Whether an export discount may come off this product's wholesale price.
 
-    Normal bottles of perfume only - 60ml to 120ml. A product with no volume
-    recorded is left out on purpose: quoting a discount we did not mean costs
-    the shop margin quietly, while missing one is visible and easily
-    corrected.
+    Normal bottles of perfume only: the type's switch, then 60ml to 120ml. A
+    product with no volume recorded is left out on purpose: quoting a discount
+    we did not mean costs the shop margin quietly, while missing one is visible
+    and easily corrected.
     """
     category = getattr(product.category, 'name', '') if product.category_id else ''
     if 'perfum' not in (category or '').lower():
         return False
-    volume = getattr(product, 'volume_ml', None)
-    if volume is None or not (DISCOUNT_MIN_VOLUME_ML <= volume <= DISCOUNT_MAX_VOLUME_ML):
+    if not product.type_info.wholesale_discount:
         return False
-    # Size already excludes the 200ml sprays; this catches a body mist that
-    # happens to be bottled at 100ml.
-    return product.product_type_id != 'body_mist'
+    volume = getattr(product, 'volume_ml', None)
+    return volume is not None and DISCOUNT_MIN_VOLUME_ML <= volume <= DISCOUNT_MAX_VOLUME_ML
 
 
 def last_discount(customer_id):

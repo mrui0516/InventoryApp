@@ -65,4 +65,4 @@ class ProductTypesTests(TestCase):
         oil = self._product(product_type_id="oil_perfume", volume_ml=100, wholesale_price=Decimal("9"),
                             barcode="6290000009003")
         self.assertFalse(discount_applies(mist))
-        self.assertTrue(discount_applies(oil))
+        self.assertFalse(discount_applies(oil))

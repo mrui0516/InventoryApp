@@ -77,3 +77,25 @@ class ProductTypeTableTests(TestCase):
         self.client.force_login(User.objects.create_superuser("boss", password="pw"))
         rows = self.client.get(reverse("product_list"), {"type": "body_mist"}).context["page_obj"]
         self.assertEqual([p.product_type_id for p in rows], ["body_mist"])
+
+
+class DiscountSwitchTests(TestCase):
+    def test_only_perfume(self):
+        from stock.services.wholesale_discount import discount_applies
+        cases = (("perfume", True), ("coffret", False), ("mini", False), ("oil_perfume", False),
+                 ("body_mist", False), ("body_spray", False), ("air_freshener", False))
+        for n, (code, expected) in enumerate(cases):
+            product = make_product(barcode=f"629000007000{n}", product_type_id=code, volume_ml=100)
+            self.assertEqual(discount_applies(product), expected, code)
+
+    def test_a_perfume_still_needs_the_size(self):
+        from stock.services.wholesale_discount import discount_applies
+        for volume, expected in ((50, False), (60, True), (120, True), (150, False), (None, False)):
+            product = make_product(barcode=f"6290000071{volume or 0:03d}", volume_ml=volume)
+            self.assertEqual(discount_applies(product), expected, volume)
+
+    def test_the_switch_decides_for_a_new_type(self):
+        from stock.services.wholesale_discount import discount_applies
+        self.addCleanup(clear_type_cache)
+        ProductType.objects.create(code="creme", name="Creme", wholesale_discount=True)
+        self.assertTrue(discount_applies(make_product(product_type_id="creme", volume_ml=100)))
