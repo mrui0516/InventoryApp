@@ -10554,7 +10554,7 @@ class ProductListTypeTests(TestCase):
     def test_rows_name_line_name_type_size(self):
         response = self.client.get(reverse("product_list"))
         self.assertContains(response, "Asad Line Asad · EDP · 100ml")
-        self.assertContains(response, "Asad · Body spray · 200ml")
+        self.assertContains(response, "Body spray Asad · 200ml")
 
     def test_the_export_takes_the_same_filters(self):
         response = self.client.get(reverse("export_product_list_excel"), {"type": "mini"})
