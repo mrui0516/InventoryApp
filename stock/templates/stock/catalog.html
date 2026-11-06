@@ -34,12 +34,10 @@
   .wc-row.is-out .wc-title{ color:var(--app-muted); }
   .wc-empty{ margin:0; padding:1rem; color:var(--app-muted); }
   .wc-pages{ display:flex; align-items:center; justify-content:center; gap:.75rem; font-size:.9rem; }
-  .wc-panel-photo{ display:grid; place-items:center; height:220px; margin-bottom:.75rem; border:1px solid var(--app-border); border-radius:var(--app-radius-sm); background:#fff; }
-  .wc-panel-photo img{ max-width:100%; max-height:100%; object-fit:contain; }
-  .wc-facts{ display:grid; grid-template-columns:auto minmax(0,1fr); gap:.2rem .8rem; margin:0 0 .75rem; }
-  .wc-facts dt{ font-size:.85rem; font-weight:700; color:var(--app-muted); }
-  .wc-facts dd{ margin:0; font-weight:600; overflow-wrap:anywhere; }
-  .wc-text{ white-space:pre-line; font-size:.92rem; }
+  .wc-panel-photo{ height:220px; border:1px solid var(--app-border); border-radius:var(--app-radius-sm); background:#fff; overflow:hidden; }
+  .wc-panel-photo img{ display:block; width:100%; height:100%; object-fit:contain; }
+  .wc-kpi-state{ font-size:1rem !important; }
+  .wc-text{ white-space:pre-line; font-size:.92rem; overflow-wrap:anywhere; }
   @media (max-width:767.98px){
     .wc-headrow{ display:none; }
     .wc-row{ grid-template-columns:48px minmax(0,1fr) auto; gap:.15rem .6rem; padding:.5rem .7rem; }
@@ -87,16 +85,18 @@
         <div data-part="title">{{ row.title }}</div>
         <div data-part="body">
           {% if row.image_url %}<div class="wc-panel-photo"><img src="{{ row.image_url }}" alt="{{ row.title }}"></div>{% endif %}
-          <dl class="wc-facts">
-            <dt>Marca</dt><dd>{{ row.brand }}</dd>
-            <dt>EAN</dt><dd>{{ row.ean }}</dd>
-            <dt>Tipo</dt><dd>{{ row.kind }}</dd>
-            {% if row.gender %}<dt>Género</dt><dd>{{ row.gender }}</dd>{% endif %}
-            <dt>Preço grossista</dt><dd>{% if row.price %}&euro;{{ row.price|floatformat:2 }}{% else %}Sob consulta{% endif %}</dd>
-            <dt>Disponibilidade</dt><dd>{{ row.state_label }}</dd>
-            {% if row.contents %}<dt>Fragrâncias</dt><dd>{{ row.contents|join:" · " }}</dd>{% endif %}
+          <div class="sp-kpis sp-kpis-2">
+            <div class="sp-kpi"><span>Preço grossista</span><b>{% if row.price %}&euro;{{ row.price|floatformat:2 }}{% else %}Sob consulta{% endif %}</b></div>
+            <div class="sp-kpi"><span>Disponibilidade</span><b class="wc-kpi-state">{{ row.state_label }}</b></div>
+          </div>
+          <dl class="sp-kv">
+            <div><dt>Marca</dt><dd>{{ row.brand }}</dd></div>
+            <div><dt>EAN</dt><dd>{{ row.ean }}</dd></div>
+            <div><dt>Tipo</dt><dd>{{ row.kind }}</dd></div>
+            {% if row.gender %}<div><dt>Género</dt><dd>{{ row.gender }}</dd></div>{% endif %}
           </dl>
-          {% if row.description %}<div class="wc-text">{{ row.description }}</div>{% endif %}
+          {% if row.contents %}<section class="sp-sec"><h6>Fragrâncias</h6><div class="wc-text">{{ row.contents|join:" · " }}</div></section>{% endif %}
+          {% if row.description %}<section class="sp-sec"><h6>Descrição</h6><div class="wc-text">{{ row.description }}</div></section>{% endif %}
         </div>
         <div data-part="foot"></div>
       </template>

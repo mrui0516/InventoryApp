@@ -224,6 +224,23 @@ class PageTests(CatalogMixin):
         self.assertEqual([t["value"] for t in context["types"]], ["coffret"])
         self.assertEqual(context["brands"], ["Lattafa"])
 
+    def test_the_panel_uses_the_shared_side_panel_parts(self):
+        product = self._product(units=9, description="Doce", gender="men")
+        html = self._get().content.decode()
+        panel = html[html.index(f'<template id="wc-{product.pk}">'):]
+        panel = panel[:panel.index("</template>")]
+        self.assertIn("sp-kpis", panel)
+        self.assertIn('class="sp-kv"', panel)
+        self.assertIn("sp-sec", panel)
+        self.assertEqual(panel.count("<dt>"), 4)      # brand, EAN, type, gender: price and stock head the panel
+
+    def test_the_panel_lists_what_a_mix_holds(self):
+        mix = self._product(name="Spray", units=9, is_mix=True, product_type_id="body_spray")
+        save_contents(mix, [{"name": "Oud", "linked_id": None}])
+        html = self._get().content.decode()
+        panel = html[html.index(f'<template id="wc-{mix.pk}">'):]
+        self.assertIn("Fragrâncias", panel[:panel.index("</template>")])
+
     def test_there_are_no_notes(self):
         product = self._product(units=9, days_ago=1)
         self._sold(product, 50)
