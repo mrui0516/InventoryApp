@@ -11,7 +11,7 @@
 | 维度 | 状态 | 说明 |
 |---|---|---|
 | 线上运行 | ✅ PythonAnywhere 欧盟区 | `https://scentory.eu.pythonanywhere.com`，两家店（Khan Perfume、Scentory）日常收银、入库都在线上；线上 `db.sqlite3` 是唯一准数据 |
-| 自动化测试 | ✅ 1316 个全部通过 | `python manage.py test stock restock_alerts`，在干净导出上跑 |
+| 自动化测试 | ✅ 1393 个全部通过 | `python manage.py test stock restock_alerts`，在干净导出上跑 |
 | 数据库迁移 | ✅ 最新 `0080_wholesale_orders`，无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
 | 生产配置 | ✅ `DEBUG=False`，密钥只在服务器 `.env` | `settings.py` 的 `if not DEBUG` 块：强制 HTTPS、安全 Cookie、HSTS、防点击劫持 |
 | 数据备份 | ✅ 每日快照 + 本机拉取 | PA 定时任务 `backup_db --keep 30`，本机 `scripts/pull_backup_from_pa.py` 拉到 U 盘；Settings → Tools 可手动下载。见 [BACKUP.md](./BACKUP.md) |
