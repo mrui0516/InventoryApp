@@ -128,6 +128,7 @@
         <a class="erp-nav-link {% if current_url == 'inbound' %}active{% endif %}" href="{% url 'inbound' %}">Inbound</a>
         <a class="erp-nav-link {% if current_url == 'stock_transfers' %}active{% endif %}" href="{% url 'stock_transfers' %}">Transfers</a>
         <a class="erp-nav-link {% if current_url in 'supplier_list,supplier_create,supplier_edit,supplier_detail' %}active{% endif %}" href="{% url 'supplier_list' %}">Suppliers</a>
+        <a class="erp-nav-link {% if current_url == 'restock_requests' %}active{% endif %}" href="{% url 'restock_requests' %}">Restock requests</a>
 
         {% if user.is_superuser %}
         <div class="erp-nav-group">Finance</div>

@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from django.db import models
 from django.db.models import Sum
+from django.utils import timezone
 
 from .product_types import ProductType
 
@@ -439,6 +440,23 @@ class ProductContent(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class RestockRequest(models.Model):
+    """Someone asked for a sold-out product to come back. Open until its next
+    delivery (services/restock_requests.py); kept afterwards as history."""
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='restock_requests')
+    requested_by = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, blank=True,
+                                     related_name='restock_requests')
+    customer = models.ForeignKey('stock.Customer', on_delete=models.SET_NULL, null=True, blank=True,
+                                 related_name='restock_requests')
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.product_id} {self.created_at:%Y-%m-%d}'
 
 
 class ProductImage(models.Model):

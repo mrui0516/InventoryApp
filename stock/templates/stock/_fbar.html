@@ -2,7 +2,7 @@
 {# The list's search, and the button that opens its other filters in the side #}
 {# panel (a <template id="{{ panel }}"> on the page). See UI_COMPONENTS.md.      #}
 <form method="get" class="fbar" role="search">
-  {% keep_params "q" %}
+  {% keep_params "q" drop %}
   <label class="fbar-search">
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
     <input type="search" name="q" value="{{ query }}" placeholder="{{ placeholder }}" aria-label="Search" enterkeyhint="search">

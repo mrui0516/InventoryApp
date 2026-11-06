@@ -5969,8 +5969,11 @@ def catalog_view(request):
     brand = request.GET.get('brand', '').strip()
     kind = request.GET.get('type', '').strip()
     gender = request.GET.get('gender', '').strip()
-    show_all = request.GET.get('stock') == 'all'
-    rows = catalog_rows(query=query, brand=brand, kind=kind, gender=gender, show_all=show_all)
+    # Browsing shows what is on sale; a search also finds what has sold out,
+    # since that is how someone gets to ask for it.
+    stock = request.GET.get('stock')
+    show_all = stock == 'all' or (bool(query) and stock != 'in')
+    rows = catalog_rows(query=query, brand=brand, kind=kind, gender=gender, show_all=show_all, viewer=request.user)
     page_obj = Paginator(rows, PAGE_SIZE).get_page(request.GET.get('page'))
     return render(request, 'stock/catalog.html', {
         'page_obj': page_obj,

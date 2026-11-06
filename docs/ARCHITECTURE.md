@@ -509,6 +509,9 @@ PDF 的 `_brand_logo` 文件缺失时跳过。`empty_brands` 默认不包括有 
 
 型号顺序：`units_sold()` 取累计销量，同一品牌、同一 Type 内按型号合计排序，PDF 和目录规则相同。销量只用来排序，不输出。
 
+`services/restock_requests.py`：`RestockRequest` 在下一次到货前有效，“有效”是算出来的（`created_at` 晚于最后一批 `Purchase.date`），不写状态字段。
+一个周期内按客户去重，没有客户时按用户去重；客户账号上线后传 `customer` 即可。有货的产品拒绝申请。申请数只在后台显示，`catalog_rows` 只给当前用户一个 `requested` 布尔值。
+
 ### 5.13y2 产品之间的连接（`ProductContent`，2026-11-05）
 
 `services/product_contents.py`。一行是一个名称，`linked` 可空；`name` 总是存着，所以被连接的产品归档或删除后名称还在。

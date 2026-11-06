@@ -14,7 +14,11 @@
   .wc-list{ background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius); overflow:hidden; }
   .wc-row, .wc-headrow{ display:grid; grid-template-columns:48px minmax(0,1fr) 6.5rem 5rem 6.5rem 7.5rem; gap:.75rem; align-items:center; width:100%; padding:.45rem .85rem; }
   .wc-headrow{ font-size:.85rem; font-weight:700; color:var(--app-muted); background:var(--app-surface-2); }
-  .wc-row{ border:0; border-top:1px solid var(--app-border); background:none; color:inherit; text-align:left; cursor:pointer; }
+  .wc-item{ border-top:1px solid var(--app-border); }
+  .wc-row{ border:0; background:none; color:inherit; text-align:left; cursor:pointer; }
+  .wc-strip{ display:flex; justify-content:flex-end; padding:0 .85rem .45rem; }
+  .wc-ask .btn{ min-height:36px; }
+  .wc-asked{ font-size:.85rem; font-weight:700; color:var(--app-muted); }
   .wc-row:hover{ background:var(--app-accent-soft); }
   .wc-row:focus-visible{ outline:2px solid var(--app-accent); outline-offset:-2px; }
   .wc-photo{ display:grid; place-items:center; width:48px; height:48px; border:1px solid var(--app-border); border-radius:var(--app-radius-sm); background:#fff; overflow:hidden; color:var(--app-muted); font-size:.85rem; }
@@ -54,11 +58,11 @@
     <span class="wc-count">{{ total }} produto{{ total|pluralize }}</span>
   </div>
 
-  {% include "stock/_fbar.html" with placeholder="Nome, marca, tipo ou EAN" panel="wc-filters" on=filters_on %}
+  {% include "stock/_fbar.html" with placeholder="Nome, marca, tipo ou EAN" panel="wc-filters" on=filters_on drop="stock" %}
 
   <div>
     <span class="wc-seg" role="group" aria-label="Disponibilidade">
-      <a class="{% if not show_all %}on{% endif %}" href="{% querystring stock=None page=None %}">Disponíveis</a>
+      <a class="{% if not show_all %}on{% endif %}" href="{% querystring stock='in' page=None %}">Disponíveis</a>
       <a class="{% if show_all %}on{% endif %}" href="{% querystring stock='all' page=None %}">Todos</a>
     </span>
   </div>
@@ -69,6 +73,7 @@
       <span class="wc-price">Preço grossista</span><span>Disponibilidade</span>
     </div>
     {% for row in page_obj %}
+      <div class="wc-item">
       <button type="button" class="wc-row{% if row.state == 'out-stock' %} is-out{% endif %}" data-layer="wc-{{ row.pk }}">
         <span class="wc-photo">{% if row.image_url %}<img src="{{ row.image_url }}" alt="" loading="lazy">{% else %}&mdash;{% endif %}</span>
         <span class="wc-main">
@@ -81,6 +86,8 @@
         {% if row.price %}<span class="wc-price">&euro;{{ row.price|floatformat:2 }}</span>{% else %}<span class="wc-price none">Sob consulta</span>{% endif %}
         <span class="wc-state {{ row.state }}">{{ row.state_label }}</span>
       </button>
+      {% if row.state == 'out-stock' %}<div class="wc-strip">{% include "stock/_restock_ask.html" %}</div>{% endif %}
+      </div>
       <template id="wc-{{ row.pk }}">
         <div data-part="title">{{ row.title }}</div>
         <div data-part="body">
@@ -98,7 +105,7 @@
           {% if row.contents %}<section class="sp-sec"><h6>Fragrâncias</h6><div class="wc-text">{{ row.contents|join:" · " }}</div></section>{% endif %}
           {% if row.description %}<section class="sp-sec"><h6>Descrição</h6><div class="wc-text">{{ row.description }}</div></section>{% endif %}
         </div>
-        <div data-part="foot"></div>
+        <div data-part="foot">{% if row.state == 'out-stock' %}{% include "stock/_restock_ask.html" %}{% endif %}</div>
       </template>
     {% empty %}
       <p class="wc-empty">Sem resultados.</p>

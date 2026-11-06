@@ -88,7 +88,7 @@ class RowsTests(CatalogMixin):
         self._product(units=9, gender="women")
         row = self._rows()[0]
         self.assertEqual(set(row), {"pk", "ean", "brand", "logo_brand", "title", "kind", "gender", "price", "state",
-                                    "state_label", "image_url", "contents", "description"})
+                                    "state_label", "image_url", "contents", "description", "requested"})
 
     def test_out_of_stock_is_hidden_until_asked_for(self):
         self._product(name="Have", units=9)

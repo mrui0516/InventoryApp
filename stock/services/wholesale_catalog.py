@@ -62,7 +62,7 @@ def _image_url(product):
     return ''
 
 
-def _row(product, units):
+def _row(product, units, requested=False):
     kind = product.type_info
     state, state_label = availability(units)
     price = product.wholesale_price
@@ -81,6 +81,7 @@ def _row(product, units):
         'image_url': _image_url(product),
         'contents': [content_label(row) for row in contents],
         'description': product.composed_description(include_inspiration=False),
+        'requested': requested,
     }
 
 
@@ -88,7 +89,7 @@ def _line_key(product):
     return (product.brand or '').lower(), product.product_type_id, (product.model or '').strip().lower()
 
 
-def catalog_rows(query='', brand='', kind='', gender='', show_all=False):
+def catalog_rows(query='', brand='', kind='', gender='', show_all=False, viewer=None):
     """The list, in order: available first, then by brand and type, then each
     type's best-selling lines first."""
     products = (Product.objects.select_related('brand_master')
@@ -104,7 +105,10 @@ def catalog_rows(query='', brand='', kind='', gender='', show_all=False):
     products = list(products)
 
     units = sellable_units([p.pk for p in products])
-    rows = [(p, _row(p, units.get(p.pk, 0))) for p in products]
+    # Local import: restock_requests reads availability() from this module.
+    from .restock_requests import requested_ids
+    asked = requested_ids(viewer, [p.pk for p in products]) if viewer else set()
+    rows = [(p, _row(p, units.get(p.pk, 0), p.pk in asked)) for p in products]
     if not show_all:
         rows = [(p, row) for p, row in rows if row['state'] != 'out-stock']
 

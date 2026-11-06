@@ -3,7 +3,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Q
 from django.http import JsonResponse
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.text import slugify
 from django.views.decorators.http import require_POST
@@ -17,6 +17,7 @@ from .services.catalog_admin import (NameTaken, delete_type, merge_brands, merge
 from .services.catalog_prune import empty_brands, empty_series
 from .services.names import title_case
 from .services.product_contents import parse_pasted
+from .services.restock_requests import demand_rows, request_restock
 
 SWITCHES = ('takes_concentration', 'takes_volume', 'wholesale_discount', 'is_gift', 'shows_scent_details',
             'has_contents')
@@ -349,3 +350,23 @@ def catalog_families(request):
 def parse_contents(request):
     """Names pasted into the list on the product form."""
     return JsonResponse({'rows': parse_pasted(_text(request, 'brand', 80), request.POST.get('text') or '')})
+
+
+@login_required
+@manager_required
+@require_POST
+def restock_request(request, pk):
+    """The sold-out row's button on the catalogue."""
+    from .views import _back_to
+    try:
+        request_restock(get_object_or_404(Product, pk=pk), request.user)
+    except ValueError as error:
+        messages.info(request, str(error))
+    return _back_to(request, 'catalog')
+
+
+@login_required
+@manager_required
+def restock_requests(request):
+    return render(request, 'stock/restock_requests.html', {'rows': demand_rows()})
+

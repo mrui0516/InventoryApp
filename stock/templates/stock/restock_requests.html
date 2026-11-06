@@ -1,0 +1,52 @@
+{% extends 'stock/base.html' %}
+{% block title %}Restock requests{% endblock %}
+{% block content %}
+<style>
+  .rq{ display:grid; gap:.75rem; grid-template-columns:minmax(0,1fr); }
+  .rq h1{ margin:0; font-size:1.4rem; font-weight:800; }
+  .rq-list{ background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius); overflow:hidden; }
+  .rq-row, .rq-head{ display:grid; grid-template-columns:minmax(0,1fr) 5.5rem 6.5rem 6.5rem 7.5rem; gap:.75rem; align-items:center; padding:.5rem .85rem; }
+  .rq-head{ font-size:.85rem; font-weight:700; color:var(--app-muted); background:var(--app-surface-2); }
+  .rq-row{ border-top:1px solid var(--app-border); color:inherit; text-decoration:none; }
+  .rq-row:hover{ background:var(--app-accent-soft); }
+  .rq-main{ min-width:0; }
+  .rq-brand{ display:block; font-size:.85rem; color:var(--app-muted); }
+  .rq-name{ font-weight:700; overflow-wrap:anywhere; }
+  .rq-tag{ margin-left:.35rem; font-size:.85rem; font-weight:700; color:#b42318; white-space:nowrap; }
+  .rq-n{ text-align:right; font-variant-numeric:tabular-nums; }
+  .rq-n.big{ font-weight:800; font-size:1.05rem; }
+  .rq-empty{ margin:0; padding:1rem; color:var(--app-muted); }
+  @media (max-width:767.98px){
+    .rq-head{ display:none; }
+    .rq-row{ grid-template-columns:minmax(0,1fr) auto; gap:.1rem .75rem; }
+    .rq-n.big{ grid-column:2; grid-row:1; }
+    .rq-more{ grid-column:1 / -1; font-size:.85rem; color:var(--app-muted); text-align:left; }
+  }
+  @media (min-width:768px){ .rq-more{ display:contents; } }
+</style>
+<div class="rq">
+  <h1>Restock requests</h1>
+  <section class="rq-list" aria-label="Restock requests">
+    <div class="rq-head" aria-hidden="true">
+      <span>Product</span><span class="rq-n">Requests</span><span class="rq-n">Sold 90 days</span>
+      <span class="rq-n">Last request</span><span class="rq-n">Stock</span>
+    </div>
+    {% for row in rows %}
+      <a class="rq-row" href="{% url 'product_detail' row.product.id %}">
+        <span class="rq-main">
+          <span class="rq-brand">{{ row.product.brand }}</span>
+          <span class="rq-name">{{ row.product.list_name }}</span>{% if not row.product.restock %}<span class="rq-tag">Not restocking</span>{% endif %}
+        </span>
+        <span class="rq-n big">{{ row.requests }}</span>
+        <span class="rq-more">
+          <span class="rq-n">{{ row.sold_90 }} sold</span>
+          <span class="rq-n">{{ row.last_request|date:"Y-m-d" }}</span>
+          <span class="rq-n">{{ row.state_label }}</span>
+        </span>
+      </a>
+    {% empty %}
+      <p class="rq-empty">No requests.</p>
+    {% endfor %}
+  </section>
+</div>
+{% endblock %}
