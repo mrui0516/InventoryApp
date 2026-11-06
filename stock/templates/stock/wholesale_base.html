@@ -5,7 +5,7 @@
   .wc{ display:grid; gap:.75rem; grid-template-columns:minmax(0,1fr); }
   .wc-head{ display:flex; flex-wrap:wrap; align-items:center; gap:.4rem .7rem; }
   .wc-head h1{ margin:0; font-size:1.4rem; font-weight:800; }
-  .wc-as{ display:flex; align-items:center; gap:.4rem; margin-left:auto; font-size:.85rem; font-weight:700; color:var(--app-muted); }
+  .wc-as{ display:flex; align-items:center; gap:.4rem; margin-left:auto; font-size:.85rem; font-weight:700; color:var(--app-muted); white-space:nowrap; }
   .wc-as select{ max-width:14rem; }
   .wc-tabs{ display:flex; flex-wrap:wrap; gap:0 1.1rem; border-bottom:1px solid var(--app-border); }
   .wc-tabs a{ padding:.45rem 0; font-weight:700; font-size:.95rem; color:var(--app-muted); text-decoration:none; border-bottom:2px solid transparent; }
@@ -18,7 +18,7 @@
   .wc-seg a.on{ background:var(--app-text); color:var(--app-surface); }
   .wc-list{ background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius); overflow:hidden; }
   .wc-row, .wc-headrow{ display:grid; grid-template-columns:48px minmax(0,1fr) 6rem 4.5rem 7rem 7.5rem; gap:.75rem; align-items:center; width:100%; padding:.45rem .85rem; }
-  .wc-headrow{ grid-template-columns:48px minmax(0,1fr) 6rem 4.5rem 7rem 7.5rem 11.5rem; }
+  .wc-headrow{ grid-template-columns:48px minmax(0,1fr) 6rem 4.5rem 7rem 7.5rem 10.75rem; }
   .wc-headrow{ font-size:.85rem; font-weight:700; color:var(--app-muted); background:var(--app-surface-2); }
   .wc-item{ display:grid; grid-template-columns:minmax(0,1fr) 11.5rem; align-items:center; border-top:1px solid var(--app-border); }
   .wc-row{ border:0; background:none; color:inherit; text-align:left; cursor:pointer; }
@@ -56,9 +56,9 @@
   .wc-mark::after{ content:""; position:absolute; left:50%; top:1.35rem; width:2px; height:8px; background:var(--app-surface); }
   .wc-message{ margin:.35rem 0 0; font-weight:700; }
   .wc-small{ margin:.15rem 0 0; font-size:.85rem; color:var(--app-muted); }
-  .wc-sum{ display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.2rem .75rem; margin:.7rem 0 0; font-variant-numeric:tabular-nums; }
+  .wc-sum{ display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.2rem 0; margin:.7rem 0 0; font-variant-numeric:tabular-nums; }
   .wc-sum dt{ font-weight:500; color:var(--app-muted); }
-  .wc-sum dd{ margin:0; text-align:right; font-weight:700; }
+  .wc-sum dd{ margin:0; padding-left:.75rem; text-align:right; font-weight:700; }
   .wc-sum .total{ padding-top:.35rem; border-top:1px solid var(--app-border); font-size:1.1rem; color:var(--app-text); font-weight:800; }
   .wc-form{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:.5rem .7rem; }
   .wc-form label{ display:grid; gap:.15rem; margin:0; font-size:.85rem; font-weight:700; color:var(--app-muted); }
@@ -102,7 +102,10 @@
     .wc-item{ grid-template-columns:minmax(0,1fr); }
     .wc-strip{ padding:0 .7rem .5rem; }
     .wc-cols{ grid-template-columns:minmax(0,1fr); }
-    .wc-side{ position:static; }
+    .wc-cols > .wc{ display:contents; }
+    .wc-side{ position:static; order:1; }
+    .wc-cols section[aria-label="Dados do pedido"]{ order:2; }
+    .wc-line .wc-brand span:last-child{ white-space:normal; }
     .wc-line{ grid-template-columns:48px minmax(0,1fr) 4.2rem 2.25rem; }
     .wc-line .wc-money{ grid-column:2 / 4; grid-row:2; text-align:left; }
     .wc-line .wc-money b, .wc-line .wc-money small{ display:inline; }
@@ -149,8 +152,10 @@
     const form = event.target.closest('[data-wc-add]');
     if (!form) return;
     event.preventDefault();
-    const button = form.querySelector('button');
-    button.disabled = true;
+    // A guard, not a disabled button: disabling it would drop the focus, and
+    // Esc would no longer close the side panel.
+    if (form.dataset.busy) return;
+    form.dataset.busy = '1';
     fetch(form.action, { method: 'POST', body: new FormData(form), headers: { 'X-Requested-With': 'fetch' } })
       .then((response) => response.json())
       .then((data) => {
@@ -171,7 +176,7 @@
           t.content.querySelectorAll(`[data-wc-incart="${id}"]`).forEach((e) => { e.textContent = text; });
         });
       })
-      .finally(() => { button.disabled = false; });
+      .finally(() => { delete form.dataset.busy; });
   });
 </script>
 {% endblock %}

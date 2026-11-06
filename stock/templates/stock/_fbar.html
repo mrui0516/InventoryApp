@@ -10,7 +10,7 @@
   {% if panel %}
   <button type="button" class="fbar-btn{% if on %} on{% endif %}" data-layer="{{ panel }}">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16"/><path d="M7 12h10"/><path d="M10 18h4"/></svg>
-    Filters{% if on %}<span class="fbar-dot" aria-label="in use"></span>{% endif %}
+    {{ filters_label|default:"Filters" }}{% if on %}<span class="fbar-dot" aria-label="in use"></span>{% endif %}
   </button>
   {% endif %}
 </form>

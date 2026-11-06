@@ -512,6 +512,15 @@ PDF 的 `_brand_logo` 文件缺失时跳过。`empty_brands` 默认不包括有 
 `services/restock_requests.py`：`RestockRequest` 在下一次到货前有效，“有效”是算出来的（`created_at` 晚于最后一批 `Purchase.date`），不写状态字段。
 一个周期内按客户去重，没有客户时按用户去重；客户账号上线后传 `customer` 即可。有货的产品拒绝申请。申请数只在后台显示，`catalog_rows` 只给当前用户一个 `requested` 布尔值。
 
+### 5.13y1c 批发下单流程（`wholesale_views.py`，2026-11-06）
+
+客户门户的样板：页面只有经理能进，用 Django User 代替客户账号，`Ver como` 把预览客户存在 session。`stock/models/wholesale.py` 有 `CartLine`、`OrderRequest`、`OrderRequestLine`。
+
+- `services/wholesale_benefits.py`：纯计算，不读数据库。`build_quote(lines, destination)` 给出所有金额、运费状态、进度文案和指纹。先算 S 再定档位，所以优惠不会把订单拉回门槛以下。
+- `services/wholesale_cart.py`：页面只传产品和数量，价格每次在服务器算。提交时比对 `fingerprint`，再由 `submissions.claim` 防重复，都在一个事务里。
+- 路由名用 `wholesale_` 前缀；不要用 `catalog_` 开头，那是 Settings → Catalog。
+- 接账号系统时：`CartLine.user`、`OrderRequest.submitted_by` 换成客户身份，`customer` 由账号绑定决定，不再读 session。`OrderRequest.customer` 现在是 SET_NULL，架构文档要求上线时改成 PROTECT。
+
 ### 5.13y2 产品之间的连接（`ProductContent`，2026-11-05）
 
 `services/product_contents.py`。一行是一个名称，`linked` 可空；`name` 总是存着，所以被连接的产品归档或删除后名称还在。

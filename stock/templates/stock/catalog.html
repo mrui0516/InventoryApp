@@ -2,7 +2,7 @@
 {% load brands %}
 {% block wholesale %}
   <div class="wc-count-row"><span class="wc-count">{{ total }} produto{{ total|pluralize }}</span></div>
-  {% include "stock/_fbar.html" with placeholder="Nome, marca, tipo ou EAN" panel="wc-filters" on=filters_on drop="stock" %}
+  {% include "stock/_fbar.html" with placeholder="Nome, marca, tipo ou EAN" panel="wc-filters" on=filters_on drop="stock" filters_label="Filtros" %}
 
   <div>
     <span class="wc-seg" role="group" aria-label="Disponibilidade">

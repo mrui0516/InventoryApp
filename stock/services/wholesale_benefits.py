@@ -67,7 +67,7 @@ def _message(subtotal, zone):
 
 
 def progress(subtotal, zone):
-    marks = [(MINIMUM, 'M\u00ednimo')]
+    marks = [(MINIMUM, 'M\u00edn.')]
     if zone in ('mainland', 'unknown'):
         marks.append((FREE_SHIPPING, 'Portes'))
     marks += [(TIERS[1][0], f'-{eur(TIERS[1][1])}\u20ac'), (TIERS[0][0], f'-{eur(TIERS[0][1])}\u20ac')]

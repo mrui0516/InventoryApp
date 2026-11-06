@@ -7,7 +7,7 @@
     {% for line in order.lines.all %}
       <div class="wc-line" style="grid-template-columns:minmax(0,1fr) auto;">
         <span class="wc-main"><span class="wc-brand"><span>{{ line.barcode }}</span></span><span class="wc-title">{{ line.name }}</span></span>
-        <span class="wc-money"><b>&euro;{{ line.line_total|floatformat:2 }}</b><small>{{ line.quantity }} &times; &euro;{{ line.final_price|floatformat:2 }}</small></span>
+        <span class="wc-money"><b>&euro;{{ line.line_total|floatformat:2 }}</b> <small>{{ line.quantity }} &times; &euro;{{ line.final_price|floatformat:2 }}</small></span>
       </div>
     {% endfor %}
     <p class="wc-notice">Pedido sujeito a confirmação de stock e portes. A submissão ou aceitação do pedido não reserva stock.</p>
