@@ -10,7 +10,16 @@
   .wc-tabs{ display:flex; flex-wrap:wrap; gap:0 1.1rem; border-bottom:1px solid var(--app-border); }
   .wc-tabs a{ padding:.45rem 0; font-weight:700; font-size:.95rem; color:var(--app-muted); text-decoration:none; border-bottom:2px solid transparent; }
   .wc-tabs a.on{ color:var(--app-text); border-bottom-color:var(--app-accent); }
-  .wc-count-row{ display:flex; justify-content:flex-end; margin-bottom:-.4rem; }
+  .wc-brands{ display:flex; flex-wrap:wrap; gap:.35rem; }
+  .wc-brands a{ display:inline-flex; align-items:center; gap:.35rem; flex:none; min-height:34px; padding:.15rem .6rem; font-size:.88rem; font-weight:700; color:var(--app-text); text-decoration:none;
+    background:var(--app-surface); border:1px solid var(--app-border); border-radius:999px; }
+  .wc-brands a.on{ color:var(--app-surface); background:var(--app-text); border-color:var(--app-text); }
+  .wc-brands .n{ font-weight:600; color:var(--app-muted); }
+  .wc-brands a.on .n{ color:inherit; opacity:.8; }
+  .wc-filters{ display:flex; flex-wrap:wrap; align-items:center; gap:.5rem .75rem; }
+  .wc-filters .wc-count{ margin-left:auto; }
+  .wc-group{ display:flex; align-items:center; gap:.5rem; padding:.4rem .85rem; font-weight:800; background:var(--app-surface-2); border-top:1px solid var(--app-border); }
+  .wc-group + .wc-item{ border-top:0; }
   .wc-tag{ font-size:.85rem; font-weight:700; padding:.1rem .55rem; border-radius:999px; background:var(--app-surface-2); color:var(--app-muted); }
   .wc-count{ font-size:.9rem; color:var(--app-muted); font-variant-numeric:tabular-nums; }
   .wc-seg{ display:inline-flex; border:1px solid var(--app-border-strong); border-radius:var(--app-radius-sm); overflow:hidden; }
@@ -70,6 +79,7 @@
   .wc-status{ font-size:.85rem; font-weight:700; }
   .wc-status.cancelled{ color:#b42318; }
   .wc-notice{ margin:0; font-size:.88rem; color:var(--app-muted); }
+  .wc-section{ margin:0 0 -.35rem; font-size:1rem; font-weight:800; }
   .wc-ask .btn{ min-height:36px; }
   .wc-asked{ font-size:.85rem; font-weight:700; color:var(--app-muted); }
   .wc-row:hover{ background:var(--app-accent-soft); }
@@ -97,6 +107,10 @@
   .wc-text{ white-space:pre-line; font-size:.92rem; overflow-wrap:anywhere; }
   @media (max-width:767.98px){
     .wc-headrow{ display:none; }
+    .wc-internal, .wc-filters .wc-count{ display:none; }
+    .wc-brands{ flex-wrap:nowrap; overflow-x:auto; padding-bottom:.15rem; scrollbar-width:none; }
+    .wc-filters{ flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; }
+    .wc-filters .wc-seg{ flex:none; }
     .wc-as{ margin-left:0; width:100%; }
     .wc-as select{ max-width:none; flex:1 1 auto; }
     .wc-item{ grid-template-columns:minmax(0,1fr); }
@@ -121,7 +135,8 @@
 <div class="wc">
   <div class="wc-head">
     <h1>Catálogo grossista</h1>
-    <span class="wc-tag">Pré-visualização interna</span>
+    <span class="wc-tag wc-internal">Pré-visualização interna</span>
+    {% if customer.portal_discount %}<span class="wc-tag">Desconto &euro;{{ customer.portal_discount|floatformat:2 }}/un.</span>{% endif %}
     <form method="post" action="{% url 'wholesale_customer' %}" class="wc-as">
       {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
       <label for="wc-as">Ver como</label>

@@ -9,7 +9,7 @@
   <dl class="wc-sum">
     <dt>Produtos ({{ quote.units }} un.)</dt><dd>&euro;{{ quote.subtotal|floatformat:2 }}</dd>
     {% if quote.tier_total %}<dt>Desconto por volume (-&euro;{{ quote.tier_discount|floatformat:0 }}/un.)</dt><dd>-&euro;{{ quote.tier_total|floatformat:2 }}</dd>{% endif %}
-    <dt>{{ quote.shipping_label }}</dt><dd>{% if quote.shipping_state == 'pending' %}&mdash;{% else %}&euro;0.00{% endif %}</dd>
-    <dt class="total">Total</dt><dd class="total">&euro;{{ quote.goods_total|floatformat:2 }}{% if quote.shipping_state == 'pending' %} + portes{% endif %}</dd>
+    <dt>{{ quote.shipping_label }}</dt><dd>{% if quote.shipping_state == 'pending' %}&mdash;{% else %}&euro;{{ quote.shipping_fee|floatformat:2 }}{% endif %}</dd>
+    <dt class="total">Total</dt><dd class="total">&euro;{{ quote.total|floatformat:2 }}{% if quote.shipping_state == 'pending' %} + portes{% endif %}</dd>
   </dl>
 </section>

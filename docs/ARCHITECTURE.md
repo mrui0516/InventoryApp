@@ -519,6 +519,10 @@ PDF 的 `_brand_logo` 文件缺失时跳过。`empty_brands` 默认不包括有 
 - `services/wholesale_benefits.py`：纯计算，不读数据库。`build_quote(lines, destination)` 给出所有金额、运费状态、进度文案和指纹。先算 S 再定档位，所以优惠不会把订单拉回门槛以下。
 - `services/wholesale_cart.py`：页面只传产品和数量，价格每次在服务器算。提交时比对 `fingerprint`，再由 `submissions.claim` 防重复，都在一个事务里。
 - 路由名用 `wholesale_` 前缀；不要用 `catalog_` 开头，那是 Settings → Catalog。
+- 客户折扣：`wholesale_views._customer` 用 `last_discount` 算好放到 `customer.portal_discount`，一次请求只算一次，`customer_price` 读这个值。这和架构文档 6.1（只用明确设置的折扣）不同，接账号系统时要定下来。
+- 运费：`SHIPPING_FEE` 在 `wholesale_benefits`。`OrderRequest.shipping_fee` 存下单时的金额，空值表示待确认；`total` = 货款 + 运费。`delivery` 取值 delivery / point / pickup，point 和 delivery 走同一套区域规则。
+- 过去的销售：`sale_view` 只查 `customer` 等于当前预览客户的 `SaleOrder`，只把产品、数量、单价、金额传给模板，成本和付款都不传。
+- Catálogo 的 tab 计数在 Python 里算：`catalog_rows` 取不含类型和品牌的全部行，先算类型计数，再算品牌计数，最后筛选分页。
 - 接账号系统时：`CartLine.user`、`OrderRequest.submitted_by` 换成客户身份，`customer` 由账号绑定决定，不再读 session。`OrderRequest.customer` 现在是 SET_NULL，架构文档要求上线时改成 PROTECT。
 
 ### 5.13y2 产品之间的连接（`ProductContent`，2026-11-05）

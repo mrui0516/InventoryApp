@@ -1,14 +1,28 @@
 {% extends 'stock/wholesale_base.html' %}
 {% load brands %}
 {% block wholesale %}
-  <div class="wc-count-row"><span class="wc-count">{{ total }} produto{{ total|pluralize }}</span></div>
-  {% include "stock/_fbar.html" with placeholder="Nome, marca, tipo ou EAN" panel="wc-filters" on=filters_on drop="stock" filters_label="Filtros" %}
+  {% include "stock/_fbar.html" with placeholder="Nome, marca, tipo ou EAN" drop="stock" %}
 
-  <div>
+  <nav class="ftabs" aria-label="Tipo">
+    <a class="{% if not type %}on{% endif %}" href="{% querystring type=None brand=None page=None %}">Todos <span class="n">{{ type_total }}</span></a>
+    {% for t in type_tabs %}<a class="{% if type == t.value %}on{% endif %}" href="{% querystring type=t.value brand=None page=None %}">{{ t.label }} <span class="n">{{ t.n }}</span></a>{% endfor %}
+  </nav>
+
+  <nav class="wc-brands" aria-label="Marca">
+    <a class="{% if not brand %}on{% endif %}" href="{% querystring brand=None page=None %}">Todas <span class="n">{{ brand_total }}</span></a>
+    {% for b in brand_tabs %}<a class="{% if brand|lower == b.name|lower %}on{% endif %}" href="{% querystring brand=b.name page=None %}">{% brand_logo b.brand size=18 fallback=b.name %}<span>{{ b.name }}</span> <span class="n">{{ b.n }}</span></a>{% endfor %}
+  </nav>
+
+  <div class="wc-filters">
     <span class="wc-seg" role="group" aria-label="Disponibilidade">
-      <a class="{% if not show_all %}on{% endif %}" href="{% querystring stock='in' page=None %}">Disponíveis</a>
+      <a class="{% if not show_all %}on{% endif %}" href="{% if query %}{% querystring stock='in' page=None %}{% else %}{% querystring stock=None page=None %}{% endif %}">Disponíveis</a>
       <a class="{% if show_all %}on{% endif %}" href="{% querystring stock='all' page=None %}">Todos</a>
     </span>
+    <span class="wc-seg" role="group" aria-label="Género">
+      <a class="{% if not gender %}on{% endif %}" href="{% querystring gender=None page=None %}">Todos</a>
+      {% for g in genders %}<a class="{% if gender == g.value %}on{% endif %}" href="{% querystring gender=g.value page=None %}">{{ g.label }}</a>{% endfor %}
+    </span>
+    <span class="wc-count">{{ total }} produto{{ total|pluralize }}</span>
   </div>
 
   <section class="wc-list" aria-label="Produtos">
@@ -17,11 +31,12 @@
       <span class="wc-price">Preço grossista</span><span>Disponibilidade</span><span></span>
     </div>
     {% for row in page_obj %}
+      {% ifchanged row.brand %}<div class="wc-group">{% brand_logo row.logo_brand size=22 fallback=row.brand %}<span>{{ row.brand }}</span></div>{% endifchanged %}
       <div class="wc-item">
       <button type="button" class="wc-row{% if row.state == 'out-stock' %} is-out{% endif %}" data-layer="wc-{{ row.pk }}">
         <span class="wc-photo">{% if row.image_url %}<img src="{{ row.image_url }}" alt="" loading="lazy">{% else %}&mdash;{% endif %}</span>
         <span class="wc-main">
-          <span class="wc-brand">{% brand_logo row.logo_brand size=16 fallback=row.brand %}<span>{{ row.brand }} &middot; {{ row.ean }}</span></span>
+          <span class="wc-brand"><span>{{ row.ean }}</span></span>
           <span class="wc-title">{{ row.title }}</span>
           {% if row.contents %}<span class="wc-contents d-block">{{ row.contents|join:" · " }}</span>{% endif %}
         </span>
@@ -63,31 +78,4 @@
     {% if page_obj.has_next %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page_obj.next_page_number %}">Seguinte</a>{% endif %}
   </nav>
   {% endif %}
-
-<template id="wc-filters">
-  <div data-part="title">Filtros</div>
-  <div data-part="body">
-    <div class="fopts">
-      <section><h6>Marca</h6>
-        <select class="form-select" aria-label="Marca" onchange="location.href=this.value">
-          <option value="{% querystring brand=None page=None %}">Todas</option>
-          {% for name in brands %}<option value="{% querystring brand=name page=None %}"{% if name|lower == brand|lower %} selected{% endif %}>{{ name }}</option>{% endfor %}
-        </select>
-      </section>
-      <section><h6>Tipo</h6>
-        <select class="form-select" aria-label="Tipo" onchange="location.href=this.value">
-          <option value="{% querystring type=None page=None %}">Todos</option>
-          {% for t in types %}<option value="{% querystring type=t.value page=None %}"{% if t.value == type %} selected{% endif %}>{{ t.label }}</option>{% endfor %}
-        </select>
-      </section>
-      <section><h6>Género</h6>
-        <select class="form-select" aria-label="Género" onchange="location.href=this.value">
-          <option value="{% querystring gender=None page=None %}">Todos</option>
-          {% for g in genders %}<option value="{% querystring gender=g.value page=None %}"{% if g.value == gender %} selected{% endif %}>{{ g.label }}</option>{% endfor %}
-        </select>
-      </section>
-    </div>
-  </div>
-  <div data-part="foot"><a class="btn btn-outline-secondary" href="{% url 'catalog' %}">Limpar</a></div>
-</template>
 {% endblock %}

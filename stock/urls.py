@@ -122,6 +122,7 @@ urlpatterns = [
     path('catalog/cart/submit/', wholesale_views.cart_submit, name='wholesale_cart_submit'),
     path('catalog/orders/', wholesale_views.orders_view, name='wholesale_orders'),
     path('catalog/orders/<uuid:public_id>/', wholesale_views.order_view, name='wholesale_order'),
+    path('catalog/purchases/<int:pk>/', wholesale_views.sale_view, name='wholesale_sale'),
     path('catalog/orders/<uuid:public_id>/cancel/', wholesale_views.order_cancel, name='wholesale_order_cancel'),
     path('order-requests/', wholesale_views.order_requests, name='order_requests'),
     path('catalog/export-excel/', views.export_catalog_excel, name='export_catalog_excel'),

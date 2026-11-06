@@ -13,6 +13,7 @@ from decimal import Decimal
 
 MINIMUM = Decimal('150')
 FREE_SHIPPING = Decimal('300')
+SHIPPING_FEE = Decimal('5')     # Portugal Continental, below FREE_SHIPPING
 TIERS = ((Decimal('1000'), Decimal('2')), (Decimal('500'), Decimal('1')))   # highest first: it replaces the lower
 MAX_QUANTITY = 999
 BAR_END = Decimal('1000')
@@ -33,8 +34,9 @@ def tier_for(subtotal):
 
 
 def zone_of(destination):
-    """pickup, mainland, islands, eu or unknown. Unknown is never mainland: a free
-    delivery is promised only to a postal code we recognise."""
+    """pickup, mainland, islands, eu or unknown. An empty postal code in Portugal
+    reads as mainland while the form is being filled; one we cannot read is unknown,
+    and shipping to it stays to be confirmed."""
     if destination.get('delivery') == 'pickup':
         return 'pickup'
     country = (destination.get('country') or '').strip().upper()
@@ -42,7 +44,10 @@ def zone_of(destination):
         return 'unknown'
     if country != 'PT':
         return 'eu'
-    match = POSTAL_PT.match((destination.get('postal_code') or '').strip())
+    postal = (destination.get('postal_code') or '').strip()
+    if not postal:
+        return 'mainland'
+    match = POSTAL_PT.match(postal)
     if not match:
         return 'unknown'
     code = int(match.group(1))
@@ -99,11 +104,13 @@ def build_quote(lines, destination):
     zone = zone_of(destination)
     free = zone == 'mainland' and subtotal >= FREE_SHIPPING
     if zone == 'pickup':
-        state, label = 'pickup', 'Levantamento em loja'
+        state, label, fee = 'pickup', 'Levantamento em loja', Decimal('0')
     elif free:
-        state, label = 'free', 'Portes gr\u00e1tis'
+        state, label, fee = 'free', 'Portes gr\u00e1tis', Decimal('0')
+    elif zone == 'mainland':
+        state, label, fee = 'standard', 'Portes', SHIPPING_FEE
     else:
-        state, label = 'pending', 'Portes por confirmar'
+        state, label, fee = 'pending', 'Portes por confirmar', None
 
     return {
         'lines': out,
@@ -116,6 +123,8 @@ def build_quote(lines, destination):
         'free_shipping': free,
         'shipping_state': state,
         'shipping_label': label,
+        'shipping_fee': fee,
+        'total': goods + (fee or Decimal('0')),
         'short_of_minimum': max(MINIMUM - subtotal, Decimal('0')),
         'can_submit': bool(out) and subtotal >= MINIMUM and all(l['ok'] and not l['needs_price'] for l in out),
         'progress': progress(subtotal, zone),
@@ -124,5 +133,5 @@ def build_quote(lines, destination):
 
 
 def policy_snapshot():
-    return {'minimum': str(MINIMUM), 'free_shipping': str(FREE_SHIPPING),
+    return {'minimum': str(MINIMUM), 'free_shipping': str(FREE_SHIPPING), 'shipping_fee': eur(SHIPPING_FEE),
             'tiers': [[str(threshold), str(discount)] for threshold, discount in TIERS]}

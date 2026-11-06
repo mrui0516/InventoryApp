@@ -22,7 +22,8 @@ class CartLine(models.Model):
 class OrderRequest(models.Model):
     SUBMITTED, CANCELLED = 'submitted', 'cancelled'
     STATUSES = [(SUBMITTED, 'Enviado'), (CANCELLED, 'Cancelado')]
-    SHIPPING = [('free', 'Portes grátis'), ('pending', 'Portes por confirmar'), ('pickup', 'Levantamento em loja')]
+    SHIPPING = [('standard', 'Portes'), ('free', 'Portes grátis'), ('pending', 'Portes por confirmar'),
+                ('pickup', 'Levantamento em loja')]
 
     public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     customer = models.ForeignKey('stock.Customer', on_delete=models.SET_NULL, null=True, blank=True,
@@ -47,6 +48,7 @@ class OrderRequest(models.Model):
     tier_total = models.DecimalField(max_digits=10, decimal_places=2)
     goods_total = models.DecimalField(max_digits=10, decimal_places=2)
     shipping_state = models.CharField(max_length=10, choices=SHIPPING)
+    shipping_fee = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)   # empty: to confirm
     policy = models.JSONField(default=dict)
 
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
@@ -55,6 +57,10 @@ class OrderRequest(models.Model):
 
     class Meta:
         ordering = ['-created_at', '-id']
+
+    @property
+    def total(self):
+        return self.goods_total + (self.shipping_fee or 0)
 
     @property
     def units(self):

@@ -62,9 +62,10 @@ def customer_price(product, customer=None):
     if not base or base <= 0:
         return None, Decimal('0')
     discount = Decimal('0')
-    set_by_hand = customer.wholesale_discount if customer else None
-    if set_by_hand and set_by_hand > 0 and discount_applies(product):
-        discount = set_by_hand
+    # portal_discount: worked out once per request (wholesale_views._customer).
+    agreed = getattr(customer, 'portal_discount', customer.wholesale_discount) if customer else None
+    if agreed and agreed > 0 and discount_applies(product):
+        discount = agreed
     price = base - discount
     return (price if price > 0 else None), discount
 
@@ -95,6 +96,7 @@ def _row(product, units, requested=False, customer=None, in_cart=0):
         'logo_brand': product.brand_master,
         'title': display_title(product),
         'kind': kind.customer_label or kind.name,
+        'type_code': product.product_type_id,
         'gender': Product.GENDER_SHOPIFY_TAGS.get(product.gender, ''),
         'price': price,
         'base_price': product.wholesale_price,
@@ -113,8 +115,8 @@ def _line_key(product):
 
 
 def catalog_rows(query='', brand='', kind='', gender='', show_all=False, viewer=None, customer=None):
-    """The list, in order: available first, then by brand and type, then each
-    type's best-selling lines first."""
+    """The list, in order: sold out last, then by brand and type, each type's
+    best-selling lines first. A brand stays together whatever its stock levels."""
     products = (Product.objects.select_related('brand_master')
                 .prefetch_related('images', 'contents__linked', 'fragrance_families'))
     if query:
@@ -144,25 +146,8 @@ def catalog_rows(query='', brand='', kind='', gender='', show_all=False, viewer=
 
     def order(pair):
         product, row = pair
-        return (STATE_ORDER[row['state']], brand_sort_key(row['brand'], sizes[(row['brand'] or '').lower()]),
+        return (row['state'] == 'out-stock', brand_sort_key(row['brand'], sizes[(row['brand'] or '').lower()]),
                 product.type_info.sort_order, not (product.model or '').strip(), -lines[_line_key(product)],
-                (product.model or '').lower(), row['title'].lower())
+                (product.model or '').lower(), STATE_ORDER[row['state']], row['title'].lower())
 
     return [row for _, row in sorted(rows, key=order)]
-
-
-def catalog_options():
-    """What the filters can offer: only what the catalogue really has."""
-    products = Product.objects.values_list('brand', 'product_type', 'gender').distinct()
-    brands, codes, genders = set(), set(), set()
-    for name, code, gender in products:
-        if (name or '').strip():
-            brands.add(customer_catalog_case(name))
-        codes.add(code)
-        if gender:
-            genders.add(gender)
-    types = [{'value': t.code, 'label': t.customer_label or t.name}
-             for t in ProductType.all_cached() if t.code in codes]
-    gender_rows = [{'value': value, 'label': label} for value, label in Product.GENDER_SHOPIFY_TAGS.items()
-                   if value in genders]
-    return {'brands': sorted(brands, key=str.lower), 'types': types, 'genders': gender_rows}

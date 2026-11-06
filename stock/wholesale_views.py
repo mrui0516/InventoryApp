@@ -4,29 +4,45 @@ Staff only for now: a shop login stands in for a customer account until the
 customer portal exists, and "Ver como" picks whose prices to see. The pages speak
 Portuguese because that is who they are for.
 """
+from collections import Counter
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.http import JsonResponse
+from django.db.models import Q
+from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .forms import OrderRequestForm
-from .models import Customer, OrderRequest, Product
+from .models import Brand, Customer, OrderRequest, Product, ProductType, SaleOrder
 from .permissions import manager_required
 from .services import submissions
 from .services.wholesale_cart import add_to_cart, cart_quote, set_quantity, submit_request
-from .services.wholesale_catalog import PAGE_SIZE, catalog_options, catalog_rows
+from .services.wholesale_catalog import PAGE_SIZE, brand_sort_key, catalog_rows
+from .services.wholesale_discount import last_discount
 
 SESSION_KEY = 'wholesale_customer'
 
 
 def _customer(request):
+    """The customer being previewed, with the discount the rest of the shop would
+    give them: set by hand or from their last sale, whichever is newer."""
     pk = request.session.get(SESSION_KEY)
-    return Customer.objects.filter(pk=pk, kind=Customer.REVENDA).first() if pk else None
+    customer = Customer.objects.filter(pk=pk, kind=Customer.REVENDA).first() if pk else None
+    if customer is not None:
+        agreed = last_discount(customer.pk)
+        customer.portal_discount = agreed['discount'] if agreed else customer.wholesale_discount
+    return customer
+
+
+def brand_tabs(counts):
+    names = sorted(counts, key=lambda name: brand_sort_key(name, counts[name]))
+    logos = {b.name.lower(): b for b in Brand.objects.filter(name__in=names)}
+    return [{'name': name, 'n': counts[name], 'brand': logos.get(name.lower())} for name in names]
 
 
 def _number(value):
@@ -55,8 +71,14 @@ def catalog_view(request):
     stock = request.GET.get('stock')
     show_all = stock == 'all' or (bool(query) and stock != 'in')
     customer = _customer(request)
-    rows = catalog_rows(query=query, brand=brand, kind=kind, gender=gender, show_all=show_all,
-                        viewer=request.user, customer=customer)
+    # The tabs count what the rest of the page allows, so each row of filters is
+    # worked out from the list before it.
+    everything = catalog_rows(query=query, gender=gender, show_all=show_all, viewer=request.user, customer=customer)
+    by_type = Counter(row['type_code'] for row in everything)
+    rows = [row for row in everything if not kind or row['type_code'] == kind]
+    by_brand = Counter(row['brand'] for row in rows)
+    if brand:
+        rows = [row for row in rows if row['brand'].lower() == brand.lower()]
     page_obj = Paginator(rows, PAGE_SIZE).get_page(request.GET.get('page'))
     return render(request, 'stock/catalog.html', {
         'tab': 'catalog',
@@ -67,8 +89,12 @@ def catalog_view(request):
         'type': kind,
         'gender': gender,
         'show_all': show_all,
-        'filters_on': bool(brand or kind or gender),
-        **catalog_options(),
+        'type_total': sum(by_type.values()),
+        'type_tabs': [{'value': t.code, 'label': t.customer_label or t.name, 'n': by_type[t.code]}
+                      for t in ProductType.all_cached() if by_type.get(t.code)],
+        'brand_total': sum(by_brand.values()),
+        'brand_tabs': brand_tabs(by_brand),
+        'genders': [{'value': value, 'label': label} for value, label in Product.GENDER_SHOPIFY_TAGS.items()],
         **_shared(request, customer),
     })
 
@@ -184,17 +210,43 @@ def cart_submit(request):
     return redirect('wholesale_order', public_id=order.public_id)
 
 
+def _visible_orders(request, customer):
+    """A customer sees their own requests; with none chosen, the login's own."""
+    rows = OrderRequest.objects.prefetch_related('lines')
+    return rows.filter(customer=customer) if customer else rows.filter(submitted_by=request.user)
+
+
 def _mine(request, public_id):
-    return get_object_or_404(OrderRequest.objects.prefetch_related('lines'),
-                             public_id=public_id, submitted_by=request.user)
+    customer = _customer(request)
+    wanted = OrderRequest.objects.prefetch_related('lines').filter(
+        Q(submitted_by=request.user) | Q(customer=customer) if customer else Q(submitted_by=request.user))
+    return get_object_or_404(wanted, public_id=public_id)
 
 
 @login_required
 @manager_required
 def orders_view(request):
-    orders = OrderRequest.objects.filter(submitted_by=request.user).prefetch_related('lines')
-    return render(request, 'stock/wholesale_orders.html', {'tab': 'orders', 'orders': orders,
-                                                           **_shared(request, _customer(request))})
+    customer = _customer(request)
+    sales = (SaleOrder.objects.filter(customer=customer).prefetch_related('items').order_by('-created_at')[:100]
+             if customer else [])
+    return render(request, 'stock/wholesale_orders.html', {
+        'tab': 'orders', 'orders': _visible_orders(request, customer), 'sales': sales,
+        **_shared(request, customer),
+    })
+
+
+@login_required
+@manager_required
+def sale_view(request, pk):
+    """One of the customer's past orders: what they bought, nothing of the shop's."""
+    customer = _customer(request)
+    if customer is None:
+        raise Http404
+    order = get_object_or_404(SaleOrder.objects.prefetch_related('items__product'), pk=pk, customer=customer)
+    lines = [{'product': item.product, 'quantity': item.quantity, 'unit_price': item.unit_price,
+              'amount': item.quantity * item.unit_price} for item in order.items.all()]
+    return render(request, 'stock/wholesale_sale.html', {'tab': 'orders', 'order': order, 'lines': lines,
+                                                         **_shared(request, customer)})
 
 
 @login_required

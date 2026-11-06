@@ -1,16 +1,35 @@
 {% extends 'stock/wholesale_base.html' %}
 {% block wholesale %}
-<section class="wc-list" aria-label="Os meus pedidos">
+<h2 class="wc-section">Pedidos</h2>
+<section class="wc-list" aria-label="Pedidos">
   {% for order in orders %}
     <a class="wc-order" href="{% url 'wholesale_order' order.public_id %}">
       <b>#{{ order.id }}</b>
       <span>{{ order.created_at|date:"Y-m-d H:i" }}</span>
       <span>{{ order.units }} un.</span>
-      <b class="wc-money">&euro;{{ order.goods_total|floatformat:2 }}</b>
+      <b class="wc-money">&euro;{{ order.total|floatformat:2 }}</b>
       <span class="wc-status {{ order.status }}">{{ order.get_status_display }}</span>
     </a>
   {% empty %}
     <p class="wc-empty">Ainda não há pedidos.</p>
   {% endfor %}
 </section>
+{% if customer %}
+<h2 class="wc-section">Compras anteriores</h2>
+<section class="wc-list" aria-label="Compras anteriores">
+  {% for sale in sales %}
+    <a class="wc-order" href="{% url 'wholesale_sale' sale.id %}">
+      <b>#{{ sale.id }}</b>
+      <span>{{ sale.created_at|date:"Y-m-d H:i" }}</span>
+      <span>{{ sale.total_items }} un.</span>
+      <b class="wc-money">&euro;{{ sale.total_amount|floatformat:2 }}</b>
+      <span class="wc-status">Concluída</span>
+    </a>
+  {% empty %}
+    <p class="wc-empty">Ainda não há compras.</p>
+  {% endfor %}
+</section>
+{% else %}
+<p class="wc-notice">Escolha um cliente em “Ver como” para ver as compras anteriores.</p>
+{% endif %}
 {% endblock %}

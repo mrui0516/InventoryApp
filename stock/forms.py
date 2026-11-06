@@ -44,6 +44,7 @@ class OrderRequestForm(forms.Form):
                  ('AT', '\u00c1ustria'), ('EU', 'Outro pa\u00eds da UE')]
 
     delivery = forms.ChoiceField(label='Entrega', choices=[('delivery', 'Entrega na morada'),
+                                                           ('point', 'Ponto de recolha perto de ti'),
                                                            ('pickup', 'Levantamento em loja')], initial='delivery')
     business_name = forms.CharField(label='Empresa', max_length=120, required=False)
     contact_name = forms.CharField(label='Nome', max_length=120)
@@ -57,10 +58,11 @@ class OrderRequestForm(forms.Form):
 
     def clean(self):
         cleaned = super().clean()
-        if cleaned.get('delivery') == 'delivery':
-            for field in ('address', 'postal_code', 'city'):
-                if not (cleaned.get(field) or '').strip():
-                    self.add_error(field, 'Campo obrigat\u00f3rio.')
+        # A pickup point is chosen by us from the area: it needs no street.
+        needed = {'delivery': ('address', 'postal_code', 'city'), 'point': ('postal_code', 'city')}
+        for field in needed.get(cleaned.get('delivery'), ()):
+            if not (cleaned.get(field) or '').strip():
+                self.add_error(field, 'Campo obrigat\u00f3rio.')
         return cleaned
 
 

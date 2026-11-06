@@ -88,7 +88,8 @@ class RowsTests(CatalogMixin):
         self._product(units=9, gender="women")
         row = self._rows()[0]
         self.assertEqual(set(row), {"pk", "ean", "brand", "logo_brand", "title", "kind", "gender", "price", "state",
-                                    "state_label", "image_url", "contents", "description", "requested", "base_price", "in_cart"})
+                                    "state_label", "image_url", "contents", "description", "requested", "base_price", "in_cart",
+                                    "type_code"})
 
     def test_out_of_stock_is_hidden_until_asked_for(self):
         self._product(name="Have", units=9)
@@ -221,8 +222,8 @@ class PageTests(CatalogMixin):
     def test_the_filters_offer_only_what_exists(self):
         self._product(units=9, product_type_id="coffret", gender="men")
         context = self._get().context
-        self.assertEqual([t["value"] for t in context["types"]], ["coffret"])
-        self.assertEqual(context["brands"], ["Lattafa"])
+        self.assertEqual([t["value"] for t in context["type_tabs"]], ["coffret"])
+        self.assertEqual([t["name"] for t in context["brand_tabs"]], ["Lattafa"])
 
     def test_the_panel_uses_the_shared_side_panel_parts(self):
         product = self._product(units=9, description="Doce", gender="men")

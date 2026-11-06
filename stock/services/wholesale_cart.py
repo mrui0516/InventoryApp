@@ -84,7 +84,8 @@ def submit_request(user, customer, data, fingerprint):
             address=data.get('address') or '', postal_code=data.get('postal_code') or '',
             city=data.get('city') or '', country=data.get('country') or '', note=data.get('note') or '',
             subtotal=quote['subtotal'], tier_discount=quote['tier_discount'], tier_total=quote['tier_total'],
-            goods_total=quote['goods_total'], shipping_state=quote['shipping_state'], policy=policy_snapshot())
+            goods_total=quote['goods_total'], shipping_state=quote['shipping_state'],
+            shipping_fee=quote['shipping_fee'], policy=policy_snapshot())
         OrderRequestLine.objects.bulk_create([OrderRequestLine(
             request=order, product_id=line['product_id'], name=line['name'][:250], barcode=line['barcode'],
             quantity=line['quantity'], base_price=line['base_price'], customer_discount=line['customer_discount'],

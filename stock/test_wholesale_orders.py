@@ -6,7 +6,7 @@ from django.test import SimpleTestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from stock.models import CartLine, Customer, OrderRequest, Product, Purchase, Sale
+from stock.models import CartLine, Customer, OrderRequest, Product, Purchase, Sale, SaleOrder
 from stock.services.wholesale_benefits import MAX_QUANTITY, build_quote, progress, tier_for, zone_of
 from stock.services.wholesale_cart import add_to_cart, cart_quote, cart_units, set_quantity, submit_request
 from stock.services.wholesale_catalog import catalog_rows, customer_price
@@ -17,6 +17,7 @@ AZORES = {'delivery': 'delivery', 'country': 'PT', 'postal_code': '9500-100'}
 MADEIRA = {'delivery': 'delivery', 'country': 'PT', 'postal_code': '9000-001'}
 SPAIN = {'delivery': 'delivery', 'country': 'ES', 'postal_code': '28001'}
 PICKUP = {'delivery': 'pickup'}
+POINT = {'delivery': 'point', 'country': 'PT', 'postal_code': '2700-123'}
 NOWHERE = {'delivery': 'delivery'}
 
 
@@ -81,7 +82,7 @@ class ZoneTests(SimpleTestCase):
             self.assertEqual(zone_of(destination), zone, destination)
 
     def test_a_bad_postal_code_is_unknown_not_mainland(self):
-        for code in ("2700", "abcd-123", "0999-000", "9400-000", ""):
+        for code in ("2700", "abcd-123", "0999-000", "9400-000"):
             self.assertEqual(zone_of({"delivery": "delivery", "country": "PT", "postal_code": code}), "unknown", code)
 
 
@@ -89,9 +90,30 @@ class ShippingTests(SimpleTestCase):
     def _state(self, amount, destination):
         return build_quote([line(amount)], destination)["shipping_state"]
 
-    def test_mainland_is_free_from_300(self):
-        self.assertEqual(self._state("299.99", MAINLAND), "pending")
-        self.assertEqual(self._state("300", MAINLAND), "free")
+    def test_mainland_is_5_until_300_then_free(self):
+        below = build_quote([line("299.99")], MAINLAND)
+        self.assertEqual((below["shipping_state"], below["shipping_fee"], below["total"]),
+                         ("standard", D("5"), D("304.99")))
+        free = build_quote([line("300")], MAINLAND)
+        self.assertEqual((free["shipping_state"], free["shipping_fee"], free["total"]), ("free", D("0"), D("300")))
+
+    def test_before_a_postal_code_is_typed_portugal_counts_as_mainland(self):
+        quote = build_quote([line("100")], {"delivery": "delivery", "country": "PT", "postal_code": ""})
+        self.assertEqual(quote["shipping_fee"], D("5"))
+
+    def test_a_postal_code_we_cannot_read_stays_to_be_confirmed(self):
+        quote = build_quote([line("100")], {"delivery": "delivery", "country": "PT", "postal_code": "27"})
+        self.assertEqual((quote["shipping_state"], quote["shipping_fee"]), ("pending", None))
+
+    def test_a_pickup_point_costs_what_a_delivery_costs(self):
+        self.assertEqual(build_quote([line("100")], POINT)["shipping_fee"], D("5"))
+        self.assertEqual(build_quote([line("300")], POINT)["shipping_state"], "free")
+        azores = {**POINT, "postal_code": "9500-100"}
+        self.assertEqual(build_quote([line("100")], azores)["shipping_state"], "pending")
+
+    def test_pickup_costs_nothing(self):
+        quote = build_quote([line("100")], PICKUP)
+        self.assertEqual((quote["shipping_fee"], quote["total"]), (D("0"), D("100")))
 
     def test_islands_and_the_eu_stay_to_be_confirmed(self):
         for destination in (AZORES, SPAIN):
@@ -239,9 +261,15 @@ class SubmitTests(CatalogMixin):
                          (6, D("100"), D("5"), D("95"), D("1"), D("94"), D("564")))
         self.assertEqual((order.subtotal, order.tier_discount, order.tier_total, order.goods_total),
                          (D("570"), D("1"), D("6"), D("564")))
-        self.assertEqual(order.shipping_state, "free")
+        self.assertEqual((order.shipping_state, order.shipping_fee, order.total), ("free", D("0"), D("564")))
         self.assertEqual(order.customer, customer)
         self.assertEqual(order.policy["minimum"], "150")
+
+    def test_a_small_order_keeps_its_5_euros(self):
+        set_quantity(self.boss, self.item.pk, 2)
+        order = self._submit()
+        self.assertEqual((order.shipping_state, order.shipping_fee, order.total), ("standard", D("5"), D("205")))
+        self.assertEqual(order.policy["shipping_fee"], "5")
 
     def test_a_request_empties_the_cart(self):
         self._submit()
@@ -328,6 +356,41 @@ class CataloguePageTests(PagesMixin):
         self.client.post(reverse("wholesale_customer"), {"customer": ""})
         self.assertEqual(self.client.get(reverse("catalog")).context["page_obj"][0]["price"], D("100"))
 
+    def _sell(self, customer, product, price):
+        order = SaleOrder.objects.create(customer=customer)
+        return order, Sale.objects.create(order=order, product=product, quantity=2, unit_price=D(price),
+                                          payment_method="cash")
+
+    def test_a_customer_gets_the_discount_of_the_last_sale(self):
+        customer = Customer.objects.create(name="Loja", kind="revenda")
+        self._sell(customer, self.item, "94")
+        self.client.post(reverse("wholesale_customer"), {"customer": customer.pk})
+        response = self.client.get(reverse("catalog"))
+        self.assertEqual(response.context["page_obj"][0]["price"], D("94"))
+        self.assertContains(response, "Desconto &euro;6.00/un.")
+
+    def test_a_discount_set_by_hand_later_wins(self):
+        customer = Customer.objects.create(name="Loja", kind="revenda")
+        self._sell(customer, self.item, "94")
+        Customer.objects.filter(pk=customer.pk).update(wholesale_discount=D("2"), wholesale_discount_set_at=timezone.now())
+        self.client.post(reverse("wholesale_customer"), {"customer": customer.pk})
+        self.assertEqual(self.client.get(reverse("catalog")).context["page_obj"][0]["price"], D("98"))
+
+    def test_the_cart_charges_the_same_discount(self):
+        customer = Customer.objects.create(name="Loja", kind="revenda")
+        self._sell(customer, self.item, "94")
+        self.client.post(reverse("wholesale_customer"), {"customer": customer.pk})
+        self._add(quantity=2)
+        self.assertEqual(self.client.get(reverse("wholesale_cart")).context["quote"]["subtotal"], D("188"))
+
+    def test_a_product_outside_the_rule_keeps_its_price(self):
+        customer = Customer.objects.create(name="Loja", kind="revenda")
+        self._sell(customer, self.item, "94")
+        spray = self._product(name="Spray", units=9, volume_ml=100, wholesale_price=D("50"), product_type_id="body_spray")
+        self.client.post(reverse("wholesale_customer"), {"customer": customer.pk})
+        prices = {r["pk"]: r["price"] for r in self.client.get(reverse("catalog")).context["page_obj"]}
+        self.assertEqual(prices[spray.pk], D("50"))
+
     def test_only_a_revenda_can_be_previewed(self):
         shop = Customer.objects.create(name="Walk in", kind="retail", wholesale_discount=D("5"))
         self.client.post(reverse("wholesale_customer"), {"customer": shop.pk})
@@ -339,6 +402,60 @@ class CataloguePageTests(PagesMixin):
             self.assertEqual(self.client.get(reverse(name)).status_code, 302, name)
         self.assertEqual(self._add().status_code, 302)
         self.assertEqual(CartLine.objects.count(), 0)
+
+
+class CatalogueLayoutTests(PagesMixin):
+    def _get(self, **params):
+        return self.client.get(reverse("catalog"), params)
+
+    def test_the_types_show_as_tabs_with_counts(self):
+        self._product(name="S", units=9, product_type_id="body_spray")
+        tabs = self._get().context["type_tabs"]
+        self.assertEqual([(t["value"], t["n"]) for t in tabs], [("perfume", 1), ("body_spray", 1)])
+        self.assertContains(self._get(), 'class="ftabs"')
+
+    def test_a_type_tab_filters_and_keeps_every_tab(self):
+        self._product(name="S", units=9, product_type_id="body_spray")
+        response = self._get(type="body_spray")
+        self.assertEqual([r["type_code"] for r in response.context["page_obj"]], ["body_spray"])
+        self.assertEqual(len(response.context["type_tabs"]), 2)
+        self.assertEqual(response.context["type_total"], 2)
+
+    def test_the_brands_show_directly_with_lattafa_first(self):
+        for n in range(2):
+            self._product(name=f"R{n}", brand="Rasasi", units=9)
+        tabs = self._get().context["brand_tabs"]
+        self.assertEqual([(t["name"], t["n"]) for t in tabs], [("Lattafa", 1), ("Rasasi", 2)])
+
+    def test_a_brand_tab_filters(self):
+        other = self._product(name="R", brand="Rasasi", units=9)
+        self.assertEqual([r["pk"] for r in self._get(brand="Rasasi").context["page_obj"]], [other.pk])
+
+    def test_the_brands_follow_the_type(self):
+        self._product(name="R", brand="Rasasi", units=9, product_type_id="body_spray")
+        self.assertEqual([t["name"] for t in self._get(type="body_spray").context["brand_tabs"]], ["Rasasi"])
+
+    def test_the_list_is_grouped_by_brand(self):
+        self._product(name="R", brand="Rasasi", units=9)
+        self.assertEqual(self._get().content.decode().count('class="wc-group"'), 2)
+
+    def test_a_brand_stays_together_whatever_the_stock_level(self):
+        low = self._product(name="Low", units=2)
+        other = self._product(name="R", brand="Rasasi", units=9)
+        for n in range(2):
+            self._product(name=f"R{n}", brand="Rasasi", units=9)
+        order = [r["pk"] for r in self._get().context["page_obj"]]
+        self.assertEqual(order.index(self.item.pk) + 1, order.index(low.pk))
+        self.assertLess(order.index(low.pk), order.index(other.pk))
+
+    def test_sold_out_still_comes_last(self):
+        gone = self._product(name="Gone", units=0)
+        self.assertEqual(list(self._get(q="line").context["page_obj"])[-1]["pk"], gone.pk)
+
+    def test_the_gender_is_a_tab(self):
+        woman = self._product(name="W", units=9, gender="women")
+        self.assertEqual([r["pk"] for r in self._get(gender="women").context["page_obj"]], [woman.pk])
+        self.assertContains(self._get(), "Mulher")
 
 
 class CartPageTests(PagesMixin):
@@ -372,6 +489,8 @@ class CartPageTests(PagesMixin):
         url = reverse("wholesale_cart_summary")
         self.assertContains(self.client.get(url, {"delivery": "delivery", "country": "PT", "postal_code": "2700-123"}), "Portes grátis")
         self.assertContains(self.client.get(url, {"delivery": "delivery", "country": "PT", "postal_code": "9500-100"}), "Portes por confirmar")
+        self.client.post(reverse("wholesale_cart_update"), {"product": self.item.pk, "quantity": 1})
+        self.assertContains(self.client.get(url, {"delivery": "delivery", "country": "PT", "postal_code": "2700-123"}), "5.00")
         self.assertContains(self.client.get(url, {"delivery": "pickup"}), "Levantamento em loja")
 
     def test_sending_makes_a_request_and_shows_it(self):
@@ -398,6 +517,37 @@ class CartPageTests(PagesMixin):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(OrderRequest.objects.count(), 0)
         self.assertEqual(cart_units(self.boss), 2)
+
+    def _point(self, **fields):
+        self._add()
+        fingerprint = self.client.get(reverse("wholesale_cart")).context["quote"]["fingerprint"]
+        return self.client.post(reverse("wholesale_cart_submit"), {
+            "delivery": "point", "contact_name": "Ana", "phone": "912", "country": "PT",
+            "fingerprint": fingerprint, **fields})
+
+    def test_a_pickup_point_needs_the_area_not_a_street(self):
+        self._point(postal_code="2700-123", city="Amadora")
+        order = OrderRequest.objects.get()
+        self.assertEqual((order.delivery, order.address, order.shipping_state), ("point", "", "standard"))
+        self.assertEqual(order.shipping_fee, D("5"))
+
+    def test_a_pickup_point_with_no_area_is_refused(self):
+        response = self._point(postal_code="", city="")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(OrderRequest.objects.count(), 0)
+        self.assertContains(response, "Campo obrigat")
+
+    def test_the_cart_offers_the_pickup_point(self):
+        self._add()
+        self.assertContains(self.client.get(reverse("wholesale_cart")), "Ponto de recolha perto de ti")
+
+    def test_the_order_says_it_goes_to_a_pickup_point(self):
+        self._point(postal_code="2700-123", city="Amadora")
+        order = OrderRequest.objects.get()
+        page = self.client.get(reverse("wholesale_order", args=[order.public_id]))
+        self.assertContains(page, "Ponto de recolha perto de ti")
+        self.assertContains(page, "2700-123 Amadora")
+        self.assertContains(self.client.get(reverse("order_requests")), "Pickup point near 2700-123 Amadora")
 
     def test_pickup_needs_no_address(self):
         self._add()
@@ -453,6 +603,56 @@ class MyOrdersTests(PagesMixin):
         first = OrderRequest.objects.get().cancelled_at
         self.client.post(reverse("wholesale_order_cancel", args=[self.order.public_id]))
         self.assertEqual(OrderRequest.objects.get().cancelled_at, first)
+
+
+class PastOrdersTests(PagesMixin):
+    def setUp(self):
+        super().setUp()
+        self.customer = Customer.objects.create(name="Loja", kind="revenda")
+        self.sale = SaleOrder.objects.create(customer=self.customer)
+        Sale.objects.create(order=self.sale, product=self.item, quantity=3, unit_price=D("90"), payment_method="cash")
+        self.other = Customer.objects.create(name="Outra", kind="revenda")
+        self.foreign = SaleOrder.objects.create(customer=self.other)
+        Sale.objects.create(order=self.foreign, product=self.item, quantity=1, unit_price=D("90"), payment_method="cash")
+
+    def _as(self, customer):
+        self.client.post(reverse("wholesale_customer"), {"customer": customer.pk if customer else ""})
+
+    def test_the_customer_sees_their_past_orders(self):
+        self._as(self.customer)
+        response = self.client.get(reverse("wholesale_orders"))
+        self.assertEqual(list(response.context["sales"]), [self.sale])
+        self.assertContains(response, "270.00")
+
+    def test_without_a_customer_there_are_none(self):
+        self.assertEqual(list(self.client.get(reverse("wholesale_orders")).context["sales"]), [])
+
+    def test_a_past_order_opens(self):
+        self._as(self.customer)
+        response = self.client.get(reverse("wholesale_sale", args=[self.sale.pk]))
+        self.assertContains(response, "Line Item")
+        self.assertContains(response, "90.00")
+        self.assertContains(response, "&euro;270.00</b>")
+
+    def test_a_past_order_shows_no_cost(self):
+        self._as(self.customer)
+        self.assertNotContains(self.client.get(reverse("wholesale_sale", args=[self.sale.pk])), "17.77")
+
+    def test_another_customers_order_stays_closed(self):
+        self._as(self.customer)
+        self.assertEqual(self.client.get(reverse("wholesale_sale", args=[self.foreign.pk])).status_code, 404)
+
+    def test_no_customer_no_past_order(self):
+        self.assertEqual(self.client.get(reverse("wholesale_sale", args=[self.sale.pk])).status_code, 404)
+
+    def test_the_customers_requests_show_too(self):
+        self._as(self.customer)
+        self._add()
+        fingerprint = self.client.get(reverse("wholesale_cart")).context["quote"]["fingerprint"]
+        self.client.post(reverse("wholesale_cart_submit"), {**self.form, "fingerprint": fingerprint})
+        self.assertEqual(self.client.get(reverse("wholesale_orders")).context["orders"].count(), 1)
+        self._as(self.other)
+        self.assertEqual(self.client.get(reverse("wholesale_orders")).context["orders"].count(), 0)
 
 
 class BackOfficeTests(PagesMixin):

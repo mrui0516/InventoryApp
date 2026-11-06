@@ -18,15 +18,17 @@
       <dl class="wc-sum">
         <dt>Produtos</dt><dd>&euro;{{ order.subtotal|floatformat:2 }}</dd>
         {% if order.tier_total %}<dt>Desconto por volume</dt><dd>-&euro;{{ order.tier_total|floatformat:2 }}</dd>{% endif %}
-        <dt>{{ order.get_shipping_state_display }}</dt><dd>{% if order.shipping_state == 'pending' %}&mdash;{% else %}&euro;0.00{% endif %}</dd>
-        <dt class="total">Total</dt><dd class="total">&euro;{{ order.goods_total|floatformat:2 }}{% if order.shipping_state == 'pending' %} + portes{% endif %}</dd>
+        <dt>{{ order.get_shipping_state_display }}</dt><dd>{% if order.shipping_state == 'pending' %}&mdash;{% else %}&euro;{{ order.shipping_fee|floatformat:2 }}{% endif %}</dd>
+        <dt class="total">Total</dt><dd class="total">&euro;{{ order.total|floatformat:2 }}{% if order.shipping_state == 'pending' %} + portes{% endif %}</dd>
       </dl>
     </section>
     <section class="wc-card" aria-label="Entrega">
       <h2>Entrega</h2>
       <p class="wc-text">{% if order.business_name %}{{ order.business_name }}
 {% endif %}{{ order.contact_name }} &middot; {{ order.phone }}{% if order.delivery == 'pickup' %}
-Levantamento em loja{% else %}
+Levantamento em loja{% elif order.delivery == 'point' %}
+Ponto de recolha perto de ti
+{{ order.postal_code }} {{ order.city }}{% else %}
 {{ order.address }}
 {{ order.postal_code }} {{ order.city }}{% endif %}{% if order.note %}
 

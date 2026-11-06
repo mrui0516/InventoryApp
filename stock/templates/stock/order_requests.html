@@ -28,7 +28,7 @@
         <span class="oq-main">{{ order.customer.name|default:order.contact_name }}<small>{{ order.phone }}{% if order.city %} &middot; {{ order.city }}{% endif %}</small></span>
         <span class="oq-date">{{ order.created_at|date:"Y-m-d H:i" }}</span>
         <span class="oq-units">{{ order.units }} pcs</span>
-        <span class="oq-total">&euro;{{ order.goods_total|floatformat:2 }}</span>
+        <span class="oq-total">&euro;{{ order.total|floatformat:2 }}</span>
         <span class="oq-status {{ order.status }}">{% if order.status == 'submitted' %}To confirm{% else %}Cancelled{% endif %}</span>
       </button>
       <template id="oq-{{ order.id }}">
@@ -38,7 +38,7 @@
             <div><dt>Customer</dt><dd>{{ order.customer.name|default:"Not linked" }}</dd></div>
             <div><dt>Contact</dt><dd>{{ order.contact_name }} &middot; {{ order.phone }}</dd></div>
             {% if order.email %}<div><dt>Email</dt><dd>{{ order.email }}</dd></div>{% endif %}
-            <div><dt>Delivery</dt><dd>{% if order.delivery == 'pickup' %}Pickup in shop{% else %}{{ order.address }}, {{ order.postal_code }} {{ order.city }} ({{ order.country }}){% endif %}</dd></div>
+            <div><dt>Delivery</dt><dd>{% if order.delivery == 'pickup' %}Pickup in shop{% elif order.delivery == 'point' %}Pickup point near {{ order.postal_code }} {{ order.city }} ({{ order.country }}){% else %}{{ order.address }}, {{ order.postal_code }} {{ order.city }} ({{ order.country }}){% endif %}</dd></div>
             <div><dt>Shipping</dt><dd>{{ order.get_shipping_state_display }}</dd></div>
             {% if order.note %}<div><dt>Note</dt><dd>{{ order.note }}</dd></div>{% endif %}
           </dl>
@@ -48,7 +48,8 @@
           <dl class="sp-kv">
             <div><dt>Goods</dt><dd>&euro;{{ order.subtotal|floatformat:2 }}</dd></div>
             {% if order.tier_total %}<div><dt>Volume</dt><dd>-&euro;{{ order.tier_total|floatformat:2 }}</dd></div>{% endif %}
-            <div><dt>Total</dt><dd><b>&euro;{{ order.goods_total|floatformat:2 }}</b></dd></div>
+            {% if order.shipping_fee %}<div><dt>Shipping</dt><dd>&euro;{{ order.shipping_fee|floatformat:2 }}</dd></div>{% endif %}
+            <div><dt>Total</dt><dd><b>&euro;{{ order.total|floatformat:2 }}</b></dd></div>
           </dl>
         </div>
         <div data-part="foot">

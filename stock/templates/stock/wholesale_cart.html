@@ -52,11 +52,11 @@
   (function () {
     const form = document.getElementById('wc-order-form');
     const box = document.getElementById('wc-summary');
-    const hide = ['address', 'postal_code', 'city', 'country'];
+    const hide = { pickup: ['address', 'postal_code', 'city', 'country'], point: ['address'] };
     function refresh() {
       const delivery = form.elements.delivery.value;
-      hide.forEach((name) => {
-        form.querySelector(`[data-field="${name}"]`).classList.toggle('d-none', delivery === 'pickup');
+      hide.pickup.forEach((name) => {
+        form.querySelector(`[data-field="${name}"]`).classList.toggle('d-none', (hide[delivery] || []).includes(name));
       });
       const query = new URLSearchParams({ delivery, country: form.elements.country.value, postal_code: form.elements.postal_code.value });
       fetch(`{% url 'wholesale_cart_summary' %}?${query}`)
