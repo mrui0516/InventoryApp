@@ -14,9 +14,10 @@ def make_product(**fields):
 
 
 class ProductTypeTableTests(TestCase):
-    def test_the_seven_types_are_seeded_in_order(self):
+    def test_the_types_are_seeded_in_order(self):
         self.assertEqual([t.code for t in ProductType.objects.all()],
-                         ["perfume", "mini", "oil_perfume", "body_mist", "body_spray", "air_freshener", "coffret"])
+                         ["perfume", "mini", "oil_perfume", "body_mist", "body_spray", "air_freshener", "coffret",
+                          "amostra"])
 
     def test_the_seeded_switches(self):
         rows = {t.code: t for t in ProductType.objects.all()}
@@ -25,7 +26,7 @@ class ProductTypeTableTests(TestCase):
         self.assertEqual({c for c, t in rows.items() if t.is_gift}, {"coffret"})
         no_scent = {"body_mist", "body_spray", "air_freshener", "coffret"}
         self.assertEqual({c for c, t in rows.items() if t.has_contents}, no_scent)
-        self.assertEqual({c for c, t in rows.items() if not t.shows_scent_details}, no_scent)
+        self.assertEqual({c for c, t in rows.items() if not t.shows_scent_details}, no_scent | {"amostra"})
         self.assertEqual({c for c, t in rows.items() if not t.takes_volume}, {"coffret"})
         self.assertEqual(rows["perfume"].name_word, "")
         self.assertEqual(rows["body_mist"].name_word, "Body mist")

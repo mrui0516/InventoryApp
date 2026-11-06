@@ -39,6 +39,7 @@ from .services.wholesale_discount import discount_applies
 from .services import pedido as pedido_math
 from .services import pedido_pdf
 from .services import shopify_sync
+from .services import wholesale_orders
 from .stores import resolve_active_store
 
 DEFAULT_VALID_DAYS = 7
@@ -167,7 +168,7 @@ def _read_customer(request):
 def _open_drafts(store):
     return (PedidoDraft.objects
             .filter(store=store, status=PedidoDraft.OPEN)
-            .select_related('customer')[:40])
+            .select_related('customer', 'order_request')[:40])
 
 
 def _form_rows(lines):
@@ -312,6 +313,8 @@ def pedido_view(request):
                         draft=_draft_for(store, request.POST.get('draft_id')),
                         customer=customer, lines=lines, totals=totals,
                         discount_kind=discount_kind, valid_days=valid_days)
+    # Handing over the PDF is the shop confirming a customer's order.
+    wholesale_orders.confirm_from_pedido(draft)
 
     stamp = timezone.localtime().strftime('%Y%m%d-%H%M')
     who = ''.join(ch for ch in customer['name'] if ch.isalnum())[:20]
@@ -341,6 +344,7 @@ def pedido_draft_delete(request, draft_id):
     store = _store_or_none(request)
     draft = get_object_or_404(PedidoDraft, id=draft_id, store=store, status=PedidoDraft.OPEN)
     label = draft.customer_name or f'#{draft.id}'
+    wholesale_orders.cancel_for_deleted_draft(draft, request.user)
     draft.delete()
     messages.success(request, f'Rascunho {label} apagado.')
     return redirect('pedido')

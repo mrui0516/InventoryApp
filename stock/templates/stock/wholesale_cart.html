@@ -1,6 +1,12 @@
 {% extends 'stock/wholesale_base.html' %}
 {% load widget_tweaks submissions %}
 {% block wholesale %}
+{% if editing %}
+<div class="wc-editing">
+  <span>A alterar o pedido #{{ editing.id }}</span>
+  <form method="post" action="{% url 'wholesale_order_edit_stop' %}">{% csrf_token %}<button type="submit" class="wc-link">Manter como estava</button></form>
+</div>
+{% endif %}
 {% if not quote.lines %}
   <section class="wc-card"><p class="wc-empty">O carrinho está vazio.</p><a class="btn btn-primary" href="{% url 'catalog' %}">Ver catálogo</a></section>
 {% else %}
@@ -13,12 +19,14 @@
         <span class="wc-main">
           <span class="wc-brand"><span>{{ line.brand }} &middot; {{ line.barcode }}</span></span>
           <span class="wc-title">{{ line.title }}</span>
+          {% if line.picks %}<span class="wc-contents d-block">{% include "stock/_wholesale_picks.html" with picks=line.picks %}</span>{% endif %}
+          {% if line.pick_mode %}<button type="button" class="wc-link" data-layer="wc-pick-{{ line.product_id }}">Alterar</button>{% endif %}
           {% if line.problem %}<span class="wc-problem">{{ line.problem }}</span>{% elif line.needs_price %}<span class="wc-problem">Contacte-nos sobre o preço</span>{% endif %}
         </span>
-        <form method="post" action="{% url 'wholesale_cart_update' %}">
+        {% if line.pick_mode %}<span class="wc-qty-fixed">{{ line.quantity }}</span>{% else %}<form method="post" action="{% url 'wholesale_cart_update' %}">
           {% csrf_token %}<input type="hidden" name="product" value="{{ line.product_id }}">
           <input type="number" name="quantity" value="{{ line.quantity }}" min="0" max="999" inputmode="numeric" aria-label="Quantidade" onchange="this.form.submit()">
-        </form>
+        </form>{% endif %}
         <span class="wc-money"><b>&euro;{{ line.line_total|floatformat:2 }}</b> <small>{{ line.quantity }} &times; &euro;{{ line.final_price|floatformat:2 }}</small></span>
         <form method="post" action="{% url 'wholesale_cart_update' %}">
           {% csrf_token %}<input type="hidden" name="product" value="{{ line.product_id }}"><input type="hidden" name="quantity" value="0">
@@ -27,6 +35,7 @@
       </div>
       {% endfor %}
       <p class="wc-small">Quantidade sujeita a confirmação.</p>
+      {% for line in quote.lines %}{% if line.pick_mode %}{% include "stock/_wholesale_pick.html" with pk=line.product_id title=line.title mode=line.pick_mode options=line.pick_options price=line.catalog_price total=line.quantity replace=True %}{% endif %}{% endfor %}
     </section>
 
     <section class="wc-card" aria-label="Dados do pedido">
@@ -41,7 +50,7 @@
           </label>
         {% endfor %}
         <p class="wc-notice wide">Pedido sujeito a confirmação de stock e portes. A submissão ou aceitação do pedido não reserva stock.</p>
-        <button type="submit" class="btn btn-primary wide"{% if not quote.can_submit %} disabled{% endif %}>Enviar pedido</button>
+        <button type="submit" class="btn btn-primary wide"{% if not quote.can_submit %} disabled{% endif %}>{% if editing %}Guardar alterações{% else %}Enviar pedido{% endif %}</button>
       </form>
     </section>
   </div>

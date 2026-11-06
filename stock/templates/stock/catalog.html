@@ -66,6 +66,7 @@
         </div>
         <div data-part="foot">{% include "stock/_wholesale_action.html" %}</div>
       </template>
+      {% if row.pick_mode and row.price and row.state != 'out-stock' %}{% include "stock/_wholesale_pick.html" with pk=row.pk title=row.title mode=row.pick_mode options=row.pick_options price=row.price total=0 %}{% endif %}
     {% empty %}
       <p class="wc-empty">Sem resultados.</p>
     {% endfor %}

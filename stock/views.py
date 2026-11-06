@@ -1218,6 +1218,8 @@ def outbound_view(request):
                     status=PedidoDraft.SOLD, sale_order=order, updated_at=timezone.now())
                 if not sold:
                     raise ValueError(f'Pedido draft #{draft.id} was already sold.')
+                from .services.wholesale_orders import complete_from_sale
+                complete_from_sale(draft, order)
 
     except submissions.AlreadySubmitted:
         messages.info(request, 'That sale was already recorded - it was not added again.')

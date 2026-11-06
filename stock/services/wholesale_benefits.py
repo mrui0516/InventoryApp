@@ -85,7 +85,8 @@ def progress(subtotal, zone):
 
 
 def _fingerprint(lines):
-    payload = [[line['product_id'], line['quantity'], str(line['catalog_price'])] for line in lines]
+    payload = [[line['product_id'], line['quantity'], str(line['catalog_price']), line.get('picks') or []]
+               for line in lines]
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 

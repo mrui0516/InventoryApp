@@ -33,6 +33,8 @@ class ProductType(models.Model):
     wholesale_discount = models.BooleanField(default=False)
     is_gift = models.BooleanField(default=False)
     has_contents = models.BooleanField(default=False)
+    # Made to order from a perfume the customer picks: its own stock does not count.
+    picks_perfume = models.BooleanField(default=False)
     shows_scent_details = models.BooleanField(default=True)
     sort_order = models.PositiveIntegerField(default=100)
 

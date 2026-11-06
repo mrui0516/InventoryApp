@@ -9,6 +9,7 @@
   .oq-row:first-child{ border-top:0; }
   .oq-row:hover{ background:var(--app-accent-soft); }
   .oq-main{ min-width:0; font-weight:700; overflow-wrap:anywhere; }
+  .oq-picks{ margin:-.15rem 0 .4rem .75rem; font-size:.88rem; color:var(--app-muted); overflow-wrap:anywhere; }
   .oq-main small{ display:block; font-weight:500; font-size:.85rem; color:var(--app-muted); }
   .oq-total{ text-align:right; font-weight:800; }
   .oq-status{ font-size:.85rem; font-weight:700; }
@@ -29,7 +30,7 @@
         <span class="oq-date">{{ order.created_at|date:"Y-m-d H:i" }}</span>
         <span class="oq-units">{{ order.units }} pcs</span>
         <span class="oq-total">&euro;{{ order.total|floatformat:2 }}</span>
-        <span class="oq-status {{ order.status }}">{% if order.status == 'submitted' %}To confirm{% else %}Cancelled{% endif %}</span>
+        <span class="oq-status {{ order.status }}">{% if order.status == 'submitted' %}To confirm{% elif order.status == 'confirmed' %}Stock confirmed{% elif order.status == 'completed' %}Sold{% else %}Cancelled{% endif %}</span>
       </button>
       <template id="oq-{{ order.id }}">
         <div data-part="title">Request #{{ order.id }}</div>
@@ -43,7 +44,7 @@
             {% if order.note %}<div><dt>Note</dt><dd>{{ order.note }}</dd></div>{% endif %}
           </dl>
           <section class="sp-sec"><h6>Products</h6>
-            {% for line in order.lines.all %}<div class="sp-row"><span class="sp-row-main">{{ line.quantity }} &times; {{ line.name }}</span><span class="sp-row-fig">&euro;{{ line.line_total|floatformat:2 }}</span></div>{% endfor %}
+            {% for line in order.lines.all %}<div class="sp-row"><span class="sp-row-main">{{ line.quantity }} &times; {{ line.name }}</span><span class="sp-row-fig">&euro;{{ line.line_total|floatformat:2 }}</span></div>{% if line.picks %}<div class="oq-picks">{% for pick in line.picks %}<div>{{ pick.quantity }} &times; {{ pick.name }}{% if pick.barcode %} <small>{{ pick.barcode }}</small>{% endif %}</div>{% endfor %}</div>{% endif %}{% endfor %}
           </section>
           <dl class="sp-kv">
             <div><dt>Goods</dt><dd>&euro;{{ order.subtotal|floatformat:2 }}</dd></div>
@@ -53,7 +54,8 @@
           </dl>
         </div>
         <div data-part="foot">
-          {% if order.status == 'submitted' %}
+          {% if order.shop_can_cancel %}
+          {% if order.pedido_id %}<a class="btn btn-primary" href="{% url 'pedido' %}?draft={{ order.pedido_id }}">Open in Pedido</a>{% endif %}
           <form method="post" action="{% url 'order_requests' %}" onsubmit="return confirm('Cancel this request?')">
             {% csrf_token %}<input type="hidden" name="id" value="{{ order.id }}"><input type="hidden" name="action" value="cancel">
             <button type="submit" class="btn btn-outline-danger">Cancel request</button>

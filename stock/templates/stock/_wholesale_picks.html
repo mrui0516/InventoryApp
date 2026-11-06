@@ -1,0 +1,1 @@
+{% for pick in picks %}{{ pick.name }} &times; {{ pick.quantity }}{% if not forloop.last %} &middot; {% endif %}{% endfor %}

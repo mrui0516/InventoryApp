@@ -13,6 +13,8 @@ class CartLine(models.Model):
     user = models.ForeignKey('auth.User', on_delete=models.CASCADE, related_name='cart_lines')
     product = models.ForeignKey('stock.Product', on_delete=models.CASCADE, related_name='cart_lines')
     quantity = models.PositiveIntegerField()
+    # What a mix or a sample is made of: services/wholesale_picks.py.
+    picks = models.JSONField(default=list, blank=True)
     added_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -20,8 +22,11 @@ class CartLine(models.Model):
 
 
 class OrderRequest(models.Model):
-    SUBMITTED, CANCELLED = 'submitted', 'cancelled'
-    STATUSES = [(SUBMITTED, 'Enviado'), (CANCELLED, 'Cancelado')]
+    SUBMITTED, CONFIRMED, COMPLETED, CANCELLED = 'submitted', 'confirmed', 'completed', 'cancelled'
+    STATUSES = [(SUBMITTED, 'A aguardar confirma\u00e7\u00e3o'), (CONFIRMED, 'Stock confirmado'),
+                (COMPLETED, 'Conclu\u00eddo'), (CANCELLED, 'Cancelado')]
+    SHOP_CAN_CANCEL = (SUBMITTED, CONFIRMED)
+    CUSTOMER_CAN_CANCEL = (SUBMITTED,)
     SHIPPING = [('standard', 'Portes'), ('free', 'Portes grátis'), ('pending', 'Portes por confirmar'),
                 ('pickup', 'Levantamento em loja')]
 
@@ -54,9 +59,23 @@ class OrderRequest(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)
     cancelled_by = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    # Where it waits for the shop, and the sale that ended it.
+    pedido = models.OneToOneField('stock.PedidoDraft', on_delete=models.SET_NULL, null=True, blank=True,
+                                  related_name='order_request')
+    sale_order = models.ForeignKey('stock.SaleOrder', on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at', '-id']
+
+    @property
+    def customer_can_change(self):
+        return self.status in self.CUSTOMER_CAN_CANCEL
+
+    @property
+    def shop_can_cancel(self):
+        return self.status in self.SHOP_CAN_CANCEL
 
     @property
     def total(self):
@@ -73,6 +92,7 @@ class OrderRequestLine(models.Model):
     name = models.CharField(max_length=250)
     barcode = models.CharField(max_length=20, blank=True, default='')
     quantity = models.PositiveIntegerField()
+    picks = models.JSONField(default=list, blank=True)
     base_price = models.DecimalField(max_digits=10, decimal_places=2)
     customer_discount = models.DecimalField(max_digits=8, decimal_places=2)
     catalog_price = models.DecimalField(max_digits=10, decimal_places=2)

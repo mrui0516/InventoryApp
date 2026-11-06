@@ -1,0 +1,35 @@
+{# Choosing what a mix or a sample is made of. The chosen quantities are the line's quantity. #}
+<template id="wc-pick-{{ pk }}">
+  <div data-part="title">{{ title }}</div>
+  <div data-part="body">
+    <form method="post" action="{% url 'wholesale_cart_add' %}" id="wc-pick-form-{{ pk }}" data-wc-pick="{{ mode }}"{% if not replace %} data-wc-add{% endif %}>
+      {% csrf_token %}
+      <input type="hidden" name="product" value="{{ pk }}">
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <input type="hidden" name="picks" value="[]">
+      {% if replace %}<input type="hidden" name="replace" value="1">{% endif %}
+      {% if mode == 'perfume' %}
+        <input type="search" class="form-control" placeholder="Procurar perfume" aria-label="Procurar perfume" autocomplete="off" data-wc-pick-search="{% url 'wholesale_pick_search' %}">
+        <div class="wc-pick-hits" data-wc-pick-hits></div>
+      {% endif %}
+      <div class="wc-picks" data-wc-picks>
+        {% for option in options %}
+          <div class="wc-pick" data-id="{{ option.id }}">
+            <span class="wc-pick-name">{{ option.name }}</span>
+            <span class="wc-step">
+              <button type="button" data-wc-step="-1" aria-label="Menos {{ option.name }}">&minus;</button>
+              <input type="number" min="0" max="999" inputmode="numeric" value="{{ option.quantity }}" aria-label="Quantidade de {{ option.name }}">
+              <button type="button" data-wc-step="1" aria-label="Mais {{ option.name }}">+</button>
+            </span>
+          </div>
+        {% endfor %}
+      </div>
+    </form>
+  </div>
+  <div data-part="foot">
+    <div class="wc-pick-foot">
+      <span><b data-wc-pick-total>{{ total|default:0 }}</b> un. &middot; &euro;{{ price|floatformat:2 }}/un.</span>
+      <button type="submit" form="wc-pick-form-{{ pk }}" class="btn btn-primary" data-wc-pick-go{% if not total %} disabled{% endif %}>{% if replace %}Guardar{% else %}Adicionar{% endif %}</button>
+    </div>
+  </div>
+</template>

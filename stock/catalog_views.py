@@ -20,7 +20,7 @@ from .services.product_contents import parse_pasted
 from .services.restock_requests import demand_rows, request_restock
 
 SWITCHES = ('takes_concentration', 'takes_volume', 'wholesale_discount', 'is_gift', 'shows_scent_details',
-            'has_contents')
+            'has_contents', 'picks_perfume')
 
 
 def _text(request, name, limit):

@@ -11,7 +11,7 @@ from decimal import Decimal
 from django.db.models import Sum
 
 from ..models import CartLine, Product, ProductType, Sale
-from .availability import LOW_STOCK_BELOW
+from .availability import LOW_STOCK_BELOW, product_ids_on_order
 from .names import customer_catalog_case
 from .product_contents import content_label
 from .product_search import product_search_q
@@ -20,7 +20,7 @@ from .wholesale_discount import discount_applies
 
 FIRST_BRAND = 'lattafa'
 PAGE_SIZE = 24
-STATE_ORDER = {'in-stock': 0, 'low-stock': 1, 'out-stock': 2}
+STATE_ORDER = {'in-stock': 0, 'low-stock': 1, 'incoming': 2, 'out-stock': 3}
 
 
 def brand_sort_key(name, count):
@@ -45,12 +45,15 @@ def sellable_units(product_ids):
     return units
 
 
-def availability(units):
-    """``(state, label)``: the only stock fact a customer ever gets."""
+def availability(units, on_way=False):
+    """``(state, label)``: the only stock fact a customer ever gets. Only
+    'out-stock' cannot be ordered: what is on the way can."""
     if units >= LOW_STOCK_BELOW:
         return 'in-stock', 'Dispon\u00edvel'
     if units > 0:
-        return 'low-stock', 'Stock reduzido'
+        return 'low-stock', 'Mais a caminho' if on_way else 'Stock reduzido'
+    if on_way:
+        return 'incoming', 'Brevemente em stock'
     return 'out-stock', 'Indispon\u00edvel'
 
 
@@ -84,9 +87,32 @@ def image_url(product):
     return ''
 
 
-def _row(product, units, requested=False, customer=None, in_cart=0):
+def made_to_order(product):
+    return product.type_info.picks_perfume
+
+
+def pick_mode(product):
+    """'perfume': a sample, from any perfume in stock. 'list': a mix, from its own
+    names. '': nothing to choose, and a coffret is what it is."""
+    if made_to_order(product):
+        return 'perfume'
+    if product.is_mix and len(product.contents.all()) > 1:
+        return 'list'
+    return ''
+
+
+def pick_options(product, picks=()):
+    """The rows of the choosing panel, holding what is already chosen."""
+    if pick_mode(product) != 'list':
+        return [{'id': pick['id'], 'name': pick['name'], 'quantity': pick['quantity']} for pick in picks]
+    chosen = {pick['id']: pick['quantity'] for pick in picks}
+    return [{'id': row.pk, 'name': content_label(row), 'quantity': chosen.get(row.pk, 0)}
+            for row in product.contents.all()]
+
+
+def _row(product, units, requested=False, customer=None, in_cart=0, on_way=False):
     kind = product.type_info
-    state, state_label = availability(units)
+    state, state_label = availability(LOW_STOCK_BELOW if made_to_order(product) else units, on_way)
     price = customer_price(product, customer)[0]
     contents = product.contents.all() if product.lists_contents else ()
     return {
@@ -107,6 +133,8 @@ def _row(product, units, requested=False, customer=None, in_cart=0):
         'contents': [content_label(row) for row in contents],
         'description': product.composed_description(include_inspiration=False),
         'requested': requested,
+        'pick_mode': pick_mode(product),
+        'pick_options': pick_options(product),
     }
 
 
@@ -134,7 +162,9 @@ def catalog_rows(query='', brand='', kind='', gender='', show_all=False, viewer=
     from .restock_requests import requested_ids
     asked = requested_ids(viewer, [p.pk for p in products]) if viewer else set()
     carted = dict(CartLine.objects.filter(user=viewer).values_list('product', 'quantity')) if viewer else {}
-    rows = [(p, _row(p, units.get(p.pk, 0), p.pk in asked, customer, carted.get(p.pk, 0))) for p in products]
+    coming = product_ids_on_order()
+    rows = [(p, _row(p, units.get(p.pk, 0), p.pk in asked, customer, carted.get(p.pk, 0), p.pk in coming))
+            for p in products]
     if not show_all:
         rows = [(p, row) for p, row in rows if row['state'] != 'out-stock']
 

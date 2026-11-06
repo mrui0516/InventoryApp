@@ -9,7 +9,7 @@
     {% for d in drafts %}
     <li class="pd-draft{% if d.id == current_draft_id %} is-current{% endif %}">
       <a class="pd-draft-main" href="{% url 'pedido' %}?draft={{ d.id }}">
-        <span class="pd-draft-who">{{ d.customer_name|default:"Sem cliente" }}</span>
+        <span class="pd-draft-who">{{ d.customer_name|default:"Sem cliente" }}{% if d.order_request %} <small class="pd-draft-online">Online #{{ d.order_request.id }}{% if d.order_request.status == 'confirmed' %} &middot; {{ d.order_request.get_status_display }}{% endif %}</small>{% endif %}</span>
         <span class="pd-draft-meta">{% if d.customer_phone %}{{ d.customer_phone }} · {% endif %}{{ d.line_count }} produto{{ d.line_count|pluralize }} · {{ d.updated_at|date:"d/m H:i" }}</span>
       </a>
       <span class="pd-draft-total">{{ d.total|eur_pt }}</span>

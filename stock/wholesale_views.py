@@ -4,6 +4,7 @@ Staff only for now: a shop login stands in for a customer account until the
 customer portal exists, and "Ver como" picks whose prices to see. The pages speak
 Portuguese because that is who they are for.
 """
+import json
 from collections import Counter
 
 from django.contrib import messages
@@ -18,14 +19,17 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .forms import OrderRequestForm
-from .models import Brand, Customer, OrderRequest, Product, ProductType, SaleOrder
+from .models import Brand, CartLine, Customer, OrderRequest, Product, ProductType, SaleOrder
 from .permissions import manager_required
 from .services import submissions
 from .services.wholesale_cart import add_to_cart, cart_quote, set_quantity, submit_request
 from .services.wholesale_catalog import PAGE_SIZE, brand_sort_key, catalog_rows
 from .services.wholesale_discount import last_discount
+from .services.wholesale_orders import cancel_order, reopen_in_cart, shop_phone
+from .services.wholesale_picks import perfume_choices
 
 SESSION_KEY = 'wholesale_customer'
+EDITING_KEY = 'wholesale_editing'
 
 
 def _customer(request):
@@ -112,6 +116,19 @@ def choose_customer(request):
     return _back_to(request, 'catalog')
 
 
+def _picks(text):
+    try:
+        return json.loads(text) if text else None
+    except ValueError:
+        return None
+
+
+@login_required
+@manager_required
+def pick_search(request):
+    return JsonResponse({'results': perfume_choices(request.GET.get('q'))})
+
+
 def _wants_json(request):
     return request.headers.get('X-Requested-With') == 'fetch'
 
@@ -123,7 +140,8 @@ def cart_add(request):
     product = get_object_or_404(Product, pk=_number(request.POST.get('product')) or 0)
     customer = _customer(request)
     try:
-        add_to_cart(request.user, product, _number(request.POST.get('quantity')), customer)
+        add_to_cart(request.user, product, _number(request.POST.get('quantity')), customer,
+                    picks=_picks(request.POST.get('picks')), replace=request.POST.get('replace') == '1')
     except ValueError as error:
         if _wants_json(request):
             return JsonResponse({'error': str(error)}, status=400)
@@ -162,14 +180,31 @@ def _destination(data):
 def _initial(customer):
     if customer is None:
         return {'delivery': 'delivery', 'country': 'PT'}
-    return {'delivery': 'delivery', 'country': 'PT', 'business_name': customer.name, 'phone': customer.phone or '',
+    return {'delivery': 'delivery', 'country': 'PT', 'contact_name': customer.name, 'phone': customer.phone or '',
             'email': customer.email or '', 'address': customer.address or ''}
+
+
+def _editing(request):
+    """The order this cart is changing. Once the shop has confirmed it the changes
+    are dropped: left in the cart, they would go out as a second order."""
+    public_id = request.session.get(EDITING_KEY)
+    if not public_id:
+        return None
+    order = OrderRequest.objects.filter(public_id=public_id).first()
+    if order is not None and order.customer_can_change:
+        return order
+    request.session.pop(EDITING_KEY, None)
+    CartLine.objects.filter(user=request.user).delete()
+    messages.error(request, 'Este pedido j\u00e1 foi confirmado e n\u00e3o pode ser alterado.')
+    return None
 
 
 def _cart_page(request, customer, form, status=200):
     data = form.data if form.is_bound else form.initial
+    editing = _editing(request)     # first: it can empty the cart
     return render(request, 'stock/wholesale_cart.html', {
         'tab': 'cart', 'form': form, 'quote': cart_quote(request.user, customer, _destination(data)),
+        'editing': editing,
         **_shared(request, customer),
     }, status=status)
 
@@ -201,12 +236,14 @@ def cart_submit(request):
     try:
         with transaction.atomic():
             submissions.claim(request)
-            order = submit_request(request.user, customer, data, request.POST.get('fingerprint') or '')
+            order = submit_request(request.user, customer, data, request.POST.get('fingerprint') or '',
+                                   editing=request.session.get(EDITING_KEY))
     except submissions.AlreadySubmitted:
         return redirect('wholesale_orders')
     except ValueError as error:
         messages.error(request, str(error))
         return _cart_page(request, customer, form)
+    request.session.pop(EDITING_KEY, None)
     return redirect('wholesale_order', public_id=order.public_id)
 
 
@@ -253,13 +290,31 @@ def sale_view(request, pk):
 @manager_required
 def order_view(request, public_id):
     return render(request, 'stock/wholesale_order.html', {'tab': 'orders', 'order': _mine(request, public_id),
+                                                          'shop_phone': shop_phone(),
                                                           **_shared(request, _customer(request))})
 
 
-def _cancel(order, user):
-    updated = OrderRequest.objects.filter(pk=order.pk, status=OrderRequest.SUBMITTED).update(
-        status=OrderRequest.CANCELLED, cancelled_at=timezone.now(), cancelled_by=user)
-    return bool(updated)
+@login_required
+@manager_required
+@require_POST
+def order_edit(request, public_id):
+    order = _mine(request, public_id)
+    if not order.customer_can_change:
+        messages.error(request, 'Este pedido j\u00e1 foi confirmado e n\u00e3o pode ser alterado.')
+        return redirect('wholesale_order', public_id=order.public_id)
+    reopen_in_cart(order, request.user)
+    request.session[EDITING_KEY] = str(order.public_id)
+    return redirect('wholesale_cart')
+
+
+@login_required
+@manager_required
+@require_POST
+def order_edit_stop(request):
+    """Leave the order as it was sent, and the cart empty."""
+    if request.session.pop(EDITING_KEY, None):
+        CartLine.objects.filter(user=request.user).delete()
+    return redirect('wholesale_orders')
 
 
 @login_required
@@ -267,7 +322,8 @@ def _cancel(order, user):
 @require_POST
 def order_cancel(request, public_id):
     order = _mine(request, public_id)
-    if _cancel(order, request.user):
+    if cancel_order(order, request.user, OrderRequest.CUSTOMER_CAN_CANCEL):
+        request.session.pop(EDITING_KEY, None)
         messages.success(request, 'Pedido cancelado.')
     return redirect('wholesale_order', public_id=order.public_id)
 
@@ -280,8 +336,8 @@ def order_requests(request):
         order = OrderRequest.objects.filter(pk=_number(request.POST.get('id')) or 0).first()
         if order is None:
             messages.error(request, 'That request no longer exists.')
-        elif request.POST.get('action') == 'cancel' and _cancel(order, request.user):
+        elif request.POST.get('action') == 'cancel' and cancel_order(order, request.user, OrderRequest.SHOP_CAN_CANCEL):
             messages.success(request, f'Request #{order.id} cancelled.')
         return redirect('order_requests')
-    orders = (OrderRequest.objects.select_related('customer', 'submitted_by').prefetch_related('lines'))
+    orders = (OrderRequest.objects.select_related('customer', 'submitted_by', 'pedido').prefetch_related('lines'))
     return render(request, 'stock/order_requests.html', {'orders': orders})

@@ -1,12 +1,24 @@
 {% extends 'stock/wholesale_base.html' %}
 {% block wholesale %}
+{% if order.status != 'cancelled' %}
+<ol class="wc-steps" aria-label="Estado do pedido">
+  <li class="on">Enviado</li>
+  <li class="{% if order.status != 'submitted' %}on{% endif %}">Stock confirmado</li>
+  <li class="{% if order.status == 'completed' %}on{% endif %}">Concluído</li>
+</ol>
+{% endif %}
+{% if order.status == 'submitted' %}
+<p class="wc-told">Recebemos o seu pedido. Vamos confirmar o stock o mais depressa possível e entraremos em contacto para a confirmação final. Pode contactar-nos a qualquer momento para saber como está o pedido{% if shop_phone %}: <a href="tel:{{ shop_phone|cut:' ' }}">{{ shop_phone }}</a>{% endif %}. Até lá pode alterar ou cancelar o pedido.</p>
+{% elif order.status == 'confirmed' %}
+<p class="wc-told">Stock confirmado. O pedido já não pode ser alterado. Para qualquer questão contacte-nos{% if shop_phone %}: <a href="tel:{{ shop_phone|cut:' ' }}">{{ shop_phone }}</a>{% endif %}.</p>
+{% endif %}
 <div class="wc-cols">
   <section class="wc-card" aria-label="Pedido">
     <h2>Pedido #{{ order.id }} &middot; <span class="wc-status {{ order.status }}">{{ order.get_status_display }}</span></h2>
     <p class="wc-small">{{ order.created_at|date:"Y-m-d H:i" }}</p>
     {% for line in order.lines.all %}
       <div class="wc-line" style="grid-template-columns:minmax(0,1fr) auto;">
-        <span class="wc-main"><span class="wc-brand"><span>{{ line.barcode }}</span></span><span class="wc-title">{{ line.name }}</span></span>
+        <span class="wc-main"><span class="wc-brand"><span>{{ line.barcode }}</span></span><span class="wc-title">{{ line.name }}</span>{% if line.picks %}<span class="wc-contents d-block">{% include "stock/_wholesale_picks.html" with picks=line.picks %}</span>{% endif %}</span>
         <span class="wc-money"><b>&euro;{{ line.line_total|floatformat:2 }}</b> <small>{{ line.quantity }} &times; &euro;{{ line.final_price|floatformat:2 }}</small></span>
       </div>
     {% endfor %}
@@ -17,7 +29,7 @@
       <h2>Resumo</h2>
       <dl class="wc-sum">
         <dt>Produtos</dt><dd>&euro;{{ order.subtotal|floatformat:2 }}</dd>
-        {% if order.tier_total %}<dt>Desconto por volume</dt><dd>-&euro;{{ order.tier_total|floatformat:2 }}</dd>{% endif %}
+        {% if order.tier_total %}<dt>Desconto</dt><dd>-&euro;{{ order.tier_total|floatformat:2 }}</dd>{% endif %}
         <dt>{{ order.get_shipping_state_display }}</dt><dd>{% if order.shipping_state == 'pending' %}&mdash;{% else %}&euro;{{ order.shipping_fee|floatformat:2 }}{% endif %}</dd>
         <dt class="total">Total</dt><dd class="total">&euro;{{ order.total|floatformat:2 }}{% if order.shipping_state == 'pending' %} + portes{% endif %}</dd>
       </dl>
@@ -35,6 +47,9 @@ Ponto de recolha perto de ti
 {{ order.note }}{% endif %}</p>
     </section>
     {% if order.status == 'submitted' %}
+    <form method="post" action="{% url 'wholesale_order_edit' order.public_id %}"{% if bar.units %} onsubmit="return confirm('O carrinho atual será substituído por este pedido.')"{% endif %}>
+      {% csrf_token %}<button type="submit" class="btn btn-primary w-100">Alterar pedido</button>
+    </form>
     <form method="post" action="{% url 'wholesale_order_cancel' order.public_id %}" onsubmit="return confirm('Cancelar este pedido?')">
       {% csrf_token %}<button type="submit" class="btn btn-outline-danger w-100">Cancelar pedido</button>
     </form>

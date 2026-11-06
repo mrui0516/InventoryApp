@@ -561,8 +561,9 @@ class CartPageTests(PagesMixin):
         self.client.post(reverse("wholesale_customer"), {"customer": customer.pk})
         self._add()
         form = self.client.get(reverse("wholesale_cart")).context["form"]
-        self.assertEqual((form.initial["business_name"], form.initial["phone"], form.initial["address"]),
+        self.assertEqual((form.initial["contact_name"], form.initial["phone"], form.initial["address"]),
                          ("Loja Ana", "911", "Rua 2"))
+        self.assertNotIn("business_name", form.initial)
 
 
 class MyOrdersTests(PagesMixin):
