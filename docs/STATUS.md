@@ -73,7 +73,8 @@
 
 一条一行，最新在前。细节查 `git log`。
 
-- 2026-11-05: **Novidade / Mais vendido 和批发目录样板。** PDF 加 Nota 列；Catalog View 改成给批发客户看的列表样板（只有经理能看），数据走白名单投影 `services/wholesale_catalog.py`。
+- 2026-11-06: **型号按销量排序，取消 Novidade / Mais vendido。** PDF 和目录样板里同一 Type 的型号按累计销量排列；Nota 列和标签逻辑全部删除。
+- 2026-11-05: **批发目录样板。** Catalog View 改成给批发客户看的列表样板（只有经理能看），数据走白名单投影 `services/wholesale_catalog.py`。
 - 2026-11-05: **名称带 Type，客户 PDF 重排。** 除 Perfume 外名称以 Type 开头，搜索能搜 Type 和跨字段；PDF 按 Lattafa、产品数、Type、型号排列，EAN 在名称上方，加性别列，没货的附属产品不显示；打折导出文件名带代号（D25）。
 - 2026-11-05: **产品连接和 PDF 跳转。** Mix、Coffret、Body mist、Body spray、Air freshener 有清单，连接到香水或只写名称（迁移 0078），只用于显示；产品页和客户 PDF 互相跳转。
 - 2026-11-05: **Settings → Catalog 完整。** 品牌、系列、分类、浓度、香调都能自己管理，改名和合并同步产品文字；品牌 logo（迁移 0077）。

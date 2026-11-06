@@ -215,24 +215,49 @@ class PdfLayoutTests(TestCase):
         self.assertIn("Body spray", text)
         self.assertIn("Coffret", text)
 
-    def test_a_new_product_has_a_note(self):
+    def test_there_is_no_note_column(self):
         product = self._product("6290000083001", "Yara")
-        Purchase.objects.create(product=product, quantity=5, remaining=5, cost_price=Decimal("2"))
-        text = self._text({"Lattafa": [product]})
-        self.assertIn("Nota", text)
-        self.assertIn("Novidade", text)
-
-    def test_a_best_seller_has_a_note(self):
-        from datetime import timedelta
-        product = self._product("6290000083001", "Yara")
-        batch = Purchase.objects.create(product=product, quantity=9, remaining=9, cost_price=Decimal("2"))
-        Purchase.objects.filter(pk=batch.pk).update(date=timezone.now() - timedelta(days=100))
-        Sale.objects.create(order=SaleOrder.objects.create(), product=product, quantity=6, unit_price=Decimal("9"),
+        Purchase.objects.create(product=product, quantity=9, remaining=9, cost_price=Decimal("2"))
+        Sale.objects.create(order=SaleOrder.objects.create(), product=product, quantity=50, unit_price=Decimal("9"),
                             payment_method="cash")
-        self.assertIn("Mais vendido", self._text({"Lattafa": [product]}))
+        text = self._text({"Lattafa": [product]})
+        for word in ("Nota", "Novidade", "Mais vendido"):
+            self.assertNotIn(word, text)
 
-    def test_no_notes_no_column(self):
-        self.assertNotIn("Nota", self._text({"Lattafa": [self._product("6290000083001", "Yara")]}))
+    def _sell(self, product, units):
+        Sale.objects.create(order=SaleOrder.objects.create(), product=product, quantity=units, unit_price=Decimal("9"),
+                            payment_method="cash")
+
+    def test_inside_a_type_the_best_selling_line_comes_first(self):
+        quiet = self._product("6290000083001", "Q1", model="Alfa")
+        loud = self._product("6290000083002", "L1", model="Beta")
+        self._sell(loud, 9)
+        self._sell(quiet, 2)
+        text = self._text({"Lattafa": [quiet, loud]})
+        self.assertLess(text.index("L1"), text.index("Q1"))
+
+    def test_a_line_counts_all_its_products(self):
+        rows = [self._product("6290000083001", "A1", model="Alfa"), self._product("6290000083002", "A2", model="Alfa"),
+                self._product("6290000083003", "B1", model="Beta")]
+        self._sell(rows[0], 3)
+        self._sell(rows[1], 3)
+        self._sell(rows[2], 5)
+        text = self._text({"Lattafa": rows})
+        self.assertLess(text.index("A1"), text.index("B1"))
+
+    def test_each_type_ranks_its_own_lines(self):
+        spray = self._product("6290000083001", "S1", model="Alfa", product_type_id="body_spray")
+        bottle = self._product("6290000083002", "P1", model="Beta")
+        self._sell(spray, 50)
+        text = self._text({"Lattafa": [spray, bottle]})
+        self.assertLess(text.index("P1"), text.index("S1"))
+
+    def test_no_line_goes_last(self):
+        blank = self._product("6290000083001", "X1", model="")
+        lined = self._product("6290000083002", "Y1", model="Alfa")
+        self._sell(blank, 50)
+        text = self._text({"Lattafa": [blank, lined]})
+        self.assertLess(text.index("Y1"), text.index("X1"))
 
     def test_a_blank_name_prints_its_type(self):
         text = self._text({"Lattafa": [self._product("6290000083001", "", model="", product_type_id="air_freshener")]})

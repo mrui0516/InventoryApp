@@ -8,7 +8,6 @@ from django.urls import reverse
 from django.utils import timezone
 
 from stock.models import Category, Product, Purchase, Sale, SaleOrder, Store
-from stock.services.product_badges import BEST_SELLER, NEW, product_badges
 from stock.services.product_contents import save_contents
 from stock.services.wholesale_catalog import availability, catalog_rows, sellable_units
 
@@ -47,70 +46,6 @@ class CatalogMixin(TestCase):
         sale = Sale.objects.create(order=order, product=product, quantity=units, unit_price=Decimal("20"),
                                    payment_method="cash")
         Sale.objects.filter(pk=sale.pk).update(date=self.now - timedelta(days=days_ago))
-
-
-class NewProductTests(CatalogMixin):
-    def test_a_first_delivery_in_the_last_14_days_is_new(self):
-        fresh = self._product(units=5, days_ago=13)
-        self.assertEqual(product_badges([fresh]), {fresh.pk: NEW})
-
-    def test_a_first_delivery_older_than_14_days_is_not(self):
-        old = self._product(units=5, days_ago=15)
-        self.assertEqual(product_badges([old]), {})
-
-    def test_a_new_delivery_of_an_old_product_is_not_new(self):
-        old = self._product(units=5, days_ago=200)
-        self._batch(old, 5, 1)
-        self.assertEqual(product_badges([old]), {})
-
-    def test_a_new_product_sold_out_is_not_offered_as_new(self):
-        fresh = self._product(units=0, days_ago=2)
-        self.assertEqual(product_badges([fresh]), {})
-
-
-class BestSellerTests(CatalogMixin):
-    def _list(self, count):
-        return [self._product(name=f"P{n}", units=5) for n in range(count)]
-
-    def test_the_top_tenth_of_the_list_with_five_sold(self):
-        rows = self._list(20)
-        for n, units in enumerate((9, 8, 7)):
-            self._sold(rows[n], units)
-        self.assertEqual(product_badges(rows), {rows[0].pk: BEST_SELLER, rows[1].pk: BEST_SELLER})
-
-    def test_a_short_list_still_has_its_best(self):
-        rows = self._list(3)
-        self._sold(rows[1], 6)
-        self.assertEqual(product_badges(rows), {rows[1].pk: BEST_SELLER})
-
-    def test_fewer_than_five_sold_is_not_a_best_seller(self):
-        rows = self._list(3)
-        self._sold(rows[0], 4)
-        self.assertEqual(product_badges(rows), {})
-
-    def test_only_the_last_30_days_count(self):
-        rows = self._list(3)
-        self._sold(rows[0], 50, days_ago=31)
-        self.assertEqual(product_badges(rows), {})
-
-    def test_several_sales_add_up(self):
-        rows = self._list(3)
-        self._sold(rows[0], 3)
-        self._sold(rows[0], 3, days_ago=10)
-        self.assertEqual(product_badges(rows), {rows[0].pk: BEST_SELLER})
-
-    def test_a_sold_out_best_seller_is_not_shown(self):
-        gone = self._product(units=0)
-        self._sold(gone, 20)
-        self.assertEqual(product_badges([gone]), {})
-
-    def test_new_wins_when_it_is_both(self):
-        fresh = self._product(units=5, days_ago=2)
-        self._sold(fresh, 20)
-        self.assertEqual(product_badges([fresh]), {fresh.pk: NEW})
-
-    def test_nothing_to_rank(self):
-        self.assertEqual(product_badges([]), {})
 
 
 class SellableTests(CatalogMixin):
@@ -153,7 +88,7 @@ class RowsTests(CatalogMixin):
         self._product(units=9, gender="women")
         row = self._rows()[0]
         self.assertEqual(set(row), {"pk", "ean", "brand", "logo_brand", "title", "kind", "gender", "price", "state",
-                                    "state_label", "note", "image_url", "contents", "description"})
+                                    "state_label", "image_url", "contents", "description"})
 
     def test_out_of_stock_is_hidden_until_asked_for(self):
         self._product(name="Have", units=9)
@@ -208,19 +143,40 @@ class RowsTests(CatalogMixin):
         row = next(r for r in self._rows() if r["pk"] == mix.pk)
         self.assertEqual(row["contents"], ["Line Yara", "Oud"])
 
-    def test_the_note_comes_with_the_row(self):
-        self._product(units=9, days_ago=1)
-        self.assertEqual(self._rows()[0]["note"], NEW)
+    def test_inside_a_type_the_best_selling_line_comes_first(self):
+        quiet = self._product(name="A", units=9, model="Alfa")
+        loud = self._product(name="B", units=9, model="Beta")
+        self._sold(loud, 8)
+        self._sold(quiet, 2)
+        self.assertEqual([r["pk"] for r in self._rows()], [loud.pk, quiet.pk])
 
-    def test_a_filter_does_not_change_the_note(self):
-        rows = [self._product(name=f"P{n}", units=5) for n in range(20)]
-        self._sold(rows[0], 9)
-        self._sold(rows[1], 8)
-        self._sold(rows[2], 7)
-        hit = next(r for r in self._rows(query="P0") if r["pk"] == rows[0].pk)
-        self.assertEqual(hit["note"], BEST_SELLER)
-        third = next(r for r in self._rows(query="P2") if r["pk"] == rows[2].pk)
-        self.assertEqual(third["note"], "")
+    def test_a_line_counts_all_its_products(self):
+        a = self._product(name="A", units=9, model="Alfa")
+        b = self._product(name="B", units=9, model="Alfa")
+        c = self._product(name="C", units=9, model="Beta")
+        self._sold(a, 3)
+        self._sold(b, 3)
+        self._sold(c, 5)
+        self.assertEqual([r["pk"] for r in self._rows()][-1], c.pk)
+
+    def test_old_sales_count_too(self):
+        old = self._product(name="A", units=9, model="Alfa")
+        new = self._product(name="B", units=9, model="Beta")
+        self._sold(old, 9, days_ago=400)
+        self._sold(new, 2)
+        self.assertEqual(self._rows()[0]["pk"], old.pk)
+
+    def test_the_type_still_comes_before_the_sales(self):
+        spray = self._product(name="S", units=9, model="Alfa", product_type_id="body_spray")
+        bottle = self._product(name="P", units=9, model="Beta")
+        self._sold(spray, 50)
+        self.assertEqual([r["pk"] for r in self._rows()], [bottle.pk, spray.pk])
+
+    def test_no_line_goes_last(self):
+        blank = self._product(name="X", units=9, model="")
+        lined = self._product(name="Y", units=9, model="Alfa")
+        self._sold(blank, 50)
+        self.assertEqual([r["pk"] for r in self._rows()], [lined.pk, blank.pk])
 
 
 class PageTests(CatalogMixin):
@@ -267,6 +223,13 @@ class PageTests(CatalogMixin):
         context = self._get().context
         self.assertEqual([t["value"] for t in context["types"]], ["coffret"])
         self.assertEqual(context["brands"], ["Lattafa"])
+
+    def test_there_are_no_notes(self):
+        product = self._product(units=9, days_ago=1)
+        self._sold(product, 50)
+        html = self._get().content.decode()
+        self.assertNotIn("Novidade", html)
+        self.assertNotIn("Mais vendido", html)
 
     def test_the_description_leaves_out_what_inspired_it(self):
         self._product(units=9, description="Doce", inspired_by_text="Baccarat")

@@ -7,10 +7,11 @@ accident. Nothing here may import stock.views.
 """
 from collections import Counter
 
-from ..models import Product, ProductType
+from django.db.models import Sum
+
+from ..models import Product, ProductType, Sale
 from .availability import LOW_STOCK_BELOW
 from .names import customer_catalog_case
-from .product_badges import product_badges
 from .product_contents import content_label
 from .product_search import product_search_q
 from .store_stock import active_stores, full_price_units, stock_by_store
@@ -24,6 +25,12 @@ def brand_sort_key(name, count):
     """Lattafa, the shop's main brand, then the biggest brands first."""
     name = (name or '').strip().lower()
     return (name != FIRST_BRAND, -count, name)
+
+
+def units_sold(product_ids):
+    """``{product_id: units}`` sold so far. Decides an order, never printed."""
+    return dict(Sale.objects.filter(product_id__in=product_ids).values_list('product')
+                .annotate(units=Sum('quantity')).order_by())
 
 
 def sellable_units(product_ids):
@@ -55,7 +62,7 @@ def _image_url(product):
     return ''
 
 
-def _row(product, units, notes):
+def _row(product, units):
     kind = product.type_info
     state, state_label = availability(units)
     price = product.wholesale_price
@@ -71,15 +78,19 @@ def _row(product, units, notes):
         'price': price if price and price > 0 else None,
         'state': state,
         'state_label': state_label,
-        'note': notes.get(product.pk, ''),
         'image_url': _image_url(product),
         'contents': [content_label(row) for row in contents],
         'description': product.composed_description(include_inspiration=False),
     }
 
 
+def _line_key(product):
+    return (product.brand or '').lower(), product.product_type_id, (product.model or '').strip().lower()
+
+
 def catalog_rows(query='', brand='', kind='', gender='', show_all=False):
-    """The list, in order: available first, then by brand, type and line."""
+    """The list, in order: available first, then by brand and type, then each
+    type's best-selling lines first."""
     products = (Product.objects.select_related('brand_master')
                 .prefetch_related('images', 'contents__linked', 'fragrance_families'))
     if query:
@@ -92,19 +103,22 @@ def catalog_rows(query='', brand='', kind='', gender='', show_all=False):
         products = products.filter(gender=gender)
     products = list(products)
 
-    # Against the whole catalogue, so a filter never moves a note.
-    notes = product_badges(list(Product.objects.only('pk')))
     units = sellable_units([p.pk for p in products])
-    rows = [(p, _row(p, units.get(p.pk, 0), notes)) for p in products]
+    rows = [(p, _row(p, units.get(p.pk, 0))) for p in products]
     if not show_all:
         rows = [(p, row) for p, row in rows if row['state'] != 'out-stock']
 
     sizes = Counter((row['brand'] or '').lower() for _, row in rows)
+    sold = units_sold([p.pk for p, _ in rows])
+    lines = Counter()
+    for product, row in rows:
+        lines[_line_key(product)] += sold.get(product.pk, 0)
 
     def order(pair):
         product, row = pair
         return (STATE_ORDER[row['state']], brand_sort_key(row['brand'], sizes[(row['brand'] or '').lower()]),
-                product.type_info.sort_order, (product.model or '').lower(), row['title'].lower())
+                product.type_info.sort_order, not (product.model or '').strip(), -lines[_line_key(product)],
+                (product.model or '').lower(), row['title'].lower())
 
     return [row for _, row in sorted(rows, key=order)]
 

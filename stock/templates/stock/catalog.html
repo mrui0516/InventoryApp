@@ -23,8 +23,6 @@
   .wc-brand{ display:flex; align-items:center; gap:.35rem; font-size:.85rem; color:var(--app-muted); min-width:0; }
   .wc-brand span:last-child{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .wc-title{ font-weight:700; overflow-wrap:anywhere; }
-  .wc-note{ display:inline-block; margin-left:.35rem; padding:0 .4rem; border-radius:999px; font-size:.85rem; font-weight:700; white-space:nowrap; background:#ccfbf1; color:#115e59; }
-  .wc-note.best{ background:#fef3c7; color:#92400e; }
   .wc-contents{ font-size:.85rem; color:var(--app-muted); overflow-wrap:anywhere; }
   .wc-price{ font-weight:800; font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
   .wc-price.none{ font-weight:600; font-size:.85rem; color:var(--app-muted); }
@@ -77,7 +75,7 @@
         <span class="wc-photo">{% if row.image_url %}<img src="{{ row.image_url }}" alt="" loading="lazy">{% else %}&mdash;{% endif %}</span>
         <span class="wc-main">
           <span class="wc-brand">{% brand_logo row.logo_brand size=16 fallback=row.brand %}<span>{{ row.brand }} &middot; {{ row.ean }}</span></span>
-          <span class="wc-title">{{ row.title }}</span>{% if row.note %}<span class="wc-note{% if row.note == 'Mais vendido' %} best{% endif %}">{{ row.note }}</span>{% endif %}
+          <span class="wc-title">{{ row.title }}</span>
           {% if row.contents %}<span class="wc-contents d-block">{{ row.contents|join:" · " }}</span>{% endif %}
         </span>
         <span class="wc-kind">{{ row.kind }}</span>

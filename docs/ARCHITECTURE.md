@@ -507,8 +507,7 @@ PDF 的 `_brand_logo` 文件缺失时跳过。`empty_brands` 默认不包括有 
 
 可售量 `sellable_units()`：有效门店逐店扣样品，加未分配门店的批次；停用门店不算。客户只看到 `availability()` 的三种状态，在途不算第四种。
 
-`services/product_badges.py::product_badges(products)` 是 PDF 和目录共用的标签：Novidade 看第一批到货日期（`Min(Purchase.date)`，新到一批老产品不算），Mais vendido 看最近 30 天销量。
-只标 `offerable_ids` 里的产品。目录按全部产品排名，所以筛选不会改变标签；PDF 按这份 PDF 里的产品排名。
+型号顺序：`units_sold()` 取累计销量，同一品牌、同一 Type 内按型号合计排序，PDF 和目录规则相同。销量只用来排序，不输出。
 
 ### 5.13y2 产品之间的连接（`ProductContent`，2026-11-05）
 
