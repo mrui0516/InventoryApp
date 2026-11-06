@@ -3,6 +3,8 @@
 {% block finance %}
 <div class="fin-kpis">
   <div class="fin-kpi hi"><span class="k">Owed to suppliers</span><span class="v">&euro;{{ owed|floatformat:2 }}</span></div>
+  <div class="fin-kpi"><span class="k">Overdue</span><span class="v{% if overdue %} neg{% endif %}">&euro;{{ overdue|floatformat:2 }}</span></div>
+  {% for f in forecast %}{% if not f.late %}<div class="fin-kpi"><span class="k">{{ f.label }}</span><span class="v">&euro;{{ f.amount|floatformat:2 }}</span></div>{% endif %}{% endfor %}
 </div>
 
 {% for g in groups %}
@@ -12,12 +14,25 @@
       <button type="button" class="fin-row" data-layer="pay-{{ o.order.id }}">
         <span class="main">#{{ o.order.id }}{% if o.order.invoice_no %} &middot; {{ o.order.invoice_no }}{% endif %}</span>
         <span class="amt{% if o.owed < 0 %} neg{% endif %}">&euro;{{ o.owed|floatformat:2 }}</span>
-        <span class="sub">{{ o.order.created_at|date:"j M Y" }}{% if o.order.status == 'pending_receipt' %} &middot; on the way{% endif %}</span>
+        <span class="sub">{% if o.next_due %}<span class="{% if o.overdue %}neg{% endif %}">{% if o.overdue %}Overdue{% else %}Due{% endif %} {{ o.next_due|date:"j M Y" }}</span>{% if o.order.pay_instalments > 1 %} &middot; {{ o.order.pay_instalments }} instalments{% endif %}{% else %}{{ o.order.created_at|date:"j M Y" }}{% endif %}{% if o.order.status == 'pending_receipt' %} &middot; on the way{% endif %}</span>
         <span class="sub">of &euro;{{ o.due|floatformat:2 }}</span>
+        <span class="sub wide">{% for s in o.shops %}{{ s.label }} &euro;{{ s.cost|floatformat:2 }}{% if not forloop.last %} &middot; {% endif %}{% endfor %}</span>
       </button>
       <template id="pay-{{ o.order.id }}">
         <div data-part="title">Pay #{{ o.order.id }} &middot; {{ g.supplier }}</div>
         <div data-part="body">
+          <dl class="sp-kv">
+            {% for s in o.shops %}<div><dt>{{ s.label }}</dt><dd>{{ s.units }} pcs &middot; &euro;{{ s.cost|floatformat:2 }}</dd></div>{% endfor %}
+          </dl>
+          <section class="sp-sec"><h6>Due</h6>
+            {% for part in o.schedule %}<div class="sp-row"><span class="sp-row-main">{{ part.on|date:"j M Y" }}</span><span class="sp-row-fig">{% if part.left %}&euro;{{ part.left|floatformat:2 }}{% else %}Paid{% endif %}</span></div>{% endfor %}
+          </section>
+          <form method="post" action="{% url 'finance_order_terms' o.order.id %}" class="fin-form">
+            {% csrf_token %}
+            <label>First due<input type="date" name="first_due" class="form-control" value="{{ o.schedule.0.on|date:'Y-m-d' }}" required></label>
+            <label>Instalments<input type="number" name="instalments" class="form-control" min="1" max="{{ max_instalments }}" value="{{ o.order.pay_instalments }}" required></label>
+            <div class="wide"><button type="submit" class="btn btn-outline-primary">Save terms</button></div>
+          </form>
           <form method="post" action="{% url 'finance_payment_add' o.order.id %}" class="fin-form">
             {% csrf_token %}
             {% submit_token %}

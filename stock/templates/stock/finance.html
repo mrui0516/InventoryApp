@@ -62,6 +62,27 @@
   {% if cash.owner_paid %}<p class="fin-empty">Paid by the owner: &euro;{{ cash.owner_paid|floatformat:"2g" }}</p>{% endif %}
 </section>
 
+{% if forecast %}
+<section class="fin-card" aria-label="Supplier payments due">
+  <h2>Supplier payments due</h2>
+  <table class="fin-table">
+    <tbody>
+      {% for f in forecast %}<tr><td class="{% if f.late %}neg{% endif %}">{{ f.label }}</td><td class="{% if f.late %}neg{% endif %}">{{ f.amount|floatformat:"2g" }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<section class="fin-card" aria-label="Goods received">
+  <h2>Goods received</h2>
+  <table class="fin-table">
+    <thead><tr><th></th><th>Units</th><th>Cost</th></tr></thead>
+    <tbody>
+      {% for r in received %}<tr><td>{{ r.label }}</td><td>{{ r.units }}</td><td>{{ r.cost|floatformat:"2g" }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+
 <section class="fin-card" aria-label="Owner's money">
   <h2>Owner's money</h2>
   <table class="fin-table">

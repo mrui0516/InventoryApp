@@ -29,16 +29,18 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from urllib.parse import urlencode
 
+from django.contrib.auth.decorators import login_required
 from django.db.models import Q
 from django.db.models.functions import Coalesce
-from django.shortcuts import render
+from django.http import Http404, HttpResponse
+from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import InboundOrder, Purchase, Sale, SaleOrder
+from .models import InboundOrder, PrintProfile, Purchase, Sale, SaleOrder, Store
 from .permissions import (has_admin_access, has_manager_access,
                           has_order_reconciliation_access,
-                          has_sales_sensitive_access)
+                          has_sales_sensitive_access, manager_required)
 from .services import finance
 from .services.store_stock import merge_batches
 from .services.inbound_rollback import can_roll_back
@@ -503,8 +505,10 @@ def load_purchases(start, end, q, next_url, store=None, by='received', with_paym
         supplier = order.supplier or next((i.supplier for i in items if i.supplier_id), None)
         rollback_ok, rollback_reason = can_roll_back(order) if batches else (False, '')
         due = paid_so_far = None
+        terms = {}
         if with_payments and (cut_off and order.created_at.date() >= cut_off or order.payments.exists()):
             due, paid_so_far = finance.order_due(order), finance.order_paid(order)
+            terms = finance.order_terms(order, due, paid_so_far)
         paid = timezone.localtime(order.created_at)
         arrived = timezone.localtime(min(b.date for b in batches)) if batches else None
         created = paid if by == 'paid' or arrived is None else arrived
@@ -513,8 +517,11 @@ def load_purchases(start, end, q, next_url, store=None, by='received', with_paym
             'iva_rate': order.iva_rate,
             'shipping': order.shipping,
             'invoice_url': reverse('inbound_invoice', args=[order.id]) if order.invoice_file else '',
+            'pdf_url': reverse('inbound_order_pdf', args=[order.id]),
             'order_paid': paid_so_far,
             'order_owing': None if due is None else due - paid_so_far,
+            'next_due': terms.get('next_due'),
+            'overdue': terms.get('overdue'),
             'paid_on': paid.date(),
             'received_on': arrived.date() if arrived else None,
             'key': f'in-{order.id}',
@@ -564,6 +571,7 @@ def load_purchases(start, end, q, next_url, store=None, by='received', with_paym
             'ref': 'Stock-in without supplier',
             'short_ref': 'Direct',
             'rollback_ids': ','.join(str(b.id) for b in purchases),
+            'pdf_url': f"{reverse('direct_purchase_pdf')}?{urlencode({'ids': ','.join(str(b.id) for b in purchases)})}",
             'can_rollback': rollback_ok,
             'rollback_reason': rollback_reason,
             'invoice_no': '',
@@ -605,6 +613,16 @@ def load_purchases(start, end, q, next_url, store=None, by='received', with_paym
         group['opens_day'] = group['day'] != previous_day
         previous_day = group['day']
     return groups
+
+
+def _purchase_shop_totals(groups):
+    totals = {}
+    for group in groups:
+        for row in group['shops']:
+            total = totals.setdefault(row['label'], {'label': row['label'], 'qty': 0, 'cost': ZERO})
+            total['qty'] += row['qty']
+            total['cost'] += row['cost']
+    return list(totals.values())
 
 
 # ---------------------------------------------------------------- analysis
@@ -704,11 +722,13 @@ def orders_page(request):
         'channel': params['ch'],
         'channel_urls': [{'label': label, 'on': params['ch'] == value, 'url': page_url(params, ch=value or None)}
                          for value, label in (('', 'All'), ('retail', 'Retail'), ('revenda', 'Revenda'))],
-        # The PDF prints what is on screen: same range, search, payment and channel.
+        # The PDF prints what is on screen: the same part, range and filters.
         'export_url': (f"{reverse('export_sales_purchases_pdf')}?" + urlencode(
-            [(k, v) for k, v in (('start_date', start.isoformat()), ('end_date', end.isoformat()),
-                                 ('q', params['q']), ('payment', params['payment']),
-                                 ('ch', params['ch'])) if v])),
+            [(k, v) for k, v in (('view', '' if view == 'sales' else view),
+                                 ('start_date', start.isoformat()), ('end_date', end.isoformat()),
+                                 ('q', params['q']), ('payment', params['payment']), ('ch', params['ch']),
+                                 ('pdate', params['pdate'] if view == 'purchases' and params['pdate'] == 'paid' else ''),
+                                 ('year', params['year_raw'] if view == 'analysis' else '')) if v])),
     }
 
     if view in ('sales', 'analysis'):
@@ -760,18 +780,12 @@ def orders_page(request):
         context['pdate_urls'] = [{'label': label, 'on': params['pdate'] == value,
                                   'url': page_url(params, pdate=None if value == 'received' else value)}
                                  for value, label in (('received', 'Received'), ('paid', 'Paid'))]
-        shop_totals = {}
-        for group in purchases:
-            for row in group['shops']:
-                total = shop_totals.setdefault(row['label'], {'label': row['label'], 'qty': 0, 'cost': ZERO})
-                total['qty'] += row['qty']
-                total['cost'] += row['cost']
         context.update({
             'purchases': purchases,
             'total_purchase_amount': sum((g['cost'] for g in purchases), ZERO),
             'total_purchase_orders': len(purchases),
             'total_purchase_qty': sum(g['qty'] for g in purchases),
-            'purchase_shop_totals': list(shop_totals.values()),
+            'purchase_shop_totals': _purchase_shop_totals(purchases),
         })
 
     else:  # analysis
@@ -811,10 +825,134 @@ def orders_page(request):
     return render(request, 'stock/sales_records.html', context)
 
 
+def _pdf_response(pdf, name):
+    response = HttpResponse(pdf, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{name}"'
+    return response
+
+
+def _range_label(start, end):
+    return (start.strftime('%d/%m/%Y') if start == end else
+            f"{start.strftime('%d/%m/%Y')} - {end.strftime('%d/%m/%Y')}")
+
+
+def _file_range(start, end):
+    return start.isoformat() if start == end else f'{start.isoformat()}_to_{end.isoformat()}'
+
+
+def _generated():
+    return timezone.localtime().strftime('%d/%m/%Y %H:%M')
+
+
+def _export_purchases(request, params, store):
+    from .services import inbound_report_pdf
+
+    start, end = params['start'], params['end']
+    with_payments = has_admin_access(request.user)
+    groups = load_purchases(start, end, params['q'], '', store=store, by=params['pdate'],
+                            with_payments=with_payments)
+    pdf = inbound_report_pdf.build_inbound_report_pdf(
+        profile=PrintProfile.get_for_store(store),
+        range_label=_range_label(start, end),
+        store_label=store.name if store else 'All stores',
+        generated_label=_generated(),
+        filter_label=f'Filtered: search "{params["q"]}"' if params['q'] else '',
+        date_label='By day paid' if params['pdate'] == 'paid' else 'By day received',
+        groups=groups,
+        shop_totals=_purchase_shop_totals(groups),
+        with_payments=with_payments,
+    )
+    return _pdf_response(pdf, f'Inbound_{_file_range(start, end)}.pdf')
+
+
+def _export_analysis(request, params, store, today):
+    from .services import analysis_report_pdf
+
+    start, end = params['start'], params['end']
+    show_profit = bool(getattr(request.user, 'is_superuser', False))
+    active_store, store_is_all = resolve_active_store(request)
+    orders = load_orders(start, end, active_store=active_store, store_is_all=store_is_all, show_profit=show_profit)
+    purchases = load_purchases(start, end, '', '', store=store)
+    trend, payments, top_products = build_analysis(orders, purchases, show_profit)
+    overview = build_yearly_sales_overview(resolve_year(params['year_raw'], today), today,
+                                           selected_category_ids=[], show_profit=show_profit, store=store)
+    pdf = analysis_report_pdf.build_analysis_report_pdf(
+        profile=PrintProfile.get_for_store(store),
+        range_label=_range_label(start, end),
+        store_label=store.name if store else 'All stores',
+        generated_label=_generated(),
+        summary=summarize(orders),
+        purchases_total=sum((group['cost'] for group in purchases), ZERO),
+        trend=trend, payments=payments, top_products=top_products, overview=overview,
+        show_profit=show_profit,
+    )
+    return _pdf_response(pdf, f'Analysis_{_file_range(start, end)}.pdf')
+
+
+def _inbound_doc_shops(items):
+    """The shop columns of a delivery: those that received any of it."""
+    names = {s.id: s.name.split()[0] for s in Store.objects.all()}
+    used = sorted({shop_id for item in items for shop_id, qty in item.by_shop.items() if qty and shop_id},
+                  key=lambda shop_id: names.get(shop_id, ''))
+    return [(shop_id, names.get(shop_id, 'Shop')) for shop_id in used]
+
+
+@login_required
+@manager_required
+def inbound_order_pdf(request, order_id):
+    """One delivery on its own. Costs as on Purchases; the payment for an admin only."""
+    from .services import inbound_report_pdf
+
+    order = get_object_or_404(InboundOrder.objects.select_related('supplier'), pk=order_id)
+    batches = list(order.items.select_related('product'))
+    items = _annotate_purchase_items(merge_batches(batches, by='received') if batches else _pending_lines(order, None))
+    payment = None
+    if has_admin_access(request.user) and (finance.tracks_payment(order) or order.payments.exists()):
+        due, paid = finance.order_due(order), finance.order_paid(order)
+        payment = {'paid': paid, 'owing': due - paid, 'schedule': finance.schedule(order, due, paid)}
+    received = order.received_at if batches else None
+    summary = []
+    if order.iva_rate:
+        summary.append((f'IVA {order.iva_rate:.0f}%', 'included'))
+    if order.shipping:
+        summary.append(('Shipping', f'EUR {order.shipping:,.2f} included'))
+    pdf = inbound_report_pdf.build_inbound_doc_pdf(
+        profile=PrintProfile.get_for_store(None),
+        title=f'INBOUND #{order.id}',
+        right_lines=[timezone.localtime(order.created_at).strftime('%d/%m/%Y'),
+                     'On the way' if not batches else 'Received'],
+        party=[('Supplier', order.supplier.name if order.supplier else ''), ('Invoice', order.invoice_no or ''),
+               ('Invoice date', order.invoice_date.strftime('%d/%m/%Y') if order.invoice_date else ''),
+               ('Received', timezone.localtime(received).strftime('%d/%m/%Y') if received else ''),
+               ('Note', order.note or '')],
+        items=items, shops=_inbound_doc_shops(items), summary=summary, payment=payment,
+    )
+    return _pdf_response(pdf, f'Inbound_{order.id}.pdf')
+
+
+@login_required
+@manager_required
+def direct_purchase_pdf(request):
+    """A stock-in with no order: the batches saved together."""
+    from .services import inbound_report_pdf
+
+    ids = [int(pk) for pk in (request.GET.get('ids') or '').split(',') if pk.strip().isdigit()]
+    batches = list(Purchase.objects.filter(pk__in=ids, inbound_order__isnull=True).select_related('product', 'supplier'))
+    if not batches:
+        raise Http404
+    items = _annotate_purchase_items(merge_batches(batches, by='received'))
+    day = timezone.localtime(batches[0].date)
+    names = sorted({b.supplier.name for b in batches if b.supplier_id})
+    pdf = inbound_report_pdf.build_inbound_doc_pdf(
+        profile=PrintProfile.get_for_store(None), title='STOCK-IN', right_lines=[day.strftime('%d/%m/%Y')],
+        party=[('Supplier', ', '.join(names))], items=items, shops=_inbound_doc_shops(items), summary=[],
+    )
+    return _pdf_response(pdf, f'Stock-in_{day.date().isoformat()}.pdf')
+
+
 def export_report(request):
-    """Orders > Export PDF: the sales report for exactly what the page shows."""
-    from django.http import HttpResponse
-    from .models import PrintProfile
+    """Orders > Export PDF: the part on screen, for exactly what the page shows.
+    Sales, Purchases and Analysis each have a report of their own."""
     from .services import sales_report_pdf
 
     today = timezone.localdate()
@@ -824,6 +962,11 @@ def export_report(request):
     start, end = params['start'], params['end']
     show_profit = bool(getattr(request.user, 'is_superuser', False))
     active_store, store_is_all = resolve_active_store(request)
+    scope = None if (store_is_all or active_store is None) else active_store
+    if params['view'] == 'purchases':
+        return _export_purchases(request, params, scope)
+    if params['view'] == 'analysis':
+        return _export_analysis(request, params, scope, today)
 
     orders = load_orders(start, end, active_store=active_store, store_is_all=store_is_all,
                          show_profit=show_profit)
@@ -850,23 +993,15 @@ def export_report(request):
         filters.append(f"paid by {PAYMENT_LABELS.get(params['payment'], params['payment'])}")
     if params['ch']:
         filters.append('Revenda only' if params['ch'] == 'revenda' else 'Retail only')
-    store = None if (store_is_all or active_store is None) else active_store
-    range_label = (start.strftime('%d/%m/%Y') if start == end else
-                   f"{start.strftime('%d/%m/%Y')} - {end.strftime('%d/%m/%Y')}")
-
     pdf = sales_report_pdf.build_sales_report_pdf(
-        profile=PrintProfile.get_for_store(store),
-        range_label=range_label,
-        store_label=store.name if store else 'All stores',
-        generated_label=timezone.localtime().strftime('%d/%m/%Y %H:%M'),
+        profile=PrintProfile.get_for_store(scope),
+        range_label=_range_label(start, end),
+        store_label=scope.name if scope else 'All stores',
+        generated_label=_generated(),
         filter_label=('Filtered: ' + ', '.join(filters)) if filters else '',
         summary=summary,
         days=sorted(days.values(), key=lambda d: d['day'], reverse=True),
         orders=orders,
         show_profit=show_profit,
     )
-    name = (f"Sales_{start.isoformat()}.pdf" if start == end
-            else f"Sales_{start.isoformat()}_to_{end.isoformat()}.pdf")
-    response = HttpResponse(pdf, content_type='application/pdf')
-    response['Content-Disposition'] = f'attachment; filename="{name}"'
-    return response
+    return _pdf_response(pdf, f'Sales_{_file_range(start, end)}.pdf')

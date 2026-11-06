@@ -50,6 +50,10 @@ class InboundOrder(models.Model):
     # The whole shipping bill, allocated to the lines by hand (shipping_share).
     shipping = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     invoice_file = models.FileField(upload_to='invoices/%Y/', storage=PrivateStorage(), blank=True, default='')
+    # How the supplier gets paid: services/finance.py works the dates and amounts
+    # out from these, so editing the order moves them. No date: 30 days.
+    pay_instalments = models.PositiveSmallIntegerField(default=1)
+    pay_first_due = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -4,7 +4,7 @@ from django.contrib.auth import views as auth_views
 from django.conf import settings
 from django.conf.urls.static import static
 
-from . import catalog_views, finance_views, panel_views, pedido_views, views, wholesale_views
+from . import catalog_views, finance_views, orders_views, panel_views, pedido_views, views, wholesale_views
 
 
 urlpatterns = [
@@ -28,6 +28,8 @@ urlpatterns = [
     path('add-product/', views.add_product_view, name='add_product'),
     path('direct-purchases/rollback/', views.direct_stock_in_rollback, name='direct_stock_in_rollback'),
     path('inbound-orders/<int:order_id>/invoice/', views.inbound_invoice, name='inbound_invoice'),
+    path('inbound-orders/<int:order_id>/pdf/', orders_views.inbound_order_pdf, name='inbound_order_pdf'),
+    path('direct-purchases/pdf/', orders_views.direct_purchase_pdf, name='direct_purchase_pdf'),
     path('inbound-orders/<int:order_id>/rollback/', views.inbound_order_rollback,
          name='inbound_order_rollback'),
     path('categories/create/', views.create_category, name='create_category'),
@@ -57,6 +59,7 @@ urlpatterns = [
     path('finance/owner/<int:funding_id>/delete/', finance_views.owner_delete, name='finance_owner_delete'),
     path('finance/suppliers/', finance_views.payables_view, name='finance_payables'),
     path('finance/suppliers/<int:order_id>/pay/', finance_views.payment_add, name='finance_payment_add'),
+    path('finance/suppliers/<int:order_id>/terms/', finance_views.order_terms, name='finance_order_terms'),
     path('finance/payments/<int:payment_id>/delete/', finance_views.payment_delete, name='finance_payment_delete'),
     path('finance/monthly/<int:template_id>/confirm/', finance_views.template_confirm, name='finance_template_confirm'),
     path('finance/monthly/<int:template_id>/skip/', finance_views.template_skip, name='finance_template_skip'),

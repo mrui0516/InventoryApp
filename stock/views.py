@@ -55,6 +55,8 @@ from .models import (
     StockAdjustmentLog, SaleOrderPayment, Store, StoreProfile,
     PedidoDraft, Concentration, ProductType,
 )
+from .services import finance
+from .models.expenses import PAID_METHODS
 from .services import order_charges
 from .services import submissions
 from .services import card_fees
@@ -578,6 +580,7 @@ def _build_pending_reviews():
             'form': InboundReceiveForm(instance=order),
             'formset': formset,
             'lines': lines,
+            'pay': finance.terms_form(order),
         })
     return reviews
 
@@ -703,6 +706,11 @@ def inbound_view(request):
         'today': today,
         **_pending_context(),
         'alloc_stores': shops if len(shops) > 1 else [],
+        # Paying is Finance's, so the dialog asks only an admin.
+        'can_pay': has_admin_access(request.user),
+        'pay_shops': shops,
+        'pay_store_id': finance.BusinessSettings.get().purchasing_store_id,
+        'pay_methods': PAID_METHODS,
         # the shop's own receipts (all shops: each shop's part), this month
         'records_url': f"{reverse('sales_records')}?"
                        + urlencode({'view': 'purchases', 'start_date': today.replace(day=1).isoformat(),
@@ -898,6 +906,14 @@ def inbound_receive_view(request, order_id):
         formset = InboundPendingFormSet(request.POST, instance=order, prefix='lines')
 
         if form.is_valid() and formset.is_valid():
+            terms = None
+            if has_admin_access(request.user) and request.POST.get('pay_mode'):
+                from .services.store_stock import active_stores
+                try:
+                    terms = finance.read_terms(request.POST, {s.id: s for s in active_stores()})
+                except ValidationError as e:
+                    messages.error(request, f"Order #{order.id} not saved. {'; '.join(e.messages)}")
+                    return redirect('inbound')
             with transaction.atomic():
                 order = form.save(commit=False)
                 order.iva_rate = IVA_RATE if request.POST.get('add_iva') == '1' else Decimal('0.00')
@@ -948,11 +964,15 @@ def inbound_receive_view(request, order_id):
                         _bought_again(it.product)
                     order.mark_received(now)
                     order.pending_items.all().delete()
+                    if terms:
+                        finance.apply_terms(order, terms, request.user)
                     messages.success(
                         request,
                         f'Order #{order.id} received. {len(remaining_items)} product(s) added to stock.'
                     )
                     return redirect('inbound')
+                if terms:
+                    finance.apply_terms(order, terms, request.user)
 
             messages.success(request, f'Pending order #{order.id} saved.')
             return redirect('inbound_receive', order_id=order.id)

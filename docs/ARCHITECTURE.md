@@ -528,6 +528,13 @@ PDF 的 `_brand_logo` 文件缺失时跳过。`empty_brands` 默认不包括有 
 - Catálogo 的 tab 计数在 Python 里算：`catalog_rows` 取不含类型和品牌的全部行，先算类型计数，再算品牌计数，最后筛选分页。
 - 接账号系统时：`CartLine.user`、`OrderRequest.submitted_by` 换成客户身份，`customer` 由账号绑定决定，不再读 session。`OrderRequest.customer` 现在是 SET_NULL，架构文档要求上线时改成 PROTECT。
 
+### 5.13y1d 供应商付款条件和 Orders 导出（2026-11-06）
+
+- `InboundOrder.pay_instalments`、`pay_first_due` 只存计划，金额和日期由 `finance.schedule` 现算，所以改单不会留下过期金额。`pay_first_due` 为空表示默认 30 天，跟着发票日期走。
+- `finance.order_terms` 是单张的到期信息，`supplier_forecast` 按月汇总，`received_by_shop` 按 `received_store` 算收到的货，调货不影响。
+- Receive：`read_terms` 在写入前校验，`apply_terms` 和保存在同一事务；Paid 只付还欠的部分，重复保存不会重复付款。
+- `orders_views.export_report` 按 `view` 分发到 `sales_report_pdf`、`inbound_report_pdf`、`analysis_report_pdf`。
+
 ### 5.13y2 产品之间的连接（`ProductContent`，2026-11-05）
 
 `services/product_contents.py`。一行是一个名称，`linked` 可空；`name` 总是存着，所以被连接的产品归档或删除后名称还在。

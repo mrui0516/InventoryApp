@@ -1,12 +1,15 @@
 """The Finance section's figures: what was spent, owed, paid and earned."""
+import calendar
 from collections import defaultdict
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import ROUND_DOWN, Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import DecimalField, ExpressionWrapper, F, Sum
 from django.db.models.functions import Coalesce
+from django.utils import timezone
+from django.utils.dateparse import parse_date
 
 from ..models import (ARInvoice, ARPayment, BusinessSettings, Expense, ExpenseTemplate, ExpenseTemplateSkip,
                       FinanceLog, InboundOrder, OwnerFunding, Purchase, Sale, SaleOrder, SaleOrderCharge,
@@ -83,6 +86,10 @@ CENT = Decimal('0.01')
 # Unit costs are rounded, so an order with IVA adds up a few cents from the
 # supplier's own total: that is not a debt.
 ROUNDING = Decimal('1.00')
+TERM_DAYS = 30
+MAX_INSTALMENTS = 36
+PAY_MODES = ('paid', 'later', 'instalments')
+FORECAST_MONTHS = 6
 
 
 def _order_lines(order):
@@ -112,24 +119,185 @@ def order_paid(order):
     return sum((p.amount for p in order.payments.all()), ZERO)
 
 
+def tracks_payment(order):
+    """Orders from before ``payables_from`` have no record of what was paid."""
+    cut_off = BusinessSettings.get().payables_from
+    return cut_off is not None and order.created_at.date() >= cut_off
+
+
+def default_due(order):
+    """30 days after the invoice; with no invoice date, after the goods came in
+    or, while they are on the way, after the order was placed."""
+    if order.invoice_date:
+        return order.invoice_date + timedelta(days=TERM_DAYS)
+    when = order.received_at or order.placed_at or order.created_at
+    return timezone.localtime(when).date() + timedelta(days=TERM_DAYS)
+
+
+def first_due(order):
+    return order.pay_first_due or default_due(order)
+
+
+def _months_after(day, months):
+    index = day.month - 1 + months
+    year, month = day.year + index // 12, index % 12 + 1
+    return date(year, month, min(day.day, calendar.monthrange(year, month)[1]))
+
+
+def schedule(order, due, paid):
+    """``[{on, amount, left}]``: equal parts, one a month, the last taking the odd
+    cents. What was paid covers the earliest first, so a part payment needs no
+    link to any one instalment."""
+    parts = max(order.pay_instalments, 1)
+    each = (due / parts).quantize(CENT, rounding=ROUND_DOWN)
+    start, covered, rows = first_due(order), max(paid, ZERO), []
+    for number in range(parts):
+        amount = due - each * (parts - 1) if number == parts - 1 else each
+        used = min(amount, covered)
+        covered -= used
+        rows.append({'on': _months_after(start, number), 'amount': amount, 'left': amount - used})
+    return rows
+
+
+def order_terms(order, due, paid, today=None):
+    today = today or timezone.localdate()
+    rows = schedule(order, due, paid)
+    upcoming = next((row for row in rows if row['left'] > 0), None)
+    return {'schedule': rows, 'next_due': upcoming['on'] if upcoming else None,
+            'next_left': upcoming['left'] if upcoming else ZERO,
+            'overdue': bool(upcoming and upcoming['on'] < today)}
+
+
+def _shop_labels():
+    return {s.id: s.name.split()[0] for s in Store.objects.all()}
+
+
+def order_shops(order, labels=None):
+    """``[{label, units, cost}]``: each shop's goods on this order."""
+    labels = _shop_labels() if labels is None else labels
+    shops = {}
+    for shop_id, units, cost in _order_lines(order):
+        row = shops.setdefault(shop_id, {'label': labels.get(shop_id, 'Not split'), 'units': 0, 'cost': ZERO})
+        row['units'] += units
+        row['cost'] += cost
+    return sorted(shops.values(), key=lambda row: row['label'])
+
+
+def received_by_shop(start, end, store=None):
+    """``[{label, units, cost}]``: goods delivered to each shop in the range. A
+    transfer keeps both the day and the shop, so moving goods changes nothing."""
+    from .store_stock import active_stores
+    shops = [store] if store is not None else active_stores()
+    rows = {shop.id: {'label': shop.name.split()[0], 'units': 0, 'cost': ZERO} for shop in shops}
+    batches = Purchase.objects.filter(date__date__gte=start, date__date__lte=end, received_store__in=rows)
+    for batch in batches.only('quantity', 'cost_price', 'received_store_id'):
+        row = rows[batch.received_store_id]
+        row['units'] += batch.quantity
+        row['cost'] += (batch.cost_price or ZERO) * batch.quantity
+    return list(rows.values())
+
+
+def supplier_forecast(today, groups=None):
+    """``[{label, amount, late}]``: what suppliers still expect, overdue first, then
+    by month. This is what the cash flow has to find; nothing here is a payment."""
+    months = [_months_after(today.replace(day=1), n) for n in range(FORECAST_MONTHS)]
+    late, later, by_month = ZERO, ZERO, {month: ZERO for month in months}
+    for group in payables() if groups is None else groups:
+        for row in group['orders']:
+            for part in row['schedule']:
+                if part['left'] <= 0:
+                    continue
+                month = part['on'].replace(day=1)
+                if part['on'] < today:
+                    late += part['left']
+                elif month in by_month:
+                    by_month[month] += part['left']
+                else:
+                    later += part['left']
+    rows = [{'label': 'Overdue', 'amount': late, 'late': True}] if late else []
+    rows += [{'label': month.strftime('%b %Y'), 'amount': by_month[month], 'late': False}
+             for month in months if by_month[month]]
+    if later:
+        rows.append({'label': 'Later', 'amount': later, 'late': False})
+    return rows
+
+
+def read_terms(post, shops):
+    """What the Receive dialog chose, checked before anything is saved."""
+    mode = post.get('pay_mode')
+    if mode not in PAY_MODES:
+        raise ValidationError('Choose how the order is paid.')
+    terms = {'mode': mode, 'first_due': parse_date(post.get('pay_first_due') or ''), 'instalments': 1}
+    if mode == 'instalments':
+        raw = (post.get('pay_instalments') or '').strip()
+        terms['instalments'] = int(raw) if raw.isdigit() else 0
+        if not 2 <= terms['instalments'] <= MAX_INSTALMENTS:
+            raise ValidationError(f'Instalments: from 2 to {MAX_INSTALMENTS} months.')
+    if mode == 'paid':
+        raw = (post.get('pay_store') or '').strip()
+        terms.update(store=shops.get(int(raw)) if raw.isdigit() else None, method=post.get('pay_method'),
+                     paid_on=parse_date(post.get('pay_on') or ''))
+        if terms['store'] is None:
+            raise ValidationError('Choose the shop paying.')
+        if terms['method'] not in dict(PAID_METHODS):
+            raise ValidationError('Choose how it was paid.')
+        if terms['paid_on'] is None:
+            raise ValidationError('Choose the day it was paid.')
+    return terms
+
+
+def save_terms(order, first_due_on, instalments):
+    """The usual 30 days stay automatic, so correcting the invoice date moves them."""
+    order.pay_instalments = instalments
+    order.pay_first_due = None if first_due_on in (None, default_due(order)) else first_due_on
+    order.save(update_fields=['pay_instalments', 'pay_first_due'])
+
+
+def apply_terms(order, terms, user):
+    """Saved with the order. 'Paid' pays what is still owed, so saving twice pays once."""
+    order = InboundOrder.objects.get(pk=order.pk)
+    save_terms(order, None if terms['mode'] == 'paid' else terms['first_due'], terms['instalments'])
+    if terms['mode'] != 'paid':
+        return
+    owed = order_due(order) - order_paid(order)
+    if owed >= ROUNDING:
+        add_payment(order, store=terms['store'], amount=owed, paid_on=terms['paid_on'], method=terms['method'],
+                    note='', user=user)
+
+
+def terms_form(order):
+    """How the Receive dialog opens; None for an order Finance does not track."""
+    if not tracks_payment(order):
+        return None
+    due, paid = order_due(order), order_paid(order)
+    settled = due > 0 and due - paid < ROUNDING
+    mode = 'paid' if settled else 'instalments' if order.pay_instalments > 1 else 'later'
+    return {'mode': mode, 'first_due': first_due(order), 'default_due': default_due(order),
+            'instalments': order.pay_instalments if order.pay_instalments > 1 else 3}
+
+
 def payables():
-    """``[{supplier, orders: [{order, due, paid, owed}], owed}]``, the most owed
-    first. Orders from before ``payables_from`` are left out: nothing says what
-    was paid for them. Paying too much shows as a negative."""
+    """``[{supplier, orders: [{order, due, paid, owed, shops, ...order_terms}], owed}]``,
+    the most owed first, and in each the soonest due. Orders from before
+    ``payables_from`` are left out: nothing says what was paid for them. Paying
+    too much shows as a negative."""
     cut_off = BusinessSettings.get().payables_from
     if cut_off is None:
         return []
     orders = (InboundOrder.objects.filter(created_at__date__gte=cut_off)
               .select_related('supplier').prefetch_related('items', 'pending_items', 'payments__store'))
-    groups = {}
+    groups, labels, today = {}, _shop_labels(), timezone.localdate()
     for order in orders:
         due, paid = order_due(order), order_paid(order)
         if abs(due - paid) < ROUNDING:
             continue
         name = order.supplier.name if order.supplier_id else 'No supplier'
         group = groups.setdefault(name, {'supplier': name, 'orders': [], 'owed': ZERO})
-        group['orders'].append({'order': order, 'due': due, 'paid': paid, 'owed': due - paid})
+        group['orders'].append({'order': order, 'due': due, 'paid': paid, 'owed': due - paid,
+                                'shops': order_shops(order, labels), **order_terms(order, due, paid, today)})
         group['owed'] += due - paid
+    for group in groups.values():
+        group['orders'].sort(key=lambda row: row['next_due'] or date.max)
     return sorted(groups.values(), key=lambda g: (-g['owed'], g['supplier']))
 
 

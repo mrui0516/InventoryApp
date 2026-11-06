@@ -130,7 +130,8 @@ body, body.bg-light{ background:var(--app-bg); color:var(--app-text); font-famil
 .btn:active{ transform:translateY(1px); }
 /* Data tables highlight the hovered row for scannability */
 .table tbody tr{ transition:background-color .12s ease; }
-.table:not(.table-borderless) tbody tr:hover{ background:var(--app-surface-2); }
+/* Only where there is a pointer: on a phone a tapped row would stay lit. */
+@media (hover:hover){ .table:not(.table-borderless) tbody tr:hover{ background:var(--app-surface-2); } }
 /* Clear affordance on everything clickable */
 button,summary,[role="button"],label[for]{ cursor:pointer; }
 

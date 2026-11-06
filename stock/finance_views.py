@@ -85,6 +85,8 @@ def overview_view(request):
         'profit': profit,
         'prior': prior,
         'cash': finance.month_cash(start, end, shop),
+        'forecast': [] if shop is not None else finance.supplier_forecast(timezone.localdate()),
+        'received': finance.received_by_shop(start, end, shop),
         'unpaid': finance.unpaid(shop),
         'columns': columns,
         'rows': finance.profit_rows(profit, columns),
@@ -302,10 +304,15 @@ def template_skip(request, template_id):
 @admin_required
 def payables_view(request):
     groups = finance.payables()
+    today = timezone.localdate()
+    forecast = finance.supplier_forecast(today, groups)
     return render(request, 'stock/finance_payables.html', {
         'tab': 'payables',
         'groups': groups,
         'owed': sum((g['owed'] for g in groups), finance.ZERO),
+        'forecast': forecast,
+        'overdue': sum((row['amount'] for row in forecast if row['late']), finance.ZERO),
+        'max_instalments': finance.MAX_INSTALMENTS,
         'recent': finance.recent_payments(),
         'shops': active_stores(),
         'shop': _shop(request),
@@ -334,6 +341,22 @@ def payment_add(request, order_id):
         messages.success(request, f'Payment saved on inbound #{order.id}.')
     except ValidationError as e:
         messages.error(request, '; '.join(e.messages))
+    return redirect('finance_payables')
+
+
+@login_required
+@admin_required
+@require_POST
+def order_terms(request, order_id):
+    order = get_object_or_404(InboundOrder, pk=order_id)
+    raw = (request.POST.get('instalments') or '').strip()
+    instalments = int(raw) if raw.isdigit() else 0
+    if not 1 <= instalments <= finance.MAX_INSTALMENTS:
+        messages.error(request, f'Instalments: from 1 to {finance.MAX_INSTALMENTS}.')
+    else:
+        finance.save_terms(order, parse_date(request.POST.get('first_due') or ''), instalments)
+        finance.log(request.user, 'changed', 'payment terms', order.id, f'Inbound #{order.id} · {instalments}')
+        messages.success(request, f'Payment terms saved on inbound #{order.id}.')
     return redirect('finance_payables')
 
 

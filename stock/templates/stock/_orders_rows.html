@@ -44,6 +44,7 @@
     </div>
     <div data-part="foot">
       {% if row.detail_url %}<a class="btn btn-primary" href="{{ row.detail_url }}">Print</a>{% endif %}
+      {% if row.order_id %}<a class="btn btn-outline-secondary" href="{% url 'sale_order_receipt_pdf' row.order_id %}" target="_blank" rel="noopener">Export PDF</a>{% endif %}
       {% if can_correct and row.correct_url %}<a class="btn btn-outline-danger" href="{{ row.correct_url }}">Correct</a>{% endif %}
     </div>
   </template>

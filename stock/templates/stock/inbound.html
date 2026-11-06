@@ -64,6 +64,8 @@
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
+          <details class="rcv-inv" data-rcv-inv open>
+            <summary>{{ pr.order.supplier.name }} &middot; {{ pr.order.invoice_no|default:"No invoice" }}{% if pr.order.invoice_date %} &middot; {{ pr.order.invoice_date|date:"Y-m-d" }}{% endif %}</summary>
           <div class="rcv-fields">
             <div class="position-relative">
               <label class="rcv-label">Supplier</label>
@@ -77,6 +79,7 @@
               <input type="file" name="invoice_file" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic" aria-label="Invoice file">
             </div>
           </div>
+          </details>
 
           <div class="rcv-costs">
             <label class="rcv-iva"><input type="checkbox" name="add_iva" value="1" data-rcv-iva{% if pr.order.iva_rate %} checked{% endif %}> Add IVA 23%</label>
@@ -127,7 +130,7 @@
                     <td data-label="Price &euro;">{{ line.form.cost_price }}</td>
                     <td class="rcv-iva-col" data-label="With IVA"><span data-rcv-with-iva></span></td>
                     <td data-label="Shipping &euro;">{{ line.form.shipping_share }}</td>
-                    {% for a in line.alloc %}<td data-label="{{ a.short }}"><input type="number" min="0" step="1" inputmode="numeric" class="alloc-in" name="alloc-{{ line.item.pk }}-{{ a.store.id }}" value="{{ a.value }}" aria-label="{{ a.store.name }}"></td>{% endfor %}
+                    {% for a in line.alloc %}<td data-label="{{ a.short }}"><input type="number" min="0" step="1" inputmode="numeric" class="alloc-in" data-rcv-shop="{{ a.short }}" name="alloc-{{ line.item.pk }}-{{ a.store.id }}" value="{{ a.value }}" aria-label="{{ a.store.name }}"></td>{% endfor %}
                     <td class="rcv-final" data-label="Unit cost"><b data-rcv-unit></b><small data-rcv-line></small></td>
                     <td class="rcv-del"><label class="rcv-del-x" title="Remove this line">{{ line.form.DELETE }}<span aria-hidden="true">&times;</span><span class="visually-hidden">Remove</span></label></td>
                   </tr>
@@ -136,15 +139,38 @@
             </table>
           </div>
 
+          {% if can_pay and pr.pay %}
+          <fieldset class="rcv-pay" data-rcv-pay>
+            <legend>Payment</legend>
+            <div class="rcv-seg" role="radiogroup" aria-label="Payment">
+              <label><input type="radio" name="pay_mode" value="paid"{% if pr.pay.mode == 'paid' %} checked{% endif %}><span>Paid</span></label>
+              <label><input type="radio" name="pay_mode" value="later"{% if pr.pay.mode == 'later' %} checked{% endif %}><span>Pay later</span></label>
+              <label><input type="radio" name="pay_mode" value="instalments"{% if pr.pay.mode == 'instalments' %} checked{% endif %}><span>Instalments</span></label>
+            </div>
+            <div class="rcv-pay-fields">
+              <label data-pay-for="paid"><span class="rcv-label">Paid by</span>
+                <select name="pay_store" class="form-select">{% for shop in pay_shops %}<option value="{{ shop.id }}"{% if shop.id == pay_store_id %} selected{% endif %}>{{ shop.name }}</option>{% endfor %}</select></label>
+              <label data-pay-for="paid"><span class="rcv-label">How</span>
+                <select name="pay_method" class="form-select">{% for value, name in pay_methods %}<option value="{{ value }}"{% if value == 'bank' %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
+              <label data-pay-for="paid"><span class="rcv-label">Paid on</span><input type="date" name="pay_on" class="form-control" value="{{ today|date:'Y-m-d' }}"></label>
+              <label data-pay-for="later instalments"><span class="rcv-label">Due</span><input type="date" name="pay_first_due" class="form-control" value="{{ pr.pay.first_due|date:'Y-m-d' }}" data-rcv-due="{{ pr.pay.default_due|date:'Y-m-d' }}"></label>
+              <label data-pay-for="instalments"><span class="rcv-label">Months</span><input type="number" name="pay_instalments" class="form-control" min="2" max="36" inputmode="numeric" value="{{ pr.pay.instalments }}"></label>
+              <span class="rcv-month" data-pay-for="instalments" data-rcv-month></span>
+            </div>
+          </fieldset>
+          {% endif %}
+
           <details class="rcv-more"{% if pr.order.note %} open{% endif %}>
             <summary>Note</summary>
             {{ pr.form.note }}
           </details>
+          <div class="rcv-danger">
+            <button type="submit" name="action" value="cancel" class="btn btn-link text-danger"
+                    onclick="return confirm('Cancel this pending order? This cannot be undone.');">Cancel order</button>
+          </div>
         </div>
         <div class="modal-footer rcv-foot">
-          <div class="rcv-total"><span>Total</span><b data-rcv-total></b></div>
-          <button type="submit" name="action" value="cancel" class="btn btn-link text-danger"
-                  onclick="return confirm('Cancel this pending order? This cannot be undone.');">Cancel order</button>
+          <div class="rcv-total"><span>Total</span><b data-rcv-total></b><small data-rcv-shops></small></div>
           <button type="submit" name="action" value="save" class="btn btn-outline-primary">Save</button>
           <button type="submit" name="action" value="receive" class="btn btn-primary">Confirm receipt</button>
         </div>
@@ -212,7 +238,9 @@
   };
   document.querySelectorAll('.rcv-table tbody tr').forEach(window.allocWire);
   document.querySelectorAll('.modal [data-alloc-all]').forEach((b) => b.addEventListener('click', () => {
-    window.allocAll(b.closest('.modal').querySelector('.rcv-table tbody'), Number(b.dataset.allocAll));
+    const lines = b.closest('.modal').querySelector('.rcv-table tbody');
+    window.allocAll(lines, Number(b.dataset.allocAll));
+    lines.dispatchEvent(new Event('input', { bubbles: true }));     // the footer's figures follow
   }));
 })();
 
@@ -236,6 +264,8 @@
       const rate = iva.checked ? 0.23 : 0;
       form.querySelector('.rcv-table').classList.toggle('has-iva', iva.checked);
       let total = 0, allocated = 0;
+      const shops = new Map();
+      let unsplit = 0;
       form.querySelectorAll('.rcv-table tbody tr').forEach((row) => {
         const gone = field(row, 'DELETE').checked;
         row.classList.toggle('rcv-gone', gone);
@@ -248,14 +278,45 @@
         row.querySelector('[data-rcv-line]').textContent = money(unit * qty);
         total += unit * qty;
         allocated += share;
+        let split = 0;
+        row.querySelectorAll('[data-rcv-shop]').forEach((input) => {
+          const units = num(input);
+          split += units;
+          shops.set(input.dataset.rcvShop, (shops.get(input.dataset.rcvShop) || 0) + unit * units);
+        });
+        unsplit += unit * Math.max(qty - split, 0);
       });
+      const parts = Array.from(shops, ([name, value]) => `${name} ${money(value)}`).filter((_, n) => Array.from(shops.values())[n] > 0);
+      if (shops.size && cents(unsplit)) parts.push(`${money(unsplit)} not split`);
+      form.querySelector('[data-rcv-shops]').textContent = parts.join(' · ');
       const rest = cents(num(ship)) - cents(allocated);
       form.dataset.shipLeft = String(rest);
       left.textContent = rest ? `€${(rest / 100).toFixed(2)} still to allocate` : '';
       left.classList.toggle('bad', rest !== 0);
       form.querySelector('[data-rcv-total]').textContent = money(total);
       form.querySelector('[data-rcv-split]').hidden = !num(ship);
+      const pay = form.querySelector('[data-rcv-pay]');
+      if (pay) {
+        const mode = (pay.querySelector('[name="pay_mode"]:checked') || {}).value;
+        pay.querySelectorAll('[data-pay-for]').forEach((e) => { e.hidden = !e.dataset.payFor.split(' ').includes(mode); });
+        const months = num(pay.querySelector('[name="pay_instalments"]'));
+        pay.querySelector('[data-rcv-month]').textContent = months ? `${money(total / months)} a month` : '';
+      }
     }
+    // The 30 days follow the invoice date until somebody sets another day.
+    const due = form.querySelector('[data-rcv-due]');
+    const invoiceDate = form.querySelector('input[name="invoice_date"]');
+    if (due && invoiceDate) {
+      invoiceDate.addEventListener('change', () => {
+        if (due.value !== due.dataset.rcvDue || !invoiceDate.value) return;
+        const day = new Date(`${invoiceDate.value}T12:00:00`);
+        day.setDate(day.getDate() + 30);
+        due.value = due.dataset.rcvDue = day.toISOString().slice(0, 10);
+      });
+    }
+    // A phone starts on the lines: the invoice is a tap away.
+    const invoice = form.querySelector('[data-rcv-inv]');
+    if (invoice && window.matchMedia('(max-width:575.98px)').matches) invoice.open = false;
     form.querySelector('[data-rcv-split]').addEventListener('click', () => {
       const lines = rows();
       const units = lines.reduce((t, r) => t + num(field(r, 'quantity')), 0);
@@ -612,6 +673,22 @@
   /* Receive dialog: who and which invoice, then the costs, then the lines;
      the total and the buttons stay in view */
   .rcv-sub{ font-size:.88rem; color:var(--app-muted); }
+  .rcv-inv summary{ display:none; }
+  .rcv-pay{ margin:.8rem 0 0; padding:.6rem .75rem; border:1px solid var(--app-border); border-radius:var(--app-radius-sm); }
+  .rcv-pay legend{ float:none; width:auto; margin:0 0 .35rem; padding:0; font-size:.9rem; font-weight:800; }
+  .rcv-seg{ display:inline-grid; grid-auto-flow:column; grid-auto-columns:minmax(0,1fr); max-width:100%; border:1px solid var(--app-border-strong); border-radius:var(--app-radius-sm); overflow:hidden; }
+  .rcv-seg label{ margin:0; cursor:pointer; }
+  .rcv-seg input{ position:absolute; opacity:0; width:0; height:0; }
+  .rcv-seg span{ display:block; min-height:38px; padding:.45rem .7rem; font-size:.9rem; font-weight:700; text-align:center; color:var(--app-muted); white-space:nowrap; }
+  .rcv-seg input:checked + span{ color:var(--app-surface); background:var(--app-text); }
+  .rcv-seg input:focus-visible + span{ outline:2px solid var(--app-accent); outline-offset:-2px; }
+  .rcv-pay-fields{ display:grid; grid-template-columns:repeat(3, minmax(0,12rem)); gap:.5rem .7rem; align-items:end; margin-top:.55rem; }
+  .rcv-pay-fields label{ margin:0; }
+  .rcv-pay-fields [hidden]{ display:none; }
+  .rcv-month{ align-self:center; font-weight:700; font-variant-numeric:tabular-nums; }
+  .rcv-danger{ margin-top:.6rem; text-align:right; }
+  .rcv-danger .btn{ padding-right:0; }
+  .rcv-total small{ font-size:.85rem; color:var(--app-muted); font-variant-numeric:tabular-nums; }
   .rcv-fields{ display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.4fr); gap:.5rem .7rem; margin-bottom:.8rem; }
   .rcv-costs{ display:flex; flex-wrap:wrap; align-items:center; gap:.5rem 1.2rem; padding:.55rem .75rem; margin-bottom:.8rem;
     background:var(--app-surface-2); border-radius:var(--app-radius-sm); }
@@ -651,19 +728,45 @@
   .alloc-all{ display:flex; flex-wrap:wrap; align-items:center; gap:.4rem; margin:0 0 .5rem; font-size:.88rem;
     font-weight:600; color:var(--app-muted); }
   @media (max-width:575.98px){
+    .rcv .modal-body{ padding:.6rem .75rem; }
+    .rcv .modal-header{ padding:.5rem .75rem; }
+    .rcv input, .rcv select, .rcv textarea{ font-size:16px !important; }   /* below 16px an iPhone zooms the page */
+    .rcv-inv{ margin-bottom:.5rem; border-bottom:1px solid var(--app-border); padding-bottom:.45rem; }
+    .rcv-inv summary{ display:list-item; font-size:.9rem; font-weight:700; color:var(--app-muted); cursor:pointer; overflow-wrap:anywhere; }
+    .rcv-inv[open] summary{ margin-bottom:.45rem; }
+    .rcv-fields{ margin-bottom:.3rem; }
+    .rcv-costs{ display:grid; grid-template-columns:auto minmax(0,1fr); gap:.35rem .75rem; padding:.45rem .6rem; margin-bottom:.45rem; }
+    .rcv-ship{ justify-self:end; }
+    .rcv-ship input{ width:5.5rem; }
+    .rcv-costs .btn, .rcv-left{ grid-column:1 / -1; justify-self:start; }
+    .rcv-costs .btn[hidden], .rcv-left:empty{ display:none; }
+    .alloc-all{ margin-bottom:.25rem; }
+    .alloc-all .btn{ padding:.2rem .55rem; font-size:.85rem; }
+    .rcv .table-responsive{ overflow:visible; }
     .rcv-table thead{ display:none; }
-    .rcv-table tbody tr{ display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:.35rem .45rem;
-      padding:.6rem .1rem; border-bottom:1px solid var(--app-border); position:relative; }
+    .rcv-table tbody tr{ display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:.3rem .4rem;
+      padding:.5rem .1rem; border-bottom:1px solid var(--app-border); position:relative; }
+    .rcv-table.has-iva tbody tr{ grid-template-columns:repeat(4, minmax(0,1fr)); }
+    .rcv-table.has-iva tbody td.rcv-final{ grid-column:-3 / -1; }
+    .rcv-pay-fields{ grid-template-columns:repeat(2, minmax(0,1fr)); }
+    .rcv-seg{ display:grid; }
+    .rcv-seg span{ padding:.45rem .3rem; }
+    .rcv-foot{ padding:.45rem .75rem; flex-wrap:nowrap; }
+    .rcv-foot .rcv-total{ flex:1 1 auto; min-width:0; display:grid; grid-template-columns:auto minmax(0,1fr); gap:0 .4rem; align-items:baseline; }
+    .rcv-foot .rcv-total small{ grid-column:1 / -1; line-height:1.15; }
+    .rcv-foot .rcv-total b{ font-size:1.1rem; }
+    .rcv-foot .btn{ flex:none; padding-left:.7rem; padding-right:.7rem; }
     .rcv-table tbody td{ display:block; padding:0 !important; border:0; min-width:0; }
     .rcv-table tbody td:first-child{ grid-column:1 / -1; padding-right:2.6rem !important; }
     .rcv-table tbody td[data-label]::before{ content:attr(data-label); display:block; font-size:.85rem; font-weight:700;
       color:var(--app-muted); margin-bottom:.15rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .rcv-table tbody td input{ min-height:40px; }
+    .rcv-table tbody td input{ min-height:38px; padding:.2rem .3rem; }
     .rcv-table tbody td.rcv-del{ position:absolute; top:.45rem; right:.2rem; text-align:center; }
     .rcv-table tbody td.rcv-del::before{ margin-bottom:0; }
     .rcv-table tbody td.rcv-final{ align-self:end; }
     .rcv-table tbody td.rcv-final b{ display:inline; }
-    .rcv-table tbody td.rcv-final small{ display:block; }
+    .rcv-table tbody td.rcv-final small{ display:inline; margin-left:.3rem; }
+    .rcv-table tbody td.rcv-final::before{ text-align:right; }
     #cart-table thead{ display:none; }
     #cart-table tbody tr{ display:grid; grid-template-columns:repeat(var(--cols, 3), minmax(0,1fr)); gap:.35rem .45rem;
       padding:.6rem .4rem; border-bottom:1px solid var(--ds-border, #e7e5e4); position:relative; }
@@ -685,8 +788,6 @@
   @media (max-width:575.98px){
     .rcv-fields{ grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
     .rcv-file{ grid-column:1 / -1; }
-    .rcv-foot .rcv-total{ flex:1 1 100%; }
-    .rcv-foot .btn-primary{ flex:1 1 auto; }
     #cart-table.has-ship .ship-col{ display:block; }
     #cart-table tbody td.ship-col{ display:none; }
     #cart-table.has-ship tbody td.ship-col{ display:block; }

@@ -202,7 +202,7 @@
     <h1>Orders</h1>
     <span class="op-store">{{ store_label }}</span>
     <div class="spacer"></div>
-    {% if show_sales_sensitive and view != 'analysis' %}<a class="btn btn-sm btn-outline-secondary" href="{{ export_url }}">Export PDF</a>{% endif %}
+    {% if show_sales_sensitive %}<a class="btn btn-sm btn-outline-secondary" href="{{ export_url }}">Export PDF</a>{% endif %}
   </div>
 
   <nav class="op-views" aria-label="Orders views">
@@ -376,11 +376,13 @@
               {% if group.order_owing is not None %}
                 <div><dt>Paid</dt><dd>EUR {{ group.order_paid|floatformat:2 }}</dd></div>
                 <div><dt>Owing</dt><dd>EUR {{ group.order_owing|floatformat:2 }}</dd></div>
+                {% if group.next_due %}<div><dt>{% if group.overdue %}Overdue{% else %}Due{% endif %}</dt><dd>{{ group.next_due|date:"j M Y" }}</dd></div>{% endif %}
               {% endif %}
             </dl>
           </div>
           <div data-part="foot">
             {% if group.invoice_url %}<a class="btn btn-outline-secondary" href="{{ group.invoice_url }}" target="_blank" rel="noopener">Invoice</a>{% endif %}
+            {% if group.pdf_url %}<a class="btn btn-outline-secondary" href="{{ group.pdf_url }}">Export PDF</a>{% endif %}
             {% if group.rollback_url or group.rollback_ids %}
               {% if group.can_rollback %}
                 <form method="post" action="{% if group.rollback_url %}{{ group.rollback_url }}{% else %}{% url 'direct_stock_in_rollback' %}{% endif %}"
