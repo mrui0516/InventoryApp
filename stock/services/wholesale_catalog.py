@@ -6,15 +6,17 @@ A row is a whitelist: no unit counts, no cost, nothing a page could leak by
 accident. Nothing here may import stock.views.
 """
 from collections import Counter
+from decimal import Decimal
 
 from django.db.models import Sum
 
-from ..models import Product, ProductType, Sale
+from ..models import CartLine, Product, ProductType, Sale
 from .availability import LOW_STOCK_BELOW
 from .names import customer_catalog_case
 from .product_contents import content_label
 from .product_search import product_search_q
 from .store_stock import active_stores, full_price_units, stock_by_store
+from .wholesale_discount import discount_applies
 
 FIRST_BRAND = 'lattafa'
 PAGE_SIZE = 24
@@ -52,7 +54,26 @@ def availability(units):
     return 'out-stock', 'Indispon\u00edvel'
 
 
-def _image_url(product):
+def customer_price(product, customer=None):
+    """``(price, discount)``: the wholesale price less the discount the shop set for
+    this customer, where the discount applies. None for a price that needs a
+    person: no wholesale price, or a discount that would leave nothing."""
+    base = product.wholesale_price
+    if not base or base <= 0:
+        return None, Decimal('0')
+    discount = Decimal('0')
+    set_by_hand = customer.wholesale_discount if customer else None
+    if set_by_hand and set_by_hand > 0 and discount_applies(product):
+        discount = set_by_hand
+    price = base - discount
+    return (price if price > 0 else None), discount
+
+
+def display_title(product):
+    return customer_catalog_case(product.title_parts(include_brand=False)) or product.barcode
+
+
+def image_url(product):
     for image in product.images.all():
         if image.image:
             try:
@@ -62,23 +83,25 @@ def _image_url(product):
     return ''
 
 
-def _row(product, units, requested=False):
+def _row(product, units, requested=False, customer=None, in_cart=0):
     kind = product.type_info
     state, state_label = availability(units)
-    price = product.wholesale_price
+    price = customer_price(product, customer)[0]
     contents = product.contents.all() if product.lists_contents else ()
     return {
         'pk': product.pk,
         'ean': product.barcode,
         'brand': customer_catalog_case(product.brand),
         'logo_brand': product.brand_master,
-        'title': customer_catalog_case(product.title_parts(include_brand=False)) or product.barcode,
+        'title': display_title(product),
         'kind': kind.customer_label or kind.name,
         'gender': Product.GENDER_SHOPIFY_TAGS.get(product.gender, ''),
-        'price': price if price and price > 0 else None,
+        'price': price,
+        'base_price': product.wholesale_price,
+        'in_cart': in_cart,
         'state': state,
         'state_label': state_label,
-        'image_url': _image_url(product),
+        'image_url': image_url(product),
         'contents': [content_label(row) for row in contents],
         'description': product.composed_description(include_inspiration=False),
         'requested': requested,
@@ -89,7 +112,7 @@ def _line_key(product):
     return (product.brand or '').lower(), product.product_type_id, (product.model or '').strip().lower()
 
 
-def catalog_rows(query='', brand='', kind='', gender='', show_all=False, viewer=None):
+def catalog_rows(query='', brand='', kind='', gender='', show_all=False, viewer=None, customer=None):
     """The list, in order: available first, then by brand and type, then each
     type's best-selling lines first."""
     products = (Product.objects.select_related('brand_master')
@@ -108,7 +131,8 @@ def catalog_rows(query='', brand='', kind='', gender='', show_all=False, viewer=
     # Local import: restock_requests reads availability() from this module.
     from .restock_requests import requested_ids
     asked = requested_ids(viewer, [p.pk for p in products]) if viewer else set()
-    rows = [(p, _row(p, units.get(p.pk, 0), p.pk in asked)) for p in products]
+    carted = dict(CartLine.objects.filter(user=viewer).values_list('product', 'quantity')) if viewer else {}
+    rows = [(p, _row(p, units.get(p.pk, 0), p.pk in asked, customer, carted.get(p.pk, 0))) for p in products]
     if not show_all:
         rows = [(p, row) for p, row in rows if row['state'] != 'out-stock']
 

@@ -71,7 +71,6 @@ from .services.availability import LOW_STOCK_BELOW, SAMPLE_RESERVE, product_ids_
 from .services.names import customer_catalog_case
 from .services.product_contents import product_page_links
 from .services.product_search import product_search_q
-from .services.wholesale_catalog import PAGE_SIZE, catalog_options, catalog_rows
 from .services.wholesale_discount import discount_applies
 from .stores import (
     ACTIVE_STORE_SESSION_KEY,
@@ -5959,33 +5958,6 @@ def products_autocomplete(request):
 # -----------------------------
 # 目录页（只展示有图片的产品；品牌/型号分组 + 库存&销量排序）
 # -----------------------------
-
-@login_required
-@manager_required
-def catalog_view(request):
-    """The wholesale catalogue as a customer will see it: a staff preview until
-    the customer portal exists (see services/wholesale_catalog)."""
-    query = request.GET.get('q', '').strip()
-    brand = request.GET.get('brand', '').strip()
-    kind = request.GET.get('type', '').strip()
-    gender = request.GET.get('gender', '').strip()
-    # Browsing shows what is on sale; a search also finds what has sold out,
-    # since that is how someone gets to ask for it.
-    stock = request.GET.get('stock')
-    show_all = stock == 'all' or (bool(query) and stock != 'in')
-    rows = catalog_rows(query=query, brand=brand, kind=kind, gender=gender, show_all=show_all, viewer=request.user)
-    page_obj = Paginator(rows, PAGE_SIZE).get_page(request.GET.get('page'))
-    return render(request, 'stock/catalog.html', {
-        'page_obj': page_obj,
-        'total': len(rows),
-        'query': query,
-        'brand': brand,
-        'type': kind,
-        'gender': gender,
-        'show_all': show_all,
-        'filters_on': bool(brand or kind or gender),
-        **catalog_options(),
-    })
 
 # -----------------------------
 # 导出：目录（按品牌分表）到 Excel

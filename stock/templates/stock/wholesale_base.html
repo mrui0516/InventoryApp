@@ -1,0 +1,177 @@
+{% extends 'stock/base.html' %}
+{% block title %}Catálogo grossista{% endblock %}
+{% block content %}
+<style>
+  .wc{ display:grid; gap:.75rem; grid-template-columns:minmax(0,1fr); }
+  .wc-head{ display:flex; flex-wrap:wrap; align-items:center; gap:.4rem .7rem; }
+  .wc-head h1{ margin:0; font-size:1.4rem; font-weight:800; }
+  .wc-as{ display:flex; align-items:center; gap:.4rem; margin-left:auto; font-size:.85rem; font-weight:700; color:var(--app-muted); }
+  .wc-as select{ max-width:14rem; }
+  .wc-tabs{ display:flex; flex-wrap:wrap; gap:0 1.1rem; border-bottom:1px solid var(--app-border); }
+  .wc-tabs a{ padding:.45rem 0; font-weight:700; font-size:.95rem; color:var(--app-muted); text-decoration:none; border-bottom:2px solid transparent; }
+  .wc-tabs a.on{ color:var(--app-text); border-bottom-color:var(--app-accent); }
+  .wc-count-row{ display:flex; justify-content:flex-end; margin-bottom:-.4rem; }
+  .wc-tag{ font-size:.85rem; font-weight:700; padding:.1rem .55rem; border-radius:999px; background:var(--app-surface-2); color:var(--app-muted); }
+  .wc-count{ font-size:.9rem; color:var(--app-muted); font-variant-numeric:tabular-nums; }
+  .wc-seg{ display:inline-flex; border:1px solid var(--app-border-strong); border-radius:var(--app-radius-sm); overflow:hidden; }
+  .wc-seg a{ padding:.35rem .75rem; font-size:.9rem; font-weight:700; color:var(--app-muted); text-decoration:none; }
+  .wc-seg a.on{ background:var(--app-text); color:var(--app-surface); }
+  .wc-list{ background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius); overflow:hidden; }
+  .wc-row, .wc-headrow{ display:grid; grid-template-columns:48px minmax(0,1fr) 6rem 4.5rem 7rem 7.5rem; gap:.75rem; align-items:center; width:100%; padding:.45rem .85rem; }
+  .wc-headrow{ grid-template-columns:48px minmax(0,1fr) 6rem 4.5rem 7rem 7.5rem 11.5rem; }
+  .wc-headrow{ font-size:.85rem; font-weight:700; color:var(--app-muted); background:var(--app-surface-2); }
+  .wc-item{ display:grid; grid-template-columns:minmax(0,1fr) 11.5rem; align-items:center; border-top:1px solid var(--app-border); }
+  .wc-row{ border:0; background:none; color:inherit; text-align:left; cursor:pointer; }
+  .wc-strip{ display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:.15rem .5rem; padding:.3rem .85rem .3rem 0; }
+  .wc-add{ display:flex; gap:.35rem; align-items:center; }
+  .wc-add input{ width:3.6rem; min-height:36px; padding:.2rem .3rem; text-align:center; border:1px solid var(--app-border-strong); border-radius:var(--app-radius-sm); }
+  .wc-add .btn{ min-height:36px; }
+  .wc-incart{ font-size:.85rem; font-weight:700; color:#0f766e; white-space:nowrap; }
+  .wc-incart:empty{ display:none; }
+  .wc-price s{ display:block; font-size:.85rem; font-weight:500; color:var(--app-muted); }
+  .wc-bar{ position:sticky; bottom:calc(var(--tabbar-live, 0px) + .5rem); z-index:5; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.1rem .9rem; align-items:center;
+    padding:.5rem .85rem; color:var(--app-surface); background:var(--app-text); border-radius:var(--app-radius); text-decoration:none; box-shadow:0 6px 18px rgba(0,0,0,.18); }
+  .wc-bar[hidden]{ display:none; }
+  .wc-bar b{ font-variant-numeric:tabular-nums; }
+  .wc-bar small{ grid-column:1; font-size:.85rem; opacity:.85; }
+  .wc-bar span.go{ grid-column:2; grid-row:1 / 3; font-weight:800; white-space:nowrap; }
+  .wc-card{ background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius); padding:.8rem .95rem; }
+  .wc-card h2{ margin:0 0 .55rem; font-size:1rem; font-weight:800; }
+  .wc-cols{ display:grid; grid-template-columns:minmax(0,1fr) 22rem; gap:.75rem; align-items:start; }
+  .wc-side{ display:grid; gap:.75rem; position:sticky; top:.75rem; }
+  .wc-line{ display:grid; grid-template-columns:48px minmax(0,1fr) 5.2rem 6rem 2.25rem; gap:.65rem; align-items:center; padding:.5rem 0; border-top:1px solid var(--app-border); }
+  .wc-line:first-of-type{ border-top:0; }
+  .wc-line input{ width:100%; min-height:36px; text-align:center; border:1px solid var(--app-border-strong); border-radius:var(--app-radius-sm); }
+  .wc-money{ text-align:right; font-variant-numeric:tabular-nums; }
+  .wc-money b{ display:block; }
+  .wc-money small{ display:block; font-size:.85rem; color:var(--app-muted); }
+  .wc-line .x{ width:36px; height:36px; border:0; border-radius:999px; background:none; color:var(--app-muted); font-size:1.1rem; }
+  .wc-line .x:hover{ background:var(--app-surface-2); }
+  .wc-problem{ display:block; font-size:.85rem; font-weight:700; color:#b42318; }
+  .wc-track{ position:relative; height:8px; margin:1.5rem .2rem .3rem; border-radius:999px; background:var(--app-surface-2); }
+  .wc-fill{ height:100%; border-radius:999px; background:var(--app-accent); }
+  .wc-mark{ position:absolute; top:-1.35rem; transform:translateX(-50%); font-size:.8rem; font-weight:700; color:var(--app-muted); white-space:nowrap; }
+  .wc-mark:last-child{ transform:translateX(-100%); }
+  .wc-mark.on{ color:var(--app-text); }
+  .wc-mark::after{ content:""; position:absolute; left:50%; top:1.35rem; width:2px; height:8px; background:var(--app-surface); }
+  .wc-message{ margin:.35rem 0 0; font-weight:700; }
+  .wc-small{ margin:.15rem 0 0; font-size:.85rem; color:var(--app-muted); }
+  .wc-sum{ display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.2rem .75rem; margin:.7rem 0 0; font-variant-numeric:tabular-nums; }
+  .wc-sum dt{ font-weight:500; color:var(--app-muted); }
+  .wc-sum dd{ margin:0; text-align:right; font-weight:700; }
+  .wc-sum .total{ padding-top:.35rem; border-top:1px solid var(--app-border); font-size:1.1rem; color:var(--app-text); font-weight:800; }
+  .wc-form{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:.5rem .7rem; }
+  .wc-form label{ display:grid; gap:.15rem; margin:0; font-size:.85rem; font-weight:700; color:var(--app-muted); }
+  .wc-form .wide{ grid-column:1 / -1; }
+  .wc-form .err{ font-size:.85rem; color:#b42318; font-weight:600; }
+  .wc-order{ display:grid; grid-template-columns:7rem minmax(0,1fr) 5rem 6rem 6.5rem; gap:.75rem; align-items:center; padding:.55rem .85rem; color:inherit; text-decoration:none; border-top:1px solid var(--app-border); font-variant-numeric:tabular-nums; }
+  .wc-order:first-child{ border-top:0; }
+  .wc-order:hover{ background:var(--app-accent-soft); }
+  .wc-status{ font-size:.85rem; font-weight:700; }
+  .wc-status.cancelled{ color:#b42318; }
+  .wc-notice{ margin:0; font-size:.88rem; color:var(--app-muted); }
+  .wc-ask .btn{ min-height:36px; }
+  .wc-asked{ font-size:.85rem; font-weight:700; color:var(--app-muted); }
+  .wc-row:hover{ background:var(--app-accent-soft); }
+  .wc-row:focus-visible{ outline:2px solid var(--app-accent); outline-offset:-2px; }
+  .wc-photo{ display:grid; place-items:center; width:48px; height:48px; border:1px solid var(--app-border); border-radius:var(--app-radius-sm); background:#fff; overflow:hidden; color:var(--app-muted); font-size:.85rem; }
+  .wc-photo img{ width:100%; height:100%; object-fit:contain; }
+  .wc-main{ min-width:0; }
+  .wc-brand{ display:flex; align-items:center; gap:.35rem; font-size:.85rem; color:var(--app-muted); min-width:0; }
+  .wc-brand span:last-child{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .wc-title{ font-weight:700; overflow-wrap:anywhere; }
+  .wc-contents{ font-size:.85rem; color:var(--app-muted); overflow-wrap:anywhere; }
+  .wc-price{ font-weight:800; font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
+  .wc-price.none{ font-weight:600; font-size:.85rem; color:var(--app-muted); }
+  .wc-state{ justify-self:start; padding:.1rem .5rem; border-radius:var(--app-radius-xs); font-size:.85rem; font-weight:700; white-space:nowrap; }
+  .wc-state.in-stock{ background:#dcfce7; color:#166534; }
+  .wc-state.low-stock{ background:#fef3c7; color:#92400e; }
+  .wc-state.out-stock{ background:#fee2e2; color:#991b1b; }
+  .wc-row.is-out .wc-photo img{ opacity:.45; }
+  .wc-row.is-out .wc-title{ color:var(--app-muted); }
+  .wc-empty{ margin:0; padding:1rem; color:var(--app-muted); }
+  .wc-pages{ display:flex; align-items:center; justify-content:center; gap:.75rem; font-size:.9rem; }
+  .wc-panel-photo{ height:220px; border:1px solid var(--app-border); border-radius:var(--app-radius-sm); background:#fff; overflow:hidden; }
+  .wc-panel-photo img{ display:block; width:100%; height:100%; object-fit:contain; }
+  .wc-kpi-state{ font-size:1rem !important; }
+  .wc-text{ white-space:pre-line; font-size:.92rem; overflow-wrap:anywhere; }
+  @media (max-width:767.98px){
+    .wc-headrow{ display:none; }
+    .wc-as{ margin-left:0; width:100%; }
+    .wc-as select{ max-width:none; flex:1 1 auto; }
+    .wc-item{ grid-template-columns:minmax(0,1fr); }
+    .wc-strip{ padding:0 .7rem .5rem; }
+    .wc-cols{ grid-template-columns:minmax(0,1fr); }
+    .wc-side{ position:static; }
+    .wc-line{ grid-template-columns:48px minmax(0,1fr) 4.2rem 2.25rem; }
+    .wc-line .wc-money{ grid-column:2 / 4; grid-row:2; text-align:left; }
+    .wc-line .wc-money b, .wc-line .wc-money small{ display:inline; }
+    .wc-form{ grid-template-columns:minmax(0,1fr); }
+    .wc-order{ grid-template-columns:minmax(0,1fr) auto; gap:.1rem .75rem; }
+    .wc-row{ grid-template-columns:48px minmax(0,1fr) auto; gap:.15rem .6rem; padding:.5rem .7rem; }
+    .wc-photo{ grid-row:span 2; align-self:start; }
+    .wc-kind, .wc-gender{ display:none; }
+    .wc-price{ grid-column:3; grid-row:1; align-self:start; }
+    .wc-state{ grid-column:2 / 4; grid-row:2; }
+  }
+</style>
+<div class="wc">
+  <div class="wc-head">
+    <h1>Catálogo grossista</h1>
+    <span class="wc-tag">Pré-visualização interna</span>
+    <form method="post" action="{% url 'wholesale_customer' %}" class="wc-as">
+      {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <label for="wc-as">Ver como</label>
+      <select class="form-select form-select-sm" id="wc-as" name="customer" onchange="this.form.submit()">
+        <option value="">Sem cliente</option>
+        {% for c in customers %}<option value="{{ c.id }}"{% if customer.id == c.id %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
+      </select>
+    </form>
+  </div>
+  <nav class="wc-tabs" aria-label="Catálogo">
+    <a class="{% if tab == 'catalog' %}on{% endif %}" href="{% url 'catalog' %}">Catálogo</a>
+    <a class="{% if tab == 'cart' %}on{% endif %}" href="{% url 'wholesale_cart' %}">Carrinho (<span data-wc-units>{{ bar.units }}</span>)</a>
+    <a class="{% if tab == 'orders' %}on{% endif %}" href="{% url 'wholesale_orders' %}">Os meus pedidos</a>
+  </nav>
+  {% block wholesale %}{% endblock %}
+  {% if tab == 'catalog' %}
+  <a class="wc-bar" href="{% url 'wholesale_cart' %}" data-wc-bar{% if not bar.units %} hidden{% endif %}>
+    <b><span data-wc-units>{{ bar.units }}</span> un. &middot; &euro;<span data-wc-subtotal>{{ bar.subtotal|floatformat:2 }}</span></b>
+    <small data-wc-message>{{ bar.progress.message }}</small>
+    <span class="go">Ver carrinho</span>
+  </a>
+  {% endif %}
+</div>
+<script>
+  // Adding from the list keeps the page where it is. Every figure comes back
+  // from the server; without this script the form still posts normally.
+  document.addEventListener('submit', (event) => {
+    const form = event.target.closest('[data-wc-add]');
+    if (!form) return;
+    event.preventDefault();
+    const button = form.querySelector('button');
+    button.disabled = true;
+    fetch(form.action, { method: 'POST', body: new FormData(form), headers: { 'X-Requested-With': 'fetch' } })
+      .then((response) => response.json())
+      .then((data) => {
+        const note = form.parentElement.querySelector('[data-wc-incart]');
+        if (data.error) {
+          if (note) note.textContent = data.error;
+          return;
+        }
+        document.querySelectorAll('[data-wc-units]').forEach((e) => { e.textContent = data.units; });
+        document.querySelectorAll('[data-wc-subtotal]').forEach((e) => { e.textContent = data.subtotal; });
+        document.querySelectorAll('[data-wc-message]').forEach((e) => { e.textContent = data.message; });
+        const bar = document.querySelector('[data-wc-bar]');
+        if (bar) bar.hidden = false;
+        const id = form.elements.product.value;
+        const text = `No carrinho: ${data.in_cart}`;
+        document.querySelectorAll(`[data-wc-incart="${id}"]`).forEach((e) => { e.textContent = text; });
+        document.querySelectorAll('template').forEach((t) => {
+          t.content.querySelectorAll(`[data-wc-incart="${id}"]`).forEach((e) => { e.textContent = text; });
+        });
+      })
+      .finally(() => { button.disabled = false; });
+  });
+</script>
+{% endblock %}

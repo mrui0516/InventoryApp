@@ -262,6 +262,7 @@
             <tr class="grand"><td>TOTAL</td><td class="num" id="pd-t-total">0,00 EUR</td></tr>
           </table>
           <div class="pd-actions" style="margin-top:.8rem;">
+            <button type="button" class="btn btn-outline-primary" id="pd-save" disabled>Guardar</button>
             <button type="submit" class="btn btn-primary" id="pd-submit" disabled {% if pedido_blocked %}data-blocked="1"{% endif %}>Descarregar PDF</button>
             <span class="pd-why" id="pd-block" style="display:none;">Preencha os preços em falta.</span>
           </div>
@@ -280,6 +281,7 @@
   const empty = document.getElementById('pd-empty');
   const extras = document.getElementById('pd-extras');
   const submit = document.getElementById('pd-submit');
+  const saveButton = document.getElementById('pd-save');
   const block = document.getElementById('pd-block');
 
   // Portuguese money: 1.234,56 EUR
@@ -544,6 +546,7 @@
 
     empty.hidden = lines > 0;
     submit.disabled = submit.dataset.blocked === '1' || lines === 0 || missing > 0;
+    saveButton.disabled = submit.disabled;
     block.style.display = missing > 0 ? 'block' : 'none';
   }
 
@@ -586,6 +589,25 @@
         submit.textContent = label;
         recalc();
       });
+  });
+
+  // Save: the same form and the same checks, no PDF.
+  saveButton.addEventListener('click', function () {
+    liveErrors.hidden = true;
+    liveErrors.textContent = '';
+    const body = new FormData(form);
+    body.append('save_only', '1');
+    saveButton.disabled = true;
+    fetch(form.action, { method: 'POST', body: body })
+      .then(function (resp) {
+        if (resp.ok) return resp.json().then(function (data) { draftSaved(data.draft); });
+        return resp.text().then(function (html) { showErrors(html); });
+      })
+      .catch(function () {
+        liveErrors.textContent = 'Falha de rede. Tente novamente.';
+        liveErrors.hidden = false;
+      })
+      .then(function () { recalc(); });
   });
 
   // The PDF kept a draft: print again and the same draft is updated, and the

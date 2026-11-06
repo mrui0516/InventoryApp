@@ -1,0 +1,71 @@
+{% extends 'stock/wholesale_base.html' %}
+{% load widget_tweaks submissions %}
+{% block wholesale %}
+{% if not quote.lines %}
+  <section class="wc-card"><p class="wc-empty">O carrinho está vazio.</p><a class="btn btn-primary" href="{% url 'catalog' %}">Ver catálogo</a></section>
+{% else %}
+<div class="wc-cols">
+  <div class="wc">
+    <section class="wc-card" aria-label="Carrinho">
+      {% for line in quote.lines %}
+      <div class="wc-line">
+        <span class="wc-photo">{% if line.image_url %}<img src="{{ line.image_url }}" alt="" loading="lazy">{% else %}&mdash;{% endif %}</span>
+        <span class="wc-main">
+          <span class="wc-brand"><span>{{ line.brand }} &middot; {{ line.barcode }}</span></span>
+          <span class="wc-title">{{ line.title }}</span>
+          {% if line.problem %}<span class="wc-problem">{{ line.problem }}</span>{% elif line.needs_price %}<span class="wc-problem">Contacte-nos sobre o preço</span>{% endif %}
+        </span>
+        <form method="post" action="{% url 'wholesale_cart_update' %}">
+          {% csrf_token %}<input type="hidden" name="product" value="{{ line.product_id }}">
+          <input type="number" name="quantity" value="{{ line.quantity }}" min="0" max="999" inputmode="numeric" aria-label="Quantidade" onchange="this.form.submit()">
+        </form>
+        <span class="wc-money"><b>&euro;{{ line.line_total|floatformat:2 }}</b> <small>{{ line.quantity }} &times; &euro;{{ line.final_price|floatformat:2 }}</small></span>
+        <form method="post" action="{% url 'wholesale_cart_update' %}">
+          {% csrf_token %}<input type="hidden" name="product" value="{{ line.product_id }}"><input type="hidden" name="quantity" value="0">
+          <button type="submit" class="x" aria-label="Remover {{ line.title }}">&times;</button>
+        </form>
+      </div>
+      {% endfor %}
+      <p class="wc-small">Quantidade sujeita a confirmação.</p>
+    </section>
+
+    <section class="wc-card" aria-label="Dados do pedido">
+      <h2>Dados do pedido</h2>
+      <form method="post" action="{% url 'wholesale_cart_submit' %}" class="wc-form" id="wc-order-form">
+        {% csrf_token %}{% submit_token %}
+        <input type="hidden" name="fingerprint" value="{{ quote.fingerprint }}">
+        {% for field in form %}
+          <label class="{% if field.name == 'address' or field.name == 'note' or field.name == 'delivery' %}wide{% endif %}" data-field="{{ field.name }}">{{ field.label }}
+            {% if field.name == 'delivery' or field.name == 'country' %}{% render_field field class="form-select" %}{% else %}{% render_field field class="form-control" %}{% endif %}
+            {% for e in field.errors %}<span class="err">{{ e }}</span>{% endfor %}
+          </label>
+        {% endfor %}
+        <p class="wc-notice wide">Pedido sujeito a confirmação de stock e portes. A submissão ou aceitação do pedido não reserva stock.</p>
+        <button type="submit" class="btn btn-primary wide"{% if not quote.can_submit %} disabled{% endif %}>Enviar pedido</button>
+      </form>
+    </section>
+  </div>
+  <div class="wc-side" id="wc-summary">{% include "stock/_wholesale_summary.html" %}</div>
+</div>
+<script>
+  // The destination changes the shipping line: ask the server, show its answer.
+  (function () {
+    const form = document.getElementById('wc-order-form');
+    const box = document.getElementById('wc-summary');
+    const hide = ['address', 'postal_code', 'city', 'country'];
+    function refresh() {
+      const delivery = form.elements.delivery.value;
+      hide.forEach((name) => {
+        form.querySelector(`[data-field="${name}"]`).classList.toggle('d-none', delivery === 'pickup');
+      });
+      const query = new URLSearchParams({ delivery, country: form.elements.country.value, postal_code: form.elements.postal_code.value });
+      fetch(`{% url 'wholesale_cart_summary' %}?${query}`)
+        .then((response) => response.text())
+        .then((html) => { box.innerHTML = html; });
+    }
+    ['delivery', 'country', 'postal_code'].forEach((name) => form.elements[name].addEventListener('change', refresh));
+    refresh();
+  })();
+</script>
+{% endif %}
+{% endblock %}

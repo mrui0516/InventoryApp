@@ -8233,7 +8233,7 @@ class RoundANavigationTests(TestCase):
         links, nav = self._menu(self.admin, store=self.store_a)
         self.assertEqual(links, ["Today", "Dashboard", "Orders", "Sell", "Pedido",
                                  "Products", "Catalog View",
-                                 "Customers", "IOU", "Inbound", "Transfers", "Suppliers", "Restock requests", "Finance",
+                                 "Customers", "IOU", "Order requests", "Inbound", "Transfers", "Suppliers", "Restock requests", "Finance",
                                  "Attendance", "Tools", "Team", "Stores", "Print Header",
                                  "Shop settings", "Catalog", "Correct orders", "Audit"])
         for group in ("Sell", "Products", "Customers", "Purchasing", "Finance", "Settings"):
@@ -8910,6 +8910,27 @@ class PedidoDraftTests(TestCase):
                 'discount_value': '5', 'discount_kind': 'amount', 'valid_days': '7'}
         data.update(extra)
         return self.client.post(reverse("pedido"), data)
+
+    def test_save_keeps_a_draft_without_a_pdf(self):
+        response = self._post(save_only='1')
+        self.assertEqual(response['Content-Type'], 'application/json')
+        draft = self.Draft.objects.get()
+        self.assertEqual(response.json(), {'draft': draft.id})
+        self.assertEqual(draft.total, Decimal("63.50"))
+
+    def test_save_updates_the_same_draft(self):
+        first = self._post(save_only='1').json()['draft']
+        second = self._post(save_only='1', draft_id=str(first), quantity=['5']).json()['draft']
+        self.assertEqual(first, second)
+        self.assertEqual(self.Draft.objects.get().lines[0]['quantity'], 5)
+
+    def test_save_is_refused_like_the_pdf(self):
+        response = self._post(save_only='1', product_id=[], quantity=[], unit_price=[])
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.Draft.objects.count(), 0)
+
+    def test_the_page_offers_save(self):
+        self.assertContains(self.client.get(reverse("pedido")), 'id="pd-save"')
 
     def test_a_pdf_keeps_a_draft_of_this_store(self):
         response = self._post()

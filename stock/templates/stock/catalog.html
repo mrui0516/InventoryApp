@@ -1,63 +1,7 @@
-{% extends 'stock/base.html' %}
+{% extends 'stock/wholesale_base.html' %}
 {% load brands %}
-{% block title %}Catálogo grossista{% endblock %}
-{% block content %}
-<style>
-  .wc{ display:grid; gap:.75rem; grid-template-columns:minmax(0,1fr); }
-  .wc-head{ display:flex; flex-wrap:wrap; align-items:center; gap:.4rem .7rem; }
-  .wc-head h1{ margin:0; font-size:1.4rem; font-weight:800; }
-  .wc-tag{ font-size:.85rem; font-weight:700; padding:.1rem .55rem; border-radius:999px; background:var(--app-surface-2); color:var(--app-muted); }
-  .wc-count{ margin-left:auto; font-size:.9rem; color:var(--app-muted); font-variant-numeric:tabular-nums; }
-  .wc-seg{ display:inline-flex; border:1px solid var(--app-border-strong); border-radius:var(--app-radius-sm); overflow:hidden; }
-  .wc-seg a{ padding:.35rem .75rem; font-size:.9rem; font-weight:700; color:var(--app-muted); text-decoration:none; }
-  .wc-seg a.on{ background:var(--app-text); color:var(--app-surface); }
-  .wc-list{ background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius); overflow:hidden; }
-  .wc-row, .wc-headrow{ display:grid; grid-template-columns:48px minmax(0,1fr) 6.5rem 5rem 6.5rem 7.5rem; gap:.75rem; align-items:center; width:100%; padding:.45rem .85rem; }
-  .wc-headrow{ font-size:.85rem; font-weight:700; color:var(--app-muted); background:var(--app-surface-2); }
-  .wc-item{ border-top:1px solid var(--app-border); }
-  .wc-row{ border:0; background:none; color:inherit; text-align:left; cursor:pointer; }
-  .wc-strip{ display:flex; justify-content:flex-end; padding:0 .85rem .45rem; }
-  .wc-ask .btn{ min-height:36px; }
-  .wc-asked{ font-size:.85rem; font-weight:700; color:var(--app-muted); }
-  .wc-row:hover{ background:var(--app-accent-soft); }
-  .wc-row:focus-visible{ outline:2px solid var(--app-accent); outline-offset:-2px; }
-  .wc-photo{ display:grid; place-items:center; width:48px; height:48px; border:1px solid var(--app-border); border-radius:var(--app-radius-sm); background:#fff; overflow:hidden; color:var(--app-muted); font-size:.85rem; }
-  .wc-photo img{ width:100%; height:100%; object-fit:contain; }
-  .wc-main{ min-width:0; }
-  .wc-brand{ display:flex; align-items:center; gap:.35rem; font-size:.85rem; color:var(--app-muted); min-width:0; }
-  .wc-brand span:last-child{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .wc-title{ font-weight:700; overflow-wrap:anywhere; }
-  .wc-contents{ font-size:.85rem; color:var(--app-muted); overflow-wrap:anywhere; }
-  .wc-price{ font-weight:800; font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
-  .wc-price.none{ font-weight:600; font-size:.85rem; color:var(--app-muted); }
-  .wc-state{ justify-self:start; padding:.1rem .5rem; border-radius:var(--app-radius-xs); font-size:.85rem; font-weight:700; white-space:nowrap; }
-  .wc-state.in-stock{ background:#dcfce7; color:#166534; }
-  .wc-state.low-stock{ background:#fef3c7; color:#92400e; }
-  .wc-state.out-stock{ background:#fee2e2; color:#991b1b; }
-  .wc-row.is-out .wc-photo img{ opacity:.45; }
-  .wc-row.is-out .wc-title{ color:var(--app-muted); }
-  .wc-empty{ margin:0; padding:1rem; color:var(--app-muted); }
-  .wc-pages{ display:flex; align-items:center; justify-content:center; gap:.75rem; font-size:.9rem; }
-  .wc-panel-photo{ height:220px; border:1px solid var(--app-border); border-radius:var(--app-radius-sm); background:#fff; overflow:hidden; }
-  .wc-panel-photo img{ display:block; width:100%; height:100%; object-fit:contain; }
-  .wc-kpi-state{ font-size:1rem !important; }
-  .wc-text{ white-space:pre-line; font-size:.92rem; overflow-wrap:anywhere; }
-  @media (max-width:767.98px){
-    .wc-headrow{ display:none; }
-    .wc-row{ grid-template-columns:48px minmax(0,1fr) auto; gap:.15rem .6rem; padding:.5rem .7rem; }
-    .wc-photo{ grid-row:span 2; align-self:start; }
-    .wc-kind, .wc-gender{ display:none; }
-    .wc-price{ grid-column:3; grid-row:1; align-self:start; }
-    .wc-state{ grid-column:2 / 4; grid-row:2; }
-  }
-</style>
-<div class="wc">
-  <div class="wc-head">
-    <h1>Catálogo grossista</h1>
-    <span class="wc-tag">Pré-visualização interna</span>
-    <span class="wc-count">{{ total }} produto{{ total|pluralize }}</span>
-  </div>
-
+{% block wholesale %}
+  <div class="wc-count-row"><span class="wc-count">{{ total }} produto{{ total|pluralize }}</span></div>
   {% include "stock/_fbar.html" with placeholder="Nome, marca, tipo ou EAN" panel="wc-filters" on=filters_on drop="stock" %}
 
   <div>
@@ -70,7 +14,7 @@
   <section class="wc-list" aria-label="Produtos">
     <div class="wc-headrow" aria-hidden="true">
       <span></span><span>Produto</span><span>Tipo</span><span>Género</span>
-      <span class="wc-price">Preço grossista</span><span>Disponibilidade</span>
+      <span class="wc-price">Preço grossista</span><span>Disponibilidade</span><span></span>
     </div>
     {% for row in page_obj %}
       <div class="wc-item">
@@ -83,10 +27,10 @@
         </span>
         <span class="wc-kind">{{ row.kind }}</span>
         <span class="wc-gender">{{ row.gender|default:"-" }}</span>
-        {% if row.price %}<span class="wc-price">&euro;{{ row.price|floatformat:2 }}</span>{% else %}<span class="wc-price none">Sob consulta</span>{% endif %}
+        {% if row.price %}<span class="wc-price">{% if row.price != row.base_price %}<s>&euro;{{ row.base_price|floatformat:2 }}</s> {% endif %}&euro;{{ row.price|floatformat:2 }}</span>{% else %}<span class="wc-price none">Sob consulta</span>{% endif %}
         <span class="wc-state {{ row.state }}">{{ row.state_label }}</span>
       </button>
-      {% if row.state == 'out-stock' %}<div class="wc-strip">{% include "stock/_restock_ask.html" %}</div>{% endif %}
+      <div class="wc-strip">{% include "stock/_wholesale_action.html" %}</div>
       </div>
       <template id="wc-{{ row.pk }}">
         <div data-part="title">{{ row.title }}</div>
@@ -105,7 +49,7 @@
           {% if row.contents %}<section class="sp-sec"><h6>Fragrâncias</h6><div class="wc-text">{{ row.contents|join:" · " }}</div></section>{% endif %}
           {% if row.description %}<section class="sp-sec"><h6>Descrição</h6><div class="wc-text">{{ row.description }}</div></section>{% endif %}
         </div>
-        <div data-part="foot">{% if row.state == 'out-stock' %}{% include "stock/_restock_ask.html" %}{% endif %}</div>
+        <div data-part="foot">{% include "stock/_wholesale_action.html" %}</div>
       </template>
     {% empty %}
       <p class="wc-empty">Sem resultados.</p>
@@ -119,7 +63,6 @@
     {% if page_obj.has_next %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page_obj.next_page_number %}">Seguinte</a>{% endif %}
   </nav>
   {% endif %}
-</div>
 
 <template id="wc-filters">
   <div data-part="title">Filtros</div>

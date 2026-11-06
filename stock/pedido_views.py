@@ -28,7 +28,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -286,6 +286,13 @@ def pedido_view(request):
 
     profile = PrintProfile.get_for_store(store)
     customer = _read_customer(request)
+
+    if request.POST.get('save_only') == '1':
+        draft = _save_draft(request, store=store,
+                            draft=_draft_for(store, request.POST.get('draft_id')),
+                            customer=customer, lines=lines, totals=totals,
+                            discount_kind=discount_kind, valid_days=valid_days)
+        return JsonResponse({'draft': draft.id})
 
     pdf_bytes = pedido_pdf.build_pedido_pdf(
         profile=profile,

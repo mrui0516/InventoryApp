@@ -1,0 +1,42 @@
+{% extends 'stock/wholesale_base.html' %}
+{% block wholesale %}
+<div class="wc-cols">
+  <section class="wc-card" aria-label="Pedido">
+    <h2>Pedido #{{ order.id }} &middot; <span class="wc-status {{ order.status }}">{{ order.get_status_display }}</span></h2>
+    <p class="wc-small">{{ order.created_at|date:"Y-m-d H:i" }}</p>
+    {% for line in order.lines.all %}
+      <div class="wc-line" style="grid-template-columns:minmax(0,1fr) auto;">
+        <span class="wc-main"><span class="wc-brand"><span>{{ line.barcode }}</span></span><span class="wc-title">{{ line.name }}</span></span>
+        <span class="wc-money"><b>&euro;{{ line.line_total|floatformat:2 }}</b><small>{{ line.quantity }} &times; &euro;{{ line.final_price|floatformat:2 }}</small></span>
+      </div>
+    {% endfor %}
+    <p class="wc-notice">Pedido sujeito a confirmação de stock e portes. A submissão ou aceitação do pedido não reserva stock.</p>
+  </section>
+  <div class="wc-side">
+    <section class="wc-card" aria-label="Resumo">
+      <h2>Resumo</h2>
+      <dl class="wc-sum">
+        <dt>Produtos</dt><dd>&euro;{{ order.subtotal|floatformat:2 }}</dd>
+        {% if order.tier_total %}<dt>Desconto por volume</dt><dd>-&euro;{{ order.tier_total|floatformat:2 }}</dd>{% endif %}
+        <dt>{{ order.get_shipping_state_display }}</dt><dd>{% if order.shipping_state == 'pending' %}&mdash;{% else %}&euro;0.00{% endif %}</dd>
+        <dt class="total">Total</dt><dd class="total">&euro;{{ order.goods_total|floatformat:2 }}{% if order.shipping_state == 'pending' %} + portes{% endif %}</dd>
+      </dl>
+    </section>
+    <section class="wc-card" aria-label="Entrega">
+      <h2>Entrega</h2>
+      <p class="wc-text">{% if order.business_name %}{{ order.business_name }}
+{% endif %}{{ order.contact_name }} &middot; {{ order.phone }}{% if order.delivery == 'pickup' %}
+Levantamento em loja{% else %}
+{{ order.address }}
+{{ order.postal_code }} {{ order.city }}{% endif %}{% if order.note %}
+
+{{ order.note }}{% endif %}</p>
+    </section>
+    {% if order.status == 'submitted' %}
+    <form method="post" action="{% url 'wholesale_order_cancel' order.public_id %}" onsubmit="return confirm('Cancelar este pedido?')">
+      {% csrf_token %}<button type="submit" class="btn btn-outline-danger w-100">Cancelar pedido</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

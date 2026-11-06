@@ -36,6 +36,34 @@ class BarcodeForm(forms.Form):
 
 
 
+class OrderRequestForm(forms.Form):
+    """Where an order goes, as the customer fills it in. In Portuguese: the customer
+    reads it."""
+    COUNTRIES = [('PT', 'Portugal'), ('ES', 'Espanha'), ('FR', 'Fran\u00e7a'), ('DE', 'Alemanha'), ('IT', 'It\u00e1lia'),
+                 ('BE', 'B\u00e9lgica'), ('NL', 'Pa\u00edses Baixos'), ('LU', 'Luxemburgo'), ('IE', 'Irlanda'),
+                 ('AT', '\u00c1ustria'), ('EU', 'Outro pa\u00eds da UE')]
+
+    delivery = forms.ChoiceField(label='Entrega', choices=[('delivery', 'Entrega na morada'),
+                                                           ('pickup', 'Levantamento em loja')], initial='delivery')
+    business_name = forms.CharField(label='Empresa', max_length=120, required=False)
+    contact_name = forms.CharField(label='Nome', max_length=120)
+    phone = forms.CharField(label='Telefone', max_length=30)
+    email = forms.EmailField(label='Email', required=False)
+    address = forms.CharField(label='Morada', required=False, widget=forms.Textarea(attrs={'rows': 2}))
+    postal_code = forms.CharField(label='C\u00f3digo postal', max_length=20, required=False)
+    city = forms.CharField(label='Localidade', max_length=80, required=False)
+    country = forms.ChoiceField(label='Pa\u00eds', choices=COUNTRIES, initial='PT', required=False)
+    note = forms.CharField(label='Nota', required=False, widget=forms.Textarea(attrs={'rows': 2}))
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get('delivery') == 'delivery':
+            for field in ('address', 'postal_code', 'city'):
+                if not (cleaned.get(field) or '').strip():
+                    self.add_error(field, 'Campo obrigat\u00f3rio.')
+        return cleaned
+
+
 class ProductForm(forms.ModelForm):
     # Every product the shop sells has an EAN on the box (2026-10-29: only
     # perfumes remain); a new product cannot be saved without one.

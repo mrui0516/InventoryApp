@@ -23,12 +23,15 @@ from .hr import AttendanceRecord
 from .submissions import FormSubmission
 from .system import ErrorLog
 from .transfers import StockTransfer, StockTransferLine, StoreSettlement
+from .wholesale import CartLine, OrderRequest, OrderRequestLine
 from .expenses import (Expense, ExpenseCategory, ExpenseTemplate, ExpenseTemplateSkip, FinanceLog,
                        OwnerFunding, SupplierPayment)
 
 __all__ = [
     # core
     'BusinessSettings', 'PrintProfile', 'Store', 'StoreProfile',
+    # wholesale
+    'CartLine', 'OrderRequest', 'OrderRequestLine',
     # catalog
     'Category', 'Brand', 'ProductSeries', 'Product', 'ProductContent', 'ProductImage', 'ProductType', 'RestockRequest',
     'Concentration', 'FragranceFamily', 'Inspiration',

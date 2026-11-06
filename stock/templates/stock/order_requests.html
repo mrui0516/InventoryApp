@@ -1,0 +1,68 @@
+{% extends 'stock/base.html' %}
+{% block title %}Order requests{% endblock %}
+{% block content %}
+<style>
+  .oq{ display:grid; gap:.75rem; grid-template-columns:minmax(0,1fr); }
+  .oq h1{ margin:0; font-size:1.4rem; font-weight:800; }
+  .oq-list{ background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius); overflow:hidden; }
+  .oq-row{ display:grid; grid-template-columns:4rem minmax(0,1fr) 7rem 4.5rem 6.5rem 6rem; gap:.75rem; align-items:center; width:100%; padding:.55rem .85rem; border:0; border-top:1px solid var(--app-border); background:none; color:inherit; text-align:left; font-variant-numeric:tabular-nums; }
+  .oq-row:first-child{ border-top:0; }
+  .oq-row:hover{ background:var(--app-accent-soft); }
+  .oq-main{ min-width:0; font-weight:700; overflow-wrap:anywhere; }
+  .oq-main small{ display:block; font-weight:500; font-size:.85rem; color:var(--app-muted); }
+  .oq-total{ text-align:right; font-weight:800; }
+  .oq-status{ font-size:.85rem; font-weight:700; }
+  .oq-status.cancelled{ color:#b42318; }
+  .oq-empty{ margin:0; padding:1rem; color:var(--app-muted); }
+  @media (max-width:767.98px){
+    .oq-row{ grid-template-columns:minmax(0,1fr) auto; gap:.1rem .75rem; }
+    .oq-date, .oq-units{ font-size:.85rem; color:var(--app-muted); }
+  }
+</style>
+<div class="oq">
+  <h1>Order requests</h1>
+  <section class="oq-list" aria-label="Order requests">
+    {% for order in orders %}
+      <button type="button" class="oq-row" data-layer="oq-{{ order.id }}">
+        <b>#{{ order.id }}</b>
+        <span class="oq-main">{{ order.customer.name|default:order.contact_name }}<small>{{ order.phone }}{% if order.city %} &middot; {{ order.city }}{% endif %}</small></span>
+        <span class="oq-date">{{ order.created_at|date:"Y-m-d H:i" }}</span>
+        <span class="oq-units">{{ order.units }} pcs</span>
+        <span class="oq-total">&euro;{{ order.goods_total|floatformat:2 }}</span>
+        <span class="oq-status {{ order.status }}">{% if order.status == 'submitted' %}To confirm{% else %}Cancelled{% endif %}</span>
+      </button>
+      <template id="oq-{{ order.id }}">
+        <div data-part="title">Request #{{ order.id }}</div>
+        <div data-part="body">
+          <dl class="sp-kv">
+            <div><dt>Customer</dt><dd>{{ order.customer.name|default:"Not linked" }}</dd></div>
+            <div><dt>Contact</dt><dd>{{ order.contact_name }} &middot; {{ order.phone }}</dd></div>
+            {% if order.email %}<div><dt>Email</dt><dd>{{ order.email }}</dd></div>{% endif %}
+            <div><dt>Delivery</dt><dd>{% if order.delivery == 'pickup' %}Pickup in shop{% else %}{{ order.address }}, {{ order.postal_code }} {{ order.city }} ({{ order.country }}){% endif %}</dd></div>
+            <div><dt>Shipping</dt><dd>{{ order.get_shipping_state_display }}</dd></div>
+            {% if order.note %}<div><dt>Note</dt><dd>{{ order.note }}</dd></div>{% endif %}
+          </dl>
+          <section class="sp-sec"><h6>Products</h6>
+            {% for line in order.lines.all %}<div class="sp-row"><span class="sp-row-main">{{ line.quantity }} &times; {{ line.name }}</span><span class="sp-row-fig">&euro;{{ line.line_total|floatformat:2 }}</span></div>{% endfor %}
+          </section>
+          <dl class="sp-kv">
+            <div><dt>Goods</dt><dd>&euro;{{ order.subtotal|floatformat:2 }}</dd></div>
+            {% if order.tier_total %}<div><dt>Volume</dt><dd>-&euro;{{ order.tier_total|floatformat:2 }}</dd></div>{% endif %}
+            <div><dt>Total</dt><dd><b>&euro;{{ order.goods_total|floatformat:2 }}</b></dd></div>
+          </dl>
+        </div>
+        <div data-part="foot">
+          {% if order.status == 'submitted' %}
+          <form method="post" action="{% url 'order_requests' %}" onsubmit="return confirm('Cancel this request?')">
+            {% csrf_token %}<input type="hidden" name="id" value="{{ order.id }}"><input type="hidden" name="action" value="cancel">
+            <button type="submit" class="btn btn-outline-danger">Cancel request</button>
+          </form>
+          {% endif %}
+        </div>
+      </template>
+    {% empty %}
+      <p class="oq-empty">No requests yet.</p>
+    {% endfor %}
+  </section>
+</div>
+{% endblock %}

@@ -4,7 +4,7 @@ from django.contrib.auth import views as auth_views
 from django.conf import settings
 from django.conf.urls.static import static
 
-from . import catalog_views, finance_views, panel_views, pedido_views, views
+from . import catalog_views, finance_views, panel_views, pedido_views, views, wholesale_views
 
 
 urlpatterns = [
@@ -113,7 +113,17 @@ urlpatterns = [
     path('api/products_autocomplete/', views.products_autocomplete, name='products_autocomplete'),
     path('api/parse-contents/', catalog_views.parse_contents, name='parse_contents'),
 
-    path('catalog/', views.catalog_view, name='catalog'),
+    path('catalog/', wholesale_views.catalog_view, name='catalog'),
+    path('catalog/customer/', wholesale_views.choose_customer, name='wholesale_customer'),
+    path('catalog/cart/', wholesale_views.cart_view, name='wholesale_cart'),
+    path('catalog/cart/add/', wholesale_views.cart_add, name='wholesale_cart_add'),
+    path('catalog/cart/update/', wholesale_views.cart_update, name='wholesale_cart_update'),
+    path('catalog/cart/summary/', wholesale_views.cart_summary, name='wholesale_cart_summary'),
+    path('catalog/cart/submit/', wholesale_views.cart_submit, name='wholesale_cart_submit'),
+    path('catalog/orders/', wholesale_views.orders_view, name='wholesale_orders'),
+    path('catalog/orders/<uuid:public_id>/', wholesale_views.order_view, name='wholesale_order'),
+    path('catalog/orders/<uuid:public_id>/cancel/', wholesale_views.order_cancel, name='wholesale_order_cancel'),
+    path('order-requests/', wholesale_views.order_requests, name='order_requests'),
     path('catalog/export-excel/', views.export_catalog_excel, name='export_catalog_excel'),
 
     path('team/', views.employee_list_view, name='employee_list'),

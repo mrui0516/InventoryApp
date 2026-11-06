@@ -1,0 +1,8 @@
+{% if row.state == 'out-stock' %}{% include "stock/_restock_ask.html" %}
+{% elif row.price %}<form method="post" action="{% url 'wholesale_cart_add' %}" class="wc-add" data-wc-add>
+  {% csrf_token %}<input type="hidden" name="product" value="{{ row.pk }}"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+  <input type="number" name="quantity" value="1" min="1" max="999" inputmode="numeric" aria-label="Quantidade">
+  <button type="submit" class="btn btn-sm btn-primary">Adicionar</button>
+</form>
+<span class="wc-incart" data-wc-incart="{{ row.pk }}">{% if row.in_cart %}No carrinho: {{ row.in_cart }}{% endif %}</span>
+{% else %}<span class="wc-asked">Contacte-nos</span>{% endif %}

@@ -1,0 +1,15 @@
+<section class="wc-card" aria-label="Resumo">
+  <h2>Resumo</h2>
+  <div class="wc-track" role="img" aria-label="{{ quote.progress.message }}">
+    <div class="wc-fill" style="width:{{ quote.progress.percent }}%"></div>
+    {% for m in quote.progress.marks %}<span class="wc-mark{% if m.reached %} on{% endif %}" style="left:{{ m.at }}%">{{ m.label }}</span>{% endfor %}
+  </div>
+  <p class="wc-message">{{ quote.progress.message }}</p>
+  <p class="wc-small">Progresso calculado antes do desconto por volume.</p>
+  <dl class="wc-sum">
+    <dt>Produtos ({{ quote.units }} un.)</dt><dd>&euro;{{ quote.subtotal|floatformat:2 }}</dd>
+    {% if quote.tier_total %}<dt>Desconto por volume (-&euro;{{ quote.tier_discount|floatformat:0 }}/un.)</dt><dd>-&euro;{{ quote.tier_total|floatformat:2 }}</dd>{% endif %}
+    <dt>{{ quote.shipping_label }}</dt><dd>{% if quote.shipping_state == 'pending' %}&mdash;{% else %}&euro;0.00{% endif %}</dd>
+    <dt class="total">Total</dt><dd class="total">&euro;{{ quote.goods_total|floatformat:2 }}{% if quote.shipping_state == 'pending' %} + portes{% endif %}</dd>
+  </dl>
+</section>

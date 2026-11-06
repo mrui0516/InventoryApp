@@ -114,13 +114,14 @@
         <a class="erp-nav-link {% if current_url in 'inbound_checklists,inbound_checklist' %}active{% endif %}" href="{% url 'inbound_checklists' %}">Deliveries</a>
         {% endif %}
         {% if user|is_manager_user %}
-        <a class="erp-nav-link {% if current_url == 'catalog' %}active{% endif %}" href="{% url 'catalog' %}">Catalog View</a>
+        <a class="erp-nav-link {% if current_url == 'catalog' or current_url|slice:":10" == 'wholesale_' %}active{% endif %}" href="{% url 'catalog' %}">Catalog View</a>
         {% endif %}
 
         <div class="erp-nav-group">Customers</div>
         <a class="erp-nav-link {% if current_url in 'customer_search,customer_detail,edit_customer' %}active{% endif %}" href="{% url 'customer_search' %}">Customers</a>
         {% if user|is_manager_user %}
         <a class="erp-nav-link {% if current_url in 'ar_list,ar_detail,ar_new,ar_add_payment,ar_add_items' %}active{% endif %}" href="{% url 'ar_list' %}">IOU</a>
+        <a class="erp-nav-link {% if current_url == 'order_requests' %}active{% endif %}" href="{% url 'order_requests' %}">Order requests</a>
         {% endif %}
 
         {% if user|is_manager_user %}

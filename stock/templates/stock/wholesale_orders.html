@@ -1,0 +1,16 @@
+{% extends 'stock/wholesale_base.html' %}
+{% block wholesale %}
+<section class="wc-list" aria-label="Os meus pedidos">
+  {% for order in orders %}
+    <a class="wc-order" href="{% url 'wholesale_order' order.public_id %}">
+      <b>#{{ order.id }}</b>
+      <span>{{ order.created_at|date:"Y-m-d H:i" }}</span>
+      <span>{{ order.units }} un.</span>
+      <b class="wc-money">&euro;{{ order.goods_total|floatformat:2 }}</b>
+      <span class="wc-status {{ order.status }}">{{ order.get_status_display }}</span>
+    </a>
+  {% empty %}
+    <p class="wc-empty">Ainda não há pedidos.</p>
+  {% endfor %}
+</section>
+{% endblock %}
