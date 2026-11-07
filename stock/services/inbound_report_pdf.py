@@ -8,7 +8,7 @@ from collections import OrderedDict
 from decimal import Decimal
 
 from reportlab.lib.units import mm
-from reportlab.platypus import KeepTogether, Paragraph, Spacer
+from reportlab.platypus import CondPageBreak, KeepTogether, Paragraph, Spacer, Table, TableStyle
 
 from . import doc_pdf
 
@@ -42,9 +42,54 @@ def _due_text(group):
     return f"{eur(group['order_owing'])}{when}"
 
 
+def _lines_table(style, items, shops):
+    """A delivery's goods with their prices: each shop's units in a column of its
+    own when every shop is shown; one shop's part when one shop is chosen."""
+    head = ['EAN', 'Product', 'Qty'] + [label for _id, label in shops] + ['Unit cost', 'Total']
+    fixed = [26 * mm, 11 * mm] + [17 * mm] * len(shops) + [21 * mm, 23 * mm]
+    widths = [fixed[0], doc_pdf.CONTENT_W - sum(fixed)] + fixed[1:]
+    rows = []
+    for item in items:
+        product = item.product
+        rows.append([(product.barcode or '') if product else '', item.display_name, str(item.quantity)]
+                    + [str(item.by_shop.get(shop_id, 0) or '') for shop_id, _label in shops]
+                    + [eur(item.cost_price), eur(item.line_total)])
+    rows.append(['', 'Total', str(sum(item.quantity for item in items))]
+                + [str(sum(item.by_shop.get(shop_id, 0) for item in items) or '') for shop_id, _label in shops]
+                + ['', eur(sum((item.line_total for item in items), ZERO))])
+    return doc_pdf.data_table(style, head, rows, widths, right_cols=tuple(range(2, len(head))), bold_last=True)
+
+
+def _delivery_head(style, group, with_payments, one_shop):
+    """The delivery's line above its goods: what, from whom, and the facts."""
+    title = f"{group['day'].strftime('%d/%m/%Y')}  {group['short_ref']}  {group['supplier_name']}"
+    if group['invoice_no']:
+        title += f"  -  invoice {group['invoice_no']}"
+    facts = ['On the way' if group['pending'] else
+             f"Received {group['received_on'].strftime('%d/%m/%Y')}" if group.get('received_on') else '']
+    if group.get('iva_rate'):
+        facts.append(f"IVA {group['iva_rate']:.0f}% included")
+    if group.get('shipping'):
+        facts.append('its share of shipping included' if one_shop else
+                     f"shipping EUR {group['shipping']:,.2f} included")
+    if group['shops']:
+        facts.append(_shops_text(group))
+    if with_payments and group.get('order_owing') is not None:
+        facts.append(f'to pay {_due_text(group)}')
+    left = [Paragraph(doc_pdf.esc(title), style['cellb']),
+            Paragraph(doc_pdf.esc(' - '.join(f for f in facts if f)), style['sub'])]
+    table = Table([[left, Paragraph(eur(group['cost']), style['cellrb'])]],
+                  colWidths=[doc_pdf.CONTENT_W - 32 * mm, 32 * mm])
+    table.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, -1), doc_pdf.TILE_BG), ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                               ('TOPPADDING', (0, 0), (-1, -1), 4), ('BOTTOMPADDING', (0, 0), (-1, -1), 4)]))
+    return table
+
+
 def build_inbound_report_pdf(*, profile, range_label, store_label, generated_label, filter_label, groups,
-                             shop_totals, date_label, with_payments):
-    """``groups``: the Purchases page's rows, newest first."""
+                             shop_totals, date_label, with_payments, shop_columns=(), one_shop=False):
+    """``groups``: the Purchases page's rows, newest first, already cut to one
+    shop's part when one is chosen. ``shop_columns``: ``[(id, label)]`` when
+    every shop is shown."""
     style = doc_pdf.styles()
     footer = f'Inbound report - {range_label} - {store_label}'
     story = [doc_pdf.shop_header(profile, style, 'INBOUND REPORT',
@@ -82,25 +127,13 @@ def build_inbound_report_pdf(*, profile, range_label, store_label, generated_lab
     story.append(doc_pdf.data_table(style, head, rows, widths, right_cols=tuple(range(1, len(head)))))
 
     story.append(Paragraph('Deliveries', style['section']))
-    head = ['Date', 'Ref', 'Supplier and goods', 'Units', 'Cost']
-    widths = [23 * mm, 15 * mm, 0, 12 * mm, 24 * mm]
-    if with_payments:
-        head.append('To pay')
-        widths.append(30 * mm)
-    widths[2] = doc_pdf.CONTENT_W - sum(widths)
-    rows = []
     for group in groups:
-        goods = ', '.join(f'{item.quantity}x {item.display_name}' for item in group['items'])
-        cell = [Paragraph(doc_pdf.esc(group['supplier_name'] + (' (on the way)' if group['pending'] else '')),
-                          style['cellb']),
-                Paragraph(doc_pdf.esc(goods), style['sub'])]
-        shops = _shops_text(group)
-        if shops:
-            cell.append(Paragraph(doc_pdf.esc(shops), style['sub']))
-        rows.append([group['day'].strftime('%d/%m/%Y'), group['short_ref'], cell, str(group['qty']),
-                     Paragraph(eur(group['cost']), style['cellrb'])]
-                    + ([_due_text(group)] if with_payments else []))
-    story.append(doc_pdf.data_table(style, head, rows, widths, right_cols=(3, 4)))
+        # The heading never ends a page alone; a long delivery runs on, its
+        # column heads repeated.
+        story.append(CondPageBreak(30 * mm))
+        story.append(_delivery_head(style, group, with_payments, one_shop))
+        story.append(_lines_table(style, group['items'], list(shop_columns)))
+        story.append(Spacer(1, 7))
     return doc_pdf.build(story, title='Inbound report', author=getattr(profile, 'name', ''), footer=footer)
 
 
@@ -114,20 +147,10 @@ def build_inbound_doc_pdf(*, profile, title, right_lines, party, items, shops, s
     if block is not None:
         story += [block, Spacer(1, 6)]
 
-    head = ['EAN', 'Product', 'Qty'] + [label for _id, label in shops] + ['Unit cost', 'Total']
-    fixed = [27 * mm, 12 * mm] + [14 * mm] * len(shops) + [22 * mm, 25 * mm]
-    widths = [fixed[0], doc_pdf.CONTENT_W - sum(fixed)] + fixed[1:]
-    rows = []
-    for item in items:
-        product = item.product
-        rows.append([(product.barcode or '') if product else '', item.display_name, str(item.quantity)]
-                    + [str(item.by_shop.get(shop_id, 0) or '') for shop_id, _label in shops]
-                    + [eur(item.cost_price), eur(item.line_total)])
-    story.append(doc_pdf.data_table(style, head, rows, widths, right_cols=tuple(range(2, len(head)))))
-    story.append(Spacer(1, 6))
-
-    total = sum((item.line_total for item in items), ZERO)
-    story.append(doc_pdf.totals_table(style, summary, ('Total', eur(total))))
+    story.append(_lines_table(style, items, shops))
+    if summary:
+        story += [Spacer(1, 3), Paragraph(doc_pdf.esc(' - '.join(f'{label} {value}' for label, value in summary)),
+                                          style['note'])]
 
     if payment:
         parts = [Paragraph('Payment', style['section'])]

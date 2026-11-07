@@ -775,7 +775,7 @@ def orders_page(request):
     elif view == 'purchases':
         purchases = load_purchases(start, end, params['q'], request.get_full_path(),
                                    store=None if store_is_all else active_store, by=params['pdate'],
-                                   with_payments=has_admin_access(request.user))
+                                   with_payments=has_admin_access(request.user) and (store_is_all or active_store is None))
         context['pdate'] = params['pdate']
         context['pdate_urls'] = [{'label': label, 'on': params['pdate'] == value,
                                   'url': page_url(params, pdate=None if value == 'received' else value)}
@@ -848,7 +848,8 @@ def _export_purchases(request, params, store):
     from .services import inbound_report_pdf
 
     start, end = params['start'], params['end']
-    with_payments = has_admin_access(request.user)
+    # What suppliers are owed is the company's debt, not one shop's.
+    with_payments = has_admin_access(request.user) and store is None
     groups = load_purchases(start, end, params['q'], '', store=store, by=params['pdate'],
                             with_payments=with_payments)
     pdf = inbound_report_pdf.build_inbound_report_pdf(
@@ -860,6 +861,8 @@ def _export_purchases(request, params, store):
         date_label='By day paid' if params['pdate'] == 'paid' else 'By day received',
         groups=groups,
         shop_totals=_purchase_shop_totals(groups),
+        shop_columns=[] if store is not None else _shop_columns(),
+        one_shop=store is not None,
         with_payments=with_payments,
     )
     return _pdf_response(pdf, f'Inbound_{_file_range(start, end)}.pdf')
@@ -889,12 +892,27 @@ def _export_analysis(request, params, store, today):
     return _pdf_response(pdf, f'Analysis_{_file_range(start, end)}.pdf')
 
 
-def _inbound_doc_shops(items):
-    """The shop columns of a delivery: those that received any of it."""
+def _shop_columns():
+    """``[(id, label)]`` of the active shops, when there is more than one."""
+    from .services.store_stock import active_stores
+    shops = active_stores()
+    return [(shop.id, shop.name.split()[0]) for shop in shops] if len(shops) > 1 else []
+
+
+def _inbound_doc_shops(items, store):
+    """The shop columns of a delivery: none for one shop's part, else those
+    that received any of it."""
+    if store is not None:
+        return []
     names = {s.id: s.name.split()[0] for s in Store.objects.all()}
     used = sorted({shop_id for item in items for shop_id, qty in item.by_shop.items() if qty and shop_id},
                   key=lambda shop_id: names.get(shop_id, ''))
     return [(shop_id, names.get(shop_id, 'Shop')) for shop_id in used]
+
+
+def _pdf_scope(request):
+    active_store, store_is_all = resolve_active_store(request)
+    return None if (store_is_all or active_store is None) else active_store
 
 
 @login_required
@@ -904,10 +922,19 @@ def inbound_order_pdf(request, order_id):
     from .services import inbound_report_pdf
 
     order = get_object_or_404(InboundOrder.objects.select_related('supplier'), pk=order_id)
+    store = _pdf_scope(request)
     batches = list(order.items.select_related('product'))
-    items = _annotate_purchase_items(merge_batches(batches, by='received') if batches else _pending_lines(order, None))
+    if batches:
+        merged = merge_batches(batches, by='received')
+        items = _scope_to_shop(merged, store) if store is not None else merged
+    else:
+        items = _pending_lines(order, store)
+    if not items:
+        raise Http404('Nothing of this delivery went to this shop.')
+    items = _annotate_purchase_items(items)
     payment = None
-    if has_admin_access(request.user) and (finance.tracks_payment(order) or order.payments.exists()):
+    if (store is None and has_admin_access(request.user)
+            and (finance.tracks_payment(order) or order.payments.exists())):
         due, paid = finance.order_due(order), finance.order_paid(order)
         payment = {'paid': paid, 'owing': due - paid, 'schedule': finance.schedule(order, due, paid)}
     received = order.received_at if batches else None
@@ -915,19 +942,21 @@ def inbound_order_pdf(request, order_id):
     if order.iva_rate:
         summary.append((f'IVA {order.iva_rate:.0f}%', 'included'))
     if order.shipping:
-        summary.append(('Shipping', f'EUR {order.shipping:,.2f} included'))
+        summary.append(('Shipping', 'its share included' if store is not None
+                        else f'EUR {order.shipping:,.2f} included'))
     pdf = inbound_report_pdf.build_inbound_doc_pdf(
-        profile=PrintProfile.get_for_store(None),
+        profile=PrintProfile.get_for_store(store),
         title=f'INBOUND #{order.id}',
         right_lines=[timezone.localtime(order.created_at).strftime('%d/%m/%Y'),
-                     'On the way' if not batches else 'Received'],
+                     'On the way' if not batches else 'Received', store.name if store else 'All stores'],
         party=[('Supplier', order.supplier.name if order.supplier else ''), ('Invoice', order.invoice_no or ''),
                ('Invoice date', order.invoice_date.strftime('%d/%m/%Y') if order.invoice_date else ''),
                ('Received', timezone.localtime(received).strftime('%d/%m/%Y') if received else ''),
                ('Note', order.note or '')],
-        items=items, shops=_inbound_doc_shops(items), summary=summary, payment=payment,
+        items=items, shops=_inbound_doc_shops(items, store), summary=summary, payment=payment,
     )
-    return _pdf_response(pdf, f'Inbound_{order.id}.pdf')
+    suffix = f"_{store.name.split()[0]}" if store else ''
+    return _pdf_response(pdf, f'Inbound_{order.id}{suffix}.pdf')
 
 
 @login_required
@@ -940,12 +969,18 @@ def direct_purchase_pdf(request):
     batches = list(Purchase.objects.filter(pk__in=ids, inbound_order__isnull=True).select_related('product', 'supplier'))
     if not batches:
         raise Http404
-    items = _annotate_purchase_items(merge_batches(batches, by='received'))
+    store = _pdf_scope(request)
+    merged = merge_batches(batches, by='received')
+    items = _scope_to_shop(merged, store) if store is not None else merged
+    if not items:
+        raise Http404('Nothing of this stock-in went to this shop.')
+    items = _annotate_purchase_items(items)
     day = timezone.localtime(batches[0].date)
     names = sorted({b.supplier.name for b in batches if b.supplier_id})
     pdf = inbound_report_pdf.build_inbound_doc_pdf(
-        profile=PrintProfile.get_for_store(None), title='STOCK-IN', right_lines=[day.strftime('%d/%m/%Y')],
-        party=[('Supplier', ', '.join(names))], items=items, shops=_inbound_doc_shops(items), summary=[],
+        profile=PrintProfile.get_for_store(store), title='STOCK-IN',
+        right_lines=[day.strftime('%d/%m/%Y'), store.name if store else 'All stores'],
+        party=[('Supplier', ', '.join(names))], items=items, shops=_inbound_doc_shops(items, store), summary=[],
     )
     return _pdf_response(pdf, f'Stock-in_{day.date().isoformat()}.pdf')
 

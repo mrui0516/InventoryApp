@@ -11,7 +11,7 @@
 | 维度 | 状态 | 说明 |
 |---|---|---|
 | 线上运行 | ✅ PythonAnywhere 欧盟区 | `https://scentory.eu.pythonanywhere.com`，两家店（Khan Perfume、Scentory）日常收银、入库都在线上；线上 `db.sqlite3` 是唯一准数据 |
-| 自动化测试 | ✅ 1536 个全部通过 | `python manage.py test stock restock_alerts`，在干净导出上跑 |
+| 自动化测试 | ✅ 1546 个全部通过 | `python manage.py test stock restock_alerts`，在干净导出上跑 |
 | 数据库迁移 | ✅ 最新 `0084_inbound_payment_terms`，无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
 | 生产配置 | ✅ `DEBUG=False`，密钥只在服务器 `.env` | `settings.py` 的 `if not DEBUG` 块：强制 HTTPS、安全 Cookie、HSTS、防点击劫持 |
 | 数据备份 | ✅ 每日快照 + 本机拉取 | PA 定时任务 `backup_db --keep 30`，本机 `scripts/pull_backup_from_pa.py` 拉到 U 盘；Settings → Tools 可手动下载。见 [BACKUP.md](./BACKUP.md) |
@@ -73,6 +73,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-11-07: **导出按店铺分开。** 单张入库单按选中的店只印这家的部分；Inbound 报告带每行价格，All stores 每家一列；欠款只在 All stores 下显示。
 - 2026-11-06: **入库付款和导出。** 入库单到期日与分期（迁移 0084）、Finance 现金流预测和每家货款、Receive 手机版重排、手机上表格行不再粘住高亮；Orders 的 Sales / Purchases / Analysis 各自导出 PDF，单张入库单和销售单可导出。
 - 2026-11-06: **Catálogo 第三轮。** 手机行压到两行、No carrinho 改成不占位的徽章、客户名进 Nome；Mix 和 Amostra 选款（迁移 0082，Decante 改为 Amostra 类型）；订单进 Pedido、下载 PDF 确认、售出完成（迁移 0083）；在路上的产品可订购。
 - 2026-11-06: **Catálogo 第二轮。** 运费 €5 / Portes grátis（迁移 0081）、Ponto de recolha、类型和品牌直接显示并按品牌分组、Os meus pedidos 显示过去的销售、客户折扣按 Pedido 同一来源（含上次成交差额）。
