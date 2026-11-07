@@ -30,7 +30,7 @@ from .expenses import (Expense, ExpenseCategory, ExpenseTemplate, ExpenseTemplat
 
 __all__ = [
     'ShopifyCatalogState', 'ShopifyCatalogLease',
-    'AccountLink', 'CustomerAccount',
+    'AccountLink', 'CustomerAccount', 'PortalVisit',
     # core
     'BusinessSettings', 'PrintProfile', 'Store', 'StoreProfile',
     # wholesale
@@ -60,4 +60,4 @@ __all__ = [
     'AttendanceRecord',
 ]
 
-from .accounts import AccountLink, CustomerAccount  # noqa: E402
+from .accounts import AccountLink, CustomerAccount, PortalVisit  # noqa: E402

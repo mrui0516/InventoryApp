@@ -8232,12 +8232,13 @@ class RoundANavigationTests(TestCase):
         # With one store picked: under "All stores" Sell and Pedido are left
         # out since 2026-10-25 (AllStoresNavTests).
         links, nav = self._menu(self.admin, store=self.store_a)
-        self.assertEqual(links, ["Today", "Dashboard", "Orders", "Sell", "Pedido",
-                                 "Products", "Catalog View",
-                                 "Customers", "IOU", "Order requests", "Inbound", "Transfers", "Suppliers", "Restock requests", "Finance",
+        self.assertEqual(links, ["Today", "Dashboard", "Orders", "Sell",
+                                 "Overview", "Order requests", "Pedido", "Catalog View", "Restock requests",
+                                 "Products",
+                                 "Customers", "IOU", "Inbound", "Transfers", "Suppliers", "Finance",
                                  "Attendance", "Tools", "Team", "Stores", "Print Header",
                                  "Shop settings", "Rules", "Catalog", "Correct orders", "Audit"])
-        for group in ("Sell", "Products", "Customers", "Purchasing", "Finance", "Settings"):
+        for group in ("Sell", "B2B", "Products", "Customers", "Purchasing", "Finance", "Settings"):
             self.assertIn(f">{group}<", nav)
 
     def test_the_old_names_are_gone(self):

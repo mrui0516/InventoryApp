@@ -71,6 +71,21 @@ def portal_invite(request, token):
 
 @login_required
 @manager_required
+def b2b_overview(request):
+    """B2B -> Overview: every reseller, its account and what it does."""
+    from .services import b2b_overview as overview
+    state = request.GET.get('state', '')
+    state = state if state in overview.STATES else ''
+    query = request.GET.get('q', '').strip()
+    data = overview.overview(state, query)
+    return render(request, 'stock/b2b_overview.html', {
+        'data': data, 'rows': data['rows'], 'state': state, 'query': query,
+        'state_tabs': [(s, overview.STATE_LABELS[s], data['counts'][s]) for s in overview.STATES],
+    })
+
+
+@login_required
+@manager_required
 @require_POST
 def customer_portal(request, customer_id):
     """Customer page -> Catalogue access: a link, suspending, resuming."""

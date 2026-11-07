@@ -1,0 +1,109 @@
+{% extends 'stock/base.html' %}
+{% block title %}B2B overview{% endblock %}
+{% block content %}
+<div class="b2-page">
+  <div class="b2-head"><h1>B2B overview</h1><a class="btn btn-sm btn-outline-secondary" href="{% url 'catalog' %}">Catalog View</a></div>
+
+  <div class="b2-kpis">
+    <div class="b2-kpi hi"><span class="k">Active accounts</span><span class="v">{{ data.counts.active }}</span><span class="s">{{ data.seen_week }} seen this week</span></div>
+    <a class="b2-kpi" href="{% url 'order_requests' %}"><span class="k">To confirm</span><span class="v">{{ data.to_confirm }}</span><span class="s">{{ data.confirmed }} confirmed, not sold</span></a>
+    <div class="b2-kpi"><span class="k">Open carts</span><span class="v">{{ data.carts }}</span><span class="s">&euro;{{ data.cart_value|floatformat:2 }}</span></div>
+    <div class="b2-kpi"><span class="k">B2B sales this month</span><span class="v">&euro;{{ data.sales_month|floatformat:"2g" }}</span></div>
+    <div class="b2-kpi"><span class="k">Invited</span><span class="v">{{ data.counts.invited }}</span><span class="s">{{ data.counts.none }} without account</span></div>
+  </div>
+
+  <nav class="ftabs" aria-label="Account">
+    <a class="{% if not state %}on{% endif %}" href="?{% if query %}q={{ query|urlencode }}{% endif %}">All <span class="n">{{ data.counts.all }}</span></a>
+    {% for value, label, n in state_tabs %}<a class="{% if state == value %}on{% endif %}" href="?state={{ value }}{% if query %}&amp;q={{ query|urlencode }}{% endif %}">{{ label }} <span class="n">{{ n }}</span></a>{% endfor %}
+  </nav>
+  <form method="get" class="b2-find" role="search">
+    {% if state %}<input type="hidden" name="state" value="{{ state }}">{% endif %}
+    <input type="search" name="q" value="{{ query }}" class="form-control" placeholder="Customer or phone" aria-label="Search">
+  </form>
+
+  <div class="b2-list">
+    <div class="b2-row b2-headrow" aria-hidden="true">
+      <span>Customer</span><span>Account</span><span>Last seen</span><span>Online orders</span><span>Cart</span><span class="r">Sales</span>
+    </div>
+    {% for r in rows %}
+      <button type="button" class="b2-row" data-layer="b2-{{ r.customer.id }}">
+        <span class="b2-cust"><b>{{ r.customer.name }}</b><small>{{ r.customer.phone|default:"no phone" }}</small></span>
+        <span class="b2-acct"><span class="b2-state {{ r.state }}">{{ r.state_label }}</span>{% if r.state == 'invited' %}<small class="{% if r.link_expired or not r.link %}late{% endif %}">{% if r.link and not r.link_expired %}link until {{ r.link.expires_at|date:"d/m H:i" }}{% else %}link expired{% endif %}</small>{% endif %}</span>
+        <span class="b2-seen">{% if r.last_seen %}{{ r.last_seen|timesince }} ago<small>{{ r.days_active }} day{{ r.days_active|pluralize }} &middot; {{ r.views }} views / 30d</small>{% else %}&mdash;{% endif %}</span>
+        <span class="b2-ord">{% if r.requests %}{% if r.to_confirm %}<b class="warn">{{ r.to_confirm }} to confirm</b>{% endif %}{% if r.confirmed %}<b>{{ r.confirmed }} confirmed</b>{% endif %}<small>{{ r.requests }} in all{% if r.last_request %} &middot; last {{ r.last_request.created_at|date:"d/m" }} &euro;{{ r.last_request.total|floatformat:2 }}{% endif %}</small>{% else %}&mdash;{% endif %}</span>
+        <span class="b2-cart">{% if r.cart_units %}<b>{{ r.cart_units }} un. &middot; &euro;{{ r.cart_value|floatformat:2 }}</b><small>since {{ r.cart_since|date:"d/m" }}</small>{% else %}&mdash;{% endif %}</span>
+        <span class="b2-sales r"><b>&euro;{{ r.sales_month|floatformat:2 }}</b><small>{% if r.last_sale %}last {{ r.last_sale|date:"d/m/Y" }} &middot; {% endif %}&euro;{{ r.sales_total|floatformat:"2g" }} total</small></span>
+      </button>
+      <template id="b2-{{ r.customer.id }}">
+        <div data-part="title">{{ r.customer.name }}</div>
+        <div data-part="body">
+          <dl class="sp-kv">
+            <div><dt>Account</dt><dd>{{ r.state_label }}{% if r.account %} &middot; +{{ r.account.phone }}{% endif %}</dd></div>
+            {% if r.account.activated_at %}<div><dt>Activated</dt><dd>{{ r.account.activated_at|date:"d/m/Y" }}</dd></div>{% endif %}
+            <div><dt>Last seen</dt><dd>{% if r.last_seen %}{{ r.last_seen|date:"d/m/Y H:i" }}{% else %}never{% endif %}</dd></div>
+            <div><dt>Last 30 days</dt><dd>{{ r.days_active }} day{{ r.days_active|pluralize }}, {{ r.views }} views</dd></div>
+            {% if r.restock_asks %}<div><dt>Restock asks</dt><dd>{{ r.restock_asks }} in 90 days</dd></div>{% endif %}
+            <div><dt>Sales</dt><dd>&euro;{{ r.sales_month|floatformat:2 }} this month &middot; &euro;{{ r.sales_total|floatformat:2 }} total</dd></div>
+          </dl>
+          {% if r.searches %}<section class="sp-sec"><h6>Searched</h6><div class="b2-terms">{% for term in r.searches %}<span>{{ term }}</span>{% endfor %}</div></section>{% endif %}
+          {% if r.cart_lines %}<section class="sp-sec"><h6>In the cart</h6>
+            {% for line in r.cart_lines %}<div class="sp-row"><span class="sp-row-main">{{ line.product.brand }} {{ line.product.name }}</span><span class="sp-row-fig">{{ line.quantity }}</span></div>{% endfor %}
+          </section>{% endif %}
+          {% if r.recent %}<section class="sp-sec"><h6>Online orders</h6>
+            {% for o in r.recent %}<div class="sp-row"><span class="sp-row-main">#{{ o.id }} &middot; {{ o.created_at|date:"d/m" }} &middot; {{ o.get_status_display }}</span><span class="sp-row-fig">&euro;{{ o.total|floatformat:2 }}</span></div>{% endfor %}
+          </section>{% endif %}
+        </div>
+        <div data-part="foot">
+          <a class="btn btn-outline-secondary" href="{% url 'customer_detail' r.customer.id %}">Customer page</a>
+          {% if r.state == 'none' or r.state == 'invited' %}
+            <form method="post" action="{% url 'customer_portal' r.customer.id %}">{% csrf_token %}<button type="submit" name="action" value="invite" class="btn btn-primary">{% if r.state == 'none' %}Create invite link{% else %}New invite link{% endif %}</button></form>
+          {% endif %}
+        </div>
+      </template>
+    {% empty %}
+      <p class="b2-empty">No customers here.</p>
+    {% endfor %}
+  </div>
+</div>
+<style>
+  .b2-page{ display:grid; gap:.75rem; }
+  .b2-head{ display:flex; align-items:center; justify-content:space-between; gap:.75rem; }
+  .b2-head h1{ margin:0; font-size:1.4rem; font-weight:800; }
+  .b2-kpis{ display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:.5rem; }
+  .b2-kpi{ display:block; padding:.55rem .7rem; color:inherit; text-decoration:none; background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius); }
+  .b2-kpi .k{ display:block; font-size:.85rem; font-weight:700; color:var(--app-muted); }
+  .b2-kpi .v{ display:block; font-size:1.35rem; font-weight:800; font-variant-numeric:tabular-nums; }
+  .b2-kpi .s{ display:block; font-size:.85rem; color:var(--app-muted); }
+  .b2-kpi.hi{ color:var(--app-surface); background:var(--app-text); border-color:var(--app-text); }
+  .b2-kpi.hi .k, .b2-kpi.hi .s{ color:inherit; opacity:.75; }
+  .b2-find{ max-width:22rem; margin:0; }
+  .b2-list{ background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius); overflow:hidden; }
+  .b2-row{ display:grid; grid-template-columns:minmax(0,1.4fr) 8.5rem minmax(0,1fr) minmax(0,1.2fr) minmax(0,1fr) 9.5rem; gap:.75rem; align-items:center;
+    width:100%; padding:.5rem .85rem; color:inherit; text-align:left; background:none; border:0; border-top:1px solid var(--app-border); }
+  .b2-row:first-child{ border-top:0; }
+  button.b2-row:hover{ background:var(--app-accent-soft); }
+  .b2-headrow{ font-size:.85rem; font-weight:700; color:var(--app-muted); background:var(--app-surface-2); }
+  .b2-row b{ display:block; font-weight:700; overflow-wrap:anywhere; }
+  .b2-row small{ display:block; font-size:.85rem; color:var(--app-muted); }
+  .b2-row small.late{ color:#b42318; }
+  .b2-row .r{ text-align:right; font-variant-numeric:tabular-nums; }
+  .b2-ord b.warn{ color:#92400e; }
+  .b2-state{ display:inline-block; padding:.05rem .5rem; font-size:.85rem; font-weight:700; border-radius:999px; background:var(--app-surface-2); color:var(--app-muted); }
+  .b2-state.active{ background:#dcfce7; color:#166534; }
+  .b2-state.invited{ background:#fef3c7; color:#92400e; }
+  .b2-state.suspended{ background:#fee2e2; color:#991b1b; }
+  .b2-terms{ display:flex; flex-wrap:wrap; gap:.3rem; }
+  .b2-terms span{ padding:.1rem .5rem; font-size:.85rem; background:var(--app-surface-2); border-radius:999px; }
+  .b2-empty{ margin:0; padding:.85rem; color:var(--app-muted); }
+  @media (max-width:991.98px){ .b2-kpis{ grid-template-columns:repeat(3, minmax(0,1fr)); } }
+  @media (max-width:767.98px){
+    .b2-kpis{ grid-template-columns:repeat(2, minmax(0,1fr)); }
+    .b2-headrow{ display:none; }
+    .b2-row{ grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"cust acct" "ord sales" "seen cart"; gap:.2rem .6rem; padding:.5rem .7rem; }
+    .b2-cust{ grid-area:cust; } .b2-acct{ grid-area:acct; text-align:right; } .b2-ord{ grid-area:ord; }
+    .b2-sales{ grid-area:sales; } .b2-seen{ grid-area:seen; } .b2-cart{ grid-area:cart; text-align:right; }
+    .b2-find{ max-width:none; }
+    .b2-find input{ font-size:16px; }
+  }
+</style>
+{% endblock %}

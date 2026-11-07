@@ -174,7 +174,28 @@ def check_login(request, phone, password):
 
 
 def shop_name():
-    from ..models import PrintProfile
-    from .wholesale_orders import shop_store
-    store = shop_store()
-    return PrintProfile.get_for_store(store).name if store else ''
+    """The portal's name (Settings -> Shop settings), 'Scentory B2B' by default."""
+    from ..models import BusinessSettings
+    return BusinessSettings.current().portal_name or 'Scentory B2B'
+
+
+TRACKED = {'catalog', 'wholesale_cart', 'wholesale_orders', 'wholesale_order', 'wholesale_sale'}
+SEEN_EVERY = timedelta(minutes=5)
+
+
+def record_visit(account, request, page):
+    """A page the customer opened, and the words searched on the catalogue.
+    Fetches (cart summary, perfume search) are not visits."""
+    from django.db.models import F
+    from ..models import PortalVisit
+    if page not in TRACKED or request.method != 'GET' or request.headers.get('X-Requested-With') == 'fetch':
+        return
+    visit, _ = PortalVisit.objects.get_or_create(account=account, day=timezone.localdate())
+    PortalVisit.objects.filter(pk=visit.pk).update(views=F('views') + 1)
+    term = (request.GET.get('q') or '').strip()[:60] if page == 'catalog' else ''
+    if term and term.lower() not in [t.lower() for t in visit.searches]:
+        visit.searches = (visit.searches + [term])[-20:]
+        visit.save(update_fields=['searches'])
+    now = timezone.now()
+    if account.last_seen_at is None or now - account.last_seen_at >= SEEN_EVERY:
+        CustomerAccount.objects.filter(pk=account.pk).update(last_seen_at=now)

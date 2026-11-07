@@ -152,6 +152,8 @@ class BusinessSettings(models.Model):
     # The shop that takes the wholesale catalogue's orders: their Pedido drafts
     # are its own, and customers see its phone. Empty: the default shop.
     wholesale_store = models.ForeignKey(Store, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    # What customers read at the top of the catalogue and its login page.
+    portal_name = models.CharField(max_length=60, default='Scentory B2B')
     # € per unit on top of cost for that share. Each payment keeps its own.
     purchase_share_markup = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal('0.00'),
                                                 verbose_name='Purchase share markup (€ per unit)')

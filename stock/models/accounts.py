@@ -22,9 +22,23 @@ class CustomerAccount(models.Model):
     invited_at = models.DateTimeField(auto_now_add=True)
     activated_at = models.DateTimeField(null=True, blank=True)
     suspended_at = models.DateTimeField(null=True, blank=True)
+    # When the customer last opened a catalogue page (services/portal.record_visit).
+    last_seen_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return f'{self.customer} ({self.get_status_display()})'
+
+
+class PortalVisit(models.Model):
+    """One customer's day on the catalogue: pages opened and what was searched.
+    Read by B2B -> Overview to see what customers look for."""
+    account = models.ForeignKey(CustomerAccount, on_delete=models.CASCADE, related_name='visits')
+    day = models.DateField()
+    views = models.PositiveIntegerField(default=0)
+    searches = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['account', 'day'], name='one_visit_a_day')]
 
 
 class AccountLink(models.Model):
