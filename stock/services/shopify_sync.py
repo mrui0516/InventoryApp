@@ -92,7 +92,9 @@ def volume_label(product):
 
 def is_decantable(product):
     """A full bottle of perfume, which is what decants are poured from."""
-    return is_perfume(product) and getattr(product, 'volume_ml', None) == DECANTABLE_VOLUME_ML
+    return (is_perfume(product) and getattr(product, 'product_type_id', 'perfume') == 'perfume'
+            and not getattr(product, 'is_mix', False)
+            and getattr(product, 'volume_ml', None) == DECANTABLE_VOLUME_ML)
 
 
 def decant_price(full_price, suffix):
@@ -394,7 +396,7 @@ def sync_product_image(product, client=None, *, overwrite=False, dry_run=False):
         return ERROR, str(exc)
 
 
-def create_product_in_shopify(product, client=None, *, status='DRAFT', dry_run=False):
+def create_product_in_shopify(product, client=None, *, status='DRAFT', dry_run=False, handle=None, include_image=True):
     """Create a missing product in Shopify, in the shape the storefront uses.
 
     A full bottle of perfume is created with its three sizes - 100ml, 10ml and
@@ -471,12 +473,14 @@ def create_product_in_shopify(product, client=None, *, status='DRAFT', dry_run=F
             'variants': variants,
         }
 
+        if handle:
+            product_input['handle'] = handle
         # Perfumes get the "Eaux de Parfum" standard category.
         if is_perfume(product):
             product_input['category'] = EAU_DE_PARFUM_TAXONOMY_GID
 
         image_path = _local_image_path(product)
-        if image_path:
+        if image_path and include_image:
             resource_url = client.stage_and_upload_image(image_path)
             product_input['files'] = [{'originalSource': resource_url, 'contentType': 'IMAGE', 'alt': title}]
 

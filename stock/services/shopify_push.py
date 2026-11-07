@@ -48,6 +48,10 @@ def queue_inventory_push(product):
     Deduplicated per transaction: an order with three lines of the same product
     is one push, not three.
     """
+    from .shopify_catalog_queue import enabled as catalog_enabled, enqueue
+    if catalog_enabled():
+        enqueue(product)
+        return
     if not enabled():
         return
     product_id = getattr(product, 'pk', None)

@@ -281,9 +281,14 @@ def split_for_receipt(raw, quantity, stores, label=''):
     return alloc
 
 
+@transaction.atomic
 def receive_batches(*, product, quantity, cost_price, allocation, supplier=None, inbound_order=None,
                     net_cost=None, iva_rate=Decimal('0.00')):
     """One batch per shop for a received line."""
+    from .shopify_catalog_queue import enabled, receipt_recorded
+    tracking = enabled()
+    before_stock = product.total_stock() if tracking else 0
+    had_history = product.purchase_set.exists() if tracking else False
     costs = {'cost_price': cost_price, 'net_cost': cost_price if net_cost is None else net_cost,
              'iva_rate': iva_rate}
     stores = {s.id: s for s in Store.objects.filter(id__in=list(allocation))}
@@ -301,6 +306,8 @@ def receive_batches(*, product, quantity, cost_price, allocation, supplier=None,
         Purchase.objects.filter(pk__in=[b.pk for b in made[1:]]).update(date=made[0].date)
         for batch in made[1:]:
             batch.date = made[0].date
+    if tracking:
+        receipt_recorded(product, before_stock=before_stock, had_history=had_history)
     return made
 
 

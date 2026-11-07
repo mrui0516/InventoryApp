@@ -7145,7 +7145,7 @@ class BackfillPerfumeSpecTests(TestCase):
 
 
 class SyncShopifyStorefrontTests(TestCase):
-    def test_hides_soldout_shows_restocked_and_sets_collections(self):
+    def test_refresh_keeps_soldout_visible_and_preserves_merchant_drafts(self):
         from io import StringIO
         from unittest import mock
         cat = Category.objects.create(name="Perfumes")
@@ -7163,15 +7163,15 @@ class SyncShopifyStorefrontTests(TestCase):
             "IN": {"product_id": "gid://P/in", "status": "DRAFT", "variant_id": "v",
                    "inventory_item_id": "i", "price": "10.00", "available": 5},
         }
-        client.find_collection_by_title.return_value = "gid://C/x"
+        client.all_collections.return_value = []
 
-        with mock.patch("stock.management.commands.sync_shopify_storefront.ShopifyClient",
-                        return_value=client):
-            call_command("sync_shopify_storefront", "--apply", stdout=StringIO())
+        from stock.services.shopify_storefront import sync_storefront
+        sync_storefront(client=client)
 
-        status_calls = {c.args[0]: c.args[1] for c in client.set_product_status.call_args_list}
-        self.assertEqual(status_calls, {"gid://P/out": "DRAFT", "gid://P/in": "ACTIVE"})
-        self.assertTrue(client.set_collection_products.called)
+        client.set_product_status.assert_not_called()
+        memberships = [c.args[1] for c in client.set_collection_products.call_args_list]
+        self.assertIn(["gid://P/out"], memberships)
+        self.assertFalse(any("gid://P/in" in members for members in memberships))
 
     def test_dry_run_writes_nothing(self):
         from io import StringIO
@@ -7185,7 +7185,8 @@ class SyncShopifyStorefrontTests(TestCase):
                     "inventory_item_id": "i", "price": "10.00", "available": 0},
         }
         client.find_collection_by_title.return_value = None
-        with mock.patch("stock.management.commands.sync_shopify_storefront.ShopifyClient",
+        client.all_collections.return_value = []
+        with mock.patch("stock.services.shopify_catalog_client.CatalogClient",
                         return_value=client):
             call_command("sync_shopify_storefront", stdout=StringIO())
         client.set_product_status.assert_not_called()
