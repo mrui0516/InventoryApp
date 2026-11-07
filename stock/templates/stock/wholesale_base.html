@@ -1,4 +1,4 @@
-{% extends 'stock/base.html' %}
+{% extends base_template|default:'stock/base.html' %}
 {% block title %}Catálogo grossista{% endblock %}
 {% block content %}
 <style>
@@ -183,8 +183,9 @@
 <div class="wc">
   <div class="wc-head">
     <h1>Catálogo grossista</h1>
-    <span class="wc-tag wc-internal">Pré-visualização interna</span>
+    {% if not portal %}<span class="wc-tag wc-internal">Pré-visualização interna</span>{% endif %}
     {% if customer.portal_discount %}<span class="wc-tag">Desconto &euro;{{ customer.portal_discount|floatformat:2 }}/un.</span>{% endif %}
+    {% if not portal %}
     <form method="post" action="{% url 'wholesale_customer' %}" class="wc-as">
       {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
       <label for="wc-as">Ver como</label>
@@ -193,6 +194,7 @@
         {% for c in customers %}<option value="{{ c.id }}"{% if customer.id == c.id %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
       </select>
     </form>
+    {% endif %}
   </div>
   <nav class="wc-tabs" aria-label="Catálogo">
     <a class="{% if tab == 'catalog' %}on{% endif %}" href="{% url 'catalog' %}">Catálogo</a>

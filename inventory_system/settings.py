@@ -164,6 +164,8 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
+    # Customer accounts stay inside the wholesale catalogue (stock/middleware.py).
+    'stock.middleware.PortalGuard',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 

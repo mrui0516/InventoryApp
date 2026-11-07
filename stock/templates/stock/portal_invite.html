@@ -1,0 +1,21 @@
+{% extends 'stock/portal_base.html' %}
+{% block title %}Criar palavra-passe{% endblock %}
+{% block content %}
+<section class="pt-card" aria-label="Criar palavra-passe">
+  {% if link %}
+    <h1>Criar palavra-passe</h1>
+    <p class="pt-sub">{{ link.account.customer.name }}</p>
+    {% if error %}<div class="alert alert-danger mt-3 mb-0" role="alert">{{ error }}</div>{% endif %}
+    <form method="post">
+      {% csrf_token %}
+      <label>Telemóvel<input type="tel" name="phone" class="form-control" autocomplete="tel" inputmode="tel" required autofocus></label>
+      <label>Palavra-passe<input type="password" name="password1" class="form-control" autocomplete="new-password" minlength="8" required></label>
+      <label>Repetir palavra-passe<input type="password" name="password2" class="form-control" autocomplete="new-password" minlength="8" required></label>
+      <button type="submit" class="btn btn-primary">Guardar e entrar</button>
+    </form>
+  {% else %}
+    <h1>Link inválido</h1>
+    <p class="pt-sub">{% if error %}{{ error }}{% else %}{{ bad_link }}{% endif %}</p>
+  {% endif %}
+</section>
+{% endblock %}

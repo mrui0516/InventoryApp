@@ -27,7 +27,7 @@ from .wholesale import CartLine, OrderRequest, OrderRequestLine
 from .expenses import (Expense, ExpenseCategory, ExpenseTemplate, ExpenseTemplateSkip, FinanceLog,
                        OwnerFunding, SupplierPayment)
 
-__all__ = [
+__all__ = ['AccountLink', 'CustomerAccount', 
     # core
     'BusinessSettings', 'PrintProfile', 'Store', 'StoreProfile',
     # wholesale
@@ -56,3 +56,5 @@ __all__ = [
     # hr
     'AttendanceRecord',
 ]
+
+from .accounts import AccountLink, CustomerAccount  # noqa: E402

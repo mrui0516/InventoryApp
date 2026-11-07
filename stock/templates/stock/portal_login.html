@@ -1,0 +1,15 @@
+{% extends 'stock/portal_base.html' %}
+{% block title %}Entrar{% endblock %}
+{% block content %}
+<section class="pt-card" aria-label="Entrar">
+  <h1>Catálogo grossista</h1>
+  {% if error %}<div class="alert alert-danger mt-3 mb-0" role="alert">{{ error }}</div>{% endif %}
+  <form method="post">
+    {% csrf_token %}<input type="hidden" name="next" value="{{ next }}">
+    <label>Telemóvel<input type="tel" name="phone" class="form-control" autocomplete="tel" inputmode="tel" value="{{ phone }}" required autofocus></label>
+    <label>Palavra-passe<input type="password" name="password" class="form-control" autocomplete="current-password" required></label>
+    <button type="submit" class="btn btn-primary">Entrar</button>
+  </form>
+  <p class="pt-sub mt-3">Esqueceu a palavra-passe? Contacte a loja.</p>
+</section>
+{% endblock %}

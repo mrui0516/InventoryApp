@@ -24,6 +24,8 @@ from .permissions import manager_required
 from .services import submissions
 from .services.wholesale_cart import add_to_cart, cart_quote, set_quantity, submit_request
 from .services.wholesale_catalog import PAGE_SIZE, brand_sort_key, catalog_rows
+from .services import portal
+from .services.portal import catalog_access
 from .services.wholesale_discount import last_discount
 from .services.wholesale_orders import cancel_order, reopen_in_cart, shop_phone
 from .services.wholesale_picks import perfume_choices
@@ -33,10 +35,15 @@ EDITING_KEY = 'wholesale_editing'
 
 
 def _customer(request):
-    """The customer being previewed, with the discount the rest of the shop would
-    give them: set by hand or from their last sale, whichever is newer."""
-    pk = request.session.get(SESSION_KEY)
-    customer = Customer.objects.filter(pk=pk, kind=Customer.REVENDA).first() if pk else None
+    """The customer: a logged-in customer's own, or the one a manager previews
+    (Ver como). With the discount the rest of the shop would give them: set by
+    hand or from their last sale, whichever is newer."""
+    account = portal.account_of(request)
+    if account is not None:
+        customer = account.customer
+    else:
+        pk = request.session.get(SESSION_KEY)
+        customer = Customer.objects.filter(pk=pk, kind=Customer.REVENDA).first() if pk else None
     if customer is not None:
         agreed = last_discount(customer.pk)
         customer.portal_discount = agreed['discount'] if agreed else customer.wholesale_discount
@@ -56,15 +63,20 @@ def _number(value):
 
 def _shared(request, customer):
     quote = cart_quote(request.user, customer, {})
+    is_customer = portal.account_of(request) is not None
     return {
         'customer': customer,
-        'customers': Customer.objects.filter(kind=Customer.REVENDA).order_by('name').only('id', 'name'),
+        'customers': [] if is_customer else Customer.objects.filter(kind=Customer.REVENDA).order_by('name').only('id', 'name'),
         'bar': quote,
+        # A customer sees the catalogue on its own page, without the shop's menu.
+        'portal': is_customer,
+        'base_template': 'stock/portal_base.html' if is_customer else 'stock/base.html',
+        'portal_shop': portal.shop_name() if is_customer else '',
+        'portal_customer': customer if is_customer else None,
     }
 
 
-@login_required
-@manager_required
+@catalog_access
 def catalog_view(request):
     query = request.GET.get('q', '').strip()
     brand = request.GET.get('brand', '').strip()
@@ -123,8 +135,7 @@ def _picks(text):
         return None
 
 
-@login_required
-@manager_required
+@catalog_access
 def pick_search(request):
     return JsonResponse({'results': perfume_choices(request.GET.get('q'))})
 
@@ -133,8 +144,7 @@ def _wants_json(request):
     return request.headers.get('X-Requested-With') == 'fetch'
 
 
-@login_required
-@manager_required
+@catalog_access
 @require_POST
 def cart_add(request):
     product = get_object_or_404(Product, pk=_number(request.POST.get('product')) or 0)
@@ -157,8 +167,7 @@ def cart_add(request):
     return _back_to(request, 'catalog')
 
 
-@login_required
-@manager_required
+@catalog_access
 @require_POST
 def cart_update(request):
     quantity = _number(request.POST.get('quantity'))
@@ -209,23 +218,20 @@ def _cart_page(request, customer, form, status=200):
     }, status=status)
 
 
-@login_required
-@manager_required
+@catalog_access
 def cart_view(request):
     customer = _customer(request)
     return _cart_page(request, customer, OrderRequestForm(initial=_initial(customer)))
 
 
-@login_required
-@manager_required
+@catalog_access
 def cart_summary(request):
     """The totals again for a new destination: the page shows what the server says."""
     quote = cart_quote(request.user, _customer(request), _destination(request.GET))
     return render(request, 'stock/_wholesale_summary.html', {'quote': quote})
 
 
-@login_required
-@manager_required
+@catalog_access
 @require_POST
 def cart_submit(request):
     customer = _customer(request)
@@ -260,8 +266,7 @@ def _mine(request, public_id):
     return get_object_or_404(wanted, public_id=public_id)
 
 
-@login_required
-@manager_required
+@catalog_access
 def orders_view(request):
     customer = _customer(request)
     sales = (SaleOrder.objects.filter(customer=customer).prefetch_related('items').order_by('-created_at')[:100]
@@ -272,8 +277,7 @@ def orders_view(request):
     })
 
 
-@login_required
-@manager_required
+@catalog_access
 def sale_view(request, pk):
     """One of the customer's past orders: what they bought, nothing of the shop's."""
     customer = _customer(request)
@@ -286,16 +290,14 @@ def sale_view(request, pk):
                                                          **_shared(request, customer)})
 
 
-@login_required
-@manager_required
+@catalog_access
 def order_view(request, public_id):
     return render(request, 'stock/wholesale_order.html', {'tab': 'orders', 'order': _mine(request, public_id),
                                                           'shop_phone': shop_phone(),
                                                           **_shared(request, _customer(request))})
 
 
-@login_required
-@manager_required
+@catalog_access
 @require_POST
 def order_edit(request, public_id):
     order = _mine(request, public_id)
@@ -307,8 +309,7 @@ def order_edit(request, public_id):
     return redirect('wholesale_cart')
 
 
-@login_required
-@manager_required
+@catalog_access
 @require_POST
 def order_edit_stop(request):
     """Leave the order as it was sent, and the cart empty."""
@@ -317,8 +318,7 @@ def order_edit_stop(request):
     return redirect('wholesale_orders')
 
 
-@login_required
-@manager_required
+@catalog_access
 @require_POST
 def order_cancel(request, public_id):
     order = _mine(request, public_id)

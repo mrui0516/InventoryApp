@@ -132,3 +132,18 @@ class TestAccountTests(FlowBase):
         text = self.run_command("test_account", "remove", "ana", "--apply")
         self.assertIn("not a test account", text)
         self.assertTrue(get_user_model().objects.filter(username="ana").exists())
+
+
+class CustomerTestAccountTests(TestAccountTests):
+    def test_it_logs_in_as_the_customer(self):
+        from stock.models import Customer, CustomerAccount
+        shop = Customer.objects.create(name="Loja Teste", kind="revenda", phone="913 000 111")
+        self.run_command("test_account", "create", "teste-cliente", "--customer", str(shop.pk))
+        account = CustomerAccount.objects.get(customer=shop)
+        self.assertEqual((account.status, account.phone), ("active", "351913000111"))
+        self.client.logout()
+        response = self.client.post(reverse("portal_login"), {"phone": "913000111", "password": "test-pass-123"})
+        self.assertRedirects(response, reverse("catalog"), fetch_redirect_response=False)
+        self.run_command("test_account", "remove", "teste-cliente", "--apply")
+        self.assertFalse(CustomerAccount.objects.exists())
+        self.assertTrue(Customer.objects.filter(pk=shop.pk).exists())

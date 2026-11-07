@@ -17,6 +17,7 @@ from .services.catalog_admin import (NameTaken, delete_type, merge_brands, merge
 from .services.catalog_prune import empty_brands, empty_series
 from .services.names import title_case
 from .services.product_contents import parse_pasted
+from .services.portal import catalog_access
 from .services.restock_requests import demand_rows, request_restock
 
 SWITCHES = ('takes_concentration', 'takes_volume', 'wholesale_discount', 'is_gift', 'shows_scent_details',
@@ -352,14 +353,15 @@ def parse_contents(request):
     return JsonResponse({'rows': parse_pasted(_text(request, 'brand', 80), request.POST.get('text') or '')})
 
 
-@login_required
-@manager_required
+@catalog_access
 @require_POST
 def restock_request(request, pk):
     """The sold-out row's button on the catalogue."""
+    from .services.portal import account_of
     from .views import _back_to
+    account = account_of(request)
     try:
-        request_restock(get_object_or_404(Product, pk=pk), request.user)
+        request_restock(get_object_or_404(Product, pk=pk), request.user, account.customer if account else None)
     except ValueError as error:
         messages.info(request, str(error))
     return _back_to(request, 'catalog')

@@ -123,6 +123,45 @@
     {% endif %}
   </header>
 
+  {% if customer.is_revenda and show_sensitive %}
+  <section class="cd-portal" aria-label="Catalogue access">
+    <div class="cd-portal-head">
+      <h2>Catalogue access</h2>
+      <span class="cd-portal-state {{ portal_account.status|default:'none' }}">{% if portal_account %}{{ portal_account.get_status_display }}{% else %}No account{% endif %}</span>
+      {% if portal_account %}<span class="cd-portal-phone">+{{ portal_account.phone }}</span>{% endif %}
+    </div>
+    {% if portal_link %}
+      <div class="cd-portal-link">
+        <input type="text" class="form-control" value="{{ portal_link }}" readonly id="portalLink" aria-label="Link">
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="navigator.clipboard.writeText(document.getElementById('portalLink').value); this.textContent='Copied';">Copy</button>
+        {% if portal_whatsapp %}<a class="btn btn-sm btn-success" href="{{ portal_whatsapp }}" target="_blank" rel="noopener">WhatsApp</a>{% endif %}
+      </div>
+    {% endif %}
+    <form method="post" action="{% url 'customer_portal' customer.id %}" class="cd-portal-acts">
+      {% csrf_token %}
+      <button type="submit" name="action" value="invite" class="btn btn-sm btn-primary">{% if not portal_account %}Create invite link{% elif portal_account.status == 'invited' %}New invite link{% else %}New password link{% endif %}</button>
+      {% if portal_account.status == 'active' %}
+        <button type="submit" name="action" value="suspend" class="btn btn-sm btn-outline-danger" onclick="return confirm('Suspend {{ customer.name|escapejs }}? They cannot log in until opened again.');">Suspend</button>
+      {% elif portal_account.status == 'suspended' %}
+        <button type="submit" name="action" value="resume" class="btn btn-sm btn-outline-primary">Open again</button>
+      {% endif %}
+    </form>
+  </section>
+  <style>
+    .cd-portal{ display:grid; gap:.5rem; margin:0 0 1rem; padding:.75rem .9rem; background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius); }
+    .cd-portal-head{ display:flex; flex-wrap:wrap; align-items:center; gap:.4rem .7rem; }
+    .cd-portal h2{ margin:0; font-size:1rem; font-weight:800; }
+    .cd-portal-state{ padding:.1rem .55rem; font-size:.85rem; font-weight:700; border-radius:999px; background:var(--app-surface-2); color:var(--app-muted); }
+    .cd-portal-state.active{ background:#dcfce7; color:#166534; }
+    .cd-portal-state.invited{ background:#fef3c7; color:#92400e; }
+    .cd-portal-state.suspended{ background:#fee2e2; color:#991b1b; }
+    .cd-portal-phone{ font-size:.88rem; color:var(--app-muted); font-variant-numeric:tabular-nums; }
+    .cd-portal-link{ display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:.4rem; }
+    .cd-portal-acts{ display:flex; flex-wrap:wrap; gap:.4rem; margin:0; }
+    .cd-portal .btn{ min-height:36px; }
+  </style>
+  {% endif %}
+
   <div class="cd-range">
     <nav class="ftabs" aria-label="Period">
       <a class="{% if range_key == 'all' %}on{% endif %}" href="?preset=all">All time</a>

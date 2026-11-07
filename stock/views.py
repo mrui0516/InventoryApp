@@ -5931,7 +5931,22 @@ def customer_detail_view(request, customer_id):
     )
 
     from .services.wholesale_discount import last_discount
+    from .models import CustomerAccount
+    from .services.contacts import whatsapp_url
+    from urllib.parse import quote as url_quote
+    portal_account = CustomerAccount.objects.filter(customer=customer).first()
+    portal_link = ''
+    if request.session.get('portal_link_for') == customer.pk:
+        portal_link = request.session.pop('portal_link', '')
+        request.session.pop('portal_link_for', None)
+    portal_whatsapp = ''
+    if portal_link and whatsapp_url(customer.phone):
+        text = f'Olá! Aqui está o link para entrar no nosso catálogo grossista: {portal_link}'
+        portal_whatsapp = f'{whatsapp_url(customer.phone)}?text={url_quote(text)}'
     return render(request, 'stock/customer_detail.html', {
+        'portal_account': portal_account,
+        'portal_link': portal_link,
+        'portal_whatsapp': portal_whatsapp,
         'customer': customer,
         'wholesale_discount': last_discount(customer.id) if customer.is_revenda else None,
         'month_blocks': month_blocks,
