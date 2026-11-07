@@ -96,7 +96,7 @@ class PaymentTermsTests(FinanceMixin, TestCase):
 
     def test_the_pages_show_it(self):
         page = self.client.get(reverse("finance_payables"))
-        self.assertContains(page, "Due")
+        self.assertContains(page, "change on the inbound record")
         self.assertContains(page, "Khan")
         overview = self.client.get(reverse("finance"))
         self.assertContains(overview, "Supplier payments due")
@@ -104,17 +104,10 @@ class PaymentTermsTests(FinanceMixin, TestCase):
 
     def test_terms_can_be_changed_later(self):
         day = self.today + timedelta(days=60)
-        self.client.post(reverse("finance_order_terms", args=[self.order.pk]),
-                         {"first_due": day.isoformat(), "instalments": "4"})
+        self.client.post(reverse("inbound_order_terms", args=[self.order.pk]),
+                         {"pay_mode": "instalments", "pay_first_due": day.isoformat(), "pay_instalments": "4"})
         self.order.refresh_from_db()
         self.assertEqual((self.order.pay_first_due, self.order.pay_instalments), (day, 4))
-
-    def test_the_30_days_stay_automatic_when_nothing_changed(self):
-        default = self.today + timedelta(days=30)
-        self.client.post(reverse("finance_order_terms", args=[self.order.pk]),
-                         {"first_due": default.isoformat(), "instalments": "1"})
-        self.order.refresh_from_db()
-        self.assertIsNone(self.order.pay_first_due)
 
 
 class ReceivePaymentTests(FinanceMixin, TestCase):

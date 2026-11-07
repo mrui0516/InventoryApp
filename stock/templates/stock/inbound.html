@@ -139,26 +139,7 @@
             </table>
           </div>
 
-          {% if can_pay and pr.pay %}
-          <fieldset class="rcv-pay" data-rcv-pay>
-            <legend>Payment</legend>
-            <div class="rcv-seg" role="radiogroup" aria-label="Payment">
-              <label><input type="radio" name="pay_mode" value="paid"{% if pr.pay.mode == 'paid' %} checked{% endif %}><span>Paid</span></label>
-              <label><input type="radio" name="pay_mode" value="later"{% if pr.pay.mode == 'later' %} checked{% endif %}><span>Pay later</span></label>
-              <label><input type="radio" name="pay_mode" value="instalments"{% if pr.pay.mode == 'instalments' %} checked{% endif %}><span>Instalments</span></label>
-            </div>
-            <div class="rcv-pay-fields">
-              <label data-pay-for="paid"><span class="rcv-label">Paid by</span>
-                <select name="pay_store" class="form-select">{% for shop in pay_shops %}<option value="{{ shop.id }}"{% if shop.id == pay_store_id %} selected{% endif %}>{{ shop.name }}</option>{% endfor %}</select></label>
-              <label data-pay-for="paid"><span class="rcv-label">How</span>
-                <select name="pay_method" class="form-select">{% for value, name in pay_methods %}<option value="{{ value }}"{% if value == 'bank' %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
-              <label data-pay-for="paid"><span class="rcv-label">Paid on</span><input type="date" name="pay_on" class="form-control" value="{{ today|date:'Y-m-d' }}"></label>
-              <label data-pay-for="later instalments"><span class="rcv-label">Due</span><input type="date" name="pay_first_due" class="form-control" value="{{ pr.pay.first_due|date:'Y-m-d' }}" data-rcv-due="{{ pr.pay.default_due|date:'Y-m-d' }}"></label>
-              <label data-pay-for="instalments"><span class="rcv-label">Months</span><input type="number" name="pay_instalments" class="form-control" min="2" max="36" inputmode="numeric" value="{{ pr.pay.instalments }}"></label>
-              <span class="rcv-month" data-pay-for="instalments" data-rcv-month></span>
-            </div>
-          </fieldset>
-          {% endif %}
+          {% if can_pay and pr.pay %}{% include "stock/_pay_terms.html" with pay=pr.pay %}{% endif %}
 
           <details class="rcv-more"{% if pr.order.note %} open{% endif %}>
             <summary>Note</summary>
@@ -303,17 +284,6 @@
         const months = num(pay.querySelector('[name="pay_instalments"]'));
         pay.querySelector('[data-rcv-month]').textContent = months ? `${money(total / months)} a month` : '';
       }
-    }
-    // The 30 days follow the invoice date until somebody sets another day.
-    const due = form.querySelector('[data-rcv-due]');
-    const invoiceDate = form.querySelector('input[name="invoice_date"]');
-    if (due && invoiceDate) {
-      invoiceDate.addEventListener('change', () => {
-        if (due.value !== due.dataset.rcvDue || !invoiceDate.value) return;
-        const day = new Date(`${invoiceDate.value}T12:00:00`);
-        day.setDate(day.getDate() + 30);
-        due.value = due.dataset.rcvDue = day.toISOString().slice(0, 10);
-      });
     }
     // A phone starts on the lines: the invoice is a tap away.
     const invoice = form.querySelector('[data-rcv-inv]');
@@ -505,6 +475,7 @@
             <input type="file" name="invoice_file" id="invoice-file" class="form-control" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic">
           </div>
         </div>
+        {% if new_pay %}{% include "stock/_pay_terms.html" with pay=new_pay pay_required=True %}{% endif %}
       </section>
 
       <section class="operation-card">
@@ -675,17 +646,12 @@
      the total and the buttons stay in view */
   .rcv-sub{ font-size:.88rem; color:var(--app-muted); }
   .rcv-inv summary{ display:none; }
-  .rcv-pay{ margin:.8rem 0 0; padding:.6rem .75rem; border:1px solid var(--app-border); border-radius:var(--app-radius-sm); }
-  .rcv-pay legend{ float:none; width:auto; margin:0 0 .35rem; padding:0; font-size:.9rem; font-weight:800; }
   .rcv-seg{ display:inline-grid; grid-auto-flow:column; grid-auto-columns:minmax(0,1fr); max-width:100%; border:1px solid var(--app-border-strong); border-radius:var(--app-radius-sm); overflow:hidden; }
-  .rcv-seg label{ margin:0; cursor:pointer; }
-  .rcv-seg input{ position:absolute; opacity:0; width:0; height:0; }
   .rcv-seg span{ display:block; min-height:38px; padding:.45rem .7rem; font-size:.9rem; font-weight:700; text-align:center; color:var(--app-muted); white-space:nowrap; }
   .rcv-seg input:checked + span{ color:var(--app-surface); background:var(--app-text); }
   .rcv-seg input:focus-visible + span{ outline:2px solid var(--app-accent); outline-offset:-2px; }
   .rcv-pay-fields{ display:grid; grid-template-columns:repeat(3, minmax(0,12rem)); gap:.5rem .7rem; align-items:end; margin-top:.55rem; }
   .rcv-pay-fields label{ margin:0; }
-  .rcv-pay-fields [hidden]{ display:none; }
   .rcv-month{ align-self:center; font-weight:700; font-variant-numeric:tabular-nums; }
   .rcv-danger{ margin-top:.6rem; text-align:right; }
   .rcv-danger .btn{ padding-right:0; }
@@ -1747,6 +1713,13 @@ document.addEventListener('DOMContentLoaded', () => {
       alert('Allocate the whole shipping to the lines first.');
       return;
     }
+    const pay = inboundForm.querySelector('[data-rcv-pay]');
+    if (pay && !pay.querySelector('[name="pay_mode"]:checked')) {
+      bootstrap.Modal.getOrCreateInstance(reviewModalEl).hide();
+      alert('Choose how the order is paid: Paid, Pay later or Instalments.');
+      pay.scrollIntoView({ block: 'center' });
+      return;
+    }
     inboundForm.dataset.confirmed = '1';
     bootstrap.Modal.getOrCreateInstance(reviewModalEl).hide();
     inboundForm.requestSubmit();
@@ -1756,4 +1729,5 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 
 {% include 'stock/_quick_import_modal.html' with mode='inbound' %}
+{% include "stock/_pay_terms_assets.html" %}
 {% endblock %}

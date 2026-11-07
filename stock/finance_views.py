@@ -347,22 +347,6 @@ def payment_add(request, order_id):
 @login_required
 @admin_required
 @require_POST
-def order_terms(request, order_id):
-    order = get_object_or_404(InboundOrder, pk=order_id)
-    raw = (request.POST.get('instalments') or '').strip()
-    instalments = int(raw) if raw.isdigit() else 0
-    if not 1 <= instalments <= finance.MAX_INSTALMENTS:
-        messages.error(request, f'Instalments: from 1 to {finance.MAX_INSTALMENTS}.')
-    else:
-        finance.save_terms(order, parse_date(request.POST.get('first_due') or ''), instalments)
-        finance.log(request.user, 'changed', 'payment terms', order.id, f'Inbound #{order.id} · {instalments}')
-        messages.success(request, f'Payment terms saved on inbound #{order.id}.')
-    return redirect('finance_payables')
-
-
-@login_required
-@admin_required
-@require_POST
 def payment_delete(request, payment_id):
     payment = get_object_or_404(SupplierPayment, pk=payment_id)
     finance.log(request.user, 'deleted', 'supplier payment', payment.id,
