@@ -255,6 +255,22 @@ def _pretty(text):
     return re.sub(r'\b(Edp|Edt|Edc)\b', lambda m: m.group(1).upper(), text)
 
 
+def _shopify_product_type(product):
+    """Read the current shop-defined Type, independently of its category.
+
+    Body sprays, oils, minis and gift sets all live in Perfumes, but are not
+    ordinary perfume listings. The customer label also lets a newly added
+    Type appear online without another hard-coded mapping or cached lookup.
+    """
+    kind = getattr(product, 'product_type', None)
+    for field in ('customer_label', 'name', 'code'):
+        value = (getattr(kind, field, '') or '').strip()
+        if value:
+            return value
+    category = getattr(getattr(product, 'category', None), 'name', '') or ''
+    return 'Perfume' if is_perfume(product) else (category.strip() or 'Perfume')
+
+
 def _shopify_title(product):
     """A clean storefront title from the app's structured fields.
 
@@ -437,18 +453,14 @@ def create_product_in_shopify(product, client=None, *, status='DRAFT', dry_run=F
             })
 
         description_html = _shopify_description_html(product) or title
-        # Match what is already on the store: every listing there is vendor
-        # "Lattafa" and productType "Perfume". The app stores brands shouting
-        # and its category is plural, and a vendor that differs only in case
-        # drops the new product out of that brand's collection.
-        product_type = 'Perfume' if is_perfume(product) else (
-            (getattr(product.category, 'name', '') if product.category_id else '')
-            or 'Perfume')
+        # Vendor drives brand collections; Type drives product-kind collections.
+        # Category controls publishing scope, not whether this is a body spray,
+        # mini, oil or coffret.
         product_input = {
             'title': title,
             'descriptionHtml': description_html,
             'vendor': _pretty(product.brand),
-            'productType': product_type,
+            'productType': _shopify_product_type(product),
             'tags': _shopify_tags(product),
             'status': status,
             'seo': _shopify_seo(product, title),

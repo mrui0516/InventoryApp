@@ -159,7 +159,7 @@ python manage.py sync_shopify_products --brand Lattafa --apply          # then t
 ```
 
 Each created product gets: clean title (from brand/model/name/size), vendor =
-brand, product type = category, tags, description, **SEO title + meta
+brand, product type = the app's ProductType customer label, tags, description, **SEO title + meta
 description**, a single variant with **price / SKU / barcode / unit cost /
 tracked inventory** set to current stock at your location, and the **product
 photo**. New products are created as **DRAFT** by default (review before
@@ -305,8 +305,11 @@ the way the storefront's existing ones are built — a product created with a si
 - **Title**: brand + series + name + EDP/EDT + volume, prettified (`Lattafa Khamrah
   Qahwa 100ml`), never the app's shouty upper case.
 - **Vendor** = the prettified brand (`Lattafa`) — vendor drives the store's brand
-  collections, so `LATTAFA` would split them — and **product type** `Perfume`,
-  both matching the existing listings.
+  collections. **Product type** reads the current `ProductType.customer_label`,
+  falling back to its name and code. Body spray, Body mist, Mini, Coffret and
+  oils therefore keep their own Type even though their category is Perfumes.
+  A shop-defined Type needs no new hard-coded mapping. Category remains the
+  publishing-scope switch; Shopify's standard taxonomy category is separate.
 - **SEO** title `<title> | Perfume Árabe` and a description built from the
   product's own text, closing with the shop and where it ships; tag `Perfume
   Árabe`; the product photo uploaded if there is one.
@@ -314,6 +317,18 @@ the way the storefront's existing ones are built — a product created with a si
   it stays an internal field.
 
 ## Behaviour & limitations
+
+- The Type rule above applies to newly created products. Reclassifying existing
+  Shopify products is a separate metadata operation: image, price and inventory
+  sync are not a bulk Type updater. The 2026-11-07 alignment used the merchant's
+  latest backup and exact SKU/barcode matches; it did not write price, stock,
+  handles or publication status.
+- The store's new Type collections use exact product-type conditions. For this
+  API's source format, singleton type values use `matchType: ANY`; the legacy
+  ruleSet conversion with `ALL` returned empty collections. Navigation is
+  Produtos -> Type; Homem/Mulher/Unissexo also require Type Perfume. Brand
+  collections use Vendor; a manual brand collection still needs new products
+  added to it (Paris Corner was reconciled during this alignment).
 
 - **Match key is barcode = SKU** (except `sync_shopify_barcodes`, which matches by
   title to *repair* the barcode). A product whose barcode doesn't match any
