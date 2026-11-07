@@ -9,7 +9,8 @@ from decimal import Decimal
 
 from django.utils import timezone
 
-from ..models import CartLine, OrderRequest, OrderRequestLine, PedidoDraft, PrintProfile, Product, Store
+from ..models import (BusinessSettings, CartLine, OrderRequest, OrderRequestLine, PedidoDraft, PrintProfile,
+                      Product, Store)
 from . import pedido as pedido_math
 from .wholesale_catalog import display_title
 
@@ -17,6 +18,10 @@ TIMES = '×'
 
 
 def shop_store():
+    """The shop taking wholesale orders (Settings -> Shop settings), else the default one."""
+    chosen = BusinessSettings.get().wholesale_store
+    if chosen is not None and chosen.is_active:
+        return chosen
     return Store.objects.filter(is_default=True).first() or Store.objects.filter(is_active=True).first()
 
 

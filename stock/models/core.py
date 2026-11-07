@@ -148,6 +148,9 @@ class BusinessSettings(models.Model):
     payables_from = models.DateField(null=True, blank=True)
     # The shop that pays the suppliers; the other shops pay it their share.
     purchasing_store = models.ForeignKey(Store, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    # The shop that takes the wholesale catalogue's orders: their Pedido drafts
+    # are its own, and customers see its phone. Empty: the default shop.
+    wholesale_store = models.ForeignKey(Store, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
     # € per unit on top of cost for that share. Each payment keeps its own.
     purchase_share_markup = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal('0.00'),
                                                 verbose_name='Purchase share markup (€ per unit)')

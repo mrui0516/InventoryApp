@@ -50,6 +50,15 @@
       </div>
     </section>
 
+    <section class="page-card pad" aria-label="Wholesale orders">
+      <h2 class="ss-h">Wholesale orders</h2>
+      <label class="ss-f" style="max-width:18rem;"><span>Handled by</span>
+        <select class="form-select" name="wholesale_store" aria-label="Wholesale orders handled by">
+          <option value="">Default shop</option>
+          {% for s in shops %}<option value="{{ s.shop.id }}"{% if s.shop.id == settings_row.wholesale_store_id %} selected{% endif %}>{{ s.shop.name }}</option>{% endfor %}
+        </select></label>
+    </section>
+
     <section class="page-card pad" aria-label="Transfer markup">
       <h2 class="ss-h">Transfer markup</h2>
       <label class="ss-f" style="max-width:12rem;"><span>&euro; per unit</span>

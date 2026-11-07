@@ -30,6 +30,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
@@ -40,7 +41,7 @@ from .services import pedido as pedido_math
 from .services import pedido_pdf
 from .services import shopify_sync
 from .services import wholesale_orders
-from .stores import resolve_active_store
+from .stores import ACTIVE_STORE_SESSION_KEY, can_switch_store, resolve_active_store
 
 DEFAULT_VALID_DAYS = 7
 MAX_LINES = 200
@@ -250,6 +251,16 @@ def pedido_view(request):
     store = _store_or_none(request)
     if request.method != 'POST':
         draft = _draft_for(store, request.GET.get('draft'))
+        # "Open in Pedido" from Order requests: the draft is the wholesale
+        # shop's, so switch to it rather than open an empty form.
+        raw = str(request.GET.get('draft') or '').strip()
+        if draft is None and raw.isdigit():
+            elsewhere = PedidoDraft.objects.filter(id=int(raw), status=PedidoDraft.OPEN,
+                                                   order_request__isnull=False).first()
+            if elsewhere is not None and can_switch_store(request.user):
+                request.session[ACTIVE_STORE_SESSION_KEY] = elsewhere.store_id
+                messages.info(request, f'Switched to {elsewhere.store.name}: the draft is theirs.')
+                return redirect(f"{reverse('pedido')}?draft={elsewhere.id}")
         # ?customer=<id> lets the customer list start a quote for a row, which
         # is also the seam a Revenda-only catalogue page would arrive through.
         prefill = None
