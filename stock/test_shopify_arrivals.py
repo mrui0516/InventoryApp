@@ -286,6 +286,28 @@ class ArrivalWorkerTests(TestCase):
 
 
 class CatalogLookupTests(SimpleTestCase):
+    def test_inventory_write_uses_the_2026_10_input_contract(self):
+        from stock.services.shopify_catalog_client import CatalogClient
+        api = CatalogClient()
+        def graphql(query, variables):
+            inventory = variables['input']
+            self.assertNotIn('ignoreCompareQuantity', inventory)
+            self.assertEqual(inventory['quantities'][0]['changeFromQuantity'], None)
+            self.assertIn('@idempotent(key: $idempotencyKey)', query)
+            self.assertTrue(variables['idempotencyKey'])
+            return {'inventorySetQuantities': {'userErrors': []}}
+        with mock.patch.object(api, 'graphql', side_effect=graphql):
+            self.assertTrue(api.set_inventory_available('item', 'location', 0))
+
+    def test_inventory_writes_do_not_reuse_an_old_idempotency_key(self):
+        from stock.services.shopify_catalog_client import CatalogClient
+        api = CatalogClient()
+        with mock.patch.object(api, 'graphql', return_value={'inventorySetQuantities': {'userErrors': []}}) as call:
+            api.set_inventory_available('item', 'location', 0)
+            api.set_inventory_available('item', 'location', 5)
+        first, second = [c.args[1] for c in call.call_args_list]
+        self.assertNotEqual(first['idempotencyKey'], second['idempotencyKey'])
+
     def test_sku_search_follows_pages_and_loads_all_parent_variants(self):
         from stock.services.shopify_catalog_client import CatalogClient
         api = CatalogClient()

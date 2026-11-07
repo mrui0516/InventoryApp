@@ -1,6 +1,7 @@
 """2026-10 catalogue operations, isolated from the legacy inventory client."""
 import logging
 import time
+import uuid
 
 from django.conf import settings
 
@@ -103,6 +104,24 @@ class CatalogClient(ShopifyClient):
         }''', {'product': {'id': gid, 'productType': kind, 'vendor': vendor}})['productUpdate']
         if data.get('userErrors'):
             raise ShopifyError(str(data['userErrors']))
+
+    def set_inventory_available(self, inventory_item_id, location_id, quantity):
+        """App-authoritative absolute stock using the 2026-04+ input contract."""
+        data = self.graphql('''mutation CatalogInventory(
+          $input: InventorySetQuantitiesInput!, $idempotencyKey: String!
+        ) {
+          inventorySetQuantities(input: $input) @idempotent(key: $idempotencyKey) {
+            userErrors { field message }
+          }
+        }''', {'input': {
+            'name': 'available', 'reason': 'correction',
+            'quantities': [{'inventoryItemId': inventory_item_id, 'locationId': location_id,
+                            'quantity': int(quantity), 'changeFromQuantity': None}],
+        }, 'idempotencyKey': str(uuid.uuid4())})
+        result = data.get('inventorySetQuantities') or {}
+        if result.get('userErrors'):
+            raise ShopifyError(f'inventorySetQuantities: {result["userErrors"]}')
+        return True
 
     def create_collection(self, title):
         data = self.graphql('''mutation CatalogCreateCollection($collection: CollectionCreateInput!) {

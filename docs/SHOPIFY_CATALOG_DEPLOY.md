@@ -2,6 +2,14 @@
 
 2026-11-07。邮件到货提醒继续暂停；本功能不启用 Flow、不发送客户邮件。
 
+## 事故恢复期间
+
+本次全量扫描超出了商家实际想同步的商品范围。当前保持自动化关闭，不再次执行下文的 `--all` 初始化，也不恢复 watcher；先确认逐商品同步范围。2026-10 库存写入兼容性修复不需要打开同步开关才能部署。
+
+Ctrl+Z 只挂起进程，不会退出，进程可能继续持有数据库锁。若 Bash 明确显示 `[2]+ Stopped python manage.py process_shopify_catalog ...`，在原控制台用 `kill -TERM %2`、`kill -CONT %2` 终止该任务（编号以实际 jobs 输出为准），暂停对应 Always-on task，关闭 SHOPIFY_CATALOG_AUTOMATION、SHOPIFY_AUTO_SYNC、SHOPIFY_AUTO_CREATE、SHOPIFY_INVENTORY_SYNC，再 Web Reload。不要删除数据库锁文件或回滚数据库。
+
+本次在执行上述隔离后，商家确认网页恢复。只有 OSError: write error，未取得 Django traceback，不能将 500 精确归因于某一个数据库操作。独立确认的 API 错误是旧 `ignoreCompareQuantity` 输入字段在 2026-10 已不存在；CatalogClient 已改用显式 `changeFromQuantity: null` 并附加每次请求唯一的 `@idempotent` key，延续库存 App 为权威来源的绝对数量写入。该修复不自动启用任务。
+
 ## 最终行为
 
 - 库存 App 新建/编辑商品、上传图片、收货和销售后，只在数据库排队，保存操作不等待 Shopify。
