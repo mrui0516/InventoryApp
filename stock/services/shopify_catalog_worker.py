@@ -37,6 +37,8 @@ def _sync_one(state, client):
     if not match:
         match = client.find_product_by_sku(p.barcode.strip())
     if not match:
+        if not state.allow_create:
+            return 'skipped'  # Pre-existing unlisted products are intentionally offline.
         if not p.default_price or p.default_price <= 0:
             raise ShopifyError('Add a positive retail price before automatic publication.')
         if not p.images.exists() or not shopify_sync._local_image_path(p):
@@ -56,7 +58,7 @@ def _sync_one(state, client):
             raise ShopifyError('Creation returned success; waiting to resolve the reserved handle.')
         just_created = True
     ShopifyCatalogState.objects.filter(pk=state.pk).update(product_gid=match['id'])
-    owned_pending = bool(state.creation_handle and not state.published_by_automation)
+    owned_pending = bool(state.allow_create and state.creation_handle and not state.published_by_automation)
     if match.get('status') != 'ACTIVE' and not (owned_pending and match.get('status') == 'DRAFT'):
         return 'skipped'
     if owned_pending:

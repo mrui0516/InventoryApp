@@ -195,6 +195,31 @@ class ArrivalWorkerTests(TestCase):
         self.assertEqual(self.state().synced_revision, self.state().requested_revision)
         self.api.product_set.assert_not_called()
 
+    def test_old_unlisted_product_is_not_created_by_a_queued_job(self):
+        from stock.models import ShopifyCatalogState
+        ShopifyCatalogState.objects.filter(product=self.product).update(allow_create=False)
+        self.product.save()  # Editing an old product must not grant creation permission.
+        self.api.find_product_by_sku.return_value = None
+        result = self.process()
+        self.assertEqual(result['skipped'], 1)
+        self.api.product_set.assert_not_called()
+        self.api.publish_online.assert_not_called()
+
+    def test_old_automation_draft_is_not_published_after_the_scope_change(self):
+        from stock.models import ShopifyCatalogState
+        ShopifyCatalogState.objects.filter(product=self.product).update(
+            allow_create=False, creation_handle='old-reserved')
+        self.api.find_product_by_handle.return_value['status'] = 'DRAFT'
+        self.assertEqual(self.process()['skipped'], 1)
+        self.api.product_set.assert_not_called()
+        self.api.publish_online.assert_not_called()
+
+    def test_old_listed_product_still_syncs_without_creation_permission(self):
+        from stock.models import ShopifyCatalogState
+        ShopifyCatalogState.objects.filter(product=self.product).update(allow_create=False)
+        self.assertEqual(self.process()['synced'], 1)
+        self.api.product_set.assert_not_called()
+
     @override_settings(SHOPIFY_CATALOG_AUTOMATION=False)
     def test_disabled_automation_never_processes_pending_products(self):
         self.process()

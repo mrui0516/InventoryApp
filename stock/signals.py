@@ -224,10 +224,10 @@ def push_price_on_change(sender, instance, created, **kwargs):
 
 
 @receiver(post_save, sender=Product)
-def enqueue_catalog_product(sender, instance, raw=False, **kwargs):
+def enqueue_catalog_product(sender, instance, created=False, raw=False, **kwargs):
     if not raw:
         from .services.shopify_catalog_queue import enqueue
-        enqueue(instance)
+        enqueue(instance, allow_create=created)
 
 
 @receiver(post_save, sender=ProductImage)

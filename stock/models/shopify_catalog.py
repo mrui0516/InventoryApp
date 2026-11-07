@@ -12,6 +12,7 @@ class ShopifyCatalogState(models.Model):
     product_gid = models.CharField(max_length=100, blank=True, default='')
     creation_handle = models.CharField(max_length=255, blank=True, default='')
     published_by_automation = models.BooleanField(default=False)
+    allow_create = models.BooleanField(default=False)
     attempts = models.PositiveIntegerField(default=0)
     next_attempt_at = models.DateTimeField(default=timezone.now, db_index=True)
     last_error = models.TextField(blank=True, default='')
