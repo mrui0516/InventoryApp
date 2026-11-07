@@ -528,6 +528,13 @@ PDF 的 `_brand_logo` 文件缺失时跳过。`empty_brands` 默认不包括有 
 - Catálogo 的 tab 计数在 Python 里算：`catalog_rows` 取不含类型和品牌的全部行，先算类型计数，再算品牌计数，最后筛选分页。
 - 接账号系统时：`CartLine.user`、`OrderRequest.submitted_by` 换成客户身份，`customer` 由账号绑定决定，不再读 session。`OrderRequest.customer` 现在是 SET_NULL，架构文档要求上线时改成 PROTECT。
 
+### 5.13y1f 客户账号（`services/portal.py`、`middleware.py`，2026-11-07）
+
+- `CustomerAccount`（User 一对一、Customer PROTECT、规范化手机号唯一、状态）和 `AccountLink`（一次性链接，只存 SHA-256 摘要）。设计见 `docs/superpowers/specs/2026-11-07-customer-portal-design.md`。
+- `PortalGuard` 中间件默认拒绝：客户账号只能打开 `CUSTOMER_PAGES` 里的页面名称。新增给客户用的页面必须加进这个集合，否则客户打不开；内部页面什么都不用做。
+- 目录视图用 `@catalog_access`：客户账号（且 `may_enter`）直接进，其他人仍走 `login_required` + `manager_required`。`wholesale_views._customer` 对客户返回账号绑定的客户，忽略 Ver como。
+- 客户页面用 `stock/portal_base.html`（`_shared` 里的 `base_template`），侧边面板在 `stock/_side_panel.html`，两个框架共用。
+
 ### 5.13y1e 规则设置（`services/rules.py`，2026-11-07）
 
 - 规则是 `BusinessSettings` 的字段，`SECTIONS` 列出标签、单位、范围，页面和校验都从它生成。

@@ -4,7 +4,8 @@ from django.contrib.auth import views as auth_views
 from django.conf import settings
 from django.conf.urls.static import static
 
-from . import catalog_views, finance_views, orders_views, panel_views, pedido_views, views, wholesale_views
+from . import (catalog_views, finance_views, orders_views, panel_views, pedido_views, portal_views, views,
+               wholesale_views)
 
 
 urlpatterns = [
@@ -119,6 +120,11 @@ urlpatterns = [
     path('api/parse-contents/', catalog_views.parse_contents, name='parse_contents'),
 
     path('catalog/', wholesale_views.catalog_view, name='catalog'),
+    path('b2b/', portal_views.portal_home, name='portal_home'),
+    path('b2b/login/', portal_views.portal_login, name='portal_login'),
+    path('b2b/logout/', portal_views.portal_logout, name='portal_logout'),
+    path('b2b/invite/<str:token>/', portal_views.portal_invite, name='portal_invite'),
+    path('customers/<int:customer_id>/catalogue-access/', portal_views.customer_portal, name='customer_portal'),
     path('catalog/customer/', wholesale_views.choose_customer, name='wholesale_customer'),
     path('catalog/cart/', wholesale_views.cart_view, name='wholesale_cart'),
     path('catalog/cart/add/', wholesale_views.cart_add, name='wholesale_cart_add'),

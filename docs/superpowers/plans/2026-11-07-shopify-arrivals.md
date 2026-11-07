@@ -25,14 +25,20 @@
 
 ## Tasks
 
-- [ ] Write failing tests for receipt transitions, queue rollback/revisions, retry/idempotency and collection selection.
-- [ ] Add queue/lease models and one migration; implement enqueue and receipt hooks.
-- [ ] Implement background runner, readiness checks, deterministic creation and collection refresh.
-- [ ] Replace the old storefront command; add watcher/bootstrap command and settings.
-- [ ] Configure the live Restock collection/menu and refresh existing Novidades from the supplied backup.
-- [ ] Verify focused tests, migration consistency and GraphQL; one code review; commit/push isolated branch.
-- [ ] Provide exact PythonAnywhere deployment flags, bootstrap command and worker command.
+- [x] Write failing tests for receipt transitions, queue rollback/revisions, retry/idempotency and collection selection.
+- [x] Add queue/lease models and one migration; implement enqueue and receipt hooks.
+- [x] Implement background runner, readiness checks, deterministic creation and collection refresh.
+- [x] Replace the old storefront command; add watcher/bootstrap command and settings.
+- [x] Configure the live Restock collection/menu and refresh existing Novidades from the supplied backup.
+- [x] Verify focused tests, migration consistency and GraphQL; one code review; commit isolated branch.
+- [x] Prepare exact PythonAnywhere deployment flags, bootstrap command and worker command.
 
 ## Review focus
 
 Concurrent workers and ambiguous creation retries must not create duplicates. A newer queued generation must survive an older worker's acknowledgment/failure. Initial split receipts and shop transfers must not create Restock entries. Missing images/prices must retain a retryable job. Manual drafts, retail monthly rankings and source publishing scope must remain intact.
+
+## Verification and handoff
+
+98 focused tests passed after merging origin/master d7ab511; migration check reports no changes, Django check reports no issues. All 17 generated GraphQL operations validate against Admin 2026-10. A single independent review found three important issues: disabled-flag bypass, asynchronous media readiness and truncated SKU lookup. Regression cases failed before the fixes and pass afterwards. The new migration is 0089, following the other session's 0088_customer_accounts.
+
+Live API readback confirms Novidades 20 items and Restock 7, exact intended order, both published to Online Store, and Restock after Novidades in Produtos. Existing duplicate SKU 6294015190656 is excluded, not deleted. Source backup and before/after API snapshots are under .tmp/geo/arrivals-20261107 (not committed). PythonAnywhere installation and persistent watcher remain for the user to execute; no automatic-server-deployment claim is made.
