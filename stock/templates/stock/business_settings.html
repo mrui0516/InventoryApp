@@ -52,6 +52,8 @@
 
     <section class="page-card pad" aria-label="Wholesale orders">
       <h2 class="ss-h">Wholesale orders</h2>
+      <label class="ss-f" style="max-width:18rem;"><span>Name customers see</span>
+        <input type="text" class="form-control" name="portal_name" maxlength="60" value="{{ settings_row.portal_name }}" aria-label="Name customers see"></label>
       <label class="ss-f" style="max-width:18rem;"><span>Handled by</span>
         <select class="form-select" name="wholesale_store" aria-label="Wholesale orders handled by">
           <option value="">Default shop</option>

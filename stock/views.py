@@ -3366,11 +3366,13 @@ def business_settings_view(request):
                 payer = next((s for s in shops if str(s.id) == request.POST.get('purchasing_store')), None)
                 if payer is not None:
                     settings_row.purchasing_store = payer
+                if (request.POST.get('portal_name') or '').strip():
+                    settings_row.portal_name = request.POST['portal_name'].strip()[:60]
                 if 'wholesale_store' in request.POST:
                     settings_row.wholesale_store = next(
                         (s for s in shops if str(s.id) == request.POST.get('wholesale_store')), None)
                 settings_row.save(update_fields=['transfer_markup', 'purchase_share_markup', 'purchasing_store',
-                                                 'wholesale_store', 'updated_at'])
+                                                 'wholesale_store', 'portal_name', 'updated_at'])
                 for (store_id, cat_id), amount in new_targets.items():
                     row = targets.get((store_id, cat_id))
                     if not amount:

@@ -125,6 +125,7 @@ urlpatterns = [
     path('b2b/logout/', portal_views.portal_logout, name='portal_logout'),
     path('b2b/invite/<str:token>/', portal_views.portal_invite, name='portal_invite'),
     path('customers/<int:customer_id>/catalogue-access/', portal_views.customer_portal, name='customer_portal'),
+    path('b2b-overview/', portal_views.b2b_overview, name='b2b_overview'),
     path('catalog/customer/', wholesale_views.choose_customer, name='wholesale_customer'),
     path('catalog/cart/', wholesale_views.cart_view, name='wholesale_cart'),
     path('catalog/cart/add/', wholesale_views.cart_add, name='wholesale_cart_add'),

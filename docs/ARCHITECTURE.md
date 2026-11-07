@@ -528,6 +528,11 @@ PDF 的 `_brand_logo` 文件缺失时跳过。`empty_brands` 默认不包括有 
 - Catálogo 的 tab 计数在 Python 里算：`catalog_rows` 取不含类型和品牌的全部行，先算类型计数，再算品牌计数，最后筛选分页。
 - 接账号系统时：`CartLine.user`、`OrderRequest.submitted_by` 换成客户身份，`customer` 由账号绑定决定，不再读 session。`OrderRequest.customer` 现在是 SET_NULL，架构文档要求上线时改成 PROTECT。
 
+### 5.13y1g B2B 总览（`services/b2b_overview.py`，2026-11-08）
+
+- 所有数据按客户分组一次查出，只有购物车金额逐个客户算（`cart_quote`）。行为记录在 `PortalVisit`（客户 × 天，浏览次数、最多 20 个搜索词），由 `PortalGuard` 在客户打开目录页面时调用 `portal.record_visit` 写入；购物车汇总、香水搜索这类 fetch 请求不算。
+- `CustomerAccount.last_seen_at` 最多每 5 分钟更新一次。
+
 ### 5.13y1f 客户账号（`services/portal.py`、`middleware.py`，2026-11-07）
 
 - `CustomerAccount`（User 一对一、Customer PROTECT、规范化手机号唯一、状态）和 `AccountLink`（一次性链接，只存 SHA-256 摘要）。设计见 `docs/superpowers/specs/2026-11-07-customer-portal-design.md`。

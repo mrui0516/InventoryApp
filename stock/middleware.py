@@ -47,6 +47,7 @@ class PortalGuard:
                     if request.method in ('GET', 'HEAD'):
                         return redirect('catalog')
                     return HttpResponseForbidden('Not available.')
+                portal.record_visit(account, request, name)
         elif name in CUSTOMER_PAGES and name not in PUBLIC_PAGES:
             return redirect(f"{reverse('portal_login')}?next={request.get_full_path()}")
         return self.get_response(request)
