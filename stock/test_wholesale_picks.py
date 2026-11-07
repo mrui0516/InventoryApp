@@ -110,9 +110,9 @@ class AddingTests(PicksMixin):
         gone = self._product(name="Gone", units=0)
         self.assertEqual(self._post(self.sample, [{"id": gone.pk, "quantity": 1}]).status_code, 400)
 
-    def test_the_last_bottle_is_the_shops_sample(self):
+    def test_a_decant_can_come_from_the_shops_sample(self):
         last = self._product(name="Last", units=1)
-        self.assertEqual(self._post(self.sample, [{"id": last.pk, "quantity": 1}]).status_code, 400)
+        self.assertEqual(self._post(self.sample, [{"id": last.pk, "quantity": 1}]).status_code, 200)
 
     def test_a_sample_refuses_what_is_not_a_perfume(self):
         self.assertEqual(self._post(self.sample, [{"id": self.mix.pk, "quantity": 1}]).status_code, 400)
@@ -203,7 +203,6 @@ class SearchTests(PicksMixin):
 
     def test_it_leaves_out_what_cannot_be_used(self):
         self._product(name="Yara Gone", units=0)
-        self._product(name="Yara Last", units=1)
         self._product(name="Yara Spray", units=9, product_type_id="body_spray")
         self._product(name="Yara Blend", units=9, is_mix=True)
         self.assertEqual(self._ids("yara"), [self.yara.pk])

@@ -27,6 +27,11 @@ def _next(request):
     return reverse('catalog')
 
 
+def _phone(request):
+    from .services.contacts import with_prefix
+    return with_prefix(request.POST.get('phone_prefix'), request.POST.get('phone') or '')
+
+
 def portal_home(request):
     return redirect('catalog')
 
@@ -35,7 +40,7 @@ def portal_login(request):
     error = ''
     if request.method == 'POST':
         try:
-            user = portal.check_login(request, request.POST.get('phone') or '', request.POST.get('password') or '')
+            user = portal.check_login(request, _phone(request), request.POST.get('password') or '')
         except ValueError as e:
             error = str(e)
         else:
@@ -43,7 +48,8 @@ def portal_login(request):
             return redirect(_next(request))
     return render(request, 'stock/portal_login.html', {'error': error, 'portal_shop': portal.shop_name(),
                                                        'next': request.GET.get('next', ''),
-                                                       'phone': request.POST.get('phone', '')})
+                                                       'phone': request.POST.get('phone', ''),
+                                                       'prefix': request.POST.get('phone_prefix', '351')})
 
 
 @require_POST
@@ -57,7 +63,7 @@ def portal_invite(request, token):
     error = ''
     if request.method == 'POST':
         try:
-            account = portal.use_link(token, request.POST.get('phone') or '', request.POST.get('password1') or '',
+            account = portal.use_link(token, _phone(request), request.POST.get('password1') or '',
                                       request.POST.get('password2') or '')
         except ValueError as e:
             error = str(e)
@@ -66,7 +72,8 @@ def portal_invite(request, token):
             _enter(request, account.user)
             return redirect('catalog')
     return render(request, 'stock/portal_invite.html', {'link': link, 'error': error, 'portal_shop': portal.shop_name(),
-                                                        'bad_link': portal.BAD_LINK})
+                                                        'bad_link': portal.BAD_LINK,
+                                                        'prefix': request.POST.get('phone_prefix', '351')})
 
 
 @login_required

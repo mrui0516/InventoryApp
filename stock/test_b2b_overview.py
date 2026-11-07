@@ -38,8 +38,8 @@ class MenuTests(PortalMixin):
     def test_b2b_is_one_group(self):
         self.client.post(reverse("set_active_store"), {"store": self.khan.id})
         nav = self.nav()
-        group = nav[nav.index(">B2B<"):nav.index(">Products<")]
-        for name in ("b2b_overview", "order_requests", "pedido", "catalog", "restock_requests"):
+        group = nav[nav.index(">B2B<"):nav.index(">Customers<")]
+        for name in ("b2b_overview", "order_requests", "catalog", "restock_requests"):
             self.assertIn(f'href="{reverse(name)}"', group, name)
         self.assertEqual(nav.count(f'href="{reverse("order_requests")}"'), 1)
 

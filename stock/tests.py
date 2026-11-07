@@ -867,7 +867,7 @@ class DashboardViewTests(TestCase):
         # The employee still has a way to each of their jobs. The menu groups
         # were renamed by task on 2026-10-16 (Operations / Sales & Clients ->
         # Sell / Customers), and Orders now sits in the Business tabs.
-        self.assertContains(response, '<div class="erp-nav-group">Sell</div>')
+        self.assertContains(response, '<div class="erp-nav-group">Stock</div>')
         self.assertContains(response, '<div class="erp-nav-group">Customers</div>')
         self.assertContains(response, reverse("sales_records"))
         self.assertContains(response, reverse("customer_search"))
@@ -8232,13 +8232,13 @@ class RoundANavigationTests(TestCase):
         # With one store picked: under "All stores" Sell and Pedido are left
         # out since 2026-10-25 (AllStoresNavTests).
         links, nav = self._menu(self.admin, store=self.store_a)
-        self.assertEqual(links, ["Today", "Dashboard", "Orders", "Sell",
-                                 "Overview", "Order requests", "Pedido", "Catalog View", "Restock requests",
+        self.assertEqual(links, ["Today", "Dashboard", "Orders", "Sell", "Inbound", "Transfers", "Suppliers",
                                  "Products",
-                                 "Customers", "IOU", "Inbound", "Transfers", "Suppliers", "Finance",
+                                 "Overview", "Pedidos", "Catalog View", "Restock requests",
+                                 "Customers", "IOU", "Finance",
                                  "Attendance", "Tools", "Team", "Stores", "Print Header",
                                  "Shop settings", "Rules", "Catalog", "Correct orders", "Audit"])
-        for group in ("Sell", "B2B", "Products", "Customers", "Purchasing", "Finance", "Settings"):
+        for group in ("Stock", "Products", "B2B", "Customers", "Finance", "Settings"):
             self.assertIn(f">{group}<", nav)
 
     def test_the_old_names_are_gone(self):
@@ -8249,7 +8249,7 @@ class RoundANavigationTests(TestCase):
     def test_an_employee_sees_only_their_four_jobs(self):
         links, nav = self._menu(self.employee)
         # Deliveries: the check lists of orders on the way (2026-10-28)
-        self.assertEqual(links, ["Today", "Orders", "Sell", "Products", "Deliveries", "Customers"])
+        self.assertEqual(links, ["Today", "Orders", "Sell", "Deliveries", "Products", "Customers"])
         self.assertNotIn("Purchasing", nav)
         self.assertNotIn("Settings", nav)
 
@@ -9244,7 +9244,8 @@ class AllStoresNavTests(TestCase):
         html = self.client.get(reverse("customer_search")).content.decode()
         nav = html[html.index('<nav class="erp-nav">'):html.index('</nav>', html.index('<nav class="erp-nav">'))]
         self.assertIn(reverse("outbound"), nav)
-        self.assertIn(reverse("pedido"), nav)
+        # Pedido opens from B2B -> Pedidos since 2026-11-08
+        self.assertIn(reverse("order_requests"), nav)
 
 
 class CustomerContactTests(TestCase):

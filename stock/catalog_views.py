@@ -359,9 +359,9 @@ def restock_request(request, pk):
     """The sold-out row's button on the catalogue."""
     from .services.portal import account_of
     from .views import _back_to
-    account = account_of(request)
+    from .wholesale_views import _customer
     try:
-        request_restock(get_object_or_404(Product, pk=pk), request.user, account.customer if account else None)
+        request_restock(get_object_or_404(Product, pk=pk), request.user, _customer(request))
     except ValueError as error:
         messages.info(request, str(error))
     return _back_to(request, 'catalog')
@@ -370,5 +370,27 @@ def restock_request(request, pk):
 @login_required
 @manager_required
 def restock_requests(request):
-    return render(request, 'stock/restock_requests.html', {'rows': demand_rows()})
+    from .services.restock_requests import arrived_rows
+    return render(request, 'stock/restock_requests.html', {'rows': demand_rows(), 'arrived': arrived_rows()})
+
+
+@login_required
+@manager_required
+@require_POST
+def restock_notify(request, pk):
+    """Open WhatsApp with the message ready, and remember the customer was told."""
+    from django.utils import timezone
+    from urllib.parse import quote
+    from .models import RestockRequest
+    from .services.contacts import whatsapp_url
+    from .services.restock_requests import tell_message
+    ask = get_object_or_404(RestockRequest.objects.select_related('product', 'customer'), pk=pk)
+    customer = ask.customer or getattr(getattr(ask.requested_by, 'customer_account', None), 'customer', None)
+    url = whatsapp_url(customer.phone if customer else '')
+    if not url:
+        messages.error(request, 'No WhatsApp number for this customer.')
+        return redirect('restock_requests')
+    RestockRequest.objects.filter(pk=ask.pk).update(notified_at=timezone.now())
+    text = tell_message(ask, request.build_absolute_uri(reverse('catalog')))
+    return redirect(f'{url}?text={quote(text)}')
 

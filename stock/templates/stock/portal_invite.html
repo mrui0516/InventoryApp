@@ -8,7 +8,9 @@
     {% if error %}<div class="alert alert-danger mt-3 mb-0" role="alert">{{ error }}</div>{% endif %}
     <form method="post">
       {% csrf_token %}
-      <label>Telemóvel<input type="tel" name="phone" class="form-control" autocomplete="tel" inputmode="tel" required autofocus></label>
+      <label>Telemóvel
+      <span class="pt-phone"><select name="phone_prefix" class="form-select" aria-label="Indicativo">{% for code, label in phone_prefixes %}<option value="{{ code }}"{% if code == prefix %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      <input type="tel" name="phone" class="form-control" autocomplete="tel-national" inputmode="tel" required autofocus></span></label>
       <label>Palavra-passe<input type="password" name="password1" class="form-control" autocomplete="new-password" minlength="8" required></label>
       <label>Repetir palavra-passe<input type="password" name="password2" class="form-control" autocomplete="new-password" minlength="8" required></label>
       <button type="submit" class="btn btn-primary">Guardar e entrar</button>

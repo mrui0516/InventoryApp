@@ -451,6 +451,8 @@ class RestockRequest(models.Model):
     customer = models.ForeignKey('stock.Customer', on_delete=models.SET_NULL, null=True, blank=True,
                                  related_name='restock_requests')
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    # When the shop told the customer it came back (Restock requests -> WhatsApp).
+    notified_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at']

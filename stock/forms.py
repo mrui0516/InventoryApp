@@ -620,6 +620,17 @@ class SaleForm(forms.ModelForm):
 
 
 class CustomerForm(forms.ModelForm):
+    phone_prefix = forms.ChoiceField(label='Country code', required=False)
+    field_order = ['name', 'phone_prefix', 'phone', 'kind', 'nif', 'email', 'address', 'notes']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from .services.contacts import PREFIXES, split_prefix
+        self.fields['phone_prefix'].choices = PREFIXES
+        if not self.is_bound and self.instance.pk:
+            code, rest = split_prefix(self.instance.phone)
+            self.initial['phone_prefix'], self.initial['phone'] = code, rest
+
     class Meta:
         model = Customer
         fields = ['name', 'phone', 'kind', 'nif', 'email', 'address', 'notes']
@@ -640,8 +651,8 @@ class CustomerForm(forms.ModelForm):
         return nif
 
     def clean_phone(self):
-        from .services.contacts import customer_with_phone
-        phone = (self.cleaned_data.get('phone') or '').strip()
+        from .services.contacts import customer_with_phone, with_prefix
+        phone = with_prefix(self.data.get('phone_prefix'), self.cleaned_data.get('phone'))
         if phone:
             taken = customer_with_phone(phone, exclude_id=self.instance.pk)
             if taken:

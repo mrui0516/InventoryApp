@@ -255,8 +255,10 @@ def pedido_view(request):
         # shop's, so switch to it rather than open an empty form.
         raw = str(request.GET.get('draft') or '').strip()
         if draft is None and raw.isdigit():
-            elsewhere = PedidoDraft.objects.filter(id=int(raw), status=PedidoDraft.OPEN,
-                                                   order_request__isnull=False).first()
+            elsewhere = PedidoDraft.objects.filter(id=int(raw), status=PedidoDraft.OPEN)
+            if request.GET.get('switch') != '1':         # opened from Pedidos: any shop's draft
+                elsewhere = elsewhere.filter(order_request__isnull=False)
+            elsewhere = elsewhere.first()
             if elsewhere is not None and can_switch_store(request.user):
                 request.session[ACTIVE_STORE_SESSION_KEY] = elsewhere.store_id
                 messages.info(request, f'Switched to {elsewhere.store.name}: the draft is theirs.')

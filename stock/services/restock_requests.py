@@ -54,6 +54,42 @@ def requested_ids(user, product_ids):
     return {row.product_id for row in _open_requests(product_ids) if row.requested_by_id == user.pk}
 
 
+TELL_DAYS = 60
+
+
+def arrived_rows():
+    """Requests a delivery has answered and nobody was told about yet, by product:
+    ``[{product, asks: [{request, name, phone}]}]``. Only those we can reach."""
+    since = timezone.now() - timedelta(days=TELL_DAYS)
+    rows = list(RestockRequest.objects.filter(notified_at__isnull=True, created_at__gte=since)
+                .select_related('product', 'customer', 'requested_by__customer_account__customer'))
+    delivered = _opened_after({row.product_id for row in rows})
+    grouped = defaultdict(list)
+    for row in rows:
+        if row.product_id not in delivered or delivered[row.product_id] <= row.created_at:
+            continue
+        customer = row.customer
+        if customer is None and row.requested_by_id:
+            account = getattr(row.requested_by, 'customer_account', None)
+            customer = account.customer if account else None
+        if customer is None or not customer.phone:
+            continue
+        grouped[row.product_id].append({'request': row, 'customer': customer})
+    out = []
+    for asks in grouped.values():
+        out.append({'product': asks[0]['request'].product, 'asks': asks})
+    out.sort(key=lambda r: r['product'].list_name.lower())
+    return out
+
+
+def tell_message(request_row, catalog_url):
+    customer = request_row.customer or request_row.requested_by.customer_account.customer
+    name = customer.name.split()[0] if customer.name else ''
+    product = f'{request_row.product.brand} {request_row.product.list_name}'.strip()
+    return (f'Olá {name}! O {product} que pediu já chegou. '
+            f'Pode encomendar no nosso catálogo: {catalog_url}')
+
+
 def demand_rows():
     """What was asked for: the most wanted first, then the best selling."""
     grouped = defaultdict(list)

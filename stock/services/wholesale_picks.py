@@ -13,7 +13,7 @@ from .wholesale_catalog import display_title, pick_mode, sellable_units, units_s
 
 NOTHING_CHOSEN = 'Escolha pelo menos uma fragrância.'
 SEARCH_FROM = 2
-SEARCH_LIMIT = 12
+SEARCH_LIMIT = 40
 
 
 def perfume_name(product):
@@ -24,19 +24,49 @@ def _perfumes(**filters):
     return Product.objects.filter(product_type_id='perfume', is_mix=False, **filters)
 
 
-def perfume_choices(query):
-    """Perfumes a sample can be made from, best sellers first. The result holds no
-    price and no stock: it goes straight to the page."""
-    query = (query or '').strip()
-    if len(query) < SEARCH_FROM:
+def _in_stock(ids):
+    """Units on hand, samples included: a decant is poured from the open bottle."""
+    from django.db.models import Sum
+    from ..models import Purchase
+    return dict(Purchase.objects.filter(product_id__in=list(ids), remaining__gt=0).values_list('product')
+                .annotate(units=Sum('remaining')).order_by())
+
+
+SORTS = ('sold', 'name')
+
+
+def perfume_choices(query='', brand='', gender='', sort='sold'):
+    """Perfumes a sample can be made from: any with a bottle on hand, the shop's
+    sample included. Typed words, a brand or a gender narrow it; best sellers or
+    A-Z. The result holds no price and no stock: it goes straight to the page."""
+    query, brand = (query or '').strip(), (brand or '').strip()
+    if len(query) < SEARCH_FROM and not brand:
         return []
-    products = list(_perfumes().filter(product_search_q(query)))
+    products = _perfumes()
+    if query:
+        products = products.filter(product_search_q(query))
+    if brand:
+        products = products.filter(brand__iexact=brand)
+    if gender:
+        products = products.filter(gender=gender)
+    products = list(products)
     ids = [product.pk for product in products]
-    units, sold = sellable_units(ids), units_sold(ids)
+    units, sold = _in_stock(ids), units_sold(ids)
     products = [product for product in products if units.get(product.pk, 0) > 0]
-    products.sort(key=lambda product: (-sold.get(product.pk, 0), perfume_name(product).lower()))
+    if sort == 'name':
+        products.sort(key=lambda product: perfume_name(product).lower())
+    else:
+        products.sort(key=lambda product: (-sold.get(product.pk, 0), perfume_name(product).lower()))
     return [{'id': product.pk, 'name': perfume_name(product), 'ean': product.barcode}
             for product in products[:SEARCH_LIMIT]]
+
+
+def pick_brands():
+    """The brands with a perfume on hand, for the panel's brand menu."""
+    ids = list(_perfumes().values_list('pk', flat=True))
+    stocked = set(_in_stock(ids))
+    names = _perfumes().filter(pk__in=stocked).values_list('brand', flat=True)
+    return sorted({customer_catalog_case(name) for name in names if name}, key=str.lower)
 
 
 def _wanted(raw):
@@ -70,7 +100,7 @@ def _from_perfumes(wanted):
     perfumes = {product.pk: product for product in _perfumes(pk__in=wanted)}
     if set(wanted) - set(perfumes):
         raise ValueError('Escolha um perfume do catálogo.')
-    units = sellable_units(list(wanted))
+    units = _in_stock(wanted)
     for pk, product in perfumes.items():
         if units.get(pk, 0) <= 0:
             raise ValueError(f'Sem stock: {perfume_name(product)}')
@@ -100,5 +130,5 @@ def sold_out_pick(mode, picks):
     checked: the shop confirms its scents by hand."""
     if mode != 'perfume':
         return ''
-    units = sellable_units([pick['id'] for pick in picks])
+    units = _in_stock([pick['id'] for pick in picks])
     return next((pick['name'] for pick in picks if units.get(pick['id'], 0) <= 0), '')

@@ -184,6 +184,7 @@ TEMPLATES = [
                 'django.contrib.messages.context_processors.messages',
                 'django.template.context_processors.static',
                 'stock.context_processors.store_context',
+                'stock.context_processors.phone_prefixes',
                 'stock.context_processors.nav_back',
             ],
         },

@@ -10,6 +10,35 @@ import re
 DEFAULT_COUNTRY_CODE = '351'
 
 
+# The country codes offered beside a phone field, Portugal first.
+PREFIXES = [('351', 'PT +351'), ('34', 'ES +34'), ('33', 'FR +33'), ('49', 'DE +49'), ('39', 'IT +39'),
+            ('44', 'UK +44'), ('32', 'BE +32'), ('31', 'NL +31'), ('41', 'CH +41'), ('352', 'LU +352'),
+            ('353', 'IE +353'), ('55', 'BR +55'), ('244', 'AO +244'), ('238', 'CV +238'), ('258', 'MZ +258'),
+            ('91', 'IN +91'), ('92', 'PK +92'), ('880', 'BD +880'), ('977', 'NP +977'), ('86', 'CN +86'),
+            ('971', 'AE +971'), ('1', 'US/CA +1')]
+
+
+def with_prefix(prefix, phone):
+    """The number as stored: a Portuguese one as typed, any other with its
+    country code in front. A number typed with its own + or 00 keeps it."""
+    phone = (phone or '').strip()
+    prefix = re.sub(r'\D', '', prefix or '')
+    if not phone or not prefix or prefix == DEFAULT_COUNTRY_CODE or phone.startswith(('+', '00')):
+        return phone
+    return f'+{prefix} {phone}'
+
+
+def split_prefix(phone):
+    """``(prefix, rest)`` to fill a form: the stored +code back in the menu."""
+    phone = (phone or '').strip()
+    if phone.startswith('+'):
+        for code, _label in sorted(PREFIXES, key=lambda p: -len(p[0])):
+            if digits(phone).startswith(code):
+                rest = phone[1:].lstrip()[len(code):].lstrip()
+                return code, rest
+    return DEFAULT_COUNTRY_CODE, phone
+
+
 def digits(phone):
     return re.sub(r'\D', '', phone or '')
 

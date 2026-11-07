@@ -48,7 +48,9 @@
   .wc-step button{ width:36px; height:36px; font-weight:800; color:var(--app-text); background:var(--app-surface); border:1px solid var(--app-border-strong); border-radius:var(--app-radius-sm); }
   .wc-step input{ width:3rem; height:36px; text-align:center; border:1px solid var(--app-border-strong); border-radius:var(--app-radius-sm); -moz-appearance:textfield; appearance:textfield; }
   .wc-step input::-webkit-inner-spin-button, .wc-step input::-webkit-outer-spin-button{ -webkit-appearance:none; margin:0; }
-  .wc-pick-hits{ margin:.35rem 0; }
+  .wc-pick-hits{ margin:.35rem 0; max-height:16rem; overflow:auto; }
+  .wc-pick-filters{ display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr); gap:.35rem; margin-top:.4rem; }
+  .wc-pick-filters .form-select{ min-height:38px; font-size:.88rem; padding-left:.5rem; }
   .wc-pick-hits:empty{ display:none; }
   .wc-pick-hit{ display:block; width:100%; padding:.45rem .35rem; text-align:left; color:inherit; background:none; border:0; border-bottom:1px solid var(--app-border); overflow-wrap:anywhere; }
   .wc-pick-hit:hover, .wc-pick-hit:focus-visible{ background:var(--app-accent-soft); }
@@ -318,24 +320,27 @@
         const form = hit.closest('[data-wc-pick]');
         choose(form, hit.dataset.id, hit.dataset.name);
         const search = form.querySelector('[data-wc-pick-search]');
-        search.value = '';
-        form.querySelector('[data-wc-pick-hits]').replaceChildren();
+        if (!form.querySelector('[data-wc-pick-brand]').value) {
+          search.value = '';
+          form.querySelector('[data-wc-pick-hits]').replaceChildren();
+        }
         search.focus();
       }
     });
 
     let waiting, asked = 0;
-    document.addEventListener('input', (event) => {
-      const form = event.target.closest('[data-wc-pick]');
-      if (!form) return;
-      if (!event.target.matches('[data-wc-pick-search]')) { refresh(form); return; }
+    function lookUp(form) {
+      const search = form.querySelector('[data-wc-pick-search]');
       const box = form.querySelector('[data-wc-pick-hits]');
-      const query = event.target.value.trim();
+      const value = (sel) => (form.querySelector(sel) || {}).value || '';
+      const query = search.value.trim();
+      const brand = value('[data-wc-pick-brand]');
       clearTimeout(waiting);
       const mine = ++asked;
-      if (query.length < 2) { box.replaceChildren(); return; }
+      if (query.length < 2 && !brand) { box.replaceChildren(); return; }
+      const params = new URLSearchParams({ q: query, brand, gender: value('[data-wc-pick-gender]'), sort: value('[data-wc-pick-sort]') || 'sold' });
       waiting = setTimeout(() => {
-        fetch(`${event.target.dataset.wcPickSearch}?${new URLSearchParams({ q: query })}`)
+        fetch(`${search.dataset.wcPickSearch}?${params}`)
           .then((response) => response.json())
           .then((data) => {
             if (mine !== asked) return;
@@ -352,6 +357,15 @@
             }
           });
       }, 200);
+    }
+    document.addEventListener('input', (event) => {
+      const form = event.target.closest('[data-wc-pick]');
+      if (!form) return;
+      if (event.target.matches('[data-wc-pick-search]')) lookUp(form); else refresh(form);
+    });
+    document.addEventListener('change', (event) => {
+      if (!event.target.matches('[data-wc-pick-brand], [data-wc-pick-gender], [data-wc-pick-sort]')) return;
+      lookUp(event.target.closest('[data-wc-pick]'));
     });
 
     // Enter in the search box searches; it must not send the form.

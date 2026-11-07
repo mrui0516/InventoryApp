@@ -3289,6 +3289,81 @@ def inbound_order_terms(request, order_id):
     return redirect('inbound_order_edit', order_id=order.id)
 
 
+def _price(raw):
+    """``(value, ok)``: blank is no price; a bad number is not ok."""
+    raw = (raw or '').strip().replace(',', '.').replace('€', '')
+    if raw == '':
+        return None, True
+    try:
+        value = Decimal(raw)
+    except InvalidOperation:
+        return None, False
+    if not value.is_finite() or value < 0:
+        return None, False
+    return value.quantize(Decimal('0.01')), True
+
+
+@login_required
+@manager_required
+def product_prices_view(request):
+    """Products -> Edit prices: many prices in one go, the changed rows saved
+    together. A changed row is locked against auto pricing unless unticked."""
+    from django.core.paginator import Paginator
+    from .services.product_search import product_search_q
+    errors = []
+    if request.method == 'POST':
+        changes = {}
+        ids = {int(key.split('-')[-1]) for key in request.POST if key.startswith('was-wholesale-')}
+        for pk in ids:
+            row = {}
+            for field, name in (('wholesale_price', 'wholesale'), ('default_price', 'retail')):
+                if request.POST.get(f'{name}-{pk}') is None:
+                    continue
+                new, ok = _price(request.POST.get(f'{name}-{pk}'))
+                was, _ = _price(request.POST.get(f'was-{name}-{pk}'))
+                if not ok:
+                    errors.append(f'Product #{pk}: "{request.POST.get(f"{name}-{pk}")}" is not a price.')
+                elif new != was:
+                    row[field] = new
+            # The page sends the box; without it a changed price is locked.
+            if f'was-lock-{pk}' in request.POST:
+                lock = request.POST.get(f'lock-{pk}') == '1'
+                if row or lock != (request.POST.get(f'was-lock-{pk}') == '1'):
+                    row['price_locked'] = lock
+            elif row:
+                row['price_locked'] = True
+            if row:
+                changes[pk] = row
+        if not errors:
+            with transaction.atomic():
+                for product in Product.objects.filter(pk__in=changes):
+                    for field, value in changes[product.pk].items():
+                        setattr(product, field, value)
+                    # A save, as the edit page does: Shopify and the history follow it.
+                    product.save(update_fields=list(changes[product.pk]))
+            messages.success(request, f'Prices saved on {len(changes)} product{"" if len(changes) == 1 else "s"}.'
+                             if changes else 'Nothing changed.')
+            from django.utils.http import url_has_allowed_host_and_scheme
+            nxt = request.POST.get('next') or ''
+            if nxt and url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}):
+                return redirect(nxt)
+            return redirect('product_prices')
+    query = request.GET.get('q', '').strip()
+    brand = request.GET.get('brand', '').strip()
+    products = Product.objects.all()
+    if query:
+        products = products.filter(product_search_q(query))
+    if brand:
+        products = products.filter(brand__iexact=brand)
+    products = products.order_by('brand', 'model', 'name', 'id')
+    page_obj = Paginator(products, 50).get_page(request.GET.get('page'))
+    for product in page_obj:
+        product.current_cost = product.current_fifo_cost_price()
+    brands = sorted({b for b in Product.objects.values_list('brand', flat=True) if b}, key=str.lower)
+    return render(request, 'stock/product_prices.html', {'page_obj': page_obj, 'query': query, 'brand': brand,
+                                                         'brands': brands, 'errors': errors})
+
+
 @login_required
 @admin_required
 def business_rules_view(request):
@@ -5293,7 +5368,8 @@ def customer_discount_set(request, customer_id):
 def add_customer(request):
     nif = (request.POST.get('nif') or '').strip()
     name = (request.POST.get('name') or '').strip()
-    phone = (request.POST.get('phone') or '').strip() or None
+    from .services.contacts import with_prefix
+    phone = with_prefix(request.POST.get('phone_prefix'), request.POST.get('phone')) or None
     email = (request.POST.get('email') or '').strip() or None
     notes = (request.POST.get('notes') or '').strip() or None
     address = (request.POST.get('address') or '').strip()

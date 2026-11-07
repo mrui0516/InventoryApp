@@ -24,6 +24,7 @@ urlpatterns = [
     path('pedido/drafts/<int:draft_id>/delete/', pedido_views.pedido_draft_delete, name='pedido_draft_delete'),
     path('products/', views.product_list_view, name='product_list'),
     path('products/export-excel/', views.export_product_list_excel, name='export_product_list_excel'),
+    path('products/prices/', views.product_prices_view, name='product_prices'),
     path('products/export-shopify-csv/', views.export_shopify_inventory_csv, name='export_shopify_inventory_csv'),
     path('check_barcode/', views.check_barcode, name='check_barcode'),
     path('add-product/', views.add_product_view, name='add_product'),
@@ -45,6 +46,7 @@ urlpatterns = [
     path('products/<int:pk>/restock/', views.toggle_restock, name='toggle_restock'),
     path('products/<int:pk>/restock-request/', catalog_views.restock_request, name='restock_request'),
     path('restock-requests/', catalog_views.restock_requests, name='restock_requests'),
+    path('restock-requests/<int:pk>/tell/', catalog_views.restock_notify, name='restock_notify'),
     path('products/<int:pk>/delete/', views.delete_product_view, name='delete_product'),
 
     path('export-sales-purchases-pdf/', views.export_sales_purchases_pdf, name='export_sales_purchases_pdf'),

@@ -16,6 +16,12 @@
   .rq-n{ text-align:right; font-variant-numeric:tabular-nums; }
   .rq-n.big{ font-weight:800; font-size:1.05rem; }
   .rq-empty{ margin:0; padding:1rem; color:var(--app-muted); }
+  .rq-head-2{ grid-template-columns:minmax(0,1fr); }
+  .rq-arr{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.4fr); gap:.5rem .75rem; align-items:center; padding:.5rem .85rem; border-top:1px solid var(--app-border); }
+  .rq-asks{ display:flex; flex-wrap:wrap; gap:.35rem; justify-content:flex-end; }
+  .rq-tell{ margin:0; }
+  .rq-tell .btn{ min-height:36px; }
+  @media (max-width:767.98px){ .rq-arr{ grid-template-columns:minmax(0,1fr); } .rq-asks{ justify-content:flex-start; } }
   @media (max-width:767.98px){
     .rq-head{ display:none; }
     .rq-row{ grid-template-columns:minmax(0,1fr) auto; gap:.1rem .75rem; }
@@ -26,6 +32,23 @@
 </style>
 <div class="rq">
   <h1>Restock requests</h1>
+  {% if arrived %}
+  <section class="rq-list rq-arrived" aria-label="Back in stock">
+    <div class="rq-head rq-head-2" aria-hidden="true"><span>Back in stock &middot; tell the customers who asked</span><span></span></div>
+    {% for row in arrived %}
+      <div class="rq-arr">
+        <span class="rq-main"><span class="rq-brand">{{ row.product.brand }}</span><span class="rq-name">{{ row.product.list_name }}</span></span>
+        <span class="rq-asks">
+          {% for ask in row.asks %}
+            <form method="post" action="{% url 'restock_notify' ask.request.id %}" target="_blank" class="rq-tell">
+              {% csrf_token %}<button type="submit" class="btn btn-sm btn-success" onclick="setTimeout(() => this.closest('form').remove(), 300)">WhatsApp {{ ask.customer.name }}</button>
+            </form>
+          {% endfor %}
+        </span>
+      </div>
+    {% endfor %}
+  </section>
+  {% endif %}
   <section class="rq-list" aria-label="Restock requests">
     <div class="rq-head" aria-hidden="true">
       <span>Product</span><span class="rq-n">Requests</span><span class="rq-n">Sold 90 days</span>

@@ -1,9 +1,11 @@
 {% extends 'stock/base.html' %}
-{% block title %}Order requests{% endblock %}
+{% block title %}Pedidos{% endblock %}
 {% block content %}
 <style>
   .oq{ display:grid; gap:.75rem; grid-template-columns:minmax(0,1fr); }
   .oq h1{ margin:0; font-size:1.4rem; font-weight:800; }
+  .oq-head{ display:flex; align-items:center; justify-content:space-between; gap:.75rem; }
+  a.oq-row{ color:inherit; text-decoration:none; }
   .oq-list{ background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius); overflow:hidden; }
   .oq-row{ display:grid; grid-template-columns:4rem minmax(0,1fr) 7rem 4.5rem 6.5rem 6rem; gap:.75rem; align-items:center; width:100%; padding:.55rem .85rem; border:0; border-top:1px solid var(--app-border); background:none; color:inherit; text-align:left; font-variant-numeric:tabular-nums; }
   .oq-row:first-child{ border-top:0; }
@@ -16,18 +18,42 @@
   .oq-status.cancelled{ color:#b42318; }
   .oq-empty{ margin:0; padding:1rem; color:var(--app-muted); }
   @media (max-width:767.98px){
-    .oq-row{ grid-template-columns:minmax(0,1fr) auto; gap:.1rem .75rem; }
-    .oq-date, .oq-units{ font-size:.85rem; color:var(--app-muted); }
+    /* two lines: who and how much, then when, how many and where it stands */
+    .oq-row{ grid-template-columns:auto minmax(0,1fr) auto auto; grid-template-areas:"id main main total" "id date units status";
+      gap:.1rem .6rem; padding:.5rem .7rem; }
+    .oq-row > b{ grid-area:id; align-self:start; }
+    .oq-main{ grid-area:main; } .oq-total{ grid-area:total; align-self:start; }
+    .oq-date{ grid-area:date; } .oq-units{ grid-area:units; } .oq-status{ grid-area:status; text-align:right; }
+    .oq-date, .oq-units{ font-size:.85rem; color:var(--app-muted); white-space:nowrap; }
   }
 </style>
 <div class="oq">
-  <h1>Order requests</h1>
-  <section class="oq-list" aria-label="Order requests">
+  <div class="oq-head"><h1>Pedidos</h1><a class="btn btn-primary btn-sm" href="{% url 'pedido' %}">+ New Pedido</a></div>
+  <nav class="ftabs" aria-label="Status">
+    <a class="{% if not show %}on{% endif %}" href="?">Open <span class="n">{{ counts.open }}</span></a>
+    <a class="{% if show == 'to_confirm' %}on{% endif %}" href="?show=to_confirm">To confirm <span class="n">{{ counts.to_confirm }}</span></a>
+    <a class="{% if show == 'confirmed' %}on{% endif %}" href="?show=confirmed">Stock confirmed <span class="n">{{ counts.confirmed }}</span></a>
+    <a class="{% if show == 'drafts' %}on{% endif %}" href="?show=drafts">Shop drafts <span class="n">{{ counts.drafts }}</span></a>
+    <a class="{% if show == 'sold' %}on{% endif %}" href="?show=sold">Sold <span class="n">{{ counts.sold }}</span></a>
+    <a class="{% if show == 'cancelled' %}on{% endif %}" href="?show=cancelled">Cancelled <span class="n">{{ counts.cancelled }}</span></a>
+    <a class="{% if show == 'all' %}on{% endif %}" href="?show=all">All <span class="n">{{ counts.all }}</span></a>
+  </nav>
+  <section class="oq-list" aria-label="Pedidos">
+    {% for draft in drafts %}
+      <a class="oq-row" href="{% url 'pedido' %}?draft={{ draft.id }}&amp;switch=1">
+        <b>P{{ draft.id }}</b>
+        <span class="oq-main">{{ draft.customer.name|default:draft.customer_name|default:"No customer" }}<small>Shop &middot; {{ draft.store.name }}{% if draft.customer_phone %} &middot; {{ draft.customer_phone }}{% endif %}</small></span>
+        <span class="oq-date">{{ draft.updated_at|date:"d/m/y H:i" }}</span>
+        <span class="oq-units">{{ draft.line_count }} line{{ draft.line_count|pluralize }}</span>
+        <span class="oq-total">&euro;{{ draft.total|floatformat:2 }}</span>
+        <span class="oq-status {% if draft.status == 'sold' %}completed{% endif %}">{% if draft.status == 'sold' %}Sold{% else %}Draft{% endif %}</span>
+      </a>
+    {% endfor %}
     {% for order in orders %}
       <button type="button" class="oq-row" data-layer="oq-{{ order.id }}">
         <b>#{{ order.id }}</b>
         <span class="oq-main">{{ order.customer.name|default:order.contact_name }}<small>{{ order.phone }}{% if order.city %} &middot; {{ order.city }}{% endif %}</small></span>
-        <span class="oq-date">{{ order.created_at|date:"Y-m-d H:i" }}</span>
+        <span class="oq-date">{{ order.created_at|date:"d/m/y H:i" }}</span>
         <span class="oq-units">{{ order.units }} pcs</span>
         <span class="oq-total">&euro;{{ order.total|floatformat:2 }}</span>
         <span class="oq-status {{ order.status }}">{% if order.status == 'submitted' %}To confirm{% elif order.status == 'confirmed' %}Stock confirmed{% elif order.status == 'completed' %}Sold{% else %}Cancelled{% endif %}</span>
@@ -64,7 +90,7 @@
         </div>
       </template>
     {% empty %}
-      <p class="oq-empty">No requests yet.</p>
+      {% if not drafts %}<p class="oq-empty">Nothing here.</p>{% endif %}
     {% endfor %}
   </section>
 </div>

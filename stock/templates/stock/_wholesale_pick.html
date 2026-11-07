@@ -10,6 +10,11 @@
       {% if replace %}<input type="hidden" name="replace" value="1">{% endif %}
       {% if mode == 'perfume' %}
         <input type="search" class="form-control" placeholder="Procurar perfume" aria-label="Procurar perfume" autocomplete="off" data-wc-pick-search="{% url 'wholesale_pick_search' %}">
+        <div class="wc-pick-filters">
+          <select class="form-select" aria-label="Marca" data-wc-pick-brand><option value="">Todas as marcas</option>{% for b in pick_brands %}<option value="{{ b }}">{{ b }}</option>{% endfor %}</select>
+          <select class="form-select" aria-label="Género" data-wc-pick-gender><option value="">Género</option><option value="men">Homem</option><option value="women">Mulher</option><option value="unisex">Unissexo</option></select>
+          <select class="form-select" aria-label="Ordenar" data-wc-pick-sort><option value="sold">Mais vendidos</option><option value="name">A–Z</option></select>
+        </div>
         <div class="wc-pick-hits" data-wc-pick-hits></div>
       {% endif %}
       <div class="wc-picks" data-wc-picks>

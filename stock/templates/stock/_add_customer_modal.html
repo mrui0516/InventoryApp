@@ -22,8 +22,11 @@
         </div>
         <div class="ac-field">
           <label for="ac-phone">Phone <span class="ac-hint">WhatsApp</span></label>
-          <input type="tel" id="ac-phone" name="phone" class="form-control" maxlength="20"
-                 inputmode="tel" autocomplete="tel" placeholder="912 345 678" required>
+          <div class="ac-phone">
+            <select name="phone_prefix" class="form-select" aria-label="Country code">{% for code, label in phone_prefixes %}<option value="{{ code }}">{{ label }}</option>{% endfor %}</select>
+            <input type="tel" id="ac-phone" name="phone" class="form-control" maxlength="20"
+                   inputmode="tel" autocomplete="tel" placeholder="912 345 678" required>
+          </div>
         </div>
         <div class="ac-field">
           <span class="ac-label" id="ac-kind-label">Customer type</span>
@@ -62,6 +65,7 @@
 </div>
 
 <style>
+  .ac-phone{ display:grid; grid-template-columns:7.2rem minmax(0,1fr); gap:.4rem; }
   /* align-content:start - full screen on a phone, a grid would otherwise
      stretch every row to fill the height and the inputs grow to ~75px. */
   .ac-body{ display:grid; gap:.85rem; align-content:start; }

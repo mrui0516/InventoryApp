@@ -18,6 +18,11 @@ def _waiting(user, store):
             'pedido_waiting': drafts.filter(store=store).count() if store is not None else 0}
 
 
+def phone_prefixes(request):
+    from .services.contacts import PREFIXES
+    return {'phone_prefixes': PREFIXES}
+
+
 def store_context(request):
     user = getattr(request, 'user', None)
     if not user or not user.is_authenticated:

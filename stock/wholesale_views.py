@@ -28,7 +28,7 @@ from .services import portal
 from .services.portal import catalog_access
 from .services.wholesale_discount import last_discount
 from .services.wholesale_orders import cancel_order, reopen_in_cart, shop_phone
-from .services.wholesale_picks import perfume_choices
+from .services.wholesale_picks import perfume_choices, pick_brands
 
 SESSION_KEY = 'wholesale_customer'
 EDITING_KEY = 'wholesale_editing'
@@ -111,6 +111,7 @@ def catalog_view(request):
         'brand_total': sum(by_brand.values()),
         'brand_tabs': brand_tabs(by_brand),
         'genders': [{'value': value, 'label': label} for value, label in Product.GENDER_SHOPIFY_TAGS.items()],
+        'pick_brands': pick_brands() if any(row.get('pick_mode') == 'perfume' for row in page_obj) else [],
         **_shared(request, customer),
     })
 
@@ -137,7 +138,8 @@ def _picks(text):
 
 @catalog_access
 def pick_search(request):
-    return JsonResponse({'results': perfume_choices(request.GET.get('q'))})
+    return JsonResponse({'results': perfume_choices(request.GET.get('q'), request.GET.get('brand'),
+                                                    request.GET.get('gender'), request.GET.get('sort') or 'sold')})
 
 
 def _wants_json(request):
@@ -214,6 +216,7 @@ def _cart_page(request, customer, form, status=200):
     return render(request, 'stock/wholesale_cart.html', {
         'tab': 'cart', 'form': form, 'quote': cart_quote(request.user, customer, _destination(data)),
         'editing': editing,
+        'pick_brands': pick_brands(),
         **_shared(request, customer),
     }, status=status)
 
@@ -339,5 +342,35 @@ def order_requests(request):
         elif request.POST.get('action') == 'cancel' and cancel_order(order, request.user, OrderRequest.SHOP_CAN_CANCEL):
             messages.success(request, f'Request #{order.id} cancelled.')
         return redirect('order_requests')
-    orders = (OrderRequest.objects.select_related('customer', 'submitted_by', 'pedido').prefetch_related('lines'))
-    return render(request, 'stock/order_requests.html', {'orders': orders})
+    from django.utils import timezone
+    from datetime import timedelta
+    from .models import PedidoDraft
+    show = request.GET.get('show', '')
+    orders = OrderRequest.objects.select_related('customer', 'submitted_by', 'pedido').prefetch_related('lines')
+    # Quotes made in the shop, not online: open ones, and the ones sold lately.
+    drafts = PedidoDraft.objects.filter(order_request__isnull=True).select_related('store', 'customer')
+    open_drafts = drafts.filter(status=PedidoDraft.OPEN)
+    sold_drafts = drafts.filter(status=PedidoDraft.SOLD, updated_at__gte=timezone.now() - timedelta(days=90))
+    counts = {'to_confirm': orders.filter(status=OrderRequest.SUBMITTED).count(),
+              'confirmed': orders.filter(status=OrderRequest.CONFIRMED).count(),
+              'drafts': open_drafts.count(),
+              'sold': orders.filter(status=OrderRequest.COMPLETED).count() + sold_drafts.count(),
+              'cancelled': orders.filter(status=OrderRequest.CANCELLED).count()}
+    by_status = {'to_confirm': OrderRequest.SUBMITTED, 'confirmed': OrderRequest.CONFIRMED,
+                 'sold': OrderRequest.COMPLETED, 'cancelled': OrderRequest.CANCELLED}
+    if show == 'drafts':
+        orders, shown_drafts = orders.none(), open_drafts
+    elif show in by_status:
+        orders = orders.filter(status=by_status[show])
+        shown_drafts = sold_drafts if show == 'sold' else PedidoDraft.objects.none()
+    elif show == 'all':
+        shown_drafts = open_drafts
+    else:
+        # What still needs the shop: requests to confirm or confirmed, and open drafts.
+        show = ''
+        orders = orders.filter(status__in=OrderRequest.SHOP_CAN_CANCEL)
+        shown_drafts = open_drafts
+    counts['open'] = counts['to_confirm'] + counts['confirmed'] + counts['drafts']
+    counts['all'] = OrderRequest.objects.count() + open_drafts.count()
+    return render(request, 'stock/order_requests.html', {'orders': orders, 'drafts': shown_drafts, 'show': show,
+                                                         'counts': counts})

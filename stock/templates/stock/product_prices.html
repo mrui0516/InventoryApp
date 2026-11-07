@@ -1,0 +1,129 @@
+{% extends 'stock/base.html' %}
+{% block title %}Edit prices{% endblock %}
+{% block content %}
+<div class="qp-page">
+  <div class="qp-head">
+    <h1>Edit prices</h1>
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'product_list' %}">Products</a>
+  </div>
+  {% for e in errors %}<div class="alert alert-danger">{{ e }}</div>{% endfor %}
+  <form method="get" class="qp-find" role="search">
+    <input type="search" name="q" value="{{ query }}" class="form-control" placeholder="Name, brand or EAN" aria-label="Search">
+    <select name="brand" class="form-select" aria-label="Brand" onchange="this.form.submit()">
+      <option value="">All brands</option>
+      {% for b in brands %}<option value="{{ b }}"{% if b == brand %} selected{% endif %}>{{ b }}</option>{% endfor %}
+    </select>
+    <button type="submit" class="btn btn-outline-primary">Find</button>
+  </form>
+
+  <form method="post" id="qpForm">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <div class="qp-list">
+      <div class="qp-row qp-headrow" aria-hidden="true"><span>Product</span><span class="r">Cost</span><span class="r">Wholesale &euro;</span><span class="r">Retail &euro;</span><span class="c">Locked</span></div>
+      {% for p in page_obj %}
+        <div class="qp-row" data-qp-row>
+          <span class="qp-name"><small>{{ p.brand }} &middot; {{ p.barcode }}</small><b>{{ p.list_name }}</b></span>
+          <span class="qp-cost r">{% if p.current_cost %}&euro;{{ p.current_cost|floatformat:2 }}{% else %}&mdash;{% endif %}</span>
+          <label class="qp-in"><span class="qp-k">Wholesale</span>
+            <input type="text" inputmode="decimal" name="wholesale-{{ p.id }}" value="{{ p.wholesale_price|default_if_none:''|floatformat:2 }}" class="form-control" aria-label="Wholesale {{ p.list_name }}">
+            <input type="hidden" name="was-wholesale-{{ p.id }}" value="{{ p.wholesale_price|default_if_none:''|floatformat:2 }}"></label>
+          <label class="qp-in"><span class="qp-k">Retail</span>
+            <input type="text" inputmode="decimal" name="retail-{{ p.id }}" value="{{ p.default_price|default_if_none:''|floatformat:2 }}" class="form-control" aria-label="Retail {{ p.list_name }}">
+            <input type="hidden" name="was-retail-{{ p.id }}" value="{{ p.default_price|default_if_none:''|floatformat:2 }}"></label>
+          <label class="qp-lock c"><input type="checkbox" name="lock-{{ p.id }}" value="1"{% if p.price_locked %} checked{% endif %} aria-label="Locked {{ p.list_name }}"><input type="hidden" name="was-lock-{{ p.id }}" value="{% if p.price_locked %}1{% endif %}"></label>
+        </div>
+      {% empty %}
+        <p class="qp-empty">No products.</p>
+      {% endfor %}
+    </div>
+    <div class="qp-bar">
+      <span class="qp-changed" data-qp-changed>No changes</span>
+      {% if page_obj.has_other_pages %}<span class="qp-pages">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+        {% if page_obj.has_previous %}<a href="?{% if query %}q={{ query|urlencode }}&amp;{% endif %}{% if brand %}brand={{ brand|urlencode }}&amp;{% endif %}page={{ page_obj.previous_page_number }}">&lsaquo;</a>{% endif %}
+        {% if page_obj.has_next %}<a href="?{% if query %}q={{ query|urlencode }}&amp;{% endif %}{% if brand %}brand={{ brand|urlencode }}&amp;{% endif %}page={{ page_obj.next_page_number }}">&rsaquo;</a>{% endif %}</span>{% endif %}
+      <button type="submit" class="btn btn-primary" data-qp-save disabled>Save changes</button>
+    </div>
+  </form>
+</div>
+<style>
+  .qp-page{ display:grid; gap:.75rem; }
+  .qp-head{ display:flex; align-items:center; justify-content:space-between; gap:.75rem; }
+  .qp-head h1{ margin:0; font-size:1.4rem; font-weight:800; }
+  .qp-find{ display:grid; grid-template-columns:minmax(0,1fr) 14rem auto; gap:.5rem; margin:0; }
+  .qp-list{ background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius); overflow:hidden; }
+  .qp-row{ display:grid; grid-template-columns:minmax(0,1fr) 6rem 8rem 8rem 4.5rem; gap:.6rem; align-items:center; padding:.4rem .85rem; border-top:1px solid var(--app-border); }
+  .qp-row:first-child{ border-top:0; }
+  .qp-row.changed{ background:#fffbeb; }
+  .qp-headrow{ font-size:.85rem; font-weight:700; color:var(--app-muted); background:var(--app-surface-2); }
+  .qp-name small{ display:block; font-size:.85rem; color:var(--app-muted); }
+  .qp-name b{ display:block; font-weight:700; overflow-wrap:anywhere; }
+  .qp-row .r{ text-align:right; font-variant-numeric:tabular-nums; }
+  .qp-row .c{ text-align:center; }
+  .qp-in{ margin:0; }
+  .qp-in .qp-k{ display:none; }
+  .qp-in input{ min-height:36px; text-align:right; font-variant-numeric:tabular-nums; }
+  .qp-in input.bad{ border-color:#dc2626; background:#fef2f2; }
+  .qp-lock input{ width:1.15rem; height:1.15rem; }
+  .qp-cost{ color:var(--app-muted); }
+  .qp-empty{ margin:0; padding:1rem; color:var(--app-muted); }
+  .qp-bar{ position:sticky; bottom:calc(var(--tabbar-live, 0px) + .5rem); z-index:5; display:flex; flex-wrap:wrap; align-items:center; gap:.5rem 1rem; padding:.55rem .85rem;
+    background:var(--app-surface); border:1px solid var(--app-border-strong); border-radius:var(--app-radius); box-shadow:0 8px 24px rgba(16,24,40,.14); }
+  .qp-changed{ font-weight:700; }
+  .qp-pages{ color:var(--app-muted); }
+  .qp-pages a{ margin-left:.4rem; font-weight:800; text-decoration:none; }
+  .qp-bar .btn{ margin-left:auto; min-height:42px; }
+  @media (max-width:767.98px){
+    .qp-find{ grid-template-columns:minmax(0,1fr) auto; }
+    .qp-find select{ grid-column:1 / -1; grid-row:2; }
+    .qp-headrow{ display:none; }
+    .qp-row{ grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto; grid-template-areas:"name name cost" "whs ret lock"; gap:.3rem .5rem; padding:.5rem .7rem; }
+    .qp-name{ grid-area:name; } .qp-cost{ grid-area:cost; align-self:start; }
+    .qp-row .qp-in:nth-of-type(1){ grid-area:whs; } .qp-row .qp-in:nth-of-type(2){ grid-area:ret; }
+    .qp-lock{ grid-area:lock; align-self:end; padding-bottom:.55rem; }
+    .qp-in .qp-k{ display:block; font-size:.85rem; font-weight:700; color:var(--app-muted); }
+    .qp-in input, .qp-find input, .qp-find select{ font-size:16px; }
+    .qp-bar{ flex-wrap:nowrap; gap:.5rem; padding:.45rem .6rem; }
+    .qp-changed{ font-size:.88rem; white-space:nowrap; }
+    .qp-pages{ font-size:0; white-space:nowrap; }
+    .qp-pages a{ font-size:1.2rem; margin-left:.5rem; }
+    .qp-bar .btn{ min-height:40px; padding-left:.8rem; padding-right:.8rem; white-space:nowrap; }
+  }
+</style>
+<script>
+  // A row that changed is marked and locked against auto pricing; the bar counts them.
+  (function () {
+    const form = document.getElementById('qpForm');
+    const save = form.querySelector('[data-qp-save]');
+    const label = form.querySelector('[data-qp-changed]');
+    function priceChanged(row) {
+      return [...row.querySelectorAll('input[type=text]')].some((input) => {
+        const was = row.querySelector(`input[name="was-${input.name}"]`);
+        return was && input.value.trim().replace(',', '.') !== was.value;
+      });
+    }
+    function changed(row) {
+      const lock = row.querySelector('input[type=checkbox]');
+      const was = row.querySelector(`input[name="was-${lock.name}"]`);
+      return priceChanged(row) || lock.checked !== (was.value === '1');
+    }
+    form.addEventListener('input', (event) => {
+      const row = event.target.closest('[data-qp-row]');
+      if (!row) return;
+      if (event.target.type === 'text') {
+        const v = event.target.value.trim().replace(',', '.');
+        event.target.classList.toggle('bad', v !== '' && !(Number(v) >= 0));
+        if (priceChanged(row)) row.querySelector('input[type=checkbox]').checked = true;
+      }
+      row.classList.toggle('changed', changed(row));
+      const n = form.querySelectorAll('[data-qp-row].changed').length;
+      label.textContent = n ? `${n} product${n > 1 ? 's' : ''} changed` : 'No changes';
+      save.disabled = n === 0;
+    });
+    window.addEventListener('beforeunload', (event) => {
+      if (form.querySelector('[data-qp-row].changed') && !form.dataset.sent) event.preventDefault();
+    });
+    form.addEventListener('submit', () => { form.dataset.sent = '1'; });
+  })();
+</script>
+{% endblock %}
