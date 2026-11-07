@@ -34,6 +34,14 @@
     </div>
   </section>
 
+  {% if pay %}
+  <form method="post" action="{% url 'inbound_order_terms' order.id %}" class="inbound-edit-card inbound-edit-pad">
+    {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+    {% include "stock/_pay_terms.html" %}
+    <div class="mt-2"><button type="submit" class="btn btn-outline-primary">Save payment</button></div>
+  </form>
+  {% endif %}
+
   <form method="post" enctype="multipart/form-data" class="inbound-edit-card inbound-edit-pad">
     {% csrf_token %}
     <input type="hidden" name="next" value="{{ next_url }}">
@@ -145,4 +153,5 @@
     </div>
   </form>
 </div>
+{% if pay %}{% include "stock/_pay_terms_assets.html" %}{% endif %}
 {% endblock %}

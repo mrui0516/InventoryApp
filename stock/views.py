@@ -708,8 +708,11 @@ def inbound_view(request):
         **_pending_context(),
         'alloc_stores': shops if len(shops) > 1 else [],
         'iva_rate': current_iva_rate(),
-        # Paying is Finance's, so the dialog asks only an admin.
+        # Paying is Finance's, so the dialog asks only an admin; a new order
+        # must say how it is paid before it is made.
         'can_pay': has_admin_access(request.user),
+        'new_pay': finance.new_order_terms(today) if has_admin_access(request.user) and finance.taking_payments() else None,
+        'pay_term': finance.BusinessSettings.current().supplier_term_days,
         'pay_shops': shops,
         'pay_store_id': finance.BusinessSettings.get().purchasing_store_id,
         'pay_methods': PAID_METHODS,
@@ -737,6 +740,14 @@ def inbound_view(request):
         return render(request, 'stock/inbound.html', context)
 
     supplier = Supplier.objects.filter(id=supplier_id).first() if supplier_id else None
+
+    terms = None
+    if context['new_pay'] is not None:
+        try:
+            terms = finance.read_terms(request.POST, {s.id: s for s in shops})
+        except ValidationError as e:
+            context['error'] = f"Payment: {'; '.join(e.messages)}"
+            return render(request, 'stock/inbound.html', context)
 
     # The same form posted again (refresh, a reopened browser resending, a
     # double tap) is recognised by its one-time token and not recorded twice.
@@ -817,6 +828,8 @@ def inbound_view(request):
                 # 回写整单总额
                 order.total_amount = order_total
                 order.save(update_fields=['total_amount'])
+                if terms:
+                    finance.apply_terms(order, terms, request.user)
 
                 context['success'] = (
                     f'Pending order #{order.id} created for {supplier.name}, €{order_total:.2f}. '
@@ -3257,6 +3270,27 @@ def audit_error_resolve(request, error_id):
 
 @login_required
 @admin_required
+@require_POST
+def inbound_order_terms(request, order_id):
+    """Change how an inbound order is paid, from its record page."""
+    order = get_object_or_404(InboundOrder, pk=order_id)
+    from .services.store_stock import active_stores
+    try:
+        terms = finance.read_terms(request.POST, {s.id: s for s in active_stores()})
+        with transaction.atomic():
+            finance.apply_terms(order, terms, request.user)
+        messages.success(request, f'Payment saved on inbound #{order.id}.')
+    except ValidationError as e:
+        messages.error(request, '; '.join(e.messages))
+    nxt = (request.POST.get('next') or '').strip()
+    from django.utils.http import url_has_allowed_host_and_scheme
+    if nxt and url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}):
+        return redirect(nxt)
+    return redirect('inbound_order_edit', order_id=order.id)
+
+
+@login_required
+@admin_required
 def business_rules_view(request):
     """Settings -> Rules: the numbers the business runs on."""
     from .services import rules
@@ -4266,6 +4300,7 @@ def inbound_order_edit_view(request, order_id):
         InboundOrder.objects.select_related('supplier').prefetch_related('items__product', 'items__product__images'),
         id=order_id,
     )
+    pay_terms = finance.terms_form(order) if has_admin_access(request.user) else None
     next_url = request.GET.get('next', '').strip() or request.POST.get('next', '').strip() or reverse('sales_records')
 
     if request.method == 'POST':
@@ -4336,6 +4371,12 @@ def inbound_order_edit_view(request, order_id):
         line_summary.append(purchase)
 
     return render(request, 'stock/inbound_order_edit.html', {
+        'pay': pay_terms,
+        'pay_shops': finance.active_shops() if pay_terms else [],
+        'pay_store_id': finance.BusinessSettings.get().purchasing_store_id,
+        'pay_methods': PAID_METHODS,
+        'pay_term': finance.BusinessSettings.current().supplier_term_days,
+        'today': timezone.localdate(),
         'order': order,
         'form': form,
         'formset': formset,

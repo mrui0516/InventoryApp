@@ -1,0 +1,20 @@
+{# Paid, pay later or instalments: what Finance follows (services/finance.py). #}
+{# pay: {mode, first_due, default_due, instalments}; pay_required: no choice made yet. #}
+<fieldset class="rcv-pay" data-rcv-pay>
+  <legend>Payment</legend>
+  <div class="rcv-seg" role="radiogroup" aria-label="Payment">
+    <label><input type="radio" name="pay_mode" value="paid"{% if pay.mode == 'paid' %} checked{% endif %}{% if pay_required %} required{% endif %}><span>Paid</span></label>
+    <label><input type="radio" name="pay_mode" value="later"{% if pay.mode == 'later' %} checked{% endif %}><span>Pay later</span></label>
+    <label><input type="radio" name="pay_mode" value="instalments"{% if pay.mode == 'instalments' %} checked{% endif %}><span>Instalments</span></label>
+  </div>
+  <div class="rcv-pay-fields">
+    <label data-pay-for="paid"{% if pay.mode != 'paid' %} hidden{% endif %}><span class="rcv-label">Paid by</span>
+      <select name="pay_store" class="form-select">{% for shop in pay_shops %}<option value="{{ shop.id }}"{% if shop.id == pay_store_id %} selected{% endif %}>{{ shop.name }}</option>{% endfor %}</select></label>
+    <label data-pay-for="paid"{% if pay.mode != 'paid' %} hidden{% endif %}><span class="rcv-label">How</span>
+      <select name="pay_method" class="form-select">{% for value, name in pay_methods %}<option value="{{ value }}"{% if value == 'bank' %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
+    <label data-pay-for="paid"{% if pay.mode != 'paid' %} hidden{% endif %}><span class="rcv-label">Paid on</span><input type="date" name="pay_on" class="form-control" value="{{ today|date:'Y-m-d' }}"></label>
+    <label data-pay-for="later instalments"{% if pay.mode != 'later' and pay.mode != 'instalments' %} hidden{% endif %}><span class="rcv-label">Due</span><input type="date" name="pay_first_due" class="form-control" value="{{ pay.first_due|date:'Y-m-d' }}" data-rcv-due="{{ pay.default_due|date:'Y-m-d' }}" data-pay-term="{{ pay_term }}"></label>
+    <label data-pay-for="instalments"{% if pay.mode != 'instalments' %} hidden{% endif %}><span class="rcv-label">Months</span><input type="number" name="pay_instalments" class="form-control" min="2" max="36" inputmode="numeric" value="{{ pay.instalments }}"></label>
+    <span class="rcv-month" data-pay-for="instalments" data-rcv-month{% if pay.mode != 'instalments' %} hidden{% endif %}></span>
+  </div>
+</fieldset>

@@ -27,12 +27,8 @@
           <section class="sp-sec"><h6>Due</h6>
             {% for part in o.schedule %}<div class="sp-row"><span class="sp-row-main">{{ part.on|date:"j M Y" }}</span><span class="sp-row-fig">{% if part.left %}&euro;{{ part.left|floatformat:2 }}{% else %}Paid{% endif %}</span></div>{% endfor %}
           </section>
-          <form method="post" action="{% url 'finance_order_terms' o.order.id %}" class="fin-form">
-            {% csrf_token %}
-            <label>First due<input type="date" name="first_due" class="form-control" value="{{ o.schedule.0.on|date:'Y-m-d' }}" required></label>
-            <label>Instalments<input type="number" name="instalments" class="form-control" min="1" max="{{ max_instalments }}" value="{{ o.order.pay_instalments }}" required></label>
-            <div class="wide"><button type="submit" class="btn btn-outline-primary">Save terms</button></div>
-          </form>
+          <p class="fin-empty">{% if o.order.pay_instalments > 1 %}{{ o.order.pay_instalments }} instalments{% else %}One payment{% endif %} &middot;
+            {% if o.order.status == 'pending_receipt' %}<a href="{% url 'inbound' %}">change on Inbound</a>{% else %}<a href="{% url 'inbound_order_edit' o.order.id %}?next={% url 'finance_payables' %}">change on the inbound record</a>{% endif %}</p>
           <form method="post" action="{% url 'finance_payment_add' o.order.id %}" class="fin-form">
             {% csrf_token %}
             {% submit_token %}

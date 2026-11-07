@@ -1,0 +1,42 @@
+{# Once per page that shows _pay_terms.html. #}
+<style>
+  .rcv-pay{ margin:.8rem 0 0; padding:.6rem .75rem; border:1px solid var(--app-border); border-radius:var(--app-radius-sm); }
+  .rcv-pay legend{ float:none; width:auto; margin:0 0 .35rem; padding:0; font-size:.9rem; font-weight:800; }
+  .rcv-seg{ display:inline-grid; grid-auto-flow:column; grid-auto-columns:minmax(0,1fr); max-width:100%; border:1px solid var(--app-border-strong); border-radius:var(--app-radius-sm); overflow:hidden; }
+  .rcv-seg label{ position:relative; margin:0; cursor:pointer; }
+  .rcv-seg input{ position:absolute; opacity:0; width:1px; height:1px; bottom:0; left:50%; }
+  .rcv-seg span{ display:block; min-height:38px; padding:.45rem .7rem; font-size:.9rem; font-weight:700; text-align:center; color:var(--app-muted); white-space:nowrap; }
+  .rcv-seg input:checked + span{ color:var(--app-surface); background:var(--app-text); }
+  .rcv-seg input:focus-visible + span{ outline:2px solid var(--app-accent); outline-offset:-2px; }
+  .rcv-pay-fields{ display:grid; grid-template-columns:repeat(3, minmax(0,12rem)); gap:.5rem .7rem; align-items:end; margin-top:.55rem; }
+  .rcv-pay-fields label{ margin:0; }
+  .rcv-pay-fields [hidden]{ display:none; }
+  .rcv-pay .rcv-label{ display:block; font-size:.85rem; font-weight:700; color:var(--app-muted); margin-bottom:.15rem; }
+  .rcv-month{ align-self:center; font-weight:700; font-variant-numeric:tabular-nums; }
+  @media (max-width:575.98px){
+    .rcv-pay-fields{ grid-template-columns:repeat(2, minmax(0,1fr)); }
+    .rcv-seg{ display:grid; }
+    .rcv-seg span{ padding:.45rem .3rem; }
+    .rcv-pay input, .rcv-pay select{ font-size:16px; }
+  }
+</style>
+<script>
+  // Show the fields of the payment chosen; the 30 days follow the invoice
+  // date until somebody sets another day.
+  (function () {
+    function show(box) {
+      const mode = (box.querySelector('[name="pay_mode"]:checked') || {}).value;
+      box.querySelectorAll('[data-pay-for]').forEach((e) => { e.hidden = !e.dataset.payFor.split(' ').includes(mode); });
+    }
+    document.addEventListener('change', (event) => {
+      const box = event.target.closest('[data-rcv-pay]');
+      if (box) show(box);
+      if (event.target.name !== 'invoice_date') return;
+      const due = event.target.form && event.target.form.querySelector('[data-rcv-due]');
+      if (!due || due.value !== due.dataset.rcvDue || !event.target.value) return;
+      const day = new Date(`${event.target.value}T12:00:00`);
+      day.setDate(day.getDate() + Number(due.dataset.payTerm || 30));
+      due.value = due.dataset.rcvDue = day.toISOString().slice(0, 10);
+    });
+  })();
+</script>

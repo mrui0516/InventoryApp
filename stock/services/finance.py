@@ -270,6 +270,23 @@ def apply_terms(order, terms, user):
                     note='', user=user)
 
 
+def active_shops():
+    from .store_stock import active_stores
+    return active_stores()
+
+
+def taking_payments():
+    """An order made today is tracked once Finance has a start date."""
+    cut_off = BusinessSettings.get().payables_from
+    return cut_off is not None and timezone.localdate() >= cut_off
+
+
+def new_order_terms(today=None):
+    """How the payment fields open on a new order: nothing chosen yet."""
+    due = (today or timezone.localdate()) + timedelta(days=BusinessSettings.current().supplier_term_days)
+    return {'mode': None, 'first_due': due, 'default_due': due, 'instalments': 3}
+
+
 def terms_form(order):
     """How the Receive dialog opens; None for an order Finance does not track."""
     if not tracks_payment(order):

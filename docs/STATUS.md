@@ -11,7 +11,7 @@
 | 维度 | 状态 | 说明 |
 |---|---|---|
 | 线上运行 | ✅ PythonAnywhere 欧盟区 | `https://scentory.eu.pythonanywhere.com`，两家店（Khan Perfume、Scentory）日常收银、入库都在线上；线上 `db.sqlite3` 是唯一准数据 |
-| 自动化测试 | ✅ 1596 个全部通过 | `python manage.py test stock restock_alerts`，在干净导出上跑 |
+| 自动化测试 | ✅ 1607 个全部通过 | `python manage.py test stock restock_alerts`，在干净导出上跑 |
 | 数据库迁移 | ✅ 最新 `0087_business_rules`，无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
 | 生产配置 | ✅ `DEBUG=False`，密钥只在服务器 `.env` | `settings.py` 的 `if not DEBUG` 块：强制 HTTPS、安全 Cookie、HSTS、防点击劫持 |
 | 数据备份 | ✅ 每日快照 + 本机拉取 | PA 定时任务 `backup_db --keep 30`，本机 `scripts/pull_backup_from_pa.py` 拉到 U 盘；Settings → Tools 可手动下载。见 [BACKUP.md](./BACKUP.md) |
@@ -73,6 +73,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-11-07: **入库时选付款方式**，直接进 Finance；Finance 不再改付款条件。
 - 2026-11-07: **Settings → Rules**（迁移 0087）：批发、付款、库存提醒、自动定价的数值可自己改；菜单显示待处理订单数。
 - 2026-11-07: **批发订单店铺可设置**（迁移 0086）；Open in Pedido 自动切店；测试账号和删除订单的命令。
 - 2026-11-07: **Transfers。** 欠款暂时和 Finance 断开；新增 Clear 清零欠款（迁移 0085）；New transfer 搜索多个产品，一次移动。

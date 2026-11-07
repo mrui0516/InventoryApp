@@ -9904,7 +9904,7 @@ class RecordedOnceTests(TestCase):
     def test_the_same_stock_in_sent_twice_is_recorded_once(self):
         supplier = Supplier.objects.create(name="Twice Ltd")
         data = {"items_json": json.dumps([{"barcode": self.product.barcode, "qty": 3, "cost_price": "4.00"}]),
-                "supplier": str(supplier.id), "submit_token": self.TOKEN}
+                "supplier": str(supplier.id), "submit_token": self.TOKEN, "pay_mode": "later"}
         first = self.client.post(reverse("inbound"), data)
         self.assertRedirects(first, reverse("inbound"), fetch_redirect_response=False)
         cache.clear()

@@ -41,7 +41,7 @@ class InboundCostsMixin(TestCase):
 
     def stock_in(self, lines, **extra):
         data = {"supplier": self.supplier.id, "invoice_no": "F1", "invoice_date": "2026-11-05",
-                "items_json": json.dumps(lines), **extra}
+                "items_json": json.dumps(lines), "pay_mode": "later", **extra}
         return self.client.post(reverse("inbound"), data)
 
     def order(self, *lines, iva="0", shipping="0"):
