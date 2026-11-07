@@ -331,9 +331,9 @@ def transfer_margins(start, end, *, category_ids=(), channel=''):
         day = timezone.localtime(row['transfer__created_at']).date()
         out.append((row['transfer__from_store'], day, markup))
         out.append((row['transfer__to_store'], day, -markup))
-    if not channel:                 # a supplier payment belongs to no channel
-        from .finance import share_margins
-        out.extend(share_margins(start, end))
+    from . import finance
+    if not channel and finance.SHOPS_LINKED:    # a supplier payment belongs to no channel
+        out.extend(finance.share_margins(start, end))
     return out
 
 
@@ -353,14 +353,14 @@ def balances():
     Transfers, each shop's share of the supplier payments another shop made,
     less settlements. ``parts`` is that sum from the debtor's side: a transfer
     the creditor took shows as a negative."""
-    from .finance import share_debts
+    from . import finance
     transfers = defaultdict(Decimal)     # (debtor_id, creditor_id) -> amount
     purchases = defaultdict(Decimal)
     settled = defaultdict(Decimal)
     for row in (StockTransferLine.objects.exclude(transfer__reason=StockTransfer.OPENING)
                 .values('transfer__from_store', 'transfer__to_store').annotate(total=Sum('amount'))):
         transfers[(row['transfer__to_store'], row['transfer__from_store'])] += row['total'] or Decimal('0.00')
-    for debtor, creditor, amount in share_debts():
+    for debtor, creditor, amount in (finance.share_debts() if finance.SHOPS_LINKED else ()):
         purchases[(debtor, creditor)] += amount
     for row in StoreSettlement.objects.values('payer', 'payee').annotate(total=Sum('amount')):
         settled[(row['payer'], row['payee'])] += row['total'] or Decimal('0.00')
@@ -436,6 +436,17 @@ def waive_transfer(transfer):
 
 
 @transaction.atomic
+def clear_debt(payer, payee, *, user=None):
+    """Square two shops without money changing hands: a settlement marked as
+    cleared, for what ``payer`` owes ``payee`` now. Deleting it brings the debt back."""
+    owed = next((row['amount'] for row in balances()
+                 if row['debtor'].pk == payer.pk and row['creditor'].pk == payee.pk), Decimal('0.00'))
+    if owed <= 0:
+        raise ValidationError(f'{payer.name} owes {payee.name} nothing.')
+    return StoreSettlement.objects.create(payer=payer, payee=payee, amount=owed, settled_on=timezone.localdate(),
+                                          created_by=user, note='Cleared', cleared=True)
+
+
 def settle(payer, payee, amount, *, settled_on, user=None, note=''):
     if amount is None or amount <= 0:
         raise ValidationError('Enter the amount paid.')

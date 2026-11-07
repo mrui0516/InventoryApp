@@ -86,6 +86,10 @@ CENT = Decimal('0.01')
 # Unit costs are rounded, so an order with IVA adds up a few cents from the
 # supplier's own total: that is not a debt.
 ROUNDING = Decimal('1.00')
+# The shops' debts to each other are still being tried out (2026-11-07). Until
+# this is switched on, Finance and Transfers do not read each other: a supplier
+# payment makes no shop owe another, and a settlement is not Finance cash.
+SHOPS_LINKED = False
 TERM_DAYS = 30
 MAX_INSTALMENTS = 36
 PAY_MODES = ('paid', 'later', 'instalments')
@@ -489,8 +493,8 @@ def month_cash(start, end, store=None):
     spent('Expenses', _in_shop(Expense.objects.filter(paid_on__gte=start, paid_on__lte=end), store))
     spent('Supplier payments', _in_shop(SupplierPayment.objects.filter(paid_on__gte=start, paid_on__lte=end), store))
 
-    if store is not None:
-        settled = StoreSettlement.objects.filter(settled_on__gte=start, settled_on__lte=end)
+    if store is not None and SHOPS_LINKED:
+        settled = StoreSettlement.objects.filter(settled_on__gte=start, settled_on__lte=end, cleared=False)
         got, gave = _sum(settled.filter(payee=store)), _sum(settled.filter(payer=store))
         if got or gave:
             line('Between shops', got - gave)

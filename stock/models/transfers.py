@@ -77,6 +77,8 @@ class StoreSettlement(models.Model):
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     settled_on = models.DateField(db_index=True)
     note = models.CharField(max_length=200, blank=True, default='')
+    # Squared without money changing hands (store_stock.clear_debt): not cash.
+    cleared = models.BooleanField(default=False)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
                                    null=True, blank=True, related_name='store_settlements')
     created_at = models.DateTimeField(auto_now_add=True)

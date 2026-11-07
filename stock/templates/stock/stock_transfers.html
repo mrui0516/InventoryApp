@@ -20,6 +20,8 @@
             <input type="text" inputmode="decimal" class="form-control" name="amount" value="{{ b.amount|floatformat:2 }}" aria-label="Amount paid"></div>
           <input type="date" class="form-control form-control-sm" name="settled_on" value="{{ today|date:'Y-m-d' }}" aria-label="Paid on">
           <button type="submit" class="btn btn-sm btn-primary">Settle</button>
+          <button type="submit" name="action" value="clear" class="btn btn-sm btn-outline-danger"
+                  onclick="return confirm('Clear what {{ b.debtor.name|escapejs }} owes {{ b.creditor.name|escapejs }} (€{{ b.amount|floatformat:2 }})? No money is recorded. Deleting it from Paid brings the debt back.');">Clear</button>
         </div>
       </form>
     {% empty %}
@@ -31,21 +33,27 @@
   {# moving goods by hand: scan, how many, which way #}
   <section class="page-card pad" aria-label="New transfer">
     <h2 class="tr-h">New transfer</h2>
-    <form method="post" class="tr-move" id="trMove">
+    <form method="post" class="tr-move" id="trMove" data-shops='{{ shops_json }}'>
       {% csrf_token %}
       <input type="hidden" name="action" value="move">
-      <label class="tr-f tr-code"><span>Barcode</span>
-        <input type="text" class="form-control" name="barcode" inputmode="numeric" autocomplete="off" required autofocus></label>
-      <label class="tr-f tr-qty"><span>Qty</span>
-        <input type="number" class="form-control" name="quantity" min="1" step="1" value="1" required></label>
-      <label class="tr-f tr-dir"><span>From &rarr; to</span>
-        <select class="form-select" name="direction">
-          {% for d in directions %}<option value="{{ d.value }}"{% if d.value == last_direction %} selected{% endif %}>{{ d.label }}</option>{% endfor %}
-        </select></label>
-      <label class="tr-f tr-note"><span>Note</span>
-        <input type="text" class="form-control" name="note" maxlength="200"></label>
-      <label class="tr-free"><input type="checkbox" name="free" value="1"> No charge (stock count)</label>
-      <button type="submit" class="btn btn-primary tr-go">Move</button>
+      <div class="tr-top">
+        <label class="tr-f tr-dir"><span>From &rarr; to</span>
+          <select class="form-select" name="direction">
+            {% for d in directions %}<option value="{{ d.value }}"{% if d.value == last_direction %} selected{% endif %}>{{ d.label }}</option>{% endfor %}
+          </select></label>
+        <label class="tr-f tr-note"><span>Note</span>
+          <input type="text" class="form-control" name="note" maxlength="200"></label>
+      </div>
+      <div class="tr-find">
+        <input type="search" class="form-control" placeholder="Name, brand or EAN" aria-label="Find a product" autocomplete="off"
+               data-tr-search="{% url 'transfer_search' %}" autofocus>
+        <div class="tr-hits" data-tr-hits></div>
+      </div>
+      <div class="tr-lines-in" data-tr-lines></div>
+      <div class="tr-bottom">
+        <label class="tr-free"><input type="checkbox" name="free" value="1"> No charge (stock count)</label>
+        <button type="submit" class="btn btn-primary tr-go" data-tr-go disabled>Move</button>
+      </div>
     </form>
   </section>
 
@@ -95,7 +103,7 @@
         <div class="tr-row">
           <div class="tr-when">{{ s.settled_on|date:"d M" }}<small>{{ s.settled_on|date:"Y" }}</small></div>
           <div class="tr-main"><div class="tr-way">{{ s.payer.name }} paid {{ s.payee.name }}</div>
-            <div class="tr-lines">{% if s.note %}{{ s.note }} &middot; {% endif %}{% if s.created_by %}{{ s.created_by.username }}{% endif %}</div></div>
+            <div class="tr-lines">{% if s.cleared %}<span class="tr-tag waived">Cleared</span> {% elif s.note %}{{ s.note }} &middot; {% endif %}{% if s.created_by %}{{ s.created_by.username }}{% endif %}</div></div>
           <div class="tr-side">
             <div class="tr-amt">&euro;{{ s.amount|floatformat:2 }}</div>
             <form method="post" onsubmit="return confirm('Delete this settlement of €{{ s.amount|floatformat:2 }}? What {{ s.payer.name|escapejs }} owes goes back up by it.');">
@@ -118,10 +126,30 @@
   .tr-owe-text{ font-size:1.02rem; }
   .tr-owe-amount{ display:block; font-size:1.6rem; font-weight:800; font-variant-numeric:tabular-nums; margin-top:.1rem; }
   .tr-owe-parts{ display:block; font-size:.85rem; color:var(--app-muted); font-variant-numeric:tabular-nums; }
-  .tr-owe-pay{ display:grid; grid-template-columns:8.5rem 9.5rem auto; gap:.4rem; align-items:center; }
+  .tr-owe-pay{ display:grid; grid-template-columns:8.5rem 9.5rem auto auto; gap:.4rem; align-items:center; }
   .tr-even{ font-size:1.05rem; font-weight:700; color:#0f766e; padding:.2rem 0 .6rem; }
   .tr-rate{ font-size:.85rem; color:var(--app-muted); }
-  .tr-move{ display:grid; grid-template-columns:minmax(0,1.4fr) 5.5rem minmax(0,1.6fr) minmax(0,1.2fr) auto; gap:.5rem; align-items:end; }
+  .tr-move{ display:grid; gap:.6rem; }
+  .tr-top{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:.5rem; }
+  .tr-find{ position:relative; }
+  .tr-hits{ position:absolute; left:0; right:0; top:100%; z-index:20; max-height:18rem; overflow:auto; background:var(--app-surface);
+    border:1px solid var(--app-border); border-radius:var(--app-radius-sm); box-shadow:0 8px 24px rgba(16,24,40,.14); }
+  .tr-hits:empty{ display:none; }
+  .tr-hit{ display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.1rem .75rem; width:100%; padding:.45rem .65rem; text-align:left;
+    color:inherit; background:none; border:0; border-bottom:1px solid var(--app-border); }
+  .tr-hit:hover, .tr-hit:focus-visible, .tr-hit.on{ background:var(--app-accent-soft); }
+  .tr-hit b{ font-weight:700; overflow-wrap:anywhere; }
+  .tr-hit small, .tr-pick small{ color:var(--app-muted); font-size:.85rem; font-variant-numeric:tabular-nums; }
+  .tr-hit .tr-held{ grid-row:span 2; align-self:center; text-align:right; }
+  .tr-lines-in:empty{ display:none; }
+  .tr-pick{ display:grid; grid-template-columns:minmax(0,1fr) 4.6rem 2.2rem; gap:.2rem .6rem; align-items:center; padding:.45rem 0; border-top:1px solid var(--app-border); }
+  .tr-pick:first-child{ border-top:0; }
+  .tr-pick b{ font-weight:700; overflow-wrap:anywhere; }
+  .tr-pick input{ min-height:38px; text-align:center; }
+  .tr-pick .x{ width:36px; height:36px; border:0; border-radius:999px; background:none; color:var(--app-muted); font-size:1.15rem; }
+  .tr-pick .x:hover{ background:var(--app-surface-2); }
+  .tr-pick.short input{ border-color:#dc2626; background:#fef2f2; }
+  .tr-bottom{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.5rem 1rem; }
   .tr-f{ display:grid; gap:.2rem; margin:0; min-width:0; }
   .tr-f > span{ font-size:.78rem; font-weight:700; color:var(--app-muted); }
   .tr-tabs{ margin:0 0 .3rem; }
@@ -146,19 +174,114 @@
   .tr-side{ display:flex; flex-direction:column; align-items:flex-end; gap:.3rem; }
   .tr-side form{ margin:0; }
   .tr-act{ min-height:32px; padding:.15rem .6rem; font-size:.85rem; }
-  .tr-free{ order:1; grid-column:1 / -1; display:flex; align-items:center; gap:.4rem; margin:0; font-size:.9rem; font-weight:600; }
+  .tr-free{ display:flex; align-items:center; gap:.4rem; margin:0; font-size:.9rem; font-weight:600; }
   .tr-free input{ width:1.1rem; height:1.1rem; }
   .tr-empty{ color:var(--app-muted); margin:.5rem 0 0; }
   @media (max-width:767.98px){
-    .tr-move{ grid-template-columns:minmax(0,1fr) 5rem; }
-    .tr-dir, .tr-note, .tr-go{ grid-column:1 / -1; }
-    .tr-free{ order:0; }
+    .tr-top{ grid-template-columns:minmax(0,1fr); }
+    .tr-move input, .tr-move select{ font-size:16px; }
+    .tr-go{ flex:1 1 100%; }
     .tr-owe-pay{ grid-template-columns:minmax(0,1fr) minmax(0,1fr); width:100%; }
-    .tr-owe-pay .btn{ grid-column:1 / -1; min-height:44px; }
+    .tr-owe-pay .btn{ min-height:44px; }
     .tr-go{ min-height:44px; }
   }
 </style>
 <script>
+  // New transfer: find products by name, brand or EAN, gather several, move them at once.
+  (function () {
+    const form = document.getElementById('trMove');
+    const search = form.querySelector('[data-tr-search]');
+    const hits = form.querySelector('[data-tr-hits]');
+    const lines = form.querySelector('[data-tr-lines]');
+    const go = form.querySelector('[data-tr-go]');
+    const shops = JSON.parse(form.dataset.shops || '[]');
+    const from = () => (form.elements.direction.value || '').split('-')[0];
+    const heldText = (stock) => shops.map((s) => `${s.label} ${stock[s.id] || 0}`).join(' · ');
+    let found = [], asked = 0, waiting;
+
+    function refresh() {
+      let count = 0;
+      lines.querySelectorAll('.tr-pick').forEach((row) => {
+        const qty = parseInt(row.querySelector('input[name="quantity"]').value, 10) || 0;
+        const stock = JSON.parse(row.dataset.stock);
+        row.classList.toggle('short', qty > (stock[from()] || 0));
+        if (qty > 0) count += 1;
+      });
+      go.disabled = count === 0;
+      go.textContent = count > 1 ? `Move ${count} products` : 'Move';
+    }
+
+    function add(product) {
+      const old = lines.querySelector(`.tr-pick[data-id="${product.id}"] input[name="quantity"]`);
+      if (old) { old.value = (parseInt(old.value, 10) || 0) + 1; refresh(); return; }
+      const row = document.createElement('div');
+      row.className = 'tr-pick';
+      row.dataset.id = product.id;
+      row.dataset.stock = JSON.stringify(product.stock);
+      const text = document.createElement('div');
+      const name = document.createElement('b');
+      name.textContent = product.name;
+      const meta = document.createElement('small');
+      meta.textContent = `${product.ean} · ${heldText(product.stock)}`;
+      text.append(name, document.createElement('br'), meta);
+      const id = Object.assign(document.createElement('input'), { type: 'hidden', name: 'product_id', value: product.id });
+      const qty = Object.assign(document.createElement('input'), { type: 'number', name: 'quantity', min: 1, step: 1, value: 1,
+                                                                     className: 'form-control', inputMode: 'numeric' });
+      qty.setAttribute('aria-label', `Quantity of ${product.name}`);
+      const drop = Object.assign(document.createElement('button'), { type: 'button', className: 'x', textContent: '×' });
+      drop.setAttribute('aria-label', `Remove ${product.name}`);
+      drop.addEventListener('click', () => { row.remove(); refresh(); search.focus(); });
+      row.append(text, id, qty, drop);
+      lines.append(row);
+      refresh();
+    }
+
+    function show(rows) {
+      found = rows;
+      hits.replaceChildren(...rows.map((product, n) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'tr-hit' + (n === 0 ? ' on' : '');
+        const name = document.createElement('b'); name.textContent = product.name;
+        const held = document.createElement('small'); held.className = 'tr-held'; held.textContent = heldText(product.stock);
+        const ean = document.createElement('small'); ean.textContent = product.ean;
+        b.append(name, held, ean);
+        b.addEventListener('click', () => pick(product));
+        return b;
+      }));
+      if (!rows.length && search.value.trim().length > 1) {
+        const none = document.createElement('div'); none.className = 'tr-hit'; none.textContent = 'No shop holds that.';
+        hits.append(none);
+      }
+    }
+
+    function pick(product) {
+      add(product);
+      search.value = '';
+      show([]);
+      search.focus();
+    }
+
+    search.addEventListener('input', () => {
+      const query = search.value.trim();
+      clearTimeout(waiting);
+      const mine = ++asked;
+      if (query.length < 2) { show([]); return; }
+      waiting = setTimeout(() => {
+        fetch(`${search.dataset.trSearch}?${new URLSearchParams({ q: query })}`)
+          .then((r) => r.json()).then((data) => { if (mine === asked) show(data.results); });
+      }, 180);
+    });
+    // Enter takes the first hit, so a scanner works as before.
+    search.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      if (found.length) pick(found[0]);
+    });
+    document.addEventListener('click', (event) => { if (!form.querySelector('.tr-find').contains(event.target)) show([]); });
+    form.addEventListener('input', (event) => { if (event.target !== search) refresh(); });
+    form.elements.direction.addEventListener('change', refresh);
+  })();
+
   (function () {
     const tabs = document.querySelectorAll('[data-tr]');
     tabs.forEach((b) => b.addEventListener('click', () => {

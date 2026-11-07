@@ -3359,27 +3359,52 @@ def stock_transfers_view(request):
             nxt, allowed_hosts={request.get_host()}, require_https=request.is_secure()) else None
         try:
             if action == 'move':
-                barcode = (request.POST.get('barcode') or '').strip()
-                product = Product.objects.filter(barcode=barcode).first()
-                if product is None:
-                    raise ValueError(f'No product with barcode {barcode or "(empty)"}.')
                 try:
-                    qty = int(request.POST.get('quantity') or 0)
                     src_id, dst_id = (int(x) for x in (request.POST.get('direction') or '').split('-'))
                 except (TypeError, ValueError):
-                    raise ValueError('Choose a quantity and which way the goods go.')
+                    raise ValueError('Choose which way the goods go.')
                 src, dst = by_id.get(src_id), by_id.get(dst_id)
                 if src is None or dst is None:
                     raise ValueError('Choose which way the goods go.')
+                wanted = {}
+                for raw_id, raw_qty in zip(request.POST.getlist('product_id'), request.POST.getlist('quantity')):
+                    if raw_id.isdigit() and raw_qty.strip().isdigit() and int(raw_qty) > 0:
+                        wanted[int(raw_id)] = wanted.get(int(raw_id), 0) + int(raw_qty)
+                # One product by barcode: the product page's "Move between shops" sends this.
+                barcode = (request.POST.get('barcode') or '').strip()
+                if not wanted and 'barcode' in request.POST:
+                    product = Product.objects.filter(barcode=barcode).first() if barcode else None
+                    if product is None:
+                        raise ValueError(f'No product with barcode {barcode or "(empty)"}.')
+                    raw_qty = (request.POST.get('quantity') or '').strip()
+                    if not raw_qty.isdigit() or int(raw_qty) < 1:
+                        raise ValueError('Choose a quantity.')
+                    wanted[product.id] = int(raw_qty)
+                products = Product.objects.in_bulk(list(wanted))
+                if not products:
+                    raise ValueError('Add the products to move.')
                 free = request.POST.get('free') == '1'
-                line = store_stock.move_units(
-                    product, qty, src, dst, user=request.user, note=(request.POST.get('note') or '').strip(),
-                    reason=StockTransfer.COUNT if free else StockTransfer.MANUAL)
+                transfer, owed = None, Decimal('0.00')
+                # One transfer for the lot, and all or nothing: a shop short of
+                # one product stops the whole move.
+                with transaction.atomic():
+                    for product_id, qty in wanted.items():
+                        line = store_stock.move_units(
+                            products[product_id], qty, src, dst, transfer=transfer, user=request.user,
+                            note=(request.POST.get('note') or '').strip(),
+                            reason=StockTransfer.COUNT if free else StockTransfer.MANUAL)
+                        transfer = line.transfer
+                        owed += line.amount
                 request.session['transfer_direction'] = f'{src.id}-{dst.id}'
-                held = store_stock.stock_by_store([product.id]).get(product.id, {})
-                messages.success(request, f'Moved {qty} x {product.display_name} to {dst.name} '
-                                          + ('(no charge). ' if free else f'(owed €{line.amount:.2f}). ')
-                                          + 'Now: ' + ' · '.join(f'{s.name} {held.get(s.id, 0)}' for s in shops))
+                units = sum(wanted.values())
+                messages.success(request, f'Moved {units} unit(s) of {len(wanted)} product(s) to {dst.name} '
+                                          + ('(no charge).' if free else f'(owed €{owed:.2f}).'))
+            elif action == 'clear':
+                payer, payee = by_id.get(int(request.POST.get('payer') or 0)), by_id.get(int(request.POST.get('payee') or 0))
+                if payer is None or payee is None:
+                    raise ValueError('Choose the two shops.')
+                row = store_stock.clear_debt(payer, payee, user=request.user)
+                messages.success(request, f'Cleared: {payer.name} owed {payee.name} €{row.amount:.2f}, now nothing.')
             elif action == 'undo':
                 transfer = StockTransfer.objects.select_related('from_store', 'to_store').filter(
                     pk=request.POST.get('transfer') or 0).first()
@@ -3431,7 +3456,30 @@ def stock_transfers_view(request):
         'transfers': transfers,
         'settlements': settlements,
         'today': timezone.localdate(),
+        'shops_json': json.dumps([{'id': str(s.id), 'label': s.name.split()[0]} for s in shops]),
     })
+
+
+@login_required
+@manager_required
+def transfer_search(request):
+    """Products some shop holds, for New transfer: name, EAN and each shop's units."""
+    from .services import store_stock
+    from .services.product_search import product_search_q
+    query = (request.GET.get('q') or '').strip()
+    if len(query) < 2:
+        return JsonResponse({'results': []})
+    products = list(Product.objects.filter(product_search_q(query)).order_by('brand', 'name')[:200])
+    held = store_stock.stock_by_store([p.id for p in products])
+    rows = []
+    for product in products:
+        stock = {str(shop_id): units for shop_id, units in held.get(product.id, {}).items() if shop_id and units}
+        if stock:
+            rows.append({'id': product.id, 'name': build_product_label(product), 'ean': product.barcode or '',
+                         'stock': stock})
+        if len(rows) == 15:
+            break
+    return JsonResponse({'results': rows})
 
 
 @login_required

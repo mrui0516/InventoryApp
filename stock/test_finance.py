@@ -2,6 +2,7 @@
 between the shops, the owner's money, and the monthly figures. Admin only."""
 from datetime import date, timedelta
 from decimal import Decimal
+from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
@@ -202,6 +203,10 @@ class TemplateTests(FinanceMixin, TestCase):
 class SupplierPaymentTests(FinanceMixin, TestCase):
     def setUp(self):
         super().setUp()
+        # How the shops share supplier payments once Transfers and Finance are linked again.
+        linked = mock.patch.object(finance, "SHOPS_LINKED", True)
+        linked.start()
+        self.addCleanup(linked.stop)
         self.supplier = Supplier.objects.create(name="Naypes")
         self.order = InboundOrder.objects.create(supplier=self.supplier, status="received")
         store_stock.receive_batches(product=self.product, quantity=10, cost_price=Decimal("100"),
@@ -460,6 +465,7 @@ class MonthFiguresTests(FinanceMixin, TestCase):
         self.assertEqual(self.cash()["net"], Decimal("0.00"))
         self.assertEqual(finance.unpaid()["expenses"], Decimal("30.00"))
 
+    @mock.patch.object(finance, "SHOPS_LINKED", True)
     def test_settlements_show_per_shop_and_not_in_all_shops(self):
         store_stock.settle(self.khan, self.scentory, Decimal("600"), settled_on=self.today)
         self.assertEqual(self.cash(self.khan)["cash"]["out"], Decimal("600.00"))
