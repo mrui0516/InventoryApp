@@ -50,6 +50,8 @@ def push_product_image_to_shopify(sender, instance, created, **kwargs):
     Off unless ``SHOPIFY_AUTO_SYNC`` is enabled, runs after commit, and never
     raises — a Shopify hiccup must not break saving the product image.
     """
+    if getattr(settings, 'SHOPIFY_CATALOG_AUTOMATION', False):
+        return  # The durable catalogue worker owns creation and image upload.
     if not created or not getattr(settings, 'SHOPIFY_AUTO_SYNC', False):
         return
 
@@ -118,6 +120,10 @@ def _push_shopify(product, *, do_price=False, do_inventory=False):
     must not break the local save."""
     if not product:
         return
+    if getattr(settings, 'SHOPIFY_CATALOG_AUTOMATION', False):
+        from .services.shopify_catalog_queue import enqueue
+        enqueue(product)
+        return
     if not getattr(settings, 'SHOPIFY_INVENTORY_SYNC', False):
         return
 
@@ -142,7 +148,9 @@ def push_inventory_on_sale(sender, instance, **kwargs):
 
 
 @receiver(post_delete, sender=Sale)
-def push_inventory_on_sale_delete(sender, instance, **kwargs):
+def push_inventory_on_sale_delete(sender, instance, origin=None, **kwargs):
+    if getattr(origin, 'model', type(origin)) is Product:
+        return
     queue_inventory_push(instance.product)
 
 
@@ -152,7 +160,9 @@ def push_inventory_on_purchase(sender, instance, **kwargs):
 
 
 @receiver(post_delete, sender=Purchase)
-def push_inventory_on_purchase_delete(sender, instance, **kwargs):
+def push_inventory_on_purchase_delete(sender, instance, origin=None, **kwargs):
+    if getattr(origin, 'model', type(origin)) is Product:
+        return
     queue_inventory_push(instance.product)
 
 
@@ -211,6 +221,22 @@ def push_price_on_change(sender, instance, created, **kwargs):
     if instance._old_default_price == instance.default_price:
         return
     _push_shopify(instance, do_price=True)
+
+
+@receiver(post_save, sender=Product)
+def enqueue_catalog_product(sender, instance, raw=False, **kwargs):
+    if not raw:
+        from .services.shopify_catalog_queue import enqueue
+        enqueue(instance)
+
+
+@receiver(post_save, sender=ProductImage)
+@receiver(post_delete, sender=ProductImage)
+def enqueue_catalog_image(sender, instance, origin=None, **kwargs):
+    if getattr(origin, 'model', type(origin)) is Product:
+        return
+    from .services.shopify_catalog_queue import enqueue
+    enqueue(instance.product)
 
 
 @receiver(user_logged_in)

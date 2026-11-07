@@ -11,6 +11,7 @@ Domain dependency order (acyclic): core → catalog → partners → inventory
 """
 from .core import BusinessSettings, PrintProfile, Store, StoreProfile
 from .product_types import ProductType
+from .shopify_catalog import ShopifyCatalogState, ShopifyCatalogLease
 from .catalog import (Category, Brand, ProductSeries, Product, ProductContent, ProductImage, RestockRequest,
                       Concentration, FragranceFamily, Inspiration)
 from .partners import Supplier, Customer
@@ -27,7 +28,9 @@ from .wholesale import CartLine, OrderRequest, OrderRequestLine
 from .expenses import (Expense, ExpenseCategory, ExpenseTemplate, ExpenseTemplateSkip, FinanceLog,
                        OwnerFunding, SupplierPayment)
 
-__all__ = ['AccountLink', 'CustomerAccount', 'PortalVisit', 
+__all__ = [
+    'ShopifyCatalogState', 'ShopifyCatalogLease',
+    'AccountLink', 'CustomerAccount', 'PortalVisit',
     # core
     'BusinessSettings', 'PrintProfile', 'Store', 'StoreProfile',
     # wholesale
