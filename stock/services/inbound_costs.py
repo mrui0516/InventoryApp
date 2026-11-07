@@ -8,7 +8,12 @@ full cost, with the quoted price beside it.
 """
 from decimal import ROUND_HALF_UP, Decimal
 
-IVA_RATE = Decimal('23.00')
+IVA_RATE = Decimal('23.00')      # the default; Settings -> Rules sets the one in use
+
+
+def iva_rate():
+    from ..models.core import BusinessSettings
+    return BusinessSettings.current().iva_rate
 CENT = Decimal('0.01')
 INVOICE_MAX_BYTES = 10 * 1024 * 1024
 INVOICE_EXTENSIONS = ('.pdf', '.jpg', '.jpeg', '.png', '.webp', '.heic')

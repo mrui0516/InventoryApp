@@ -11,7 +11,7 @@ from decimal import Decimal
 from django.db.models import Sum
 
 from ..models import CartLine, Product, ProductType, Sale
-from .availability import LOW_STOCK_BELOW, product_ids_on_order
+from .availability import low_stock_below, product_ids_on_order
 from .names import customer_catalog_case
 from .product_contents import content_label
 from .product_search import product_search_q
@@ -48,7 +48,7 @@ def sellable_units(product_ids):
 def availability(units, on_way=False):
     """``(state, label)``: the only stock fact a customer ever gets. Only
     'out-stock' cannot be ordered: what is on the way can."""
-    if units >= LOW_STOCK_BELOW:
+    if units >= low_stock_below():
         return 'in-stock', 'Dispon\u00edvel'
     if units > 0:
         return 'low-stock', 'Mais a caminho' if on_way else 'Stock reduzido'
@@ -112,7 +112,7 @@ def pick_options(product, picks=()):
 
 def _row(product, units, requested=False, customer=None, in_cart=0, on_way=False):
     kind = product.type_info
-    state, state_label = availability(LOW_STOCK_BELOW if made_to_order(product) else units, on_way)
+    state, state_label = availability(low_stock_below() if made_to_order(product) else units, on_way)
     price = customer_price(product, customer)[0]
     contents = product.contents.all() if product.lists_contents else ()
     return {

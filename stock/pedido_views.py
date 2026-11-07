@@ -34,7 +34,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .models import Customer, PedidoDraft, PrintProfile, Product
+from .models import BusinessSettings, Customer, PedidoDraft, PrintProfile, Product
 from .permissions import manager_required
 from .services.wholesale_discount import discount_applies
 from .services import pedido as pedido_math
@@ -196,7 +196,7 @@ def _page(request, store, *, errors=(), status=200, draft=None, prefill=None):
         products = {p.id: p for p in Product.objects.filter(id__in=ids)}
         rows = _form_rows(draft_lines_for_form(draft, products))
     return render(request, 'stock/pedido.html', {
-        'default_valid_days': DEFAULT_VALID_DAYS,
+        'default_valid_days': BusinessSettings.current().pedido_valid_days,
         'errors': list(errors),
         'prefill': prefill,
         'draft': draft,
@@ -292,7 +292,7 @@ def pedido_view(request):
     )
 
     today = timezone.localdate()
-    valid_days = _int(request.POST.get('valid_days'), DEFAULT_VALID_DAYS)
+    valid_days = _int(request.POST.get('valid_days'), BusinessSettings.current().pedido_valid_days)
     valid_days = min(max(valid_days, 0), 365)
     valid_until = today + timedelta(days=valid_days) if valid_days else None
 

@@ -77,6 +77,7 @@ urlpatterns = [
     path('api/quick-import/', views.quick_import, name='quick_import'),
     path('alerts/low-stock/', views.alerts_low_stock, name='alerts_low_stock'),
     path('settings/business/', views.business_settings_view, name='business_settings'),
+    path('settings/rules/', views.business_rules_view, name='business_rules'),
     path('settings/catalog/', catalog_views.catalog_settings, name='catalog_settings'),
     path('settings/catalog/types/', catalog_views.catalog_types, name='catalog_types'),
     path('settings/catalog/brands/', catalog_views.catalog_brands, name='catalog_brands'),

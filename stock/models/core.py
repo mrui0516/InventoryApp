@@ -3,6 +3,7 @@
 from django.conf import settings
 from decimal import Decimal
 
+from django.core.signals import request_started
 from django.db import models
 
 
@@ -154,6 +155,26 @@ class BusinessSettings(models.Model):
     # € per unit on top of cost for that share. Each payment keeps its own.
     purchase_share_markup = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal('0.00'),
                                                 verbose_name='Purchase share markup (€ per unit)')
+
+    # Settings -> Rules (services/rules.py). The defaults are what was in the code.
+    wholesale_minimum = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('150.00'))
+    wholesale_free_shipping = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('300.00'))
+    wholesale_shipping_fee = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal('5.00'))
+    wholesale_tier1_from = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('500.00'))
+    wholesale_tier1_off = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal('1.00'))
+    wholesale_tier2_from = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('1000.00'))
+    wholesale_tier2_off = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal('2.00'))
+    discount_min_ml = models.PositiveIntegerField(default=60)
+    discount_max_ml = models.PositiveIntegerField(default=120)
+    supplier_term_days = models.PositiveIntegerField(default=30)
+    iva_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('23.00'))
+    pedido_valid_days = models.PositiveIntegerField(default=7)
+    catalog_low_stock_below = models.PositiveIntegerField(default=3)
+    low_stock_alert_below = models.PositiveIntegerField(default=5)
+    samples_per_shop = models.PositiveIntegerField(default=1)
+    wholesale_markup = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal('10.00'))
+    retail_markup = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal('12.00'))
+    pvp_uplift = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal('2.00'))
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
@@ -163,3 +184,26 @@ class BusinessSettings(models.Model):
     def get(cls):
         obj, _ = cls.objects.get_or_create(pk=1)
         return obj
+
+    @classmethod
+    def current(cls):
+        """The row, read once per request: a rule is asked for inside loops."""
+        global _current
+        if _current is None:
+            _current = cls.get()
+        return _current
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        forget_current()
+
+
+_current = None
+
+
+def forget_current(**kwargs):
+    global _current
+    _current = None
+
+
+request_started.connect(forget_current, dispatch_uid='business_settings_current')

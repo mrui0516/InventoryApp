@@ -103,8 +103,11 @@ def store_units(product, store):
 
 
 def sample_reserve(store, units):
-    """The opened sample: one of a shop's bottles while it has any."""
-    return 1 if store is not None and store.keeps_samples and units >= 1 else 0
+    """The opened samples (Settings -> Rules), out of what the shop has."""
+    if store is None or not store.keeps_samples or units < 1:
+        return 0
+    from .rules import rules
+    return min(rules().samples_per_shop, units)
 
 
 def full_price_units(store, units):

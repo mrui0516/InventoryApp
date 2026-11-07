@@ -132,10 +132,11 @@ def tracks_payment(order):
 def default_due(order):
     """30 days after the invoice; with no invoice date, after the goods came in
     or, while they are on the way, after the order was placed."""
+    days = BusinessSettings.current().supplier_term_days
     if order.invoice_date:
-        return order.invoice_date + timedelta(days=TERM_DAYS)
+        return order.invoice_date + timedelta(days=days)
     when = order.received_at or order.placed_at or order.created_at
-    return timezone.localtime(when).date() + timedelta(days=TERM_DAYS)
+    return timezone.localtime(when).date() + timedelta(days=days)
 
 
 def first_due(order):

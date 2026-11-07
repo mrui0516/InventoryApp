@@ -528,6 +528,13 @@ PDF 的 `_brand_logo` 文件缺失时跳过。`empty_brands` 默认不包括有 
 - Catálogo 的 tab 计数在 Python 里算：`catalog_rows` 取不含类型和品牌的全部行，先算类型计数，再算品牌计数，最后筛选分页。
 - 接账号系统时：`CartLine.user`、`OrderRequest.submitted_by` 换成客户身份，`customer` 由账号绑定决定，不再读 session。`OrderRequest.customer` 现在是 SET_NULL，架构文档要求上线时改成 PROTECT。
 
+### 5.13y1e 规则设置（`services/rules.py`，2026-11-07）
+
+- 规则是 `BusinessSettings` 的字段，`SECTIONS` 列出标签、单位、范围，页面和校验都从它生成。
+- `BusinessSettings.current()` 每个请求只读一次（`request_started` 清空，`save()` 也清空），循环里调用不增加查询。测试里改了规则要 `addCleanup(forget_current)`。
+- 批发规则通过 `rules.wholesale_policy()` 传进 `build_quote`；`build_quote` 不带参数时用 `DEFAULT_POLICY`，所以纯计算的测试不碰数据库。订单的 `policy` 快照保存下单时的规则。
+- 各模块原来的常量（`MINIMUM`、`IVA_RATE`、`LOW_STOCK_BELOW` 等）只作为默认值保留，不要再直接拿来判断。
+
 ### 5.13y1d 供应商付款条件和 Orders 导出（2026-11-06）
 
 - `InboundOrder.pay_instalments`、`pay_first_due` 只存计划，金额和日期由 `finance.schedule` 现算，所以改单不会留下过期金额。`pay_first_due` 为空表示默认 30 天，跟着发票日期走。

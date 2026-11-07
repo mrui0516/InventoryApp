@@ -4,7 +4,8 @@ from django.db import transaction
 
 from ..models import CartLine, OrderRequest, OrderRequestLine
 from .availability import product_ids_on_order
-from .wholesale_benefits import MAX_QUANTITY, MINIMUM, build_quote, eur, policy_snapshot
+from .rules import wholesale_policy
+from .wholesale_benefits import MAX_QUANTITY, build_quote, eur, policy_snapshot
 from .wholesale_catalog import (customer_price, display_title, image_url, made_to_order, pick_mode, pick_options,
                                 sellable_units)
 from .wholesale_orders import save_to_pedido
@@ -81,7 +82,7 @@ def _lines(user, customer):
 
 
 def cart_quote(user, customer, destination):
-    return build_quote(_lines(user, customer), destination)
+    return build_quote(_lines(user, customer), destination, wholesale_policy())
 
 
 def submit_request(user, customer, data, fingerprint, editing=None):
@@ -95,7 +96,7 @@ def submit_request(user, customer, data, fingerprint, editing=None):
         if quote['fingerprint'] != fingerprint:
             raise ValueError('Os pre\u00e7os ou as quantidades mudaram. Confirme o carrinho de novo.')
         if quote['short_of_minimum']:
-            raise ValueError(f'O pedido m\u00ednimo \u00e9 de {eur(MINIMUM)}\u20ac.')
+            raise ValueError(f"O pedido m\u00ednimo \u00e9 de {eur(quote['minimum'])}\u20ac.")
         if not quote['can_submit']:
             raise ValueError('Retire do carrinho os produtos assinalados.')
         fields = dict(
@@ -106,7 +107,7 @@ def submit_request(user, customer, data, fingerprint, editing=None):
             city=data.get('city') or '', country=data.get('country') or '', note=data.get('note') or '',
             subtotal=quote['subtotal'], tier_discount=quote['tier_discount'], tier_total=quote['tier_total'],
             goods_total=quote['goods_total'], shipping_state=quote['shipping_state'],
-            shipping_fee=quote['shipping_fee'], policy=policy_snapshot())
+            shipping_fee=quote['shipping_fee'], policy=policy_snapshot(quote['policy']))
         if editing:
             order = OrderRequest.objects.select_for_update().filter(
                 public_id=editing, status=OrderRequest.SUBMITTED).first()

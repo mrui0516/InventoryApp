@@ -41,6 +41,12 @@ def band_for(stock):
 GENERATION_KEY = 'lowstock:gen'
 
 
+def alert_below():
+    """Settings -> Rules: products below this many units ring the bell."""
+    from ..models.core import BusinessSettings
+    return BusinessSettings.current().low_stock_alert_below
+
+
 def cache_key(category_ids=()):
     scope = ','.join(str(cid) for cid in sorted(category_ids or ()))
     return f'lowstock:v3:{cache.get(GENERATION_KEY, 0)}:{scope}'
@@ -90,7 +96,7 @@ def low_stock_data(category_ids=()):
            .annotate(stock=Coalesce(Subquery(stock_subq, output_field=IntegerField()), 0),
                      sold=Coalesce(Subquery(sold_subq, output_field=IntegerField()), 0),
                      ever_bought=Exists(Purchase.objects.filter(product=OuterRef('pk'))))
-           .filter(stock__lt=LOW_STOCK_BELOW)
+           .filter(stock__lt=alert_below())
            .filter(Q(ever_bought=True) | Q(sold__gt=0))
            .only('id', 'brand', 'model', 'name', 'category')
            .prefetch_related('images'))

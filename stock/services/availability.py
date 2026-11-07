@@ -27,9 +27,22 @@ def product_ids_on_order():
                .values_list('product_id', flat=True))
 
 
+def sample_reserve():
+    """Settings -> Rules: the bottles each shop keeps open as samples."""
+    from .rules import rules
+    return rules().samples_per_shop
+
+
+def low_stock_below():
+    """Settings -> Rules: below this a customer reads "Stock reduzido"."""
+    from .rules import rules
+    return rules().catalog_low_stock_below
+
+
 def offerable_ids(ids):
     """Those of ``ids`` a customer can have: more than the sample, or on the way."""
     stock = dict(Purchase.objects.filter(product_id__in=ids).values_list('product')
                  .annotate(n=Sum('remaining')).order_by())
     on_order = product_ids_on_order()
-    return {pk for pk in ids if (stock.get(pk) or 0) > SAMPLE_RESERVE or pk in on_order}
+    reserve = sample_reserve()
+    return {pk for pk in ids if (stock.get(pk) or 0) > reserve or pk in on_order}

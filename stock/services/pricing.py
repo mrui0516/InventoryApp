@@ -25,8 +25,10 @@ def sync_perfume_price(product):
     cost = product.current_fifo_cost_price() or Decimal('0.00')
     if cost <= 0:
         return False
-    wholesale = Decimal(math.ceil(cost + WHOLESALE_MARKUP))
-    retail = wholesale + RETAIL_MARKUP
+    from ..models.core import BusinessSettings
+    rules = BusinessSettings.current()      # Settings -> Rules
+    wholesale = Decimal(math.ceil(cost + rules.wholesale_markup))
+    retail = wholesale + rules.retail_markup
     if product.wholesale_price == wholesale and product.default_price == retail:
         return False
     Product.objects.filter(pk=product.pk).update(

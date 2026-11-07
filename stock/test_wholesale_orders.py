@@ -263,7 +263,7 @@ class SubmitTests(CatalogMixin):
                          (D("570"), D("1"), D("6"), D("564")))
         self.assertEqual((order.shipping_state, order.shipping_fee, order.total), ("free", D("0"), D("564")))
         self.assertEqual(order.customer, customer)
-        self.assertEqual(order.policy["minimum"], "150")
+        self.assertEqual(D(order.policy["minimum"]), D("150"))
 
     def test_a_small_order_keeps_its_5_euros(self):
         set_quantity(self.boss, self.item.pk, 2)

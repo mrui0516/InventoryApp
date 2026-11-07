@@ -1,0 +1,45 @@
+{% extends 'stock/base.html' %}
+{% block title %}Rules{% endblock %}
+{% block content %}
+<div class="page-shell ru-page">
+  <div class="page-head"><h1 class="page-title">Rules</h1></div>
+  {% for e in errors %}<div class="alert alert-danger">{{ e }}</div>{% endfor %}
+  <form method="post">
+    {% csrf_token %}
+    {% for section in sections %}
+    <section class="page-card pad" aria-label="{{ section.title }}">
+      <h2 class="ru-h">{{ section.title }}</h2>
+      <div class="ru-grid">
+        {% for row in section.rows %}
+          <label class="ru-f{% if row.name == 'wholesale_minimum' %} wide{% endif %}"><span>{{ row.label }}</span>
+            <div class="input-group">
+              {% if row.unit == '€' %}<span class="input-group-text">&euro;</span>{% endif %}
+              <input type="text" inputmode="decimal" class="form-control" name="{{ row.name }}" value="{{ row.value }}" aria-label="{{ row.label }}" required>
+              {% if row.unit != '€' %}<span class="input-group-text">{{ row.unit }}</span>{% endif %}
+            </div></label>
+        {% endfor %}
+      </div>
+    </section>
+    {% endfor %}
+    <div class="ru-save"><button type="submit" class="btn btn-primary">Save rules</button></div>
+  </form>
+</div>
+<style>
+  .ru-page{ max-width:56rem; display:grid; gap:.75rem; }
+  .ru-page form{ display:grid; gap:.75rem; }
+  .ru-h{ font-size:1.05rem; font-weight:700; margin:0 0 .6rem; }
+  /* two columns everywhere: a threshold sits beside what it gives */
+  .ru-grid{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:.6rem .8rem; max-width:34rem; align-items:end; }
+  .ru-f.wide{ grid-column:1 / -1; max-width:calc(50% - .4rem); }
+  .ru-f{ display:grid; gap:.2rem; margin:0; min-width:0; }
+  .ru-f > span{ font-size:.85rem; font-weight:700; color:var(--app-muted); }
+  .ru-f input{ text-align:right; font-variant-numeric:tabular-nums; }
+  .ru-save{ position:sticky; bottom:calc(var(--tabbar-live, 0px) + .5rem); display:flex; justify-content:flex-end; }
+  .ru-save .btn{ min-height:44px; padding-left:1.4rem; padding-right:1.4rem; box-shadow:0 6px 18px rgba(16,24,40,.18); }
+  @media (max-width:767.98px){
+    .ru-f.wide{ max-width:calc(50% - .4rem); }
+    .ru-f input{ font-size:16px; }
+    .ru-save .btn{ flex:1 1 auto; }
+  }
+</style>
+{% endblock %}

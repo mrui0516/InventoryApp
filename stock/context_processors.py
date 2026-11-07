@@ -7,6 +7,17 @@ from .stores import (
 )
 
 
+def _waiting(user, store):
+    """Catalogue orders to deal with: to confirm, and in this shop's Pedido."""
+    from .models import OrderRequest, PedidoDraft
+    from .permissions import has_manager_access
+    if not has_manager_access(user):
+        return {}
+    drafts = PedidoDraft.objects.filter(status=PedidoDraft.OPEN, order_request__status__in=OrderRequest.SHOP_CAN_CANCEL)
+    return {'requests_waiting': OrderRequest.objects.filter(status=OrderRequest.SUBMITTED).count(),
+            'pedido_waiting': drafts.filter(store=store).count() if store is not None else 0}
+
+
 def store_context(request):
     user = getattr(request, 'user', None)
     if not user or not user.is_authenticated:
@@ -15,6 +26,7 @@ def store_context(request):
     store, is_all = resolve_active_store(request)
     can_switch = can_switch_store(user)
     return {
+        **_waiting(user, None if is_all else store),
         'active_store': store,
         'active_store_is_all': is_all,
         'store_can_switch': can_switch,

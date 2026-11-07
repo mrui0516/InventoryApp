@@ -82,7 +82,7 @@
           </details>
 
           <div class="rcv-costs">
-            <label class="rcv-iva"><input type="checkbox" name="add_iva" value="1" data-rcv-iva{% if pr.order.iva_rate %} checked{% endif %}> Add IVA 23%</label>
+            <label class="rcv-iva"><input type="checkbox" name="add_iva" value="1" data-rcv-iva{% if pr.order.iva_rate %} checked{% endif %}> Add IVA {{ iva_rate|floatformat:'-2' }}%</label>
             <label class="rcv-ship"><span>Shipping &euro;</span>{{ pr.form.shipping }}</label>
             <button type="button" class="btn btn-sm btn-outline-secondary" data-rcv-split>Split by quantity</button>
             <span class="rcv-left" data-rcv-left></span>
@@ -179,6 +179,7 @@
   </div>
 {% endfor %}
 
+<script>const IVA = {{ iva_rate|stringformat:'s' }} / 100;</script>
 <script>
 (function () {
   // Splitting a line between the shops. With two shops, typing one quantity
@@ -261,7 +262,7 @@
       .filter((r) => !r.querySelector('input[name$="-DELETE"]').checked);
     const field = (row, name) => row.querySelector(`input[name$="-${name}"]`);
     function update() {
-      const rate = iva.checked ? 0.23 : 0;
+      const rate = iva.checked ? IVA : 0;
       form.querySelector('.rcv-table').classList.toggle('has-iva', iva.checked);
       let total = 0, allocated = 0;
       const shops = new Map();
@@ -273,7 +274,7 @@
         const qty = num(field(row, 'quantity'));
         const share = num(field(row, 'shipping_share'));
         const unit = Math.round((num(field(row, 'cost_price')) * (1 + rate) + (qty ? share / qty : 0)) * 100) / 100;
-        row.querySelector('[data-rcv-with-iva]').textContent = money(num(field(row, 'cost_price')) * 1.23);
+        row.querySelector('[data-rcv-with-iva]').textContent = money(num(field(row, 'cost_price')) * (1 + IVA));
         row.querySelector('[data-rcv-unit]').textContent = money(unit);
         row.querySelector('[data-rcv-line]').textContent = money(unit * qty);
         total += unit * qty;
@@ -493,7 +494,7 @@
             <input type="date" name="invoice_date" id="invoice-date" class="form-control" value="{{ today|date:'Y-m-d' }}">
           </div>
           <div class="col-md-3 col-6">
-            <label class="inb-iva"><input type="checkbox" name="add_iva" id="add-iva" value="1"> Add IVA 23%</label>
+            <label class="inb-iva"><input type="checkbox" name="add_iva" id="add-iva" value="1"> Add IVA {{ iva_rate|floatformat:'-2' }}%</label>
           </div>
           <div class="col-md-3 col-6">
             <label class="form-label" for="shipping">Shipping &euro;</label>
@@ -1361,7 +1362,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function unitCost(tr) {
     const qty = Number(tr.querySelector('.qty').value || 0);
     const cost = parseMoney(tr.querySelector('.cost').value) || 0;
-    const unit = cost * (addIva.checked ? 1.23 : 1) + (qty ? shareOf(tr) / qty : 0);
+    const unit = cost * (addIva.checked ? 1 + IVA : 1) + (qty ? shareOf(tr) / qty : 0);
     return Math.round(unit * 100) / 100;
   }
   function lineTotal(tr) { return unitCost(tr) * Number(tr.querySelector('.qty').value || 0); }
@@ -1401,7 +1402,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const cost = parseMoney(tr.querySelector('.cost').value);
       const sub  = isFinite(cost) ? lineTotal(tr) : NaN;
       tr.querySelector('.subtotal').textContent = '€' + (isFinite(sub) ? sub.toFixed(2) : '0.00');
-      tr.querySelector('.with-iva').textContent = '€' + ((isFinite(cost) ? cost : 0) * 1.23).toFixed(2);
+      tr.querySelector('.with-iva').textContent = '€' + ((isFinite(cost) ? cost : 0) * (1 + IVA)).toFixed(2);
       total += isFinite(sub) ? sub : 0;
       evaluateCartRow(tr);
       if (!(qty>=1 && qty<=100000 && isFinite(cost) && cost>0 && cost<=10000)) ok = false;

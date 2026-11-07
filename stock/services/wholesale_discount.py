@@ -35,7 +35,9 @@ def discount_applies(product):
     if not product.type_info.wholesale_discount:
         return False
     volume = getattr(product, 'volume_ml', None)
-    return volume is not None and DISCOUNT_MIN_VOLUME_ML <= volume <= DISCOUNT_MAX_VOLUME_ML
+    from .rules import rules
+    r = rules()
+    return volume is not None and r.discount_min_ml <= volume <= r.discount_max_ml
 
 
 def last_discount(customer_id):

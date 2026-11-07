@@ -15,7 +15,7 @@ from datetime import timedelta
 from django.db.models import Sum
 from django.db.models.functions import Coalesce
 
-from .low_stock import LOW_STOCK_BELOW
+from .low_stock import alert_below
 
 
 def sell_through(period_end, category_ids=(), days=90, limit=8):
@@ -50,17 +50,17 @@ def sell_through(period_end, category_ids=(), days=90, limit=8):
         sales[product_id].append((at, qty))
 
     from ..views import get_product_image_url
-    rows = []
+    rows, below = [], alert_below()
     for product_id, batch in latest.items():
         after = [(at, qty) for at, qty in sales[product_id] if at >= batch.date]
         level = on_hand.get(product_id, 0) + sum(q for _, q in after) - later_deliveries[product_id]
-        if level < LOW_STOCK_BELOW:
+        if level < below:
             continue                     # it arrived already low: nothing to measure
         start, sold = level, 0
         for at, qty in after:
             level -= qty
             sold += qty
-            if level < LOW_STOCK_BELOW:
+            if level < below:
                 rows.append({
                     'product_id': product_id,
                     'brand': batch.product.brand,

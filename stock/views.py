@@ -68,8 +68,8 @@ from .permissions import (
     admin_required,
     manager_required,
 )
-from .services.inbound_costs import IVA_RATE, check_invoice, check_shipping
-from .services.availability import LOW_STOCK_BELOW, SAMPLE_RESERVE, product_ids_on_order
+from .services.inbound_costs import check_invoice, check_shipping, iva_rate as current_iva_rate
+from .services.availability import low_stock_below, product_ids_on_order, sample_reserve
 from .services.names import customer_catalog_case
 from .services.product_contents import product_page_links
 from .services.product_search import product_search_q
@@ -238,7 +238,8 @@ def pvp_price(retail):
     """The price a customer is quoted: the till price plus the PVP uplift."""
     if retail is None:
         return None
-    return (Decimal(retail) + PVP_UPLIFT).quantize(Decimal('0.01'))
+    from .models.core import BusinessSettings
+    return (Decimal(retail) + BusinessSettings.current().pvp_uplift).quantize(Decimal('0.01'))
 
 
 def discounted_wholesale(wholesale, discount):
@@ -255,14 +256,14 @@ def discounted_wholesale(wholesale, discount):
 
 def sellable_stock(stock_val):
     """What a customer can actually be sold, with the display sample held back."""
-    return max(int(stock_val or 0) - SAMPLE_RESERVE, 0)
+    return max(int(stock_val or 0) - sample_reserve(), 0)
 
 
 
 
 def get_catalog_availability_parts(stock_val, on_order=False):
     sellable = sellable_stock(stock_val)
-    if sellable >= LOW_STOCK_BELOW:
+    if sellable >= low_stock_below():
         return 'Available now', 'in-stock'
     if sellable > 0:
         # Still the honest answer even when more is coming: what matters to
@@ -706,6 +707,7 @@ def inbound_view(request):
         'today': today,
         **_pending_context(),
         'alloc_stores': shops if len(shops) > 1 else [],
+        'iva_rate': current_iva_rate(),
         # Paying is Finance's, so the dialog asks only an admin.
         'can_pay': has_admin_access(request.user),
         'pay_shops': shops,
@@ -755,7 +757,8 @@ def inbound_view(request):
             order_total = Decimal('0.00')
             upload = request.FILES.get('invoice_file')
             check_invoice(upload)
-            iva_rate = IVA_RATE if request.POST.get('add_iva') == '1' else Decimal('0.00')
+            iva_rate_now = current_iva_rate()
+            iva_rate = iva_rate_now if request.POST.get('add_iva') == '1' else Decimal('0.00')
             try:
                 shipping = Decimal((request.POST.get('shipping') or '0').strip().replace(',', '.') or '0')
             except InvalidOperation:
@@ -916,7 +919,7 @@ def inbound_receive_view(request, order_id):
                     return redirect('inbound')
             with transaction.atomic():
                 order = form.save(commit=False)
-                order.iva_rate = IVA_RATE if request.POST.get('add_iva') == '1' else Decimal('0.00')
+                order.iva_rate = current_iva_rate() if request.POST.get('add_iva') == '1' else Decimal('0.00')
                 order.save()
                 formset.save()
 
@@ -1623,7 +1626,7 @@ def export_product_list_excel(request):
         # em stock", which is a real answer for a customer - dropping it would
         # mean losing an order over something arriving this week.
         products_qs = products_qs.filter(
-            Q(total_stock__gt=SAMPLE_RESERVE) | Q(pk__in=on_order_ids))
+            Q(total_stock__gt=sample_reserve()) | Q(pk__in=on_order_ids))
 
     products = list(products_qs)
     for product in products:
@@ -1692,7 +1695,7 @@ def export_product_list_excel(request):
     # that used to sit here - sort order, "Images: yes" - meant nothing to
     # anyone reading the list.
     legend = ('Cores:  verde = disponível  |  '
-              f'amarelo = stock reduzido (menos de {LOW_STOCK_BELOW} unidades)  |  '
+              f'amarelo = stock reduzido (menos de {low_stock_below()} unidades)  |  '
               'azul = brevemente em stock (encomendado, normalmente 3-7 dias)  |  '
               'vermelho = indisponível')
 
@@ -3250,6 +3253,26 @@ def audit_error_resolve(request, error_id):
     if not url_has_allowed_host_and_scheme(back, allowed_hosts={request.get_host()}):
         back = reverse('audit_errors')
     return redirect(back)
+
+
+@login_required
+@admin_required
+def business_rules_view(request):
+    """Settings -> Rules: the numbers the business runs on."""
+    from .services import rules
+    values, errors = {}, []
+    if request.method == 'POST':
+        values, errors = rules.clean(request.POST)
+        if not errors:
+            rules.save(values)
+            messages.success(request, 'Rules saved.')
+            return redirect('business_rules')
+    current = rules.rules()
+    sections = [{'title': title, 'rows': [
+        {'name': name, 'label': label, 'unit': unit,
+         'value': request.POST.get(name, '') if errors else getattr(current, name)}
+        for name, label, unit, _kind, _low, _high in rows]} for title, rows in rules.SECTIONS]
+    return render(request, 'stock/business_rules.html', {'sections': sections, 'errors': errors})
 
 
 @login_required

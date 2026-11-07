@@ -26,8 +26,11 @@ def eur(amount):
     return str(int(amount)) if amount == int(amount) else str(amount)
 
 
-def tier_for(subtotal):
-    for threshold, discount in TIERS:
+DEFAULT_POLICY = {'minimum': MINIMUM, 'free_shipping': FREE_SHIPPING, 'shipping_fee': SHIPPING_FEE, 'tiers': TIERS}
+
+
+def tier_for(subtotal, tiers=TIERS):
+    for threshold, discount in tiers:
         if subtotal >= threshold:
             return discount
     return Decimal('0')
@@ -58,29 +61,34 @@ def zone_of(destination):
     return 'unknown'
 
 
-def _message(subtotal, zone):
-    if subtotal < MINIMUM:
-        return f'Faltam {eur(MINIMUM - subtotal)}\u20ac para o pedido m\u00ednimo de {eur(MINIMUM)}\u20ac.'
-    if subtotal < FREE_SHIPPING and zone in ('mainland', 'unknown'):
-        return f'Faltam {eur(FREE_SHIPPING - subtotal)}\u20ac para portes gr\u00e1tis em Portugal Continental.'
-    if subtotal < TIERS[1][0]:
-        return f'Faltam {eur(TIERS[1][0] - subtotal)}\u20ac para mais {eur(TIERS[1][1])}\u20ac de desconto por unidade.'
-    if subtotal < TIERS[0][0]:
-        return (f'Faltam {eur(TIERS[0][0] - subtotal)}\u20ac para {eur(TIERS[0][1])}\u20ac de desconto por unidade '
-                f'(agora {eur(TIERS[1][1])}\u20ac).')
-    return f'Escal\u00e3o m\u00e1ximo: {eur(TIERS[0][1])}\u20ac extra de desconto por unidade.'
+def _message(subtotal, zone, policy):
+    minimum, free = policy['minimum'], policy['free_shipping']
+    (top, top_off), (first, first_off) = policy['tiers']
+    if subtotal < minimum:
+        return f'Faltam {eur(minimum - subtotal)}\u20ac para o pedido m\u00ednimo de {eur(minimum)}\u20ac.'
+    if subtotal < free and zone in ('mainland', 'unknown'):
+        return f'Faltam {eur(free - subtotal)}\u20ac para portes gr\u00e1tis em Portugal Continental.'
+    if subtotal < first:
+        return f'Faltam {eur(first - subtotal)}\u20ac para mais {eur(first_off)}\u20ac de desconto por unidade.'
+    if subtotal < top:
+        return (f'Faltam {eur(top - subtotal)}\u20ac para {eur(top_off)}\u20ac de desconto por unidade '
+                f'(agora {eur(first_off)}\u20ac).')
+    return f'Escal\u00e3o m\u00e1ximo: {eur(top_off)}\u20ac extra de desconto por unidade.'
 
 
-def progress(subtotal, zone):
-    marks = [(MINIMUM, 'M\u00edn.')]
+def progress(subtotal, zone, policy=None):
+    policy = policy or DEFAULT_POLICY
+    (top, top_off), (first, first_off) = policy['tiers']
+    end = top or BAR_END
+    marks = [(policy['minimum'], 'M\u00edn.')]
     if zone in ('mainland', 'unknown'):
-        marks.append((FREE_SHIPPING, 'Portes'))
-    marks += [(TIERS[1][0], f'-{eur(TIERS[1][1])}\u20ac'), (TIERS[0][0], f'-{eur(TIERS[0][1])}\u20ac')]
+        marks.append((policy['free_shipping'], 'Portes'))
+    marks += [(first, f'-{eur(first_off)}\u20ac'), (top, f'-{eur(top_off)}\u20ac')]
     return {
-        'message': _message(subtotal, zone),
-        'percent': int(min(subtotal / BAR_END * 100, Decimal('100'))),
-        'marks': [{'amount': int(amount), 'label': label, 'at': int(amount / BAR_END * 100), 'reached': subtotal >= amount}
-                  for amount, label in marks],
+        'message': _message(subtotal, zone, policy),
+        'percent': int(min(subtotal / end * 100, Decimal('100'))),
+        'marks': [{'amount': int(amount), 'label': label, 'at': int(min(amount / end * 100, Decimal('100'))),
+                   'reached': subtotal >= amount} for amount, label in marks],
     }
 
 
@@ -90,11 +98,12 @@ def _fingerprint(lines):
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
-def build_quote(lines, destination):
+def build_quote(lines, destination, policy=None):
     """``lines``: dicts with product_id, name, barcode, quantity, base_price,
     customer_discount, catalog_price and ok (it can be ordered)."""
+    policy = policy or DEFAULT_POLICY
     subtotal = sum((line['catalog_price'] * line['quantity'] for line in lines), Decimal('0'))
-    tier = tier_for(subtotal)
+    tier = tier_for(subtotal, policy['tiers'])
     out, goods = [], Decimal('0')
     for line in lines:
         final = line['catalog_price'] - tier
@@ -103,13 +112,13 @@ def build_quote(lines, destination):
         out.append({**line, 'tier_discount': tier, 'final_price': final, 'line_total': total, 'needs_price': final <= 0})
 
     zone = zone_of(destination)
-    free = zone == 'mainland' and subtotal >= FREE_SHIPPING
+    free = zone == 'mainland' and subtotal >= policy['free_shipping']
     if zone == 'pickup':
         state, label, fee = 'pickup', 'Levantamento em loja', Decimal('0')
     elif free:
         state, label, fee = 'free', 'Portes gr\u00e1tis', Decimal('0')
     elif zone == 'mainland':
-        state, label, fee = 'standard', 'Portes', SHIPPING_FEE
+        state, label, fee = 'standard', 'Portes', policy['shipping_fee']
     else:
         state, label, fee = 'pending', 'Portes por confirmar', None
 
@@ -126,13 +135,17 @@ def build_quote(lines, destination):
         'shipping_label': label,
         'shipping_fee': fee,
         'total': goods + (fee or Decimal('0')),
-        'short_of_minimum': max(MINIMUM - subtotal, Decimal('0')),
-        'can_submit': bool(out) and subtotal >= MINIMUM and all(l['ok'] and not l['needs_price'] for l in out),
-        'progress': progress(subtotal, zone),
+        'short_of_minimum': max(policy['minimum'] - subtotal, Decimal('0')),
+        'minimum': policy['minimum'],
+        'policy': policy,
+        'can_submit': bool(out) and subtotal >= policy['minimum'] and all(l['ok'] and not l['needs_price'] for l in out),
+        'progress': progress(subtotal, zone, policy),
         'fingerprint': _fingerprint(out),
     }
 
 
-def policy_snapshot():
-    return {'minimum': str(MINIMUM), 'free_shipping': str(FREE_SHIPPING), 'shipping_fee': eur(SHIPPING_FEE),
-            'tiers': [[str(threshold), str(discount)] for threshold, discount in TIERS]}
+def policy_snapshot(policy=None):
+    policy = policy or DEFAULT_POLICY
+    return {'minimum': str(policy['minimum']), 'free_shipping': str(policy['free_shipping']),
+            'shipping_fee': eur(policy['shipping_fee']),
+            'tiers': [[str(threshold), str(discount)] for threshold, discount in policy['tiers']]}
