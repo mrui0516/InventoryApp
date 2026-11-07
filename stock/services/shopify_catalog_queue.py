@@ -15,11 +15,13 @@ def enabled():
     return bool(getattr(settings, 'SHOPIFY_CATALOG_AUTOMATION', False))
 
 
-def enqueue(product, *, wake_worker=True):
+def enqueue(product, *, wake_worker=True, allow_create=False):
     if not enabled() or not getattr(product, 'pk', None):
         return
     from stock.models import ShopifyCatalogState
     state, _ = ShopifyCatalogState.objects.get_or_create(product_id=product.pk)
+    if allow_create:
+        ShopifyCatalogState.objects.filter(pk=state.pk).update(allow_create=True)
     ShopifyCatalogState.objects.filter(pk=state.pk).update(
         requested_revision=F('requested_revision') + 1,
         next_attempt_at=timezone.now(), updated_at=timezone.now())

@@ -2,10 +2,20 @@
 
 2026-11-07。邮件到货提醒继续暂停；本功能不启用 Flow、不发送客户邮件。
 
+## 事故恢复期间
+
+本次全量扫描超出了商家实际想同步的商品范围。已确认最终规则：旧商品没有上架代表不需要上架；已在 Shopify 上架的商品继续更新；重新启用后在 App 新建的商品自动上架。升级并执行 0091 迁移后，所有已有同步记录的 allow_create 默认为 False，只有之后实际新建 Product 的信号才赋予创建资格。旧的待重试任务及已生成但未发布的旧草稿不会获得创建资格；编辑旧商品、收货、--all 也不会赋予资格。已经发布的商品继续同步，不自动删除。
+
+服务器先保持同步关闭，完成下面代码更新与 migrate 后再启用。不要再次执行 `--all`；历史补货已回填 7 款，不需要重复初始化。
+
+Ctrl+Z 只挂起进程，不会退出，进程可能继续持有数据库锁。若 Bash 明确显示 `[2]+ Stopped python manage.py process_shopify_catalog ...`，在原控制台用 `kill -TERM %2`、`kill -CONT %2` 终止该任务（编号以实际 jobs 输出为准），暂停对应 Always-on task，关闭 SHOPIFY_CATALOG_AUTOMATION、SHOPIFY_AUTO_SYNC、SHOPIFY_AUTO_CREATE、SHOPIFY_INVENTORY_SYNC，再 Web Reload。不要删除数据库锁文件或回滚数据库。
+
+本次在执行上述隔离后，商家确认网页恢复。只有 OSError: write error，未取得 Django traceback，不能将 500 精确归因于某一个数据库操作。独立确认的 API 错误是旧 `ignoreCompareQuantity` 输入字段在 2026-10 已不存在；CatalogClient 已改用显式 `changeFromQuantity: null` 并附加每次请求唯一的 `@idempotent` key，延续库存 App 为权威来源的绝对数量写入。该修复不自动启用任务。
+
 ## 最终行为
 
 - 库存 App 新建/编辑商品、上传图片、收货和销售后，只在数据库排队，保存操作不等待 Shopify。
-- 允许同步的分类中，具有条码、正数零售价和可读取本地图片的新品自动创建 Shopify 草稿。同步当前 Type、品牌、价格、库存，等待 Shopify 图片 READY 后发布 Online Store。已有人工草稿/归档商品保持原状态。
+- 允许同步的分类中，重新启用后在 App 实际新建、具有条码、正数零售价和可读取本地图片的新品自动创建 Shopify 草稿。旧商品不会因为编辑或排队就补建。同步当前 Type、品牌、价格、库存，等待 Shopify 图片 READY 后发布 Online Store。已有人工草稿/归档商品保持原状态。
 - Novidades 保留按 App 建档时间最新的 20 款已上架商品，再把这 20 款中的有货商品排前。缺货商品保持展示。
 - Restock 仅收录之前有收货历史、实际库存从 0 经收货变为正数的商品；保留 30 天，当前再次为 0 时移出。首次收货、门店调拨、退货、手工调整不产生新的补货时间。
 - 月度畅销及男女中性排序继续使用本月零售销量。这里只调整集合，不把缺货商品改为 DRAFT。
@@ -44,10 +54,10 @@ lines.extend(f'{key}={value}' for key, value in values.items())
 path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
 print('Catalogue configuration saved; other settings preserved.')
 PY
-python manage.py process_shopify_catalog --apply --all --backfill-restocks
+python manage.py process_shopify_catalog --apply
 ```
 
-首次运行会同步当前允许上网的商品的零售价和库存，并自动创建资料完整但未上架的商品；沿用系统既有试香库存保留规则。重复 SKU、缺照片、接口暂时失败的条目留在队列，不需要反复执行 `--all`。历史补货只回填账目可核对、没有人工调整且余额未曾为负的记录；不确定记录跳过。
+这次不需要 --all 或 --backfill-restocks。旧队列中已有 Shopify 商品继续更新零售价和库存，旧的未上架商品跳过；沿用系统既有试香库存保留规则。缺照片或接口暂时失败的新商品留在队列。若以后首次安装需要回填历史补货，--backfill-restocks 只回填账目可核对、没有人工调整且余额未曾为负的记录；不确定记录跳过。
 
 Shopify App 的现有 Admin API token 需要商品及库存读写、Online Store 发布权限（`write_publications`）；连接器权限与库存 App token 的权限相互独立。如日志出现权限错误，补齐该 token 权限后重启任务即可重试。
 

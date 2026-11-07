@@ -195,6 +195,31 @@ class ArrivalWorkerTests(TestCase):
         self.assertEqual(self.state().synced_revision, self.state().requested_revision)
         self.api.product_set.assert_not_called()
 
+    def test_old_unlisted_product_is_not_created_by_a_queued_job(self):
+        from stock.models import ShopifyCatalogState
+        ShopifyCatalogState.objects.filter(product=self.product).update(allow_create=False)
+        self.product.save()  # Editing an old product must not grant creation permission.
+        self.api.find_product_by_sku.return_value = None
+        result = self.process()
+        self.assertEqual(result['skipped'], 1)
+        self.api.product_set.assert_not_called()
+        self.api.publish_online.assert_not_called()
+
+    def test_old_automation_draft_is_not_published_after_the_scope_change(self):
+        from stock.models import ShopifyCatalogState
+        ShopifyCatalogState.objects.filter(product=self.product).update(
+            allow_create=False, creation_handle='old-reserved')
+        self.api.find_product_by_handle.return_value['status'] = 'DRAFT'
+        self.assertEqual(self.process()['skipped'], 1)
+        self.api.product_set.assert_not_called()
+        self.api.publish_online.assert_not_called()
+
+    def test_old_listed_product_still_syncs_without_creation_permission(self):
+        from stock.models import ShopifyCatalogState
+        ShopifyCatalogState.objects.filter(product=self.product).update(allow_create=False)
+        self.assertEqual(self.process()['synced'], 1)
+        self.api.product_set.assert_not_called()
+
     @override_settings(SHOPIFY_CATALOG_AUTOMATION=False)
     def test_disabled_automation_never_processes_pending_products(self):
         self.process()
@@ -286,6 +311,28 @@ class ArrivalWorkerTests(TestCase):
 
 
 class CatalogLookupTests(SimpleTestCase):
+    def test_inventory_write_uses_the_2026_10_input_contract(self):
+        from stock.services.shopify_catalog_client import CatalogClient
+        api = CatalogClient()
+        def graphql(query, variables):
+            inventory = variables['input']
+            self.assertNotIn('ignoreCompareQuantity', inventory)
+            self.assertEqual(inventory['quantities'][0]['changeFromQuantity'], None)
+            self.assertIn('@idempotent(key: $idempotencyKey)', query)
+            self.assertTrue(variables['idempotencyKey'])
+            return {'inventorySetQuantities': {'userErrors': []}}
+        with mock.patch.object(api, 'graphql', side_effect=graphql):
+            self.assertTrue(api.set_inventory_available('item', 'location', 0))
+
+    def test_inventory_writes_do_not_reuse_an_old_idempotency_key(self):
+        from stock.services.shopify_catalog_client import CatalogClient
+        api = CatalogClient()
+        with mock.patch.object(api, 'graphql', return_value={'inventorySetQuantities': {'userErrors': []}}) as call:
+            api.set_inventory_available('item', 'location', 0)
+            api.set_inventory_available('item', 'location', 5)
+        first, second = [c.args[1] for c in call.call_args_list]
+        self.assertNotEqual(first['idempotencyKey'], second['idempotencyKey'])
+
     def test_sku_search_follows_pages_and_loads_all_parent_variants(self):
         from stock.services.shopify_catalog_client import CatalogClient
         api = CatalogClient()
