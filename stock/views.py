@@ -19,7 +19,7 @@ from django.core.paginator import Paginator
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Q, Sum, Count, Max, Case, When
+from django.db.models import Q, Sum, Count, Max, Case, When, Exists
 from django.db.models.functions import Coalesce
 from django.http import (
     Http404, HttpResponse, JsonResponse, FileResponse
@@ -5506,6 +5506,7 @@ def customer_search_view(request):
             total_spent=Coalesce(Subquery(spent_subquery, output_field=money_field), Value(Decimal('0.00'))),
             balance_due=Coalesce(Subquery(balance_subquery, output_field=money_field), Value(Decimal('0.00'))),
             last_order_at=Subquery(last_order_subquery, output_field=DateTimeField()),
+            bought_anywhere=Exists(SaleOrder.objects.filter(customer=OuterRef('pk'))),
         )
     )
 
@@ -5517,9 +5518,11 @@ def customer_search_view(request):
             | Q(email__icontains=query)
         )
 
-    # Under a specific store, show only customers who have bought there.
-    if not store_is_all and active_store is not None:
-        base_qs = base_qs.filter(total_orders__gt=0)
+    # Under a specific store: its own buyers, and every customer who has not
+    # bought anywhere yet - a customer just added belongs to no shop and must
+    # still be found. A search looks through everybody.
+    if not store_is_all and active_store is not None and not query:
+        base_qs = base_qs.filter(Q(total_orders__gt=0) | Q(bought_anywhere=False))
 
     kind_q = Q(kind=kind_filter) if kind_filter else Q()
     status_q = _customer_status_q(status_filter, recent_cutoff)
@@ -5545,8 +5548,9 @@ def customer_search_view(request):
     sort_field = CUSTOMER_SORTS[sort_key]
     order = F(sort_field).asc(nulls_last=True) if sort_dir == 'asc' \
         else F(sort_field).desc(nulls_last=True)
-    # A second key so equal rows keep a stable order between pages.
-    customers_qs = customers_qs.order_by(order, 'name', 'id')
+    # A second key so equal rows keep a stable order between pages. By last
+    # order, the customers who never ordered come after, the newest first.
+    customers_qs = customers_qs.order_by(order, *(('-id',) if sort_key == 'last' else ('name', 'id')))
 
     customer_summary = customers_qs.aggregate(
         customer_count=Count('id'),
