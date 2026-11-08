@@ -20,7 +20,6 @@ urlpatterns = [
     path('inbound/', views.inbound_view, name='inbound'),
     path('outbound/', views.outbound_view, name='outbound'),
     path('pedido/', pedido_views.pedido_view, name='pedido'),
-    path('pedido/drafts/', pedido_views.pedido_drafts_partial, name='pedido_drafts_partial'),
     path('pedido/drafts/<int:draft_id>/delete/', pedido_views.pedido_draft_delete, name='pedido_draft_delete'),
     path('products/', views.product_list_view, name='product_list'),
     path('products/export-excel/', views.export_product_list_excel, name='export_product_list_excel'),

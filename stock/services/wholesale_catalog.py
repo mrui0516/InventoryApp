@@ -10,7 +10,7 @@ from decimal import Decimal
 
 from django.db.models import Sum
 
-from ..models import CartLine, Product, ProductType, Sale
+from ..models import CartLine, Product, Sale
 from .availability import low_stock_below, product_ids_on_order
 from .names import customer_catalog_case
 from .product_contents import content_label

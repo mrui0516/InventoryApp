@@ -199,12 +199,6 @@ def _read_customer(request):
             'address': (request.POST.get('customer_address') or '').strip()}
 
 
-def _open_drafts(store):
-    return (PedidoDraft.objects
-            .filter(store=store, status=PedidoDraft.OPEN)
-            .select_related('customer', 'order_request')[:40])
-
-
 def _form_rows(lines):
     """The rows the form starts with when a draft is reopened: the shape the
     product search returns, plus the quantity and price that were quoted."""
@@ -236,7 +230,6 @@ def _page(request, store, *, errors=(), status=200, draft=None, prefill=None):
         'prefill': prefill,
         'draft': draft,
         'draft_rows': rows,
-        'drafts': _open_drafts(store) if store else [],
         'pedido_blocked': store is None,
     }, status=status)
 
@@ -373,17 +366,6 @@ def pedido_view(request):
     # The page reads this to keep editing the same draft and refresh the list.
     response['X-Pedido-Draft'] = str(draft.id)
     return response
-
-
-@login_required
-@manager_required
-def pedido_drafts_partial(request):
-    """The drafts list alone, refreshed after a PDF without reloading the form."""
-    store = _store_or_none(request)
-    return render(request, 'stock/_pedido_drafts.html', {
-        'drafts': _open_drafts(store) if store else [],
-        'current_draft_id': _int(request.GET.get('current'), 0),
-    })
 
 
 @require_POST

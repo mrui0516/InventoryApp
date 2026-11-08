@@ -5,7 +5,6 @@ from decimal import Decimal
 from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
-from django.db.models import Q
 from django.forms import inlineformset_factory
 from django.utils import timezone
 
@@ -24,16 +23,10 @@ from .models import (
     ProductSeries,
     ProductType,
     Purchase,
-    Sale,
     SaleOrder,
     Store,
     Supplier,
 )
-
-
-class BarcodeForm(forms.Form):
-    barcode = forms.CharField(label="Scan or Enter Barcode", max_length=13)
-
 
 
 class OrderRequestForm(forms.Form):
@@ -589,34 +582,6 @@ class SaleOrderCorrectionForm(forms.ModelForm):
         self.fields['customer'].widget.attrs.setdefault('class', 'form-select')
         if self.instance and self.instance.pk and not self.initial.get('order_datetime'):
             self.initial['order_datetime'] = timezone.localtime(self.instance.created_at).strftime('%Y-%m-%dT%H:%M')
-
-
-class PurchaseForm(forms.ModelForm):
-    class Meta:
-        model = Purchase
-        fields = ['product', 'supplier', 'quantity', 'cost_price']
-
-
-class SaleForm(forms.ModelForm):
-    class Meta:
-        model = Sale
-        fields = ['customer', 'quantity', 'unit_price', 'payment_method']
-        widgets = {
-            'unit_price': forms.NumberInput(attrs={'step': '0.01', 'min': '0.01', 'max': '9999.99'}),
-            'quantity': forms.NumberInput(attrs={'min': '1', 'max': '1000'}),
-        }
-
-    def clean_unit_price(self):
-        v = self.cleaned_data['unit_price']
-        if v <= 0 or v > 9999.99:
-            raise forms.ValidationError("Price must be between 0.01 and 9999.99.")
-        return v
-
-    def clean_quantity(self):
-        q = self.cleaned_data['quantity']
-        if q < 1 or q > 1000:
-            raise forms.ValidationError("Quantity must be between 1 and 1000.")
-        return q
 
 
 class CustomerForm(forms.ModelForm):

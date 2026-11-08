@@ -699,7 +699,10 @@ Excel 和 PDF 用**同一套判断和同一组颜色**，两份文件不会互�
 - 进货/出货页为"购物车式"交互：JS 维护本地商品列表，提交时序列化为 `items_json` 一并 POST。
 - 扫码识别：`html5-qrcode.min.js` 调用摄像头扫码 → 调用 `check_barcode` API 联想填充商品信息。
 - 自动补全：客户（`customers_autocomplete`）、产品（`products_autocomplete`）均为简单 JSON API + 前端下拉建议。
-- 模板自定义过滤器：`math_extras.py` 提供 `mul`/`sum_list`/`map_attr`，用于模板中做轻量聚合计算（避免在模板里写复杂表达式）。
+- 模板自定义过滤器：`math_extras.py` 提供 `mul`、`digits`（wa.me / tel 链接）、`absval`、`eur_pt`。
+- 菜单滚动位置：`base.html` 把 `#erpSidebar` 的 scrollTop 存在 sessionStorage（`navScroll`），换页后恢复；没有记录时把当前页面的链接滚到可见处。
+- 测试速度：`settings.py` 在 `manage.py test` 时改用 MD5 密码哈希（生产仍是 PBKDF2），全量测试约 50 秒。
+- 2026-11-08 清理：删除无人使用的 `BarcodeForm` / `PurchaseForm` / `SaleForm`、`charge_payments`、`build_customer_product_title`、`sum_list` / `map_attr` 过滤器、`_sales_order_entry.html`、Pedido 草稿列表的刷新接口 `pedido/drafts/`（列表已搬到 B2B → Pedidos），以及没引用的 Bootstrap CSS 变体；各文件没用到的 import 一并删掉。
 - **图表（Chart.js）**：可视化页面通过 CDN `chart.js` 渲染。视图把数据预聚合为纯 Python 列表（金额转 `float`），用 Django `{{ data|json_script:"id" }}` 安全嵌入页面，前端 `JSON.parse(...textContent)` 后 `new Chart(...)`。采用页面：`dashboard.html`（月度趋势）、`customer_detail.html`（月度消费 bar + 支付占比 doughnut）、`customer_search.html`（活跃度 doughnut）、`sales_records.html`（**合并了原 Sales Trend**：无区间时显示年度 12 月柱状图 + 月度明细表 + 支付占比；选定区间时显示每日 money in/out 柱 + 利润折线、支付 doughnut、Top Products 条）。含金额的图表受 `has_order_reconciliation_access`/`has_sales_sensitive_access`/`is_superuser` 等与页面金额一致的门控才输出数据与 `<canvas>`。
 
 ### 6.2 返回键与导航轨迹（2026-10-28）

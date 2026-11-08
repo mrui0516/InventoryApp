@@ -303,6 +303,22 @@
         head.addEventListener('click', toggle);
         head.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
       });
+      // The menu stays where it was from page to page; set after the folding
+      // above, which changes its height. A page reached another way still
+      // shows its own link.
+      var side = document.getElementById('erpSidebar');
+      if (side) {
+        var SKEY = 'navScroll';
+        try { var y = sessionStorage.getItem(SKEY); if (y !== null) side.scrollTop = Number(y) || 0; } catch (e) {}
+        var here = side.querySelector('.erp-nav-link.active');
+        if (here) {
+          var r = here.getBoundingClientRect(), box = side.getBoundingClientRect();
+          if (r.top < box.top || r.bottom > box.bottom) here.scrollIntoView({ block: 'center' });
+        }
+        var keep = function () { try { sessionStorage.setItem(SKEY, String(side.scrollTop)); } catch (e) {} };
+        side.addEventListener('click', keep);
+        window.addEventListener('pagehide', keep);
+      }
     })();
   </script>
   <script>

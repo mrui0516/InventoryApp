@@ -4,13 +4,12 @@ from decimal import Decimal, InvalidOperation,ROUND_HALF_UP
 import hashlib
 import json
 import os
-import re
 from io import BytesIO
 from collections import defaultdict
-from datetime import timedelta, datetime, date
+from datetime import timedelta, datetime
 import qrcode
 import base64
-from calendar import monthrange, Calendar
+from calendar import monthrange
 from urllib.parse import quote_plus
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
@@ -33,12 +32,7 @@ from django.views.decorators.http import require_POST
 from django.urls import reverse
 from urllib.parse import urlencode
 
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak,KeepTogether,HRFlowable
-
-from django.db.models import Sum, OuterRef, Subquery, IntegerField, F, DecimalField, DateTimeField, ExpressionWrapper, Q,Value
+from django.db.models import OuterRef, Subquery, IntegerField, F, DecimalField, DateTimeField, ExpressionWrapper, Value
 from io import BytesIO as _BytesIO
 
 from .forms import (
@@ -89,11 +83,9 @@ from .services.dashboard import (
     build_monthly_dashboard_snapshot,
     build_period_comparison,
     build_target_progress,
-    build_yearly_sales_overview,
     normalise_channel,
     order_tender_amounts,
     resolve_dashboard_month,
-    resolve_year,
 )
 from .services.inventory import build_inventory_snapshot
 from .services.low_stock import low_stock_data
@@ -197,17 +189,6 @@ def discount_code(discount):
     tenths = discount * 10
     digits = str(int(tenths)) if tenths == int(tenths) else format(tenths.normalize(), 'f').replace('.', '')
     return f'D{digits}_'
-
-
-def build_customer_product_title(product):
-    model_part = (getattr(product, 'model', '') or '').strip()
-    name_part = (getattr(product, 'name', '') or '').strip()
-    title_parts = []
-    if model_part:
-        title_parts.append(model_part)
-    if name_part and name_part.lower() != model_part.lower():
-        title_parts.append(name_part)
-    return customer_catalog_case(' - '.join(title_parts) or name_part or build_product_label(product))
 
 
 # fill, font - light enough to read black text over, and distinct in greyscale
@@ -2250,15 +2231,11 @@ def product_detail_view(request, pk):
     # page (merged with sales detail); the product page just links there.
     is_perfume = bool(product.category and 'perfum' in (product.category.name or '').lower())
 
-    category_name = (product.category.name if product.category else '').lower()
     from .services.store_stock import shop_split
     return render(request, 'stock/product_detail.html', {
         'product': product,
         'links': product_page_links(product),
         'shop_split': shop_split([product.id]).get(product.id, []),
-        # The perfume rows (volume, notes, family) mean nothing for other
-        # goods; shown there they would all read "-".
-        'is_perfume': 'perfum' in category_name,
         'purchases': purchases_recent,
         'purchases_older': purchases_older,
         'sales': sales,
@@ -2272,6 +2249,8 @@ def product_detail_view(request, pk):
         'supplier_costs': supplier_costs,
         'cheapest_supplier_id': cheapest_supplier_id,
         'show_sensitive': is_manager,
+        # The perfume rows (volume, notes, family) mean nothing for other
+        # goods; shown there they would all read "-".
         'is_perfume': is_perfume,
         'show_sales_sensitive': has_sales_sensitive_access(request.user),
     })

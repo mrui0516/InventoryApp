@@ -357,7 +357,6 @@ def parse_contents(request):
 @require_POST
 def restock_request(request, pk):
     """The sold-out row's button on the catalogue."""
-    from .services.portal import account_of
     from .views import _back_to
     from .wholesale_views import _customer
     try:

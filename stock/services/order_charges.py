@@ -8,7 +8,6 @@ till. Sell and Correct Order post them the same way, as ``charges_json``:
     [{"label": "Transporte", "amount": "6.50", "payment": "card"}, ...]
 """
 import json
-from collections import defaultdict
 from decimal import Decimal, InvalidOperation
 
 from django.db.models import Q
@@ -67,16 +66,6 @@ def order_charges(order):
     if order is None or not getattr(order, 'pk', None):
         return []
     return list(order.charges.all())
-
-
-def charge_payments(charges):
-    """Per-method totals of the charges, to add to the goods' payments."""
-    out = defaultdict(Decimal)
-    for charge in charges:
-        method = charge['payment_method'] if isinstance(charge, dict) else charge.payment_method
-        amount = charge['amount'] if isinstance(charge, dict) else charge.amount
-        out[method] += amount or ZERO
-    return out
 
 
 def save_charges(order, charges):

@@ -11,7 +11,7 @@ from django.db import transaction
 from django.db.models import Max, Sum
 from django.utils import timezone
 
-from ..models import Product, Purchase, RestockRequest, Sale
+from ..models import Purchase, RestockRequest, Sale
 from .wholesale_catalog import availability, sellable_units
 
 SALES_DAYS = 90

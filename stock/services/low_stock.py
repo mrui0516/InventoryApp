@@ -17,7 +17,7 @@ and in every analysis; only this list leaves them out.
 from collections import defaultdict
 
 from django.core.cache import cache
-from django.db.models import Exists, F, IntegerField, OuterRef, Q, Subquery, Sum
+from django.db.models import Exists, IntegerField, OuterRef, Q, Subquery, Sum
 from django.db.models.functions import Coalesce
 
 LOW_STOCK_BELOW = 5

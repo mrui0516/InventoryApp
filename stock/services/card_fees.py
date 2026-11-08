@@ -65,7 +65,6 @@ def record(order, payment_totals):
 def refresh_after_correction(order, payment_totals):
     """A corrected order's payments may have changed. Orders from before card
     fees were recorded keep 0 - the fee applies from 2026-10-28 on."""
-    from ..models import SaleOrder
     if order.created_at.date() < FEES_FROM:
         return
     record(order, payment_totals)

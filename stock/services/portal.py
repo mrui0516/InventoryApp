@@ -14,12 +14,9 @@ from django.contrib.auth.signals import user_login_failed
 from django.core.cache import cache
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
-from django.shortcuts import redirect
-from django.urls import reverse
 from django.utils import timezone
 
 from ..models import AccountLink, Customer, CustomerAccount
-from ..permissions import has_manager_access
 from .contacts import international
 
 LINK_HOURS = 72

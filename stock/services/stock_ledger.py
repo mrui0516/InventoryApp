@@ -21,7 +21,7 @@ always counted (a manual remaining edit has no other event).
 """
 from django.utils import timezone
 
-from ..models import Purchase, Sale, StockAdjustmentLog
+from ..models import Sale, StockAdjustmentLog
 
 
 def build_stock_ledger(product):

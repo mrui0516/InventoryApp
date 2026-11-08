@@ -9,7 +9,7 @@ from .names import customer_catalog_case
 from .product_contents import content_label
 from .product_search import product_search_q
 from .wholesale_benefits import MAX_QUANTITY
-from .wholesale_catalog import display_title, pick_mode, sellable_units, units_sold
+from .wholesale_catalog import display_title, pick_mode, units_sold
 
 NOTHING_CHOSEN = 'Escolha pelo menos uma fragrância.'
 SEARCH_FROM = 2
