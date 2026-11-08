@@ -103,15 +103,47 @@ class StorefrontSelectionTests(TestCase):
             Purchase.objects.create(product=p, quantity=stock, remaining=stock, cost_price='10')
         return p
 
-    def test_novidades_selects_newest_twenty_before_stock_ordering(self):
-        from stock.services.shopify_storefront import collection_targets
+    def test_novidades_uses_shopify_publication_order_including_sold_out_products(self):
+        from stock.services.shopify_storefront import sync_storefront
         products = [self.product(n, stock=0 if n == 21 else 3) for n in range(1, 22)]
         variants = {p.barcode: {'product_id': str(p.pk), 'status': 'ACTIVE'} for p in products}
-        target = collection_targets(variants)['Novidades']
-        self.assertEqual(len(target), 20)
-        self.assertNotIn(str(products[0].pk), target)
-        self.assertIn(str(products[-1].pk), target)
-        self.assertEqual(target[-1], str(products[-1].pk))
+        # The oldest App record was published most recently; the newest is sold out.
+        newest = [str(products[0].pk), str(products[-1].pk)] + [
+            str(p.pk) for p in products[2:20]]
+        client = mock.Mock()
+        client.all_variants_by_sku.return_value = variants
+        client.latest_online_product_ids.return_value = newest
+        client.all_collections.return_value = [{'title': 'Novidades', 'id': 'new'}]
+        sync_storefront(client)
+        client.set_collection_products.assert_any_call('new', newest)
+
+    def test_unpublished_active_app_products_do_not_displace_online_products(self):
+        from stock.services.shopify_storefront import sync_storefront
+        products = [self.product(n) for n in range(1, 22)]
+        client = mock.Mock()
+        client.all_variants_by_sku.return_value = {
+            p.barcode: {'product_id': str(p.pk), 'status': 'ACTIVE'} for p in products}
+        # Online listings need no matching App record or SKU to belong to Novidades.
+        newest = [f'gid://shopify/Product/{n}' for n in range(40, 20, -1)]
+        client.latest_online_product_ids.return_value = newest
+        client.all_collections.return_value = [{'title': 'Novidades', 'id': 'new'}]
+        result = sync_storefront(client)
+        self.assertEqual(result['Novidades'], 20)
+        client.set_collection_products.assert_any_call('new', newest)
+
+    def test_publication_fetch_failure_preserves_all_collections(self):
+        from stock.services.shopify_client import ShopifyError
+        from stock.services.shopify_storefront import sync_storefront
+        client = mock.Mock()
+        client.all_variants_by_sku.return_value = {}
+        client.latest_online_product_ids.side_effect = ShopifyError('temporary')
+        client.all_collections.return_value = [{'title': 'Novidades', 'id': 'new'}]
+        with self.assertRaises(ShopifyError):
+            sync_storefront(client)
+        client.create_collection.assert_not_called()
+        client.publish_online.assert_not_called()
+        client.set_collection_products.assert_not_called()
+        client.reorder_collection_products.assert_not_called()
 
     def test_restock_expires_and_sold_out_products_leave(self):
         from stock.models import ShopifyCatalogState
@@ -308,6 +340,70 @@ class ArrivalWorkerTests(TestCase):
         self.api.find_product_by_sku.return_value = None
         self.process()
         self.assertEqual(len(self.api.product_set.call_args.args[0]['variants']), 1)
+
+
+@override_settings(SHOPIFY_ONLINE_STORE_PUBLICATION_ID='gid://shopify/Publication/online')
+class OnlinePublicationSelectionTests(SimpleTestCase):
+    def node(self, number, published=True):
+        return {'id': f'gid://shopify/Product/{number}',
+                'publishedAt': '2026-11-08T12:00:00Z',
+                'publishedOnPublication': published}
+
+    def page(self, nodes, more=False, cursor=None):
+        return {'products': {'nodes': nodes,
+                             'pageInfo': {'hasNextPage': more, 'endCursor': cursor}}}
+
+    def test_latest_twenty_follow_publication_order_and_new_listing_evicts_oldest(self):
+        from stock.services.shopify_catalog_client import CatalogClient
+        api = CatalogClient()
+        pages = [self.page([self.node(n) for n in range(20, 0, -1)]),
+                 self.page([self.node(n) for n in range(21, 1, -1)])]
+        with mock.patch.object(api, 'graphql', side_effect=pages) as query:
+            before = api.latest_online_product_ids()
+            after = api.latest_online_product_ids()
+        self.assertEqual(len(before), 20)
+        self.assertEqual(before[0], 'gid://shopify/Product/20')
+        self.assertEqual(before[-1], 'gid://shopify/Product/1')
+        self.assertEqual(after, ['gid://shopify/Product/21'] + before[:-1])
+        operation, variables = query.call_args.args
+        self.assertIn('sortKey: PUBLISHED_AT', operation)
+        self.assertIn('reverse: true', operation)
+        self.assertEqual(variables['query'], 'status:active AND published_status:published')
+        self.assertEqual(variables['publicationId'], 'gid://shopify/Publication/online')
+        self.assertNotIn('inventory', operation.lower())
+
+    def test_other_channel_products_are_skipped_and_pages_fill_twenty_online_slots(self):
+        from stock.services.shopify_catalog_client import CatalogClient
+        api = CatalogClient()
+        hidden = dict(self.node(99, published=False), publishedAt=None)
+        pages = [self.page([hidden] + [self.node(n) for n in range(20, 1, -1)],
+                           more=True, cursor='next'), self.page([self.node(1)])]
+        with mock.patch.object(api, 'graphql', side_effect=pages) as query:
+            result = api.latest_online_product_ids()
+        self.assertEqual(len(result), 20)
+        self.assertEqual(result[0], 'gid://shopify/Product/20')
+        self.assertEqual(result[-1], 'gid://shopify/Product/1')
+        self.assertNotIn('gid://shopify/Product/99', result)
+        self.assertEqual(query.call_args.args[1]['after'], 'next')
+
+    def test_malformed_publication_responses_raise_instead_of_returning_empty_membership(self):
+        from stock.services.shopify_catalog_client import CatalogClient
+        from stock.services.shopify_client import ShopifyError
+        bad_pages = [{}, {'products': None}, {'products': {'nodes': []}},
+                     self.page([{'id': 'gid://shopify/Product/1'}]),
+                     self.page([dict(self.node(1), publishedAt=None)]),
+                     self.page([], more=True),
+                     self.page([self.node(1), self.node(1)])]
+        for response in bad_pages:
+            with self.subTest(response=response):
+                with mock.patch.object(CatalogClient, 'graphql', return_value=response):
+                    with self.assertRaises(ShopifyError):
+                        CatalogClient().latest_online_product_ids()
+
+    def test_valid_empty_online_catalog_is_supported(self):
+        from stock.services.shopify_catalog_client import CatalogClient
+        with mock.patch.object(CatalogClient, 'graphql', return_value=self.page([])):
+            self.assertEqual(CatalogClient().latest_online_product_ids(), [])
 
 
 class CatalogLookupTests(SimpleTestCase):

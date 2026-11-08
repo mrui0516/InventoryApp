@@ -1,4 +1,4 @@
-"""Collection membership derived from the app, with no stock/status writes."""
+"""Collection membership from Shopify publications and App stock/sales rules."""
 from datetime import timedelta
 
 from django.conf import settings
@@ -20,7 +20,7 @@ GENDER_COLLECTIONS = {
 }
 
 
-def collection_targets(variants, *, now=None):
+def collection_targets(variants, *, newest_product_ids=(), now=None):
     now = now or timezone.now()
     products = list(shopify_syncable(Product.objects).exclude(barcode='').annotate(
         on_hand=Coalesce(Sum('purchase__remaining'), Value(0), output_field=IntegerField())))
@@ -31,8 +31,6 @@ def collection_targets(variants, *, now=None):
     def ids(pairs):
         return list(dict.fromkeys(rec['product_id'] for _, rec in pairs))
 
-    newest = sorted(matched, key=lambda pair: (-pair[0].created_at.timestamp(), -pair[0].pk))[:20]
-    newest.sort(key=lambda pair: (pair[0].on_hand <= 0, -pair[0].created_at.timestamp(), -pair[0].pk))
     cutoff = now - timedelta(days=max(1, getattr(settings, 'SHOPIFY_RESTOCK_DAYS', 30)))
     dates = dict(ShopifyCatalogState.objects.filter(last_restocked_at__gte=cutoff)
                  .values_list('product_id', 'last_restocked_at'))
@@ -49,7 +47,7 @@ def collection_targets(variants, *, now=None):
     units = {row['product_id']: row['units'] for row in sales}
     ranked = sorted(matched, key=lambda pair: (pair[0].on_hand <= 0,
                                               -units.get(pair[0].pk, 0), pair[0].pk))
-    targets = {NEW_TITLE: ids(newest), RESTOCK_TITLE: ids(restocked),
+    targets = {NEW_TITLE: list(newest_product_ids), RESTOCK_TITLE: ids(restocked),
                TOP_TITLE: ids(pair for pair in ranked if units.get(pair[0].pk, 0) > 0)[:5]}
     for gender, title in GENDER_COLLECTIONS.items():
         targets[title] = ids(pair for pair in ranked
@@ -62,7 +60,8 @@ def sync_storefront(client=None, *, dry_run=False):
         from .shopify_catalog_client import CatalogClient
         client = CatalogClient()
     client.require_configured()
-    targets = collection_targets(client.all_variants_by_sku())
+    targets = collection_targets(client.all_variants_by_sku(),
+                                 newest_product_ids=client.latest_online_product_ids())
     collections = {c['title']: c for c in client.all_collections()}
     for title in (NEW_TITLE, RESTOCK_TITLE, TOP_TITLE):
         c = collections.get(title)
