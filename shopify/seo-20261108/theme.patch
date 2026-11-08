@@ -1,0 +1,551 @@
+--- a/assets/component-card.css
++++ b/assets/component-card.css
+@@ -593,3 +593,20 @@
+     clip-path: polygon(var(--shape--blob-5));
+   }
+ }
++
++
++/* Consistent product rows: keep short and long names in the same two-line slot. */
++.product-card-wrapper .card__heading .full-unstyled-link { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; height: 2.8em; min-height: 2.8em; line-height: 1.4; overflow-wrap: anywhere; }
++.product-card-wrapper .card__information > .caption-with-letter-spacing { display: block; height: 1.5em; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
++.product-card-wrapper .card__inner.ratio { --ratio-percent: 100% !important; }
++.product-card-wrapper .card__media .media > img { object-fit: contain; }
++.product-card-wrapper.is-sold-out .card__inner { background: #f3f2ef; }
++.product-card-wrapper.is-sold-out .card__media img { filter: grayscale(.25); opacity: .72; }
++.product-card-wrapper.is-sold-out .badge { background: #eeece7; border-color: #e1ded5; color: #625f58; }
++.product-card-wrapper .card { border: 0; border-radius: 1.2rem; background: #fff; box-shadow: none; }
++.product-card-wrapper .card__inner, .product-card-wrapper .card__media { border-radius: 1.2rem; overflow: hidden; }
++.product-card-wrapper .card > .card__content { padding: 0 .6rem .6rem; }
++.product-card-wrapper .card__information { padding-top: 1.2rem; }
++.product-card-wrapper .quick-add__submit { --buttons-radius: 2.4rem; --buttons-radius-outset: 2.4rem; min-height: 4.2rem; border-radius: 2.4rem; font-size: 1.25rem; }
++.product-card-wrapper .quick-add__submit::after { border-radius: inherit; box-shadow: 0 0 0 1px #dfd9cd; }
++.product-card-wrapper.is-sold-out .quick-add__submit { color: #716e66; background: #f5f4f0; }
+--- a/snippets/card-product.liquid
++++ b/snippets/card-product.liquid
+@@ -44,7 +44,7 @@
+   -%}
+ 
+   <product-component view-event-payload="{{ card_product | standard_event_data: 'view', context: product_view_context | escape }}">
+-    <div class="card-wrapper product-card-wrapper underline-links-hover">
++    <div class="card-wrapper product-card-wrapper underline-links-hover{% unless card_product.available %} is-sold-out{% endunless %}">
+       <div
+         class="
+           card card--{{ settings.card_style }}
+@@ -208,7 +208,7 @@
+                 </p>
+               {%- endif -%}
+ 
+-              {% render 'price', product: card_product, price_class: '', show_compare_at_price: true %}
++              {% render 'price', product: card_product, price_class: '', show_compare_at_price: true, show_capacity: true %}
+               {%- if card_product.quantity_price_breaks_configured? -%}
+                 {% if card_product.variants_count == 1 and quick_add == 'bulk' %}
+                   {% liquid
+@@ -516,7 +516,7 @@
+                           <a href="{{ card_product.url }}" class="full-unstyled-link">
+                             <h3>{{ card_product.title | escape }}</h3>
+                           </a>
+-                          {% render 'price', product: card_product, price_class: '', show_compare_at_price: true %}
++                          {% render 'price', product: card_product, price_class: '', show_compare_at_price: true, show_capacity: true %}
+                           {%- if card_product.quantity_price_breaks_configured? -%}
+                             <div class="card__information-volume-pricing-note">
+                               <span class="caption">{{ 'products.product.volume_pricing.note' | t }}</span>
+@@ -531,7 +531,7 @@
+                               {{ card_product.title | escape }}
+                             </h3>
+                           </a>
+-                          {% render 'price', product: card_product, price_class: '', show_compare_at_price: true %}
++                          {% render 'price', product: card_product, price_class: '', show_compare_at_price: true, show_capacity: true %}
+                           {%- if card_product.quantity_price_breaks_configured? -%}
+                             <div class="card__information-volume-pricing-note">
+                               <span class="caption">{{ 'products.product.volume_pricing.note' | t }}</span>
+--- a/snippets/price.liquid
++++ b/snippets/price.liquid
+@@ -7,11 +7,16 @@
+   @param {boolean} [show_badges] - Whether to show sale and sold-out badges when applicable. Defaults to false.
+   @param {string} [price_class] - An additional class for the price wrapper.
+   @param {boolean} [show_compare_at_price] - Whether to show a compare-at price with volume pricing when applicable. Defaults to false.
++  @param {boolean} [show_capacity] - Whether to label the displayed available variant on product cards.
+ 
+   @example
+   {% render 'price', product: product, use_variant: true, show_badges: true, price_class: 'price--large' %}
+ {%- enddoc -%}
++{%- capture scentory_whole_only -%}{%- render 'scentory-whole-only', product: product -%}{%- endcapture -%}
++{%- assign scentory_whole_only = scentory_whole_only | strip -%}
+ {%- liquid
++  assign scentory_price_varies = product.price_varies
++
+   if use_variant
+     assign target = product.selected_or_first_available_variant
+   elsif placeholder
+@@ -20,10 +25,50 @@
+     assign target = product
+   endif
+ 
++  if scentory_whole_only == 'true'
++    assign scentory_first_whole = nil
++    assign scentory_available_whole = nil
++    assign scentory_sorted_variants = product.variants | sort: 'price'
++    for scentory_variant in scentory_sorted_variants
++      assign scentory_sku = scentory_variant.sku | upcase
++      if scentory_sku contains '-5ML' or scentory_sku contains '-10ML'
++        continue
++      endif
++      if scentory_first_whole == nil
++        assign scentory_first_whole = scentory_variant
++      endif
++      assign scentory_last_whole = scentory_variant
++      if scentory_variant.available and scentory_available_whole == nil
++        assign scentory_available_whole = scentory_variant
++      endif
++    endfor
++    assign scentory_selected_sku = product.selected_or_first_available_variant.sku | upcase
++    assign target = scentory_available_whole | default: scentory_first_whole
++    if use_variant
++      unless scentory_selected_sku contains '-5ML' or scentory_selected_sku contains '-10ML'
++        assign target = product.selected_or_first_available_variant
++      endunless
++    endif
++    assign scentory_price_varies = false
++    if scentory_first_whole.price != scentory_last_whole.price
++      assign scentory_price_varies = true
++    endif
++  endif
++
++  if show_capacity and use_variant != true and scentory_whole_only != 'true'
++    assign scentory_card_options = product.variants | sort: 'price'
++    assign scentory_card_available = scentory_card_options | where: 'available', true
++    assign target = scentory_card_available.first | default: scentory_card_options.first
++  endif
++
+   assign compare_at_price = target.compare_at_price
+   assign price = target.price | default: 1999
+   assign price_min = product.price_min
+   assign price_max = product.price_max
++  if scentory_whole_only == 'true'
++    assign price_min = scentory_first_whole.price
++    assign price_max = scentory_last_whole.price
++  endif
+   assign available = target.available | default: false
+   assign money_price = price | money
+   assign money_price_min = price_min | money
+@@ -34,8 +79,10 @@
+     assign money_price_max = price_max | money_with_currency
+   endif
+ 
+-  if target == product and product.price_varies
+-    assign money_price = 'products.product.price.from_price_html' | t: price: money_price
++  if scentory_price_varies and use_variant != true
++    if target == product or scentory_whole_only == 'true' or show_capacity
++      assign money_price = 'products.product.price.from_price_html' | t: price: money_price
++    endif
+   endif
+ -%}
+ 
+@@ -47,7 +94,7 @@
+       {%- if available == false %} price--sold-out{% endif -%}
+       {%- if compare_at_price > price and product.quantity_price_breaks_configured? != true %} price--on-sale{% endif -%}
+       {%- if compare_at_price > price and product.quantity_price_breaks_configured? %} volume-pricing--sale-badge{% endif -%}
+-      {%- if product.price_varies == false and product.compare_at_price_varies %} price--no-compare{% endif -%}
++      {%- if scentory_price_varies == false and product.compare_at_price_varies %} price--no-compare{% endif -%}
+       {%- if show_badges %} price--show-badge{% endif -%}
+     "
+   >
+@@ -60,7 +107,7 @@
+       <div class="price__regular">
+         {%- if product.quantity_price_breaks_configured? -%}
+           {%- if show_compare_at_price and compare_at_price -%}
+-            {%- unless product.price_varies == false and product.compare_at_price_varies %}
++            {%- unless scentory_price_varies == false and product.compare_at_price_varies %}
+               <span class="visually-hidden visually-hidden--inline">
+                 {{- 'products.product.price.regular_price' | t -}}
+               </span>
+@@ -90,7 +137,7 @@
+         {%- endif -%}
+       </div>
+       <div class="price__sale">
+-        {%- unless product.price_varies == false and product.compare_at_price_varies %}
++        {%- unless scentory_price_varies == false and product.compare_at_price_varies %}
+           <span class="visually-hidden visually-hidden--inline">{{ 'products.product.price.regular_price' | t }}</span>
+           <span>
+             <s class="price-item price-item--regular">
+@@ -110,6 +157,9 @@
+       {%- if product.selected_or_first_available_variant.unit_price_measurement -%}
+         {% render 'unit-price', price: product.selected_or_first_available_variant.unit_price, measurement: product.selected_or_first_available_variant.unit_price_measurement %}
+       {%- endif -%}
++      {%- if show_capacity and product.has_only_default_variant == false and target.title != 'Default Title' and target.title != blank -%}
++        <small class="scentory-price-capacity"> · {{ target.title | escape }}</small>
++      {%- endif -%}
+     </div>
+     {%- if show_badges -%}
+       <span class="badge price__badge-sale color-{{ settings.sale_badge_color_scheme }}">
+--- a/snippets/product-variant-picker.liquid
++++ b/snippets/product-variant-picker.liquid
+@@ -41,7 +41,7 @@
+               {{- option.selected_value | escape -}}
+             </span>
+           </legend>
+-          {% render 'product-variant-options',
++          {% render 'product-variant-options', product: product,
+             option: option,
+             block: block,
+             picker_type: picker_type
+@@ -50,7 +50,7 @@
+       {%- elsif picker_type == 'button' -%}
+         <fieldset class="js product-form__input product-form__input--pill">
+           <legend class="form__label">{{ option.name | escape }}</legend>
+-          {% render 'product-variant-options',
++          {% render 'product-variant-options', product: product,
+             option: option,
+             block: block,
+             picker_type: picker_type
+@@ -76,7 +76,7 @@
+               name="options[{{ option.name | escape }}]"
+               form="{{ product_form_id }}"
+             >
+-              {% render 'product-variant-options',
++              {% render 'product-variant-options', product: product,
+                 option: option,
+                 block: block,
+                 picker_type: picker_type
+--- a/snippets/product-variant-options.liquid
++++ b/snippets/product-variant-options.liquid
+@@ -1,6 +1,7 @@
+ {%- doc -%}
+   Renders the values for one product option as swatches, buttons, or dropdown options.
+ 
++  @param {product} product - Product that owns these option values.
+   @param {product_option} option - The product option whose values are rendered.
+   @param {string} picker_type - The picker markup to render: `swatch`, `button`, `dropdown`, or `swatch_dropdown`.
+   @param {block} [block] - The variant-picker block, required for swatch settings.
+@@ -9,11 +10,31 @@
+   @example
+   {% render 'product-variant-options', option: option, block: block, picker_type: 'button' %}
+ {%- enddoc -%}
++{%- capture scentory_whole_only -%}{%- render 'scentory-whole-only', product: product -%}{%- endcapture -%}
++{%- assign scentory_whole_only = scentory_whole_only | strip -%}
+ {%- liquid
+   assign product_form_id = 'product-form-' | append: section.id
+ -%}
+ 
+ {%- for value in option.values -%}
++  {%- if scentory_whole_only == 'true' -%}
++    {%- liquid
++      assign scentory_allowed_value = false
++      assign scentory_option_index = option.position | minus: 1
++      for scentory_variant in product.variants
++        if scentory_variant.options[scentory_option_index] == value.name
++          assign scentory_sku = scentory_variant.sku | upcase
++          unless scentory_sku contains '-5ML' or scentory_sku contains '-10ML'
++            assign scentory_allowed_value = true
++            break
++          endunless
++        endif
++      endfor
++      unless scentory_allowed_value
++        continue
++      endunless
++    -%}
++  {%- endif -%}
+   {%- liquid
+     assign swatch_focal_point = null
+     if value.swatch.image
+--- a/templates/index.json
++++ b/templates/index.json
+@@ -1,12 +1,3 @@
+-/*
+- * ------------------------------------------------------------
+- * IMPORTANT: The contents of this file are auto-generated.
+- *
+- * This file may be updated by the Shopify admin theme editor
+- * or related systems. Please exercise caution as any changes
+- * made to this file may be overwritten.
+- * ------------------------------------------------------------
+- */
+ {
+   "sections": {
+     "image_banner": {
+@@ -15,7 +6,7 @@
+         "heading": {
+           "type": "heading",
+           "settings": {
+-            "heading": "Descubra o seu próximo perfume árabe",
++            "heading": "Perfumes árabes originais em Portugal",
+             "heading_size": "h0"
+           }
+         },
+@@ -33,7 +24,7 @@
+         "intro": {
+           "type": "text",
+           "settings": {
+-            "text": "Perfumes 100% originais, várias marcas e stock em Portugal. Encontre o seu favorito online ou experimente na nossa loja na Amadora.",
++            "text": "Descubra Lattafa, Armaf, French Avenue e outras marcas. Escolha online ou experimente diferentes fragrâncias com a nossa equipa na Amadora.",
+             "text_style": "body"
+           }
+         }
+@@ -160,7 +151,7 @@
+           "type": "column",
+           "settings": {
+             "title": "Envio Rápido",
+-            "text": "<p>Stock em Portugal — receba a sua encomenda em poucos dias.</p>",
++            "text": "<p>Stock em Portugal. Consulte os prazos e destinos na nossa <a href=\"/policies/shipping-policy\">política de envio</a>.</p>",
+             "link_label": "",
+             "link": ""
+           }
+@@ -169,7 +160,7 @@
+           "type": "column",
+           "settings": {
+             "title": "100% Originais",
+-            "text": "<p>Todos os perfumes são originais e selados.</p>",
++            "text": "<p>Perfumes originais. Os <a href=\"/pages/decants\">decants</a> são preparados pela Scentory e identificados como tal.</p>",
+             "link_label": "",
+             "link": ""
+           }
+@@ -177,8 +168,8 @@
+         "c3": {
+           "type": "column",
+           "settings": {
+-            "title": "Preços Competitivos",
+-            "text": "<p>Qualidade premium ao melhor preço.</p>",
++            "title": "Ajuda na escolha",
++            "text": "<p>Conte-nos os aromas de que gosta. <a href=\"/pages/contact\">A nossa equipa ajuda-o</a> a conhecer as opções.</p>",
+             "link_label": "",
+             "link": ""
+           }
+@@ -308,7 +299,7 @@
+         "t": {
+           "type": "text",
+           "settings": {
+-            "text": "<p>A nossa experiência com perfumes árabes começou em 2024. Na Scentory, reunimos fragrâncias 100% originais de várias marcas e ajudamos a encontrar o aroma certo para si. Conheça a nossa história e venha experimentar na Amadora.</p>"
++            "text": "<p>A nossa experiência com perfumes árabes começou em 2024. Na Scentory, reunimos fragrâncias 100% originais de várias marcas e ajudamos a encontrar o aroma certo para si. Conheça a nossa história e venha experimentar na Amadora.</p><p>Está a descobrir estas fragrâncias? Leia o nosso <a href=\"/blogs/news/como-escolher-primeiro-perfume-arabe\">guia para escolher o primeiro perfume árabe</a>.</p>"
+           }
+         },
+         "b": {
+--- a/sections/footer-group.json
++++ b/sections/footer-group.json
+@@ -1,12 +1,3 @@
+-/*
+- * ------------------------------------------------------------
+- * IMPORTANT: The contents of this file are auto-generated.
+- *
+- * This file may be updated by the Shopify admin theme editor
+- * or related systems. Please exercise caution as any changes
+- * made to this file may be overwritten.
+- * ------------------------------------------------------------
+- */
+ {
+   "name": "t:sections.footer.name",
+   "type": "footer",
+@@ -25,7 +16,7 @@
+           "type": "text",
+           "settings": {
+             "heading": "Contactos",
+-            "subtext": "<p>Loja C03A, C.C. Babilónia, Piso 1<br/>R. Elias Garcia 362D, 2700-337 Amadora<br/><a href=\"https://maps.app.goo.gl/ehL84mFUr7Q1oPVE9\" target=\"_blank\" rel=\"noopener\">Ver no Google Maps</a><br/>Telefone / WhatsApp: +351 935 993 566<br/>Email: info@scentory.pt</p>"
++            "subtext": "<p>Loja C03A, C.C. Babilónia, Piso 1<br>R. Elias Garcia 362D, 2700-337 Amadora<br><a href=\"https://maps.app.goo.gl/ehL84mFUr7Q1oPVE9\" target=\"_blank\" rel=\"noopener noreferrer\">Ver no Google Maps</a><br>Telefone: <a href=\"tel:+351935993566\">+351 935 993 566</a><br>Email: <a href=\"mailto:info@scentory.pt\">info@scentory.pt</a><br><a href=\"https://www.instagram.com/scentory.pt/\" target=\"_blank\" rel=\"noopener noreferrer\">Instagram oficial da Scentory</a></p>"
+           }
+         }
+       },
+--- a/layout/theme.liquid
++++ b/layout/theme.liquid
+@@ -15,11 +15,18 @@
+       <link rel="preconnect" href="https://fonts.shopifycdn.com" crossorigin>
+     {%- endunless -%}
+ 
++    {%- liquid
++      if request.page_type == 'index'
++        assign page_title = 'scentory_seo.home_title' | t
++        assign page_description = 'scentory_seo.home_description' | t
++      endif
++    -%}
++
+     <title>
+       {{ page_title }}
+       {%- if current_tags %} &ndash; tagged "{{ current_tags | join: ', ' }}"{% endif -%}
+       {%- if current_page != 1 %} &ndash; Page {{ current_page }}{% endif -%}
+-      {%- unless page_title contains shop.name %} &ndash; {{ shop.name }}{% endunless -%}
++      {%- unless page_title contains 'Scentory' %} &ndash; {{ shop.name }}{% endunless -%}
+     </title>
+ 
+     {% if page_description %}
+--- a/locales/en.default.json
++++ b/locales/en.default.json
+@@ -1,12 +1,3 @@
+-/*
+- * ------------------------------------------------------------
+- * IMPORTANT: The contents of this file are auto-generated.
+- *
+- * This file may be updated by the Shopify admin language editor
+- * or related systems. Please exercise caution as any changes
+- * made to this file may be overwritten.
+- * ------------------------------------------------------------
+- */
+ {
+   "general": {
+     "password_page": {
+@@ -283,7 +274,6 @@
+       "announcement": "Announcement",
+       "announcement_bar": "Announcement bar"
+     },
+-
+     "header": {
+       "announcement": "Announcement",
+       "menu": "Menu",
+@@ -537,5 +527,9 @@
+       "send_on": "YYYY-MM-DD",
+       "send_on_label": "Send on (optional)"
+     }
++  },
++  "scentory_seo": {
++    "home_title": "Original Arabic perfumes in Portugal | Scentory",
++    "home_description": "Discover original Arabic perfumes from Lattafa, Armaf and French Avenue. Shop online or try fragrances at our store in Amadora."
+   }
+ }
+--- a/locales/pt-PT.json
++++ b/locales/pt-PT.json
+@@ -1,12 +1,3 @@
+-/*
+- * ------------------------------------------------------------
+- * IMPORTANT: The contents of this file are auto-generated.
+- *
+- * This file may be updated by the Shopify admin language editor
+- * or related systems. Please exercise caution as any changes
+- * made to this file may be overwritten.
+- * ------------------------------------------------------------
+- */
+ {
+   "general": {
+     "password_page": {
+@@ -548,5 +539,9 @@
+       "expanded": "Formulário de destinatário do cartão de oferta expandido",
+       "collapsed": "Formulário de destinatário do cartão de oferta fechado"
+     }
++  },
++  "scentory_seo": {
++    "home_title": "Perfumes árabes originais em Portugal | Scentory",
++    "home_description": "Descubra perfumes árabes originais de marcas como Lattafa, Armaf e French Avenue. Compre online ou experimente na nossa loja na Amadora."
+   }
+ }
+--- a/sections/header.liquid
++++ b/sections/header.liquid
+@@ -182,7 +182,7 @@
+ 
+     {%- if section.settings.logo_position != 'middle-center' -%}
+       {%- if request.page_type == 'index' -%}
+-        <h1 class="header__heading">
++        <div class="header__heading">
+       {%- endif -%}
+       <a href="{{ routes.root_url }}" class="header__heading-link link link--text focus-inset">
+         {%- if settings.logo != blank -%}
+@@ -209,7 +209,7 @@
+         {%- endif -%}
+       </a>
+       {%- if request.page_type == 'index' -%}
+-        </h1>
++        </div>
+       {%- endif -%}
+     {%- endif -%}
+ 
+@@ -225,7 +225,7 @@
+ 
+     {%- if section.settings.logo_position == 'middle-center' -%}
+       {%- if request.page_type == 'index' -%}
+-        <h1 class="header__heading">
++        <div class="header__heading">
+       {%- endif -%}
+       <a href="{{ routes.root_url }}" class="header__heading-link link link--text focus-inset">
+         {%- if settings.logo != blank -%}
+@@ -252,7 +252,7 @@
+         {%- endif -%}
+       </a>
+       {%- if request.page_type == 'index' -%}
+-        </h1>
++        </div>
+       {%- endif -%}
+     {%- endif -%}
+ 
+--- a/sections/image-banner.liquid
++++ b/sections/image-banner.liquid
+@@ -120,12 +120,16 @@
+       {%- for block in section.blocks -%}
+         {%- case block.type -%}
+           {%- when 'heading' -%}
+-            <h2
++            {%- assign heading_tag = 'h2' -%}
++            {%- if request.page_type == 'index' -%}
++              {%- assign heading_tag = 'h1' -%}
++            {%- endif -%}
++            <{{ heading_tag }}
+               class="banner__heading inline-richtext {{ block.settings.heading_size }}"
+               {{ block.shopify_attributes }}
+             >
+               {{ block.settings.heading }}
+-            </h2>
++            </{{ heading_tag }}>
+           {%- when 'text' -%}
+             <div class="banner__text rte {{ block.settings.text_style }}" {{ block.shopify_attributes }}>
+               <p>{{ block.settings.text }}</p>
+@@ -505,3 +509,4 @@
+   ]
+ }
+ {% endschema %}
++
+--- a/templates/article.json
++++ b/templates/article.json
+@@ -1,12 +1,3 @@
+-/*
+- * ------------------------------------------------------------
+- * IMPORTANT: The contents of this file are auto-generated.
+- *
+- * This file may be updated by the Shopify admin theme editor
+- * or related systems. Please exercise caution as any changes
+- * made to this file may be overwritten.
+- * ------------------------------------------------------------
+- */
+ {
+   "sections": {
+     "main": {
+@@ -22,7 +13,7 @@
+           "type": "title",
+           "settings": {
+             "blog_show_date": true,
+-            "blog_show_author": false
++            "blog_show_author": true
+           }
+         },
+         "share": {
+--- a/templates/blog.json
++++ b/templates/blog.json
+@@ -1,12 +1,3 @@
+-/*
+- * ------------------------------------------------------------
+- * IMPORTANT: The contents of this file are auto-generated.
+- *
+- * This file may be updated by the Shopify admin theme editor
+- * or related systems. Please exercise caution as any changes
+- * made to this file may be overwritten.
+- * ------------------------------------------------------------
+- */
+ {
+   "sections": {
+     "main": {
+@@ -16,7 +7,7 @@
+         "show_image": true,
+         "image_height": "medium",
+         "show_date": true,
+-        "show_author": false,
++        "show_author": true,
+         "padding_top": 36,
+         "padding_bottom": 36
+       }
+--- a/snippets/scentory-card-price.liquid
++++ b/snippets/scentory-card-price.liquid
+@@ -40,7 +40,7 @@
+ {%- else -%}
+   {{- scentory_money_price -}}
+ {%- endif -%}
+-{%- unless product.has_only_default_variant -%}
++{%- if product.has_only_default_variant == false and scentory_price_variant.title != 'Default Title' and scentory_price_variant.title != blank -%}
+   <small class="scentory-price-capacity"> · {{ scentory_price_variant.title | escape }}</small>
+-{%- endunless -%}
++{%- endif -%}
+ 

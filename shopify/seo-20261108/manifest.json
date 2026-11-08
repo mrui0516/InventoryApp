@@ -1,0 +1,24 @@
+{
+  "base_theme": "208330096988",
+  "base_version": "Dawn 16.1.1",
+  "draft_theme": "208349528412",
+  "draft_name": "Scentory 16.1.1 - SEO e Design 08-11",
+  "files": [
+    "assets/component-card.css",
+    "snippets/card-product.liquid",
+    "snippets/price.liquid",
+    "snippets/product-variant-picker.liquid",
+    "snippets/product-variant-options.liquid",
+    "templates/index.json",
+    "sections/footer-group.json",
+    "layout/theme.liquid",
+    "locales/en.default.json",
+    "locales/pt-PT.json",
+    "sections/header.liquid",
+    "sections/image-banner.liquid",
+    "templates/article.json",
+    "templates/blog.json",
+    "snippets/scentory-card-price.liquid"
+  ],
+  "publication": "Manual Shopify publish required; MAIN writes and themePublish unavailable through connector."
+}
