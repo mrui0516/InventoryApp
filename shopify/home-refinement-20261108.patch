@@ -1,0 +1,784 @@
+--- a/sections/novidades-spotlight.liquid
++++ b/sections/novidades-spotlight.liquid
+@@ -1,229 +1,140 @@
+ {%- assign source = section.settings.collection -%}
+ {%- if source != blank and source.products_count > 0 -%}
+-  {%- liquid
+-    assign in_stock = source.products | where: 'available', true
+-    assign sold_out = source.products | where: 'available', false
+-    assign products = in_stock | concat: sold_out
+-  -%}
+-  <scentory-spotlight class="nv-spotlight" data-autoplay="{{ section.settings.autoplay }}" data-interval="{{ section.settings.interval | default: 5 }}" data-pause-label="{{ 'sections.slideshow.pause_slideshow' | t | escape }}" data-play-label="{{ 'sections.slideshow.play_slideshow' | t | escape }}" role="region" aria-roledescription="carousel" aria-labelledby="SpotlightHeading-{{ section.id }}" style="padding-top: {{ section.settings.padding_top }}px; padding-bottom: {{ section.settings.padding_bottom }}px;">
+-    <div class="nv-spotlight__header page-width">
+-      {% if section.settings.eyebrow != blank %}<p class="nv-spotlight__eyebrow">{{ section.settings.eyebrow | escape }}</p>{% endif %}
+-      <h2 id="SpotlightHeading-{{ section.id }}" class="nv-spotlight__heading h1">{{ section.settings.title | escape }}</h2>
+-      <a class="nv-spotlight__all link" href="{{ source.url }}">{{ 'sections.featured_collection.view_all' | t }} <span aria-hidden="true">↗</span></a>
++  <scentory-product-marquee class="nv-marquee page-width" style="--nv-duration: {{ section.settings.speed | default: 80 }}s; padding-top: {{ section.settings.padding_top }}px; padding-bottom: {{ section.settings.padding_bottom }}px;" aria-labelledby="NewHeading-{{ section.id }}">
++    <div class="nv-marquee__header">
++      <h2 id="NewHeading-{{ section.id }}" class="nv-marquee__heading h2">{{ section.settings.title | escape }}</h2>
++      <a class="nv-marquee__all link" href="{{ source.url }}">{{ 'sections.featured_collection.view_all' | t }} <span aria-hidden="true">↗</span></a>
+     </div>
+-    <div class="nv-spotlight__viewport">
+-      <div class="nv-spotlight__track">
+-        {% for product in products limit: 10 %}
+-          <div class="nv-spotlight__slide{% if forloop.first %} is-active{% endif %}{% unless product.available %} is-sold-out{% endunless %}" role="group" aria-roledescription="slide" aria-label="{{ forloop.index }} / {{ products.size | at_most: 10 }}">
+-            <a class="nv-spotlight__card" href="{{ product.url }}">
+-              <div class="nv-spotlight__media">
+-                {% if product.featured_image %}
+-                  {{ product.featured_image | image_url: width: 700 | image_tag: widths: '250, 400, 550, 700', sizes: '(min-width: 990px) 300px, 66vw', loading: 'lazy', draggable: false, alt: product.title }}
+-                {% else %}
+-                  {{ 'product-1' | placeholder_svg_tag }}
+-                {% endif %}
+-                {% if section.settings.badge_text != blank %}<span class="nv-spotlight__tag">{{ section.settings.badge_text | escape }}</span>{% endif %}
+-                {% unless product.available %}<span class="nv-spotlight__stock">{{ 'products.product.sold_out' | t }}</span>{% endunless %}
+-              </div>
+-              <span class="nv-spotlight__vendor">{{ product.vendor | escape }}</span>
+-              <span class="nv-spotlight__title">{{ product.title | escape }}</span>
+-              <span class="nv-spotlight__price">{% render 'scentory-card-price', product: product %}</span>
+-              <span class="nv-spotlight__cta button" aria-hidden="true">{{ section.settings.button_label | escape }} <span aria-hidden="true">↗</span></span>
+-            </a>
+-            {% unless product.available %}{% render 'scentory-restock-trigger', product: product %}{% endunless %}
+-          </div>
++    <div class="nv-marquee__viewport">
++      <div class="nv-marquee__track">
++        {% for copy in (1..2) %}
++          <ul class="nv-marquee__group" role="list"{% if copy == 2 %} aria-hidden="true"{% endif %}>
++            {% for product in source.products limit: 20 %}
++              {% render 'scentory-home-card', product: product, badge_text: section.settings.badge_text %}
++            {% endfor %}
++          </ul>
+         {% endfor %}
+       </div>
+     </div>
+-    <div class="nv-spotlight__controls" hidden>
+-      <div class="nv-spotlight__navigation">
+-        <button type="button" class="nv-spotlight__arrow" data-previous aria-label="{{ 'general.slider.previous_slide' | t }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg></button>
+-        <span class="nv-spotlight__counter" aria-live="off"></span>
+-        <button type="button" class="nv-spotlight__arrow" data-next aria-label="{{ 'general.slider.next_slide' | t }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m10 6 6 6-6 6"/></svg></button>
+-        <button type="button" class="nv-spotlight__arrow nv-spotlight__pause" data-pause aria-pressed="false" aria-label="{{ 'sections.slideshow.pause_slideshow' | t }}"><svg class="nv-spotlight__pause-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg><svg class="nv-spotlight__play-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m9 5 10 7-10 7z"/></svg></button>
+-      </div>
+-      <div class="nv-spotlight__dots">
+-        {% for product in products limit: 10 %}<button type="button" data-slide="{{ forloop.index0 }}" aria-label="{{ product.title | escape }}"{% if forloop.first %} aria-current="true"{% endif %}><span></span></button>{% endfor %}
+-      </div>
+-    </div>
+-  </scentory-spotlight>
++  </scentory-product-marquee>
+ {%- endif -%}
+ {% stylesheet %}
+-  .nv-spotlight { display: block; overflow: hidden; background: #f8f5ee; border-block: 1px solid #eee8da; }
+-  .nv-spotlight__header { text-align: center; padding-bottom: 1.8rem; }
+-  .nv-spotlight__eyebrow { color: #7a6948; font-size: 1.1rem; letter-spacing: .18em; text-transform: uppercase; margin: 0 0 .8rem; }
+-  .nv-spotlight__heading { margin: 0 0 .4rem; font-size: clamp(2.6rem,3vw,3.4rem); }
+-  .nv-spotlight__all { display: inline-flex; align-items: center; gap: .8rem; min-height: 4.4rem; font-size: 1.3rem; text-underline-offset: .4rem; }
+-  .nv-spotlight__viewport { overflow-x: auto; padding-block: 1.2rem 1.8rem; touch-action: pan-y pinch-zoom; }
+-  .nv-spotlight__track { position: relative; display: flex; align-items: stretch; gap: 1.8rem; }
+-  .nv-spotlight.is-enhanced .nv-spotlight__viewport { overflow: hidden; }
+-  .nv-spotlight.is-enhanced .nv-spotlight__track { transition: transform .5s cubic-bezier(.22,.61,.36,1); }
+-  .nv-spotlight__slide { display: flex; flex-direction: column; flex: 0 0 clamp(18rem,18vw,23rem); min-width: 0; padding: 1.2rem; border: 1px solid #e9e2d6; border-radius: 1.2rem; background: #fff; box-sizing: border-box; transition: transform .5s ease, opacity .5s ease, box-shadow .5s ease; }
+-  .nv-spotlight.is-enhanced .nv-spotlight__slide { transform: scale(.88); opacity: .5; }
+-  .nv-spotlight.is-enhanced .nv-spotlight__slide.is-active { transform: scale(1.025); opacity: 1; border-color: #c8b78e; box-shadow: 0 1.5rem 3.2rem -1.2rem #3b301c30; }
+-  .nv-spotlight__card { display: flex; flex-direction: column; gap: .8rem; flex: 1; color: #121212; text-decoration: none; text-align: center; user-select: none; -webkit-user-drag: none; }
+-  .nv-spotlight__card:focus-visible { outline: 2px solid #8c7547; outline-offset: .6rem; }
+-  .nv-spotlight__media { position: relative; aspect-ratio: 1; overflow: hidden; border-radius: .7rem; }
+-  .nv-spotlight__media img, .nv-spotlight__media > svg { width: 100%; height: 100%; object-fit: contain; display: block; }
+-  .nv-spotlight__tag { position: absolute; top: .2rem; left: .2rem; border: 1px solid #d5c398; border-radius: 2rem; padding: .4rem 1rem; background: #f6e7c1; color: #3e321c; font-size: 1rem; letter-spacing: .08em; }
+-  .nv-spotlight__vendor { color: #756d61; font-size: 1.1rem; letter-spacing: .12em; text-transform: uppercase; }
+-  .nv-spotlight__title { font-size: 1.4rem; line-height: 1.4; min-height: 3.9rem; overflow-wrap: anywhere; }
+-  .nv-spotlight__price { font-size: 1.5rem; font-weight: 600; margin-top: auto; }
+-  .nv-spotlight__price small { font-size: 1.2rem; font-weight: 400; }
+-  .nv-spotlight__cta { margin-top: .6rem; gap: .5rem; min-height: 4.6rem; min-width: 0; padding-inline: 1rem; font-size: 1.25rem; white-space: nowrap; }
+-  .nv-spotlight.is-enhanced .nv-spotlight__slide:not(.is-active) .nv-spotlight__cta { visibility: hidden; }
+-  .nv-spotlight__stock { position: absolute; bottom: .4rem; inset-inline: .4rem; padding: .5rem; border-radius: .4rem; background: #eee; color: #333; font-size: 1.2rem; }
+-  .nv-spotlight__slide.is-sold-out img { filter: grayscale(1); opacity: .5; }
+-  .nv-spotlight__controls { padding-inline: 1.5rem; }
+-  .nv-spotlight__controls[hidden] { display: none; }
+-  .nv-spotlight__navigation { display: flex; justify-content: center; align-items: center; gap: 1.2rem; }
+-  .nv-spotlight__arrow { display: inline-flex; align-items: center; justify-content: center; width: 4.4rem; height: 4.4rem; border: 1px solid #d8cdb7; border-radius: 50%; color: #302819; background: #fff; cursor: pointer; }
+-  .nv-spotlight__arrow svg { width: 2rem; height: 2rem; }
+-  .nv-spotlight__arrow:hover { background: #f6e7c1; }
+-  .nv-spotlight__counter { min-width: 5.5rem; text-align: center; font-size: 1.2rem; font-variant-numeric: tabular-nums; color: #756d61; }
+-  .nv-spotlight__play-icon, .nv-spotlight__pause[aria-pressed="true"] .nv-spotlight__pause-icon { display: none; }
+-  .nv-spotlight__pause[aria-pressed="true"] .nv-spotlight__play-icon { display: block; }
+-  .nv-spotlight__dots { display: flex; flex-wrap: wrap; justify-content: center; gap: .2rem; }
+-  .nv-spotlight__dots button { display: grid; place-items: center; width: 2.8rem; height: 4.4rem; padding: 0; border: 0; background: transparent; cursor: pointer; }
+-  .nv-spotlight__dots button span { width: .6rem; height: .6rem; border-radius: 2rem; background: #cfc6b7; transition: width .25s; }
+-  .nv-spotlight__dots button[aria-current="true"] span { width: 2rem; background: #665132; }
+-  @media screen and (max-width: 749px) { .nv-spotlight__slide { flex-basis: 46vw; max-width: 23rem; padding: 1rem; } .nv-spotlight__track { gap: 1.2rem; } .nv-spotlight__title { font-size: 1.4rem; min-height: 3.6rem; } }
+-  @media (prefers-reduced-motion: reduce) { .nv-spotlight .nv-spotlight__track, .nv-spotlight .nv-spotlight__slide, .nv-spotlight__dots button span { transition: none; } }
++  .nv-marquee { display: block; --nv-card-width: 18.4rem; }
++  .nv-marquee__header { display: flex; align-items: center; justify-content: space-between; gap: 1.2rem; margin-bottom: 1rem; }
++  .nv-marquee__heading { margin: 0; font-size: clamp(2.3rem, 2.5vw, 2.9rem); }
++  .nv-marquee__all { display: inline-flex; align-items: center; gap: .5rem; min-height: 4.4rem; font-size: 1.2rem; text-underline-offset: .4rem; }
++  .nv-marquee__viewport { overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: none; border-radius: 1.2rem; touch-action: pan-y pinch-zoom; cursor: grab; }
++  .nv-marquee__viewport::-webkit-scrollbar { display: none; }
++  .nv-marquee__track { display: flex; align-items: stretch; width: max-content; }
++  .nv-marquee__group { display: flex; align-items: stretch; gap: 1.2rem; flex: 0 0 auto; width: max-content; margin: 0; padding: .2rem 1.2rem .4rem 0; list-style: none; }
++  .nv-marquee .scentory-shelf__item { flex: 0 0 var(--nv-card-width); width: var(--nv-card-width); }
++  .nv-marquee .scentory-shelf__card { gap: .6rem; padding: .8rem; border-color: #eeece6; border-radius: 1.2rem; box-shadow: none; }
++  .nv-marquee .scentory-shelf__media { aspect-ratio: 1.12; border-radius: .8rem; }
++  .nv-marquee .scentory-shelf__vendor { display: none; }
++  .nv-marquee .scentory-shelf__name { font-size: 1.3rem; height: 2.8em; min-height: 2.8em; line-height: 1.4; }
++  .nv-marquee .scentory-shelf__price { min-height: 2.1rem; padding-top: 0; font-size: 1.4rem; }
++  .nv-marquee .scentory-shelf__badge { top: .4rem; left: .4rem; border-radius: .4rem; padding: .3rem .6rem; font-size: .95rem; font-weight: 400; background: #f8f4e9; color: #74613c; }
++  .nv-marquee .scentory-shelf__stock { bottom: .4rem; inset-inline: .4rem; padding: .35rem .5rem; border-radius: .5rem; background: #efeee9dd; color: #625f58; font-size: 1.05rem; }
++  .nv-marquee:has([data-restock-trigger]) .scentory-shelf__footer { min-height: 5rem; }
++  .nv-marquee.is-dragging .nv-marquee__viewport { cursor: grabbing; user-select: none; }
++  @media screen and (max-width: 749px) { .nv-marquee { --nv-card-width: 15.6rem; } .nv-marquee__group { gap: 1rem; padding-right: 1rem; } }
++  @media (prefers-reduced-motion: reduce) { .nv-marquee__group[aria-hidden="true"] { display: none; } }
+ {% endstylesheet %}
+ {% javascript %}
+-  if (!customElements.get('scentory-spotlight')) {
+-    customElements.define('scentory-spotlight', class extends HTMLElement {
++  if (!customElements.get('scentory-product-marquee')) {
++    customElements.define('scentory-product-marquee', class extends HTMLElement {
+       connectedCallback() {
+         if (this.abort) return;
+         this.abort = new AbortController();
+         const signal = this.abort.signal;
+-        this.viewport = this.querySelector('.nv-spotlight__viewport');
+-        this.track = this.querySelector('.nv-spotlight__track');
+-        this.originals = Array.from(this.track.children);
+-        this.total = this.originals.length;
+-        if (!this.total) return;
++        this.viewport = this.querySelector('.nv-marquee__viewport');
++        this.track = this.querySelector('.nv-marquee__track');
++        this.group = this.querySelector('.nv-marquee__group');
+         this.motion = matchMedia('(prefers-reduced-motion: reduce)');
+-        this.paused = this.dataset.autoplay !== 'true';
+-        this.pauseButton = this.querySelector('[data-pause]');
+-        this.counter = this.querySelector('.nv-spotlight__counter');
+-        this.dots = Array.from(this.querySelectorAll('[data-slide]'));
+-        if (this.total > 1) {
+-          const before = document.createDocumentFragment();
+-          const after = document.createDocumentFragment();
+-          this.originals.forEach(slide => { before.append(slide.cloneNode(true)); after.append(slide.cloneNode(true)); });
+-          this.track.prepend(before);
+-          this.track.append(after);
+-        }
+-        this.slides = Array.from(this.track.children);
+-        this.position = this.total > 1 ? this.total : 0;
+-        this.classList.add('is-enhanced');
+-        this.querySelector('.nv-spotlight__controls').hidden = this.total < 2;
+-        this.querySelector('[data-previous]').addEventListener('click', () => this.move(-1), { signal });
+-        this.querySelector('[data-next]').addEventListener('click', () => this.move(1), { signal });
+-        this.dots.forEach(button => button.addEventListener('click', () => this.go(this.total + Number(button.dataset.slide)), { signal }));
+-        this.pauseButton.addEventListener('click', () => { this.paused = !this.paused; this.updatePause(); this.restart(); }, { signal });
+-        this.addEventListener('pointerenter', () => { this.hovered = true; this.stop(); }, { signal });
+-        this.addEventListener('pointerleave', () => { this.hovered = false; this.restart(); }, { signal });
+-        this.addEventListener('focusin', event => { if (event.target.closest('a')) { this.linkFocused = true; this.stop(); } }, { signal });
+-        this.addEventListener('focusout', event => { if (event.target.closest('a')) { this.linkFocused = false; this.restart(); } }, { signal });
+-        this.addEventListener('keydown', event => {
+-          if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+-          event.preventDefault(); this.move(event.key === 'ArrowRight' ? 1 : -1);
++        this.visible = false;
++        this.pointer = null;
++        this.position = this.viewport.scrollLeft;
++        this.refresh = () => {
++          this.loopWidth = this.group.getBoundingClientRect().width;
++          this.duration = parseFloat(getComputedStyle(this).getPropertyValue('--nv-duration')) || 80;
++        };
++        this.refresh();
++        this.querySelectorAll('[aria-hidden="true"] a, [aria-hidden="true"] button').forEach(node => node.tabIndex = -1);
++        this.viewport.addEventListener('pointerdown', event => {
++          if (event.button !== 0) return;
++          this.pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, scroll: this.viewport.scrollLeft, moved: false };
+         }, { signal });
+-        this.viewport.addEventListener('pointerdown', event => { if (event.button === 0) this.startPoint = { x: event.clientX, y: event.clientY }; }, { signal });
+-        this.viewport.addEventListener('pointercancel', () => { this.startPoint = null; }, { signal });
+-        this.viewport.addEventListener('pointerup', event => {
+-          if (!this.startPoint) return;
+-          const dx = event.clientX - this.startPoint.x;
+-          const dy = event.clientY - this.startPoint.y;
+-          this.startPoint = null;
+-          if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
+-          this.ignoreClick = true;
+-          this.move(dx < 0 ? 1 : -1);
+-          setTimeout(() => { this.ignoreClick = false; }, 0);
++        this.viewport.addEventListener('pointermove', event => {
++          const p = this.pointer;
++          if (!p || p.id !== event.pointerId) return;
++          const dx = event.clientX - p.x;
++          const dy = event.clientY - p.y;
++          if (!p.moved && (Math.abs(dx) < 6 || Math.abs(dx) <= Math.abs(dy))) return;
++          p.moved = true;
++          this.classList.add('is-dragging');
++          try { this.viewport.setPointerCapture(event.pointerId); } catch {}
++          event.preventDefault();
++          let position = p.scroll - dx;
++          if (!this.motion.matches && this.loopWidth > this.viewport.clientWidth) {
++            while (position < 0) { position += this.loopWidth; p.scroll += this.loopWidth; }
++            const maximum = this.viewport.scrollWidth - this.viewport.clientWidth;
++            while (position > maximum) { position -= this.loopWidth; p.scroll -= this.loopWidth; }
++          }
++          this.viewport.scrollLeft = position;
++          this.position = this.viewport.scrollLeft;
+         }, { signal });
+-        this.viewport.addEventListener('wheel', event => {
+-          const delta = event.shiftKey ? event.deltaY || event.deltaX : event.deltaX;
+-          if (!event.shiftKey && Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
+-          if (Math.abs(delta) < 4) return;
+-          event.preventDefault();
+-          if (Date.now() - (this.lastWheel || 0) < 500) return;
+-          this.lastWheel = Date.now(); this.move(delta > 0 ? 1 : -1);
+-        }, { signal, passive: false });
+-        this.track.addEventListener('click', event => {
+-          const slide = event.target.closest('.nv-spotlight__slide');
+-          if (!slide) return;
+-          if (this.ignoreClick) { event.preventDefault(); return; }
+-          const position = this.slides.indexOf(slide);
+-          if (position !== this.position) { event.preventDefault(); this.go(position); }
+-        }, { signal });
+-        document.addEventListener('visibilitychange', () => this.restart(), { signal });
+-        this.motion.addEventListener('change', () => this.restart(), { signal });
+-        this.resize = new ResizeObserver(() => this.center(false));
+-        this.resize.observe(this.viewport);
+-        this.visibility = new IntersectionObserver(entries => { this.visible = entries[0].isIntersecting; this.restart(); }, { threshold: .15 });
+-        this.visibility.observe(this);
+-        this.updatePause();
+-        this.go(this.position, false);
++        const release = event => {
++          const p = this.pointer;
++          if (!p || p.id !== event.pointerId) return;
++          if (p.moved) this.suppressClickUntil = performance.now() + 300;
++          this.pointer = null;
++          this.position = this.viewport.scrollLeft;
++          this.classList.remove('is-dragging');
++          try { this.viewport.releasePointerCapture(event.pointerId); } catch {}
++        };
++        this.viewport.addEventListener('pointerup', release, { signal });
++        this.viewport.addEventListener('pointercancel', release, { signal });
++        this.viewport.addEventListener('lostpointercapture', release, { signal });
++        window.addEventListener('pointerup', release, { signal });
++        window.addEventListener('pointercancel', release, { signal });
++        window.addEventListener('blur', () => { this.pointer = null; this.classList.remove('is-dragging'); }, { signal });
++        this.viewport.addEventListener('dragstart', event => event.preventDefault(), { signal });
++        this.viewport.addEventListener('click', event => {
++          if (performance.now() < (this.suppressClickUntil || 0)) { event.preventDefault(); event.stopPropagation(); }
++        }, { signal, capture: true });
++        this.viewport.addEventListener('scroll', () => { this.position = this.viewport.scrollLeft; }, { signal, passive: true });
++        const observer = new IntersectionObserver(entries => {
++          this.visible = entries[0].isIntersecting;
++        });
++        observer.observe(this); this.observer = observer;
++        this.resize = new ResizeObserver(this.refresh); this.resize.observe(this.viewport);
++        const tick = now => {
++          const elapsed = Math.min((now - (this.previousFrame || now)) / 1000, .05);
++          this.previousFrame = now;
++          if (this.visible && !document.hidden && !this.pointer && !this.motion.matches && this.loopWidth > this.viewport.clientWidth) {
++            this.position += elapsed * this.loopWidth / this.duration;
++            if (this.position >= this.loopWidth) this.position %= this.loopWidth;
++            this.viewport.scrollLeft = this.position;
++          }
++          this.frame = requestAnimationFrame(tick);
++        };
++        this.frame = requestAnimationFrame(tick);
+       }
+-      logical(position) { return ((position % this.total) + this.total) % this.total; }
+-      center(animate = true) {
+-        const slide = this.slides[this.position];
+-        if (!slide) return;
+-        if (!animate) this.track.style.transition = 'none';
+-        this.track.style.transform = `translateX(${this.viewport.clientWidth / 2 - slide.offsetLeft - slide.offsetWidth / 2}px)`;
+-        if (!animate) { void this.track.offsetWidth; this.track.style.transition = ''; }
+-      }
+-      go(position, animate = true) {
+-        clearTimeout(this.normalizeTimer);
+-        this.position = Math.max(0, Math.min(this.slides.length - 1, position));
+-        this.slides.forEach((slide, index) => {
+-          const active = index === this.position;
+-          slide.classList.toggle('is-active', active);
+-          slide.setAttribute('aria-hidden', String(!active));
+-          slide.querySelectorAll('a,button').forEach(element => { element.tabIndex = active ? 0 : -1; });
+-        });
+-        const logical = this.logical(this.position);
+-        this.dots.forEach((button, index) => index === logical ? button.setAttribute('aria-current', 'true') : button.removeAttribute('aria-current'));
+-        this.counter.textContent = `${String(logical + 1).padStart(2, '0')} / ${this.total}`;
+-        this.center(animate);
+-        if (this.total > 1 && (this.position < this.total || this.position >= this.total * 2)) {
+-          this.normalizeTimer = setTimeout(() => this.go(this.total + logical, false), this.motion.matches ? 0 : 520);
+-        }
+-        this.restart();
+-      }
+-      move(direction) { if (this.total > 1) this.go(this.position + direction); }
+-      updatePause() {
+-        this.pauseButton.setAttribute('aria-pressed', String(this.paused));
+-        this.pauseButton.setAttribute('aria-label', this.paused ? this.dataset.playLabel : this.dataset.pauseLabel);
+-      }
+-      stop() { clearInterval(this.timer); }
+-      restart() {
+-        this.stop();
+-        if (this.total < 2 || this.paused || this.dialogOpen || this.motion.matches || this.hovered || this.linkFocused || !this.visible || document.hidden) return;
+-        this.timer = setInterval(() => this.move(1), Number(this.dataset.interval || 5) * 1000);
+-      }
+-      disconnectedCallback() {
+-        this.stop(); clearTimeout(this.normalizeTimer); this.abort?.abort(); this.resize?.disconnect(); this.visibility?.disconnect();
+-        this.track?.replaceChildren(...this.originals); this.abort = null; this.classList.remove('is-enhanced');
+-      }
++      disconnectedCallback() { this.abort?.abort(); this.observer?.disconnect(); this.resize?.disconnect(); cancelAnimationFrame(this.frame); this.abort = null; }
+     });
+   }
+ {% endjavascript %}
+ {% schema %}
+ {
+-  "name":"Novidades spotlight","tag":"section","class":"section",
+-  "settings":[
+-    {"type":"text","id":"title","label":"Heading","default":"Novidades"},
+-    {"type":"text","id":"eyebrow","label":"Eyebrow","default":"Novas descobertas"},
+-    {"type":"collection","id":"collection","label":"Inventory app collection"},
+-    {"type":"text","id":"badge_text","label":"Product badge","default":"Novidade"},
+-    {"type":"text","id":"button_label","label":"Product button","default":"Ver perfume"},
+-    {"type":"checkbox","id":"autoplay","label":"Auto rotate","default":true},
+-    {"type":"range","id":"interval","min":3,"max":10,"step":1,"unit":"s","label":"Rotation interval","default":5},
+-    {"type":"range","id":"padding_top","min":0,"max":100,"step":4,"unit":"px","label":"Padding top","default":40},
+-    {"type":"range","id":"padding_bottom","min":0,"max":100,"step":4,"unit":"px","label":"Padding bottom","default":36}
+-  ],"presets":[{"name":"Novidades spotlight"}]
++  "name": "Novidades carousel", "tag": "section", "class": "section",
++  "settings": [
++    { "type": "text", "id": "title", "label": "Heading", "default": "Novidades" },
++    { "type": "collection", "id": "collection", "label": "Collection" },
++    { "type": "text", "id": "badge_text", "label": "Product badge", "default": "Novidade" },
++    { "type": "range", "id": "speed", "min": 40, "max": 240, "step": 10, "unit": "s", "label": "Full loop duration", "default": 80 },
++    { "type": "range", "id": "padding_top", "min": 0, "max": 100, "step": 4, "unit": "px", "label": "Padding top", "default": 16 },
++    { "type": "range", "id": "padding_bottom", "min": 0, "max": 100, "step": 4, "unit": "px", "label": "Padding bottom", "default": 12 }
++  ],
++  "presets": [{ "name": "Novidades carousel" }]
+ }
+ {% endschema %}
+-
+--- a/snippets/scentory-shelf.liquid
++++ b/snippets/scentory-shelf.liquid
+@@ -6,6 +6,8 @@
+ @param {string} [icon] - Optional gender icon key.
+ @param {boolean} [show_rank] - Display a numbered rank.
+ @param {string} [badge_text] - Optional new-product label.
++@param {boolean} [carousel] - Scroll the shelf on desktop as well as mobile.
++@param {boolean} [preserve_order] - Preserve collection order, including availability.
+ @param {string} [heading_tag] - h2 or h3.
+ {% enddoc %}
+ {%- if source != blank and source.products_count > 0 -%}
+@@ -13,9 +15,12 @@
+     assign available_products = source.products | where: 'available', true
+     assign sold_out_products = source.products | where: 'available', false
+     assign ordered_products = available_products | concat: sold_out_products
++    if preserve_order
++      assign ordered_products = source.products
++    endif
+     assign title_tag = heading_tag | default: 'h2'
+   -%}
+-  <scentory-shelf class="scentory-shelf">
++  <scentory-shelf class="scentory-shelf{% if carousel %} scentory-shelf--carousel{% endif %}">
+     <div class="scentory-shelf__header">
+       <{{ title_tag }} class="scentory-shelf__heading h2">{% if icon != blank %}{% render 'scentory-category-icon', kind: icon %}{% endif %}{{ heading | escape }}</{{ title_tag }}>
+       <a class="scentory-shelf__all link" href="{{ source.url }}">{{ 'sections.featured_collection.view_all' | t }}<span class="visually-hidden">: {{ heading | escape }}</span><span aria-hidden="true"> →</span></a>
+@@ -40,19 +45,19 @@
+   .scentory-shelf__icon { flex: 0 0 4rem; width: 4rem; height: 4rem; padding: .6rem; color: #69542e; background: #f8f3e7; border: 1px solid #e6dbc5; border-radius: 50%; }
+   .scentory-shelf__all { flex-shrink: 0; min-height: 4.4rem; display: inline-flex; align-items: center; text-underline-offset: .3rem; }
+   .scentory-shelf__list { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1.6rem; padding: 0; margin: 0; list-style: none; }
+-  .scentory-shelf__item { min-width: 0; }
+-  .scentory-shelf__card { display: flex; flex-direction: column; height: 100%; gap: .8rem; padding: 1.2rem; border: 1px solid #eee9df; border-radius: 1rem; color: rgb(var(--color-foreground)); background: #fff; text-decoration: none; transition: box-shadow .2s ease, border-color .2s ease, transform .2s ease; }
++  .scentory-shelf__item { display: flex; flex-direction: column; min-width: 0; }
++  .scentory-shelf__card { display: flex; flex-direction: column; flex: 1; gap: .6rem; padding: 1rem; border: 1px solid #eee9df; border-radius: 1rem; color: rgb(var(--color-foreground)); background: #fff; text-decoration: none; transition: box-shadow .2s ease, border-color .2s ease, transform .2s ease; }
+   .scentory-shelf__card:focus-visible { outline: .2rem solid currentColor; outline-offset: .4rem; }
+   .scentory-shelf__media { position: relative; aspect-ratio: 1; overflow: hidden; background: #fff; border-radius: .6rem; }
+   .scentory-shelf__image { width: 100%; height: 100%; object-fit: contain; display: block; transition: transform .2s ease; }
+-  .scentory-shelf__vendor { font-size: 1.1rem; letter-spacing: .08em; text-transform: uppercase; color: rgba(var(--color-foreground), .7); }
+-  .scentory-shelf__name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 3.9rem; font-size: 1.4rem; line-height: 1.4; overflow-wrap: anywhere; }
++  .scentory-shelf__vendor { height: 1.5rem; line-height: 1.5rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 1rem; letter-spacing: .08em; text-transform: uppercase; color: rgba(var(--color-foreground), .7); }
++  .scentory-shelf__name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; height: 2.8em; min-height: 2.8em; font-size: 1.4rem; line-height: 1.4; overflow-wrap: anywhere; }
+   .scentory-shelf__price { margin-top: auto; padding-top: .3rem; font-size: 1.5rem; font-weight: 600; }
+   .scentory-shelf__price small { font-weight: 400; }
+   .scentory-shelf__badge { position: absolute; left: .8rem; top: .8rem; padding: .4rem .9rem; border-radius: 2rem; background: #121212; color: #f6e7c1; font-size: 1.2rem; line-height: 1.4; }
+   .scentory-shelf__stock { position: absolute; inset-inline: .8rem; bottom: .8rem; padding: .5rem .8rem; text-align: center; background: #eee; color: #333; font-size: 1.2rem; border-radius: .3rem; }
+-  .scentory-shelf__item--sold-out .scentory-shelf__image { filter: grayscale(1); opacity: .5; }
+-  .scentory-shelf__item--sold-out .scentory-shelf__media { background: #f2f2f2; }
++  .scentory-shelf__item--sold-out .scentory-shelf__image { filter: grayscale(.25); opacity: .72; }
++  .scentory-shelf__item--sold-out .scentory-shelf__media { background: #f3f2ef; }
+   .scentory-shelf__controls { display: flex; align-items: center; justify-content: flex-end; gap: .8rem; padding-top: 1.6rem; }
+   .scentory-shelf__controls[hidden] { display: none; }
+   .scentory-shelf__controls button { width: 4.4rem; height: 4.4rem; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #ded5c5; border-radius: 50%; background: #fff; color: #302819; cursor: pointer; }
+@@ -60,16 +65,22 @@
+   .scentory-shelf__controls button:disabled { opacity: .3; cursor: default; }
+   .scentory-shelf__progress { height: .2rem; background: #e9e3d7; flex: 1; margin-right: 1.6rem; overflow: hidden; }
+   .scentory-shelf__progress span { display: block; min-width: 15%; height: 100%; width: 15%; background: #8c7547; }
++  .scentory-shelf__item--sold-out .scentory-shelf__card { background: #f6f5f2; border-color: #e8e6e0; }
++  .scentory-shelf__footer { display: flex; align-items: end; }
++  .scentory-shelf:has([data-restock-trigger]) .scentory-shelf__footer { min-height: 5rem; }
++  .scentory-shelf__footer .scentory-restock-trigger { padding: .6rem; font-size: 1.1rem; }
++  .scentory-shelf--carousel .scentory-shelf__list { display: flex; overflow-x: auto; gap: 1.4rem; scroll-snap-type: x proximity; overscroll-behavior-inline: contain; scrollbar-width: thin; scrollbar-color: #cdbb95 transparent; padding-bottom: .6rem; }
++  .scentory-shelf--carousel .scentory-shelf__item { flex: 0 0 calc((100% - 5.6rem) / 5); scroll-snap-align: start; }
+   @media (hover: hover) and (prefers-reduced-motion: no-preference) { .scentory-shelf__card:hover { transform: translateY(-.4rem); border-color: #cdbb95; box-shadow: 0 1rem 2rem -1.2rem #46351b40; } .scentory-shelf__card:hover .scentory-shelf__image { transform: scale(1.025); } }
+   @media screen and (max-width: 989px) {
+     .scentory-shelf__list { display: flex; overflow-x: auto; gap: 1.2rem; scroll-snap-type: x proximity; overscroll-behavior-inline: contain; padding: .5rem .4rem 1.4rem; margin-inline: -.4rem; scrollbar-width: thin; scrollbar-color: #cdbb95 transparent; }
+-    .scentory-shelf__item { flex: 0 0 43%; scroll-snap-align: start; }
++    .scentory-shelf__item, .scentory-shelf--carousel .scentory-shelf__item { flex: 0 0 43%; scroll-snap-align: start; }
+     .scentory-shelf__heading { font-size: 2rem; }
+     .scentory-shelf__all { font-size: 1.3rem; }
+     .scentory-shelf__card { padding: .9rem; }
+     .scentory-shelf__icon { flex-basis: 3.6rem; width: 3.6rem; height: 3.6rem; }
+   }
+-  @media screen and (min-width: 600px) and (max-width: 989px) { .scentory-shelf__item { flex-basis: 29%; } }
++  @media screen and (min-width: 600px) and (max-width: 989px) { .scentory-shelf__item, .scentory-shelf--carousel .scentory-shelf__item { flex-basis: 29%; } }
+ {% endstylesheet %}
+ {% javascript %}
+   if (!customElements.get('scentory-shelf')) {
+@@ -105,4 +116,3 @@
+     });
+   }
+ {% endjavascript %}
+-
+--- a/snippets/scentory-home-card.liquid
++++ b/snippets/scentory-home-card.liquid
+@@ -19,6 +19,5 @@
+     <span class="scentory-shelf__name">{{ product.title | escape }}</span>
+     <span class="scentory-shelf__price">{% render 'scentory-card-price', product: product %}</span>
+   </a>
+-  {% unless product.available %}{% render 'scentory-restock-trigger', product: product %}{% endunless %}
++  <div class="scentory-shelf__footer">{% unless product.available %}{% render 'scentory-restock-trigger', product: product %}{% endunless %}</div>
+ </li>
+-
+--- a/snippets/card-product.liquid
++++ b/snippets/card-product.liquid
+@@ -44,7 +44,7 @@
+   -%}
+ 
+   <product-component view-event-payload="{{ card_product | standard_event_data: 'view', context: product_view_context | escape }}">
+-    <div class="card-wrapper product-card-wrapper underline-links-hover">
++    <div class="card-wrapper product-card-wrapper underline-links-hover{% unless card_product.available %} is-sold-out{% endunless %}">
+       <div
+         class="
+           card card--{{ settings.card_style }}
+@@ -627,4 +627,3 @@
+     </div>
+   </div>
+ {%- endif -%}
+-
+--- a/assets/component-card.css
++++ b/assets/component-card.css
+@@ -594,3 +594,19 @@
+   }
+ }
+ 
++
++/* Consistent product rows: keep short and long names in the same two-line slot. */
++.product-card-wrapper .card__heading .full-unstyled-link { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; height: 2.8em; min-height: 2.8em; line-height: 1.4; overflow-wrap: anywhere; }
++.product-card-wrapper .card__information > .caption-with-letter-spacing { display: block; height: 1.5em; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
++.product-card-wrapper .card__inner.ratio { --ratio-percent: 100% !important; }
++.product-card-wrapper .card__media .media > img { object-fit: contain; }
++.product-card-wrapper.is-sold-out .card__inner { background: #f3f2ef; }
++.product-card-wrapper.is-sold-out .card__media img { filter: grayscale(.25); opacity: .72; }
++.product-card-wrapper.is-sold-out .badge { background: #eeece7; border-color: #e1ded5; color: #625f58; }
++.product-card-wrapper .card { border: 0; border-radius: 1.2rem; background: #fff; box-shadow: none; }
++.product-card-wrapper .card__inner, .product-card-wrapper .card__media { border-radius: 1.2rem; overflow: hidden; }
++.product-card-wrapper .card > .card__content { padding: 0 .6rem .6rem; }
++.product-card-wrapper .card__information { padding-top: 1.2rem; }
++.product-card-wrapper .quick-add__submit { --buttons-radius: 2.4rem; --buttons-radius-outset: 2.4rem; min-height: 4.2rem; border-radius: 2.4rem; font-size: 1.25rem; }
++.product-card-wrapper .quick-add__submit::after { border-radius: inherit; box-shadow: 0 0 0 1px #dfd9cd; }
++.product-card-wrapper.is-sold-out .quick-add__submit { color: #716e66; background: #f5f4f0; }
+--- /dev/null
++++ b/sections/scentory-restock-shelf.liquid
+@@ -0,0 +1,26 @@
++{%- assign source = section.settings.collection -%}
++{%- if source != blank and source.products_count > 0 -%}
++  <div class="page-width scentory-restock-shelf" style="padding-top: {{ section.settings.padding_top }}px; padding-bottom: {{ section.settings.padding_bottom }}px;">
++    {% if section.settings.description != blank %}<p class="scentory-restock-shelf__intro">{{ section.settings.description | escape }}</p>{% endif %}
++    {% render 'scentory-shelf', source: source, heading: section.settings.title, count: 20, carousel: true, preserve_order: true %}
++  </div>
++{%- endif -%}
++{% stylesheet %}
++  .scentory-restock-shelf__intro { margin: 0 0 .6rem; color: #756f64; font-size: 1.2rem; line-height: 1.5; }
++  .scentory-restock-shelf .scentory-shelf__heading { font-size: clamp(2.2rem, 2.5vw, 2.8rem); }
++{% endstylesheet %}
++{% schema %}
++{
++  "name": "Restock shelf",
++  "tag": "section",
++  "class": "section",
++  "settings": [
++    { "type": "text", "id": "title", "label": "Heading", "default": "De volta ao stock" },
++    { "type": "text", "id": "description", "label": "Description", "default": "Os favoritos que regressaram nos últimos 30 dias." },
++    { "type": "collection", "id": "collection", "label": "Collection" },
++    { "type": "range", "id": "padding_top", "min": 0, "max": 100, "step": 4, "unit": "px", "label": "Padding top", "default": 20 },
++    { "type": "range", "id": "padding_bottom", "min": 0, "max": 100, "step": 4, "unit": "px", "label": "Padding bottom", "default": 24 }
++  ],
++  "presets": [{ "name": "Restock shelf" }]
++}
++{% endschema %}
+--- a/templates/index.json
++++ b/templates/index.json
+@@ -1,12 +1,3 @@
+-/*
+- * ------------------------------------------------------------
+- * IMPORTANT: The contents of this file are auto-generated.
+- *
+- * This file may be updated by the Shopify admin theme editor
+- * or related systems. Please exercise caution as any changes
+- * made to this file may be overwritten.
+- * ------------------------------------------------------------
+- */
+ {
+   "sections": {
+     "image_banner": {
+@@ -148,8 +139,9 @@
+         "title": "Novidades",
+         "collection": "novidades",
+         "badge_text": "Novidade",
+-        "padding_top": 24,
+-        "padding_bottom": 16
++        "padding_top": 16,
++        "padding_bottom": 12,
++        "speed": 80
+       }
+     },
+     "beneficios": {
+@@ -352,6 +344,16 @@
+         "padding_top": 24,
+         "padding_bottom": 28
+       }
++    },
++    "restock_shelf": {
++      "type": "scentory-restock-shelf",
++      "settings": {
++        "title": "De volta ao stock",
++        "description": "Os favoritos que regressaram nos últimos 30 dias.",
++        "collection": "restock",
++        "padding_top": 20,
++        "padding_bottom": 24
++      }
+     }
+   },
+   "order": [
+@@ -360,10 +362,10 @@
+     "novidades_spotlight",
+     "gender_picks",
+     "top_vendidos",
++    "restock_shelf",
+     "beneficios",
+     "loja",
+     "sobre_nos",
+     "revendedor"
+   ]
+ }
+-
+--- /dev/null
++++ b/snippets/scentory-whole-only.liquid
+@@ -0,0 +1,8 @@
++{% doc %}
++Outputs true for product types that are sold only as a whole item or set.
++@param {product} product - Product whose type determines decant eligibility.
++{% enddoc %}
++{%- assign scentory_type_key = product.type | handleize -%}
++{%- case scentory_type_key -%}
++  {%- when 'coffret', 'coffrets', 'mini', 'mini-perfume', 'mini-perfumes', 'oil', 'oil-perfume', 'oil-perfumes', 'oleo-de-perfume', 'oleos-de-perfume' -%}true
++{%- endcase -%}
+--- a/snippets/product-variant-picker.liquid
++++ b/snippets/product-variant-picker.liquid
+@@ -41,7 +41,7 @@
+               {{- option.selected_value -}}
+             </span>
+           </legend>
+-          {% render 'product-variant-options',
++          {% render 'product-variant-options', product: product,
+             option: option,
+             block: block,
+             picker_type: picker_type
+@@ -50,7 +50,7 @@
+       {%- elsif picker_type == 'button' -%}
+         <fieldset class="js product-form__input product-form__input--pill">
+           <legend class="form__label">{{ option.name }}</legend>
+-          {% render 'product-variant-options',
++          {% render 'product-variant-options', product: product,
+             option: option,
+             block: block,
+             picker_type: picker_type
+@@ -76,7 +76,7 @@
+               name="options[{{ option.name | escape }}]"
+               form="{{ product_form_id }}"
+             >
+-              {% render 'product-variant-options',
++              {% render 'product-variant-options', product: product,
+                 option: option,
+                 block: block,
+                 picker_type: picker_type
+--- a/snippets/product-variant-options.liquid
++++ b/snippets/product-variant-options.liquid
+@@ -1,6 +1,7 @@
+ {%- doc -%}
+   Renders the values for one product option as swatches, buttons, or dropdown options.
+ 
++  @param {product} product - Product that owns these option values.
+   @param {product_option} option - The product option whose values are rendered.
+   @param {string} picker_type - The picker markup to render: `swatch`, `button`, `dropdown`, or `swatch_dropdown`.
+   @param {block} [block] - The variant-picker block, required for swatch settings.
+@@ -9,11 +10,31 @@
+   @example
+   {% render 'product-variant-options', option: option, block: block, picker_type: 'button' %}
+ {%- enddoc -%}
++{%- capture scentory_whole_only -%}{%- render 'scentory-whole-only', product: product -%}{%- endcapture -%}
++{%- assign scentory_whole_only = scentory_whole_only | strip -%}
+ {%- liquid
+   assign product_form_id = 'product-form-' | append: section.id
+ -%}
+ 
+ {%- for value in option.values -%}
++  {%- if scentory_whole_only == 'true' -%}
++    {%- liquid
++      assign scentory_allowed_value = false
++      assign scentory_option_index = option.position | minus: 1
++      for scentory_variant in product.variants
++        if scentory_variant.options[scentory_option_index] == value.name
++          assign scentory_sku = scentory_variant.sku | upcase
++          unless scentory_sku contains '-5ML' or scentory_sku contains '-10ML'
++            assign scentory_allowed_value = true
++            break
++          endunless
++        endif
++      endfor
++      unless scentory_allowed_value
++        continue
++      endunless
++    -%}
++  {%- endif -%}
+   {%- liquid
+     assign swatch_focal_point = null
+     if value.swatch.image
+--- a/snippets/price.liquid
++++ b/snippets/price.liquid
+@@ -11,7 +11,11 @@
+   @example
+   {% render 'price', product: product, use_variant: true, show_badges: true, price_class: 'price--large' %}
+ {%- enddoc -%}
++{%- capture scentory_whole_only -%}{%- render 'scentory-whole-only', product: product -%}{%- endcapture -%}
++{%- assign scentory_whole_only = scentory_whole_only | strip -%}
+ {%- liquid
++  assign scentory_price_varies = product.price_varies
++
+   if use_variant
+     assign target = product.selected_or_first_available_variant
+   elsif placeholder
+@@ -20,10 +24,44 @@
+     assign target = product
+   endif
+ 
++  if scentory_whole_only == 'true'
++    assign scentory_first_whole = nil
++    assign scentory_available_whole = nil
++    assign scentory_sorted_variants = product.variants | sort: 'price'
++    for scentory_variant in scentory_sorted_variants
++      assign scentory_sku = scentory_variant.sku | upcase
++      if scentory_sku contains '-5ML' or scentory_sku contains '-10ML'
++        continue
++      endif
++      if scentory_first_whole == nil
++        assign scentory_first_whole = scentory_variant
++      endif
++      assign scentory_last_whole = scentory_variant
++      if scentory_variant.available and scentory_available_whole == nil
++        assign scentory_available_whole = scentory_variant
++      endif
++    endfor
++    assign scentory_selected_sku = product.selected_or_first_available_variant.sku | upcase
++    assign target = scentory_available_whole | default: scentory_first_whole
++    if use_variant
++      unless scentory_selected_sku contains '-5ML' or scentory_selected_sku contains '-10ML'
++        assign target = product.selected_or_first_available_variant
++      endunless
++    endif
++    assign scentory_price_varies = false
++    if scentory_first_whole.price != scentory_last_whole.price
++      assign scentory_price_varies = true
++    endif
++  endif
++
+   assign compare_at_price = target.compare_at_price
+   assign price = target.price | default: 1999
+   assign price_min = product.price_min
+   assign price_max = product.price_max
++  if scentory_whole_only == 'true'
++    assign price_min = scentory_first_whole.price
++    assign price_max = scentory_last_whole.price
++  endif
+   assign available = target.available | default: false
+   assign money_price = price | money
+   assign money_price_min = price_min | money
+@@ -34,8 +72,10 @@
+     assign money_price_max = price_max | money_with_currency
+   endif
+ 
+-  if target == product and product.price_varies
+-    assign money_price = 'products.product.price.from_price_html' | t: price: money_price
++  if scentory_price_varies and use_variant != true
++    if target == product or scentory_whole_only == 'true'
++      assign money_price = 'products.product.price.from_price_html' | t: price: money_price
++    endif
+   endif
+ -%}
+ 
+@@ -47,7 +87,7 @@
+       {%- if available == false %} price--sold-out{% endif -%}
+       {%- if compare_at_price > price and product.quantity_price_breaks_configured? != true %} price--on-sale{% endif -%}
+       {%- if compare_at_price > price and product.quantity_price_breaks_configured? %} volume-pricing--sale-badge{% endif -%}
+-      {%- if product.price_varies == false and product.compare_at_price_varies %} price--no-compare{% endif -%}
++      {%- if scentory_price_varies == false and product.compare_at_price_varies %} price--no-compare{% endif -%}
+       {%- if show_badges %} price--show-badge{% endif -%}
+     "
+   >
+@@ -60,7 +100,7 @@
+       <div class="price__regular">
+         {%- if product.quantity_price_breaks_configured? -%}
+           {%- if show_compare_at_price and compare_at_price -%}
+-            {%- unless product.price_varies == false and product.compare_at_price_varies %}
++            {%- unless scentory_price_varies == false and product.compare_at_price_varies %}
+               <span class="visually-hidden visually-hidden--inline">
+                 {{- 'products.product.price.regular_price' | t -}}
+               </span>
+@@ -90,7 +130,7 @@
+         {%- endif -%}
+       </div>
+       <div class="price__sale">
+-        {%- unless product.price_varies == false and product.compare_at_price_varies %}
++        {%- unless scentory_price_varies == false and product.compare_at_price_varies %}
+           <span class="visually-hidden visually-hidden--inline">{{ 'products.product.price.regular_price' | t }}</span>
+           <span>
+             <s class="price-item price-item--regular">
+--- a/snippets/scentory-card-price.liquid
++++ b/snippets/scentory-card-price.liquid
+@@ -4,13 +4,38 @@
+ @example
+ {% render 'scentory-card-price', product: product %}
+ {% enddoc %}
++{%- capture scentory_whole_only -%}{%- render 'scentory-whole-only', product: product -%}{%- endcapture -%}
++{%- assign scentory_whole_only = scentory_whole_only | strip -%}
+ {%- liquid
+   assign scentory_ordered_variants = product.variants | sort: 'price'
+   assign scentory_available_variants = scentory_ordered_variants | where: 'available', true
+   assign scentory_price_variant = scentory_available_variants.first | default: scentory_ordered_variants.first
++  assign scentory_price_varies = product.price_varies
++  if scentory_whole_only == 'true'
++    assign scentory_first_whole = nil
++    assign scentory_available_whole = nil
++    for scentory_variant in scentory_ordered_variants
++      assign scentory_sku = scentory_variant.sku | upcase
++      if scentory_sku contains '-5ML' or scentory_sku contains '-10ML'
++        continue
++      endif
++      if scentory_first_whole == nil
++        assign scentory_first_whole = scentory_variant
++      endif
++      assign scentory_last_whole = scentory_variant
++      if scentory_variant.available and scentory_available_whole == nil
++        assign scentory_available_whole = scentory_variant
++      endif
++    endfor
++    assign scentory_price_variant = scentory_available_whole | default: scentory_first_whole
++    assign scentory_price_varies = false
++    if scentory_first_whole.price != scentory_last_whole.price
++      assign scentory_price_varies = true
++    endif
++  endif
+   assign scentory_money_price = scentory_price_variant.price | money
+ -%}
+-{%- if product.price_varies -%}
++{%- if scentory_price_varies -%}
+   {{- 'products.product.price.from_price_html' | t: price: scentory_money_price -}}
+ {%- else -%}
+   {{- scentory_money_price -}}
