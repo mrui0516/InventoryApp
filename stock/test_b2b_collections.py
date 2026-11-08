@@ -59,6 +59,18 @@ class CataloguePageTests(CollectionMixin):
         Purchase.objects.update(date=timezone.now() - timedelta(days=300))
         self.assertNotContains(self.client.get(reverse("catalog")), 'class="wc-coll"')
 
+    def test_the_flag_sits_outside_the_title(self):
+        # Inside the title it pushed the name right and the rows no longer lined up.
+        html = self.client.get(reverse("catalog")).content.decode()
+        self.assertNotIn('<span class="wc-title"><span class="wc-flag', html)
+        self.assertIn('class="wc-badge is-restock" role="img" aria-label="Reposto"', html)
+
+    def test_filters_in_use_are_marked_and_cleared_in_one_place(self):
+        html = self.client.get(reverse("catalog"), {"sort": "name"}).content.decode()
+        self.assertIn('class="form-select is-set"', html)
+        self.assertIn('class="wc-clear"', html)
+        self.assertNotIn('class="fchip"', html)
+
     def test_side_scrolling_rows_have_arrows(self):
         page = self.client.get(reverse("catalog"))
         self.assertContains(page, "data-wc-scroll>", count=3)
