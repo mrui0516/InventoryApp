@@ -7145,7 +7145,7 @@ class BackfillPerfumeSpecTests(TestCase):
 
 
 class SyncShopifyStorefrontTests(TestCase):
-    def test_refresh_keeps_soldout_visible_and_preserves_merchant_drafts(self):
+    def test_refresh_excludes_soldout_from_novidades_and_preserves_merchant_drafts(self):
         from io import StringIO
         from unittest import mock
         cat = Category.objects.create(name="Perfumes")
@@ -7164,14 +7164,16 @@ class SyncShopifyStorefrontTests(TestCase):
                    "inventory_item_id": "i", "price": "10.00", "available": 5},
         }
         client.all_collections.return_value = []
-        client.latest_online_product_ids.return_value = ["gid://P/out"]
+        client.online_product_ids.return_value = {"gid://P/out"}
+        client.create_collection.side_effect = lambda title: title
 
         from stock.services.shopify_storefront import sync_storefront
         sync_storefront(client=client)
 
         client.set_product_status.assert_not_called()
         memberships = [c.args[1] for c in client.set_collection_products.call_args_list]
-        self.assertIn(["gid://P/out"], memberships)
+        client.set_collection_products.assert_any_call("Novidades", [])
+        self.assertFalse(any("gid://P/out" in members for members in memberships))
         self.assertFalse(any("gid://P/in" in members for members in memberships))
 
     def test_dry_run_writes_nothing(self):
@@ -7187,7 +7189,7 @@ class SyncShopifyStorefrontTests(TestCase):
         }
         client.find_collection_by_title.return_value = None
         client.all_collections.return_value = []
-        client.latest_online_product_ids.return_value = ["gid://P/out"]
+        client.online_product_ids.return_value = {"gid://P/out"}
         with mock.patch("stock.services.shopify_catalog_client.CatalogClient",
                         return_value=client):
             call_command("sync_shopify_storefront", stdout=StringIO())

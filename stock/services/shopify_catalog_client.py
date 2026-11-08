@@ -6,8 +6,20 @@ import uuid
 from django.conf import settings
 
 from .shopify_client import ShopifyClient, ShopifyError
+from .shopify_sync import is_non_decant_type
 
 logger = logging.getLogger(__name__)
+MANAGED_ALL_DESCRIPTION = '<!-- Inventory App: managed catalogue -->'
+
+
+def variant_availability_tier(sku, variant):
+    """Full bottles first, then decants, then variants Shopify cannot sell."""
+    decant = sku.upper().endswith(('-5ML', '-10ML'))
+    if decant and is_non_decant_type(variant.get('product_type')):
+        return 2
+    buyable = (variant.get('tracked', True) is False or variant.get('policy') == 'CONTINUE'
+               or (variant.get('available') or 0) > 0)
+    return (1 if decant else 0) if buyable else 2
 
 
 class CatalogClient(ShopifyClient):
@@ -16,6 +28,7 @@ class CatalogClient(ShopifyClient):
         super().__init__(**kwargs)
         self._publication = None
         self.lease_heartbeat = None
+        self.availability_tiers = {}
 
     def graphql(self, query, variables=None):
         if self.lease_heartbeat is not None:
@@ -123,21 +136,30 @@ class CatalogClient(ShopifyClient):
             raise ShopifyError(f'inventorySetQuantities: {result["userErrors"]}')
         return True
 
-    def create_collection(self, title):
+    def create_collection(self, title, *, handle=None):
+        collection = {'title': title, 'sortOrder': 'MANUAL', 'sources': [
+            {'source': {'title': 'Inventory App', 'inclusion': {'selections': []}}}]}
+        if handle:
+            collection['handle'] = handle
+        if handle == 'all':
+            collection['descriptionHtml'] = MANAGED_ALL_DESCRIPTION
         data = self.graphql('''mutation CatalogCreateCollection($collection: CollectionCreateInput!) {
           collectionCreate(collection: $collection) { collection { id } userErrors { field message } }
-        }''', {'collection': {'title': title, 'sortOrder': 'MANUAL', 'sources': [
-            {'source': {'title': 'Inventory App', 'inclusion': {'selections': []}}}]}})['collectionCreate']
+        }''', {'collection': collection})['collectionCreate']
         if data.get('userErrors') or not data.get('collection'):
             raise ShopifyError(str(data.get('userErrors')))
         return data['collection']['id']
 
     def all_variants_by_sku(self):
         out, ambiguous, cursor = {}, set(), None
+        self.availability_tiers = {}
         while True:
             data = self.graphql('''query CatalogProducts($cursor: String) {
               products(first: 40, after: $cursor) {
-                nodes { id status variants(first: 10) { nodes { id sku } pageInfo { hasNextPage endCursor } } }
+                nodes { id status productType variants(first: 10) {
+                  nodes { id sku inventoryQuantity inventoryPolicy inventoryItem { id tracked } }
+                  pageInfo { hasNextPage endCursor }
+                } }
                 pageInfo { hasNextPage endCursor }
               }
             }''', {'cursor': cursor})['products']
@@ -145,20 +167,31 @@ class CatalogClient(ShopifyClient):
                 variants, page = list(p['variants']['nodes']), p['variants']['pageInfo']
                 while page['hasNextPage']:
                     more = self.graphql('''query CatalogMoreVariants($id: ID!, $after: String) {
-                      product(id: $id) { variants(first: 50, after: $after) { nodes { id sku } pageInfo { hasNextPage endCursor } } }
+                      product(id: $id) { variants(first: 50, after: $after) {
+                        nodes { id sku inventoryQuantity inventoryPolicy inventoryItem { id tracked } }
+                        pageInfo { hasNextPage endCursor }
+                      } }
                     }''', {'id': p['id'], 'after': page['endCursor']})['product']['variants']
                     variants.extend(more['nodes'])
                     page = more['pageInfo']
-                for v in variants:
-                    if v.get('sku'):
-                        if v['sku'] in ambiguous:
+                records = [(v.get('sku') or '', {'product_id': p['id'], 'variant_id': v['id'],
+                            'status': p['status'], 'product_type': p.get('productType', ''),
+                            'available': v['inventoryQuantity'],
+                            'policy': v['inventoryPolicy'], 'tracked': v['inventoryItem']['tracked']})
+                           for v in variants]
+                tier = min((variant_availability_tier(sku, rec) for sku, rec in records), default=2)
+                self.availability_tiers[p['id']] = tier
+                for sku, rec in records:
+                    rec['availability_tier'] = tier
+                    if sku:
+                        if sku in ambiguous:
                             continue
-                        if v['sku'] in out and out[v['sku']]['product_id'] != p['id']:
-                            logger.warning('Exclude ambiguous SKU %s from catalogue collections', v['sku'])
-                            ambiguous.add(v['sku'])
-                            out.pop(v['sku'])
+                        if sku in out and out[sku]['product_id'] != p['id']:
+                            logger.warning('Exclude ambiguous SKU %s from catalogue collections', sku)
+                            ambiguous.add(sku)
+                            out.pop(sku)
                             continue
-                        out[v['sku']] = {'product_id': p['id'], 'variant_id': v['id'], 'status': p['status']}
+                        out[sku] = rec
             if not data['pageInfo']['hasNextPage']:
                 return out
             cursor = data['pageInfo']['endCursor']
@@ -168,11 +201,14 @@ class CatalogClient(ShopifyClient):
         while True:
             data = self.graphql('''query CatalogCollections($after: String) {
               collections(first: 50, after: $after) {
-                nodes { id title sources { ... on CollectionConditionsSource { inclusion { conditions { id } } } } }
+                nodes { id title handle descriptionHtml
+                  sources { ... on CollectionConditionsSource { inclusion { conditions { id } } } }
+                }
                 pageInfo { hasNextPage endCursor }
               }
             }''', {'after': cursor})['collections']
-            out.extend({'id': c['id'], 'title': c['title'],
+            out.extend({'id': c['id'], 'title': c['title'], 'handle': c['handle'],
+                        'managed_all': c['handle'] == 'all' and c['descriptionHtml'] == MANAGED_ALL_DESCRIPTION,
                         'smart': any('inclusion' not in s or s['inclusion']['conditions'] for s in c['sources'])}
                        for c in data['nodes'])
             if not data['pageInfo']['hasNextPage']:
@@ -208,41 +244,38 @@ class CatalogClient(ShopifyClient):
                 self._publication = matches[0]
         return self._publication
 
-    def latest_online_product_ids(self):
-        """Latest 20 active Online Store listings, in Shopify publication order."""
+    def online_product_ids(self):
+        """All active Online Store listings, used to gate App collection selection."""
         publication_id = self.online_store_publication_id()
-        out, seen, cursors, cursor = [], set(), set(), None
+        out, seen, cursors, cursor = set(), set(), set(), None
         while True:
-            data = self.graphql('''query CatalogLatestOnline($query: String!, $publicationId: ID!, $after: String) {
-              products(first: 20, query: $query, sortKey: PUBLISHED_AT, reverse: true, after: $after) {
-                nodes { id publishedAt publishedOnPublication(publicationId: $publicationId) }
+            data = self.graphql('''query CatalogOnlineProducts($query: String!, $publicationId: ID!, $after: String) {
+              products(first: 50, query: $query, after: $after) {
+                nodes { id publishedOnPublication(publicationId: $publicationId) }
                 pageInfo { hasNextPage endCursor }
               }
             }''', {'query': 'status:active AND published_status:published',
                   'publicationId': publication_id, 'after': cursor})
             products = data.get('products') if isinstance(data, dict) else None
             if not isinstance(products, dict) or not isinstance(products.get('nodes'), list):
-                raise ShopifyError('Invalid latest Online Store products response.')
+                raise ShopifyError('Invalid Online Store products response.')
             page = products.get('pageInfo')
             if not isinstance(page, dict) or type(page.get('hasNextPage')) is not bool:
-                raise ShopifyError('Invalid latest Online Store products pagination.')
+                raise ShopifyError('Invalid Online Store products pagination.')
             for product in products['nodes']:
                 if (not isinstance(product, dict) or not isinstance(product.get('id'), str)
                         or not product['id'] or product['id'] in seen
-                        or type(product.get('publishedOnPublication')) is not bool
-                        or 'publishedAt' not in product
-                        or (product['publishedOnPublication'] and (
-                            not isinstance(product['publishedAt'], str) or not product['publishedAt']))):
-                    raise ShopifyError('Invalid latest Online Store product publication.')
+                        or type(product.get('publishedOnPublication')) is not bool):
+                    raise ShopifyError('Invalid Online Store product publication.')
                 seen.add(product['id'])
-                if product['publishedOnPublication'] and len(out) < 20:
-                    out.append(product['id'])
+                if product['publishedOnPublication']:
+                    out.add(product['id'])
             if page['hasNextPage']:
                 cursor = page.get('endCursor')
                 if not products['nodes'] or not isinstance(cursor, str) or not cursor or cursor in cursors:
-                    raise ShopifyError('Invalid latest Online Store products cursor.')
+                    raise ShopifyError('Invalid Online Store products cursor.')
                 cursors.add(cursor)
-            if len(out) == 20 or not page['hasNextPage']:
+            if not page['hasNextPage']:
                 return out
 
     def publish_online(self, gid):
@@ -291,13 +324,17 @@ class CatalogClient(ShopifyClient):
             raise ShopifyError(str(data['userErrors']))
         self.wait_job(data.get('job'))
 
-    def reorder_collection_products(self, gid, desired):
-        current = self.collection_product_ids(gid)
+    def reorder_collection_products(self, gid, desired, *, current=None):
+        current = list(current) if current is not None else self.collection_product_ids(gid)
         wanted = [p for p in dict.fromkeys(desired) if p in current]
         wanted.extend(p for p in current if p not in wanted)
         if wanted == current:
             return
         self._collection_update({'id': gid, 'sortOrder': 'MANUAL'})
+        # Switching sort mode can reveal a different saved manual sequence.
+        current = self.collection_product_ids(gid)
+        wanted = [p for p in dict.fromkeys(desired) if p in current]
+        wanted.extend(p for p in current if p not in wanted)
         moves = []
         for position, pid in enumerate(wanted):
             if current[position] != pid:

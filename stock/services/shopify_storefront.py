@@ -7,6 +7,7 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from stock.models import Product, Sale, ShopifyCatalogState
+from .shopify_catalog_client import variant_availability_tier
 from .shopify_client import ShopifyError
 from .shopify_sync import shopify_syncable
 
@@ -20,7 +21,16 @@ GENDER_COLLECTIONS = {
 }
 
 
-def collection_targets(variants, *, newest_product_ids=(), now=None):
+def product_availability_tiers(variants):
+    tiers = {}
+    for sku, variant in variants.items():
+        gid = variant['product_id']
+        tier = variant.get('availability_tier', variant_availability_tier(sku, variant))
+        tiers[gid] = min(tiers.get(gid, 2), tier)
+    return tiers
+
+
+def collection_targets(variants, *, online_product_ids=(), availability_tiers=None, now=None):
     now = now or timezone.now()
     products = list(shopify_syncable(Product.objects).exclude(barcode='').annotate(
         on_hand=Coalesce(Sum('purchase__remaining'), Value(0), output_field=IntegerField())))
@@ -31,6 +41,11 @@ def collection_targets(variants, *, newest_product_ids=(), now=None):
     def ids(pairs):
         return list(dict.fromkeys(rec['product_id'] for _, rec in pairs))
 
+    online = set(online_product_ids)
+    tiers = availability_tiers if availability_tiers is not None else product_availability_tiers(variants)
+    newest = sorted((pair for pair in matched if pair[1]['product_id'] in online
+                     and pair[0].on_hand > 0 and tiers.get(pair[1]['product_id'], 2) < 2),
+                    key=lambda pair: (-pair[0].created_at.timestamp(), -pair[0].pk))
     cutoff = now - timedelta(days=max(1, getattr(settings, 'SHOPIFY_RESTOCK_DAYS', 30)))
     dates = dict(ShopifyCatalogState.objects.filter(last_restocked_at__gte=cutoff)
                  .values_list('product_id', 'last_restocked_at'))
@@ -45,9 +60,9 @@ def collection_targets(variants, *, newest_product_ids=(), now=None):
              .filter(at__gte=start, at__lt=end).exclude(kind='revenda')
              .values('product_id').annotate(units=Sum('quantity')))
     units = {row['product_id']: row['units'] for row in sales}
-    ranked = sorted(matched, key=lambda pair: (pair[0].on_hand <= 0,
+    ranked = sorted(matched, key=lambda pair: (tiers.get(pair[1]['product_id'], 2),
                                               -units.get(pair[0].pk, 0), pair[0].pk))
-    targets = {NEW_TITLE: list(newest_product_ids), RESTOCK_TITLE: ids(restocked),
+    targets = {NEW_TITLE: ids(newest)[:20], RESTOCK_TITLE: ids(restocked),
                TOP_TITLE: ids(pair for pair in ranked if units.get(pair[0].pk, 0) > 0)[:5]}
     for gender, title in GENDER_COLLECTIONS.items():
         targets[title] = ids(pair for pair in ranked
@@ -60,9 +75,26 @@ def sync_storefront(client=None, *, dry_run=False):
         from .shopify_catalog_client import CatalogClient
         client = CatalogClient()
     client.require_configured()
-    targets = collection_targets(client.all_variants_by_sku(),
-                                 newest_product_ids=client.latest_online_product_ids())
+    variants = client.all_variants_by_sku()
+    online = client.online_product_ids()
+    tiers = product_availability_tiers(variants)
+    catalog_tiers = getattr(client, 'availability_tiers', {})
+    if isinstance(catalog_tiers, dict):
+        tiers.update(catalog_tiers)
+    targets = collection_targets(variants, online_product_ids=online, availability_tiers=tiers)
     collections = {c['title']: c for c in client.all_collections()}
+    all_collection = next((c for c in collections.values() if c.get('handle') == 'all'), None)
+    all_members = sorted(sorted(online), key=lambda gid: tiers.get(gid, 2))
+    reorders = []
+    if not dry_run:
+        for title, collection in collections.items():
+            if title in (NEW_TITLE, RESTOCK_TITLE, TOP_TITLE) or collection.get('managed_all'):
+                continue
+            current = client.collection_product_ids(collection['id'])
+            ranked = [gid for gid in targets.get(title, []) if gid in current]
+            ranked.extend(gid for gid in current if gid not in ranked)
+            desired = sorted(ranked, key=lambda gid: tiers.get(gid, 2))
+            reorders.append((collection['id'], desired, current))
     for title in (NEW_TITLE, RESTOCK_TITLE, TOP_TITLE):
         c = collections.get(title)
         if c and c.get('smart'):
@@ -72,9 +104,10 @@ def sync_storefront(client=None, *, dry_run=False):
             client.publish_online(gid)
             client.set_collection_products(gid, targets[title])
     if not dry_run:
-        for title in GENDER_COLLECTIONS.values():
-            if title in collections:
-                client.reorder_collection_products(collections[title]['id'], targets[title])
+        if all_collection and all_collection.get('managed_all'):
+            client.set_collection_products(all_collection['id'], all_members)
+        for gid, desired, current in reorders:
+            client.reorder_collection_products(gid, desired, current=current)
     return {title: len(ids) for title, ids in targets.items()}
 
 
