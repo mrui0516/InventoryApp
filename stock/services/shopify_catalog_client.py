@@ -192,7 +192,7 @@ class CatalogClient(ShopifyClient):
                 return out
             cursor = data['pageInfo']['endCursor']
 
-    def publish_online(self, gid):
+    def online_store_publication_id(self):
         if self._publication is None:
             self._publication = getattr(settings, 'SHOPIFY_ONLINE_STORE_PUBLICATION_ID', '')
             if not self._publication:
@@ -206,9 +206,50 @@ class CatalogClient(ShopifyClient):
                 if len(matches) != 1:
                     raise ShopifyError('Set SHOPIFY_ONLINE_STORE_PUBLICATION_ID to the Online Store publication.')
                 self._publication = matches[0]
+        return self._publication
+
+    def latest_online_product_ids(self):
+        """Latest 20 active Online Store listings, in Shopify publication order."""
+        publication_id = self.online_store_publication_id()
+        out, seen, cursors, cursor = [], set(), set(), None
+        while True:
+            data = self.graphql('''query CatalogLatestOnline($query: String!, $publicationId: ID!, $after: String) {
+              products(first: 20, query: $query, sortKey: PUBLISHED_AT, reverse: true, after: $after) {
+                nodes { id publishedAt publishedOnPublication(publicationId: $publicationId) }
+                pageInfo { hasNextPage endCursor }
+              }
+            }''', {'query': 'status:active AND published_status:published',
+                  'publicationId': publication_id, 'after': cursor})
+            products = data.get('products') if isinstance(data, dict) else None
+            if not isinstance(products, dict) or not isinstance(products.get('nodes'), list):
+                raise ShopifyError('Invalid latest Online Store products response.')
+            page = products.get('pageInfo')
+            if not isinstance(page, dict) or type(page.get('hasNextPage')) is not bool:
+                raise ShopifyError('Invalid latest Online Store products pagination.')
+            for product in products['nodes']:
+                if (not isinstance(product, dict) or not isinstance(product.get('id'), str)
+                        or not product['id'] or product['id'] in seen
+                        or type(product.get('publishedOnPublication')) is not bool
+                        or 'publishedAt' not in product
+                        or (product['publishedOnPublication'] and (
+                            not isinstance(product['publishedAt'], str) or not product['publishedAt']))):
+                    raise ShopifyError('Invalid latest Online Store product publication.')
+                seen.add(product['id'])
+                if product['publishedOnPublication'] and len(out) < 20:
+                    out.append(product['id'])
+            if page['hasNextPage']:
+                cursor = page.get('endCursor')
+                if not products['nodes'] or not isinstance(cursor, str) or not cursor or cursor in cursors:
+                    raise ShopifyError('Invalid latest Online Store products cursor.')
+                cursors.add(cursor)
+            if len(out) == 20 or not page['hasNextPage']:
+                return out
+
+    def publish_online(self, gid):
+        publication_id = self.online_store_publication_id()
         data = self.graphql('''mutation CatalogPublish($id: ID!, $input: [PublicationInput!]!) {
           publishablePublish(id: $id, input: $input) { userErrors { field message } }
-        }''', {'id': gid, 'input': [{'publicationId': self._publication}]})
+        }''', {'id': gid, 'input': [{'publicationId': publication_id}]})
         if data['publishablePublish'].get('userErrors'):
             raise ShopifyError(str(data['publishablePublish']['userErrors']))
 

@@ -7164,6 +7164,7 @@ class SyncShopifyStorefrontTests(TestCase):
                    "inventory_item_id": "i", "price": "10.00", "available": 5},
         }
         client.all_collections.return_value = []
+        client.latest_online_product_ids.return_value = ["gid://P/out"]
 
         from stock.services.shopify_storefront import sync_storefront
         sync_storefront(client=client)
@@ -7186,6 +7187,7 @@ class SyncShopifyStorefrontTests(TestCase):
         }
         client.find_collection_by_title.return_value = None
         client.all_collections.return_value = []
+        client.latest_online_product_ids.return_value = ["gid://P/out"]
         with mock.patch("stock.services.shopify_catalog_client.CatalogClient",
                         return_value=client):
             call_command("sync_shopify_storefront", stdout=StringIO())
