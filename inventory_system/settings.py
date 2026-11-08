@@ -89,6 +89,12 @@ if not TESTING:
         }
     }
 
+# Tests only: a real password hash takes ~0.7 s (PBKDF2, 1,000,000 rounds) and
+# the suite creates or logs in a user in most tests, which was most of its
+# 14 minutes. Production keeps Django's default hashers.
+if TESTING:
+    PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']
+
 # Crashes, security warnings and the app's own warnings go to stderr (the
 # host's error log) and to the database, where Settings -> Audit -> Errors
 # shows them (stock/system_log.py). 404s and other 4xx are not recorded.
