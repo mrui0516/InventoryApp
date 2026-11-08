@@ -277,6 +277,7 @@
   - **类型**(新字段 `Product.perfume_type`,迁移 0066):Perfume(默认)/ Mini / Oil perfume / Body mist / splash / Body spray(Deo)/ Air freshener / Coffret(礼盒)。
   - **Type 自己管理(2026-11-05,迁移 0075)**:Settings → Catalog → Types 可以添加、改名、排序、删除 Type,每个 Type 有开关:浓度、容量、Scent 区块、批发折扣、礼盒。新 Type 默认不打折、不显示 Scent。有产品的 Type 删除前要选一个 Type 转移产品;Perfume 是默认值,不能删。只有管理员能用。
   - **产品之间的连接(2026-11-05,迁移 0078)**:Mix(表单勾 **This is a mix**,所有 Type 都能用)、Coffret、Body mist、Body spray、Air freshener 有一份清单,每项连接到产品或只写名称。输入时提示产品,也可以一次粘贴多个名称,同品牌名称完全相同的自动连接。只用于显示:库存、进货、销售都按产品本身,卖出 Coffret 不扣香水库存,Mix 不分款式计库存。产品页互相显示("Also in: Body spray (Mix)")。系列名为 Mix 的现有产品自动标记为 Mix,清单由店主自己填。
+  - **禁止分装的 Type（2026-11-08，全局规则）**：所有品牌的 Coffret、Oil perfume、Mini perfume 都只整套／整件销售，不生成 5ml／10ml、不扣分装试香预留、不计算分装价格、不归入“仅分装有货”。历史误建分装规格停售并从前台选项和价格中排除；Mini 的不同香型保留为正常款式。该规则适用于现有商品和未来新增商品。
   - **产品名称带 Type(2026-11-05)**:除 Perfume 外,名称以 Type 开头("Lattafa - Body spray Yara 200ml"),没有名称的产品就叫它的 Type;名称里已经有这个词时不重复。Shopify 标题不变。
   - **搜索(2026-11-05)**:所有产品搜索框都能搜 Type,多个词可以来自不同字段("yara body spray")。Quick import 也读 Type。
   - **客户 PDF 排版(2026-11-05)**:Lattafa 排最前,其余品牌按这份 PDF 里的产品数从多到少;每个品牌先按 Type 分,同一 Type 内型号按累计销量从多到少,没有型号的放最后。EAN 放在名称上方,不再单独一列;增加性别列(Género)。香水行的 `Também em:` 只显示客人能买到的产品(库存多于样品,或在途)。Excel 除名称外不变。

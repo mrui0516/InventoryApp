@@ -13,6 +13,7 @@ ProductImage signal.
 import logging
 import os
 import re
+import unicodedata
 from decimal import ROUND_HALF_UP, Decimal
 
 from django.utils.html import linebreaks
@@ -56,6 +57,15 @@ def _price_str(value):
 DECANT_RESERVE = 2          # full bottles kept back; 100ml shows on-hand minus this
 DECANT_AVAILABLE = 10       # 10ml/5ml available quantity while any bottle exists
 DECANT_SUFFIXES = ('-10ML', '-5ML')
+NON_DECANT_TYPES = frozenset(('coffret', 'coffrets', 'oil perfume', 'oil perfumes',
+                             'perfume oil', 'perfume oils', 'oleo de perfume', 'oleos de perfume',
+                             'mini', 'minis', 'mini perfume', 'mini perfumes'))
+
+
+def is_non_decant_type(product_type):
+    """App type IDs and Shopify labels whose products are sold whole only."""
+    normalized = unicodedata.normalize('NFKD', str(product_type or '')).encode('ascii', 'ignore').decode()
+    return re.sub(r'[\s_-]+', ' ', normalized.strip().lower()) in NON_DECANT_TYPES
 
 # Only a full bottle is worth decanting: a 30ml costs little, and taking two of
 # them as samples would empty the stock. Matches what is already on the store,
@@ -162,6 +172,7 @@ def sync_product_price_inventory(product, client=None, *, do_price=True, do_inve
             return INV_NOT_IN_SHOPIFY, f'no Shopify variant with sku {barcode}'
 
         parts, writes = [], []
+        no_decants = is_non_decant_type(getattr(product, 'product_type_id', None))
 
         if do_price:
             main = shop_variants.get(barcode)
@@ -170,7 +181,7 @@ def sync_product_price_inventory(product, client=None, *, do_price=True, do_inve
                 if Decimal(main['price']) != Decimal(app_price):
                     parts.append(f"price {main.get('price')}->{app_price}")
                     writes.append(('price', main['product_id'], main['variant_id'], app_price))
-                for suffix in DECANT_SUFFIXES:
+                for suffix in (() if no_decants else DECANT_SUFFIXES):
                     rec = shop_variants.get(barcode + suffix)
                     if rec is None or rec.get('price') is None or rec['product_id'] != main['product_id']:
                         continue
@@ -184,7 +195,12 @@ def sync_product_price_inventory(product, client=None, *, do_price=True, do_inve
                 on_hand = int(product.total_stock() or 0)
             except Exception:
                 on_hand = 0
-            targets = _inventory_targets(barcode, on_hand, set(shop_variants))
+            if no_decants:
+                targets = {sku: on_hand if sku == barcode else 0
+                           for sku in (barcode, *(barcode + suffix for suffix in DECANT_SUFFIXES))
+                           if sku in shop_variants}
+            else:
+                targets = _inventory_targets(barcode, on_hand, set(shop_variants))
             for sku, target in targets.items():
                 rec = shop_variants.get(sku)
                 if rec is None:
@@ -192,6 +208,8 @@ def sync_product_price_inventory(product, client=None, *, do_price=True, do_inve
                 # A variant must track inventory and refuse overselling, or its
                 # quantity is ignored and it stays buyable (the decant bug).
                 needs_policy = (rec.get('tracked') is False) or (rec.get('policy') not in (None, 'DENY'))
+                if no_decants and sku != barcode:
+                    needs_policy = rec.get('tracked') is not True or rec.get('policy') != 'DENY'
                 needs_qty = rec.get('available') != target
                 # Switching a variant to tracked makes Shopify (re)initialise its
                 # inventory level, which starts at 0 — an untracked variant never

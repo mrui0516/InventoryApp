@@ -103,29 +103,36 @@ class StorefrontSelectionTests(TestCase):
             Purchase.objects.create(product=p, quantity=stock, remaining=stock, cost_price='10')
         return p
 
-    def test_novidades_uses_shopify_publication_order_including_sold_out_products(self):
+    def variant(self, product, available=3):
+        return {'product_id': str(product.pk), 'status': 'ACTIVE',
+                'available': available, 'tracked': True, 'policy': 'DENY'}
+
+    def test_novidades_uses_app_created_at_and_fills_twenty_around_latest_empty(self):
         from stock.services.shopify_storefront import sync_storefront
         products = [self.product(n, stock=0 if n == 21 else 3) for n in range(1, 22)]
-        variants = {p.barcode: {'product_id': str(p.pk), 'status': 'ACTIVE'} for p in products}
-        # The oldest App record was published most recently; the newest is sold out.
-        newest = [str(products[0].pk), str(products[-1].pk)] + [
-            str(p.pk) for p in products[2:20]]
+        variants = {p.barcode: self.variant(p) for p in products}
+        # Creation date wins over App PK and Shopify result order.
+        Product.objects.filter(pk=products[0].pk).update(created_at=timezone.now()+timedelta(days=1))
+        online = [str(p.pk) for p in products]
+        newest = [str(products[0].pk)] + [str(p.pk) for p in reversed(products[1:20])]
         client = mock.Mock()
         client.all_variants_by_sku.return_value = variants
-        client.latest_online_product_ids.return_value = newest
+        client.online_product_ids.return_value = online
         client.all_collections.return_value = [{'title': 'Novidades', 'id': 'new'}]
         sync_storefront(client)
         client.set_collection_products.assert_any_call('new', newest)
 
     def test_unpublished_active_app_products_do_not_displace_online_products(self):
         from stock.services.shopify_storefront import sync_storefront
-        products = [self.product(n) for n in range(1, 22)]
+        products = [self.product(n) for n in range(1, 23)]
         client = mock.Mock()
         client.all_variants_by_sku.return_value = {
-            p.barcode: {'product_id': str(p.pk), 'status': 'ACTIVE'} for p in products}
-        # Online listings need no matching App record or SKU to belong to Novidades.
-        newest = [f'gid://shopify/Product/{n}' for n in range(40, 20, -1)]
-        client.latest_online_product_ids.return_value = newest
+            p.barcode: self.variant(p) for p in products}
+        # The two newest App records are ACTIVE but absent from Online Store.
+        # An Online Store product without an App match is also ineligible.
+        online = [str(p.pk) for p in products[:20]] + ['gid://shopify/Product/unmatched']
+        newest = [str(p.pk) for p in reversed(products[:20])]
+        client.online_product_ids.return_value = online
         client.all_collections.return_value = [{'title': 'Novidades', 'id': 'new'}]
         result = sync_storefront(client)
         self.assertEqual(result['Novidades'], 20)
@@ -136,7 +143,7 @@ class StorefrontSelectionTests(TestCase):
         from stock.services.shopify_storefront import sync_storefront
         client = mock.Mock()
         client.all_variants_by_sku.return_value = {}
-        client.latest_online_product_ids.side_effect = ShopifyError('temporary')
+        client.online_product_ids.side_effect = ShopifyError('temporary')
         client.all_collections.return_value = [{'title': 'Novidades', 'id': 'new'}]
         with self.assertRaises(ShopifyError):
             sync_storefront(client)
@@ -144,6 +151,122 @@ class StorefrontSelectionTests(TestCase):
         client.publish_online.assert_not_called()
         client.set_collection_products.assert_not_called()
         client.reorder_collection_products.assert_not_called()
+
+    def test_new_app_product_evicts_oldest_and_duplicate_shopify_ids_use_one_slot(self):
+        from stock.services.shopify_storefront import collection_targets
+        products = [self.product(n) for n in range(1, 21)]
+        variants = {p.barcode: self.variant(p) for p in products}
+        online = [str(p.pk) for p in products]
+        before = collection_targets(variants, online_product_ids=online)['Novidades']
+        self.assertEqual(before, [str(p.pk) for p in reversed(products)])
+        newest = self.product(21)
+        duplicate = self.product(22)
+        same_time = timezone.now()
+        Product.objects.filter(pk__in=[newest.pk, duplicate.pk]).update(created_at=same_time)
+        variants.update({p.barcode: dict(self.variant(p), product_id=str(newest.pk))
+                         for p in [newest, duplicate]})
+        online.append(str(newest.pk))
+        after = collection_targets(variants, online_product_ids=online)['Novidades']
+        self.assertEqual(after, [str(newest.pk)] + before[:-1])
+
+    def test_app_creation_ties_use_descending_primary_key(self):
+        from stock.services.shopify_storefront import collection_targets
+        first, second = self.product(1), self.product(2)
+        Product.objects.filter(pk__in=[first.pk, second.pk]).update(created_at=timezone.now())
+        variants = {p.barcode: self.variant(p)
+                    for p in [first, second]}
+        self.assertEqual(collection_targets(variants, online_product_ids=[str(first.pk), str(second.pk)])[
+            'Novidades'], [str(second.pk), str(first.pk)])
+
+    def test_receipt_restores_recent_empty_product_and_evicts_oldest_eligible(self):
+        from stock.services.shopify_storefront import collection_targets
+        products = [self.product(n, stock=0 if n == 21 else 3) for n in range(1, 22)]
+        # Shopify may still have a buyable decant while App stock is exhausted.
+        variants = {p.barcode: self.variant(p) for p in products}
+        online = [str(p.pk) for p in products]
+        before = collection_targets(variants, online_product_ids=online)['Novidades']
+        self.assertEqual(before, [str(p.pk) for p in reversed(products[:20])])
+        Purchase.objects.create(product=products[-1], quantity=3, remaining=3, cost_price='10')
+        after = collection_targets(variants, online_product_ids=online)['Novidades']
+        self.assertEqual(after, [str(products[-1].pk)] + before[:-1])
+
+    def test_novidades_requires_buyability_and_accepts_decant_only_without_stock_tier_sorting(self):
+        from stock.services.shopify_storefront import collection_targets
+        full, decant, unavailable = [self.product(n) for n in range(1, 4)]
+        variants = {full.barcode: self.variant(full), decant.barcode: self.variant(decant, 0),
+                    decant.barcode+'-5ML': self.variant(decant, 2),
+                    unavailable.barcode: self.variant(unavailable, 0)}
+        self.assertEqual(collection_targets(variants, online_product_ids=[str(p.pk) for p in [
+            full, decant, unavailable]])['Novidades'], [str(decant.pk), str(full.pk)])
+
+    def test_monthly_sales_rank_within_full_bottle_decant_and_sold_out_tiers(self):
+        from stock.models import Sale
+        from stock.services.shopify_storefront import collection_targets, TOP_TITLE
+        out, decant, full_low, full_high = [self.product(n) for n in range(1, 5)]
+        variants = {}
+        for product, quantity, units in [(out, 0, 50), (decant, 0, 40),
+                                         (full_low, 3, 1), (full_high, 3, 2)]:
+            variants[product.barcode] = {'product_id': str(product.pk), 'status': 'ACTIVE',
+                                        'available': quantity, 'tracked': True, 'policy': 'DENY'}
+            Sale.objects.create(product=product, quantity=units, unit_price='30')
+        variants[decant.barcode+'-5ML'] = {'product_id': str(decant.pk), 'status': 'ACTIVE',
+                                         'available': 5, 'tracked': True, 'policy': 'DENY'}
+        self.assertEqual(collection_targets(variants)[TOP_TITLE], [str(p.pk) for p in [
+            full_high, full_low, decant, out]])
+
+    def test_ordinary_collection_reorders_complete_membership_without_replacing_it(self):
+        from stock.services.shopify_storefront import sync_storefront
+        client = mock.Mock()
+        client.all_variants_by_sku.return_value = {
+            'OUT': {'product_id': 'out', 'available': 0, 'tracked': True, 'policy': 'DENY'},
+            'DEC-10ML': {'product_id': 'decant', 'available': 3, 'tracked': True, 'policy': 'DENY'},
+            'FULL': {'product_id': 'full', 'available': 2, 'tracked': True, 'policy': 'DENY'}}
+        client.online_product_ids.return_value = {'out', 'decant', 'full'}
+        client.all_collections.return_value = [{'id': 'brand', 'title': 'Lattafa',
+                                                'handle': 'lattafa', 'smart': True},
+                                               {'id': 'all', 'title': 'Catalog', 'handle': 'all'}]
+        # This represents every page, including the full bottle on a later page.
+        client.collection_product_ids.side_effect = lambda gid: (
+            ['out', 'decant', 'full', 'unmatched'] if gid == 'brand' else ['out'])
+        sync_storefront(client)
+        client.reorder_collection_products.assert_any_call(
+            'brand', ['full', 'decant', 'out', 'unmatched'], current=['out', 'decant', 'full', 'unmatched'])
+        self.assertFalse(any(call.args[0] in ('brand', 'all')
+                             for call in client.set_collection_products.call_args_list))
+        client.set_product_status.assert_not_called()
+        self.assertFalse(any(call.args[0] in ('out', 'decant', 'full')
+                             for call in client.publish_online.call_args_list))
+
+    def test_missing_all_collection_is_never_created_or_published(self):
+        from stock.services.shopify_storefront import sync_storefront
+        client = mock.Mock()
+        client.all_variants_by_sku.return_value = {
+            'OLD': {'product_id': 'unpublished', 'available': 5, 'tracked': True, 'policy': 'DENY'},
+            'OUT': {'product_id': 'out', 'available': 0, 'tracked': True, 'policy': 'DENY'},
+            'FULL': {'product_id': 'full', 'available': 2, 'tracked': True, 'policy': 'DENY'}}
+        client.online_product_ids.return_value = {'out', 'full'}
+        client.all_collections.return_value = []
+        client.create_collection.side_effect = lambda title, **kwargs: kwargs.get('handle', title)
+        sync_storefront(client)
+        self.assertFalse(any(call.kwargs.get('handle') == 'all'
+                             for call in client.create_collection.call_args_list))
+        self.assertFalse(any(call.args[0] == 'all'
+                             for call in client.set_collection_products.call_args_list))
+        self.assertFalse(any(call.args[0] in ('all', 'unpublished')
+                             for call in client.publish_online.call_args_list))
+
+    def test_managed_all_membership_follows_online_catalog_without_touching_products(self):
+        from stock.services.shopify_storefront import sync_storefront
+        client = mock.Mock()
+        client.all_variants_by_sku.return_value = {}
+        client.online_product_ids.return_value = {'new-online'}
+        client.all_collections.return_value = [{'id': 'all', 'title': 'Todos os produtos',
+                                                'handle': 'all', 'managed_all': True}]
+        sync_storefront(client)
+        client.set_collection_products.assert_any_call('all', ['new-online'])
+        client.product_set.assert_not_called()
+        self.assertFalse(any(call.args[0] == 'new-online'
+                             for call in client.publish_online.call_args_list))
 
     def test_restock_expires_and_sold_out_products_leave(self):
         from stock.models import ShopifyCatalogState
@@ -346,64 +469,140 @@ class ArrivalWorkerTests(TestCase):
 class OnlinePublicationSelectionTests(SimpleTestCase):
     def node(self, number, published=True):
         return {'id': f'gid://shopify/Product/{number}',
-                'publishedAt': '2026-11-08T12:00:00Z',
                 'publishedOnPublication': published}
 
     def page(self, nodes, more=False, cursor=None):
         return {'products': {'nodes': nodes,
                              'pageInfo': {'hasNextPage': more, 'endCursor': cursor}}}
 
-    def test_latest_twenty_follow_publication_order_and_new_listing_evicts_oldest(self):
+    def test_all_online_products_are_loaded_beyond_the_first_fifty(self):
         from stock.services.shopify_catalog_client import CatalogClient
         api = CatalogClient()
-        pages = [self.page([self.node(n) for n in range(20, 0, -1)]),
-                 self.page([self.node(n) for n in range(21, 1, -1)])]
+        pages = [self.page([self.node(n) for n in range(1, 51)], more=True, cursor='next'),
+                 self.page([self.node(51)])]
         with mock.patch.object(api, 'graphql', side_effect=pages) as query:
-            before = api.latest_online_product_ids()
-            after = api.latest_online_product_ids()
-        self.assertEqual(len(before), 20)
-        self.assertEqual(before[0], 'gid://shopify/Product/20')
-        self.assertEqual(before[-1], 'gid://shopify/Product/1')
-        self.assertEqual(after, ['gid://shopify/Product/21'] + before[:-1])
+            result = api.online_product_ids()
+        self.assertEqual(len(result), 51)
+        self.assertIn('gid://shopify/Product/1', result)
+        self.assertIn('gid://shopify/Product/51', result)
         operation, variables = query.call_args.args
-        self.assertIn('sortKey: PUBLISHED_AT', operation)
-        self.assertIn('reverse: true', operation)
+        self.assertIn('first: 50', operation)
+        self.assertEqual(variables['after'], 'next')
         self.assertEqual(variables['query'], 'status:active AND published_status:published')
         self.assertEqual(variables['publicationId'], 'gid://shopify/Publication/online')
-        self.assertNotIn('inventory', operation.lower())
 
-    def test_other_channel_products_are_skipped_and_pages_fill_twenty_online_slots(self):
+    def test_other_channel_products_are_skipped_without_hiding_online_products(self):
         from stock.services.shopify_catalog_client import CatalogClient
         api = CatalogClient()
-        hidden = dict(self.node(99, published=False), publishedAt=None)
-        pages = [self.page([hidden] + [self.node(n) for n in range(20, 1, -1)],
-                           more=True, cursor='next'), self.page([self.node(1)])]
-        with mock.patch.object(api, 'graphql', side_effect=pages) as query:
-            result = api.latest_online_product_ids()
-        self.assertEqual(len(result), 20)
-        self.assertEqual(result[0], 'gid://shopify/Product/20')
-        self.assertEqual(result[-1], 'gid://shopify/Product/1')
-        self.assertNotIn('gid://shopify/Product/99', result)
-        self.assertEqual(query.call_args.args[1]['after'], 'next')
+        with mock.patch.object(api, 'graphql', return_value=self.page([
+                self.node(99, published=False), self.node(1)])):
+            self.assertEqual(api.online_product_ids(), {'gid://shopify/Product/1'})
 
     def test_malformed_publication_responses_raise_instead_of_returning_empty_membership(self):
         from stock.services.shopify_catalog_client import CatalogClient
         from stock.services.shopify_client import ShopifyError
         bad_pages = [{}, {'products': None}, {'products': {'nodes': []}},
                      self.page([{'id': 'gid://shopify/Product/1'}]),
-                     self.page([dict(self.node(1), publishedAt=None)]),
+                     self.page([dict(self.node(1), publishedOnPublication=None)]),
                      self.page([], more=True),
                      self.page([self.node(1), self.node(1)])]
         for response in bad_pages:
             with self.subTest(response=response):
                 with mock.patch.object(CatalogClient, 'graphql', return_value=response):
                     with self.assertRaises(ShopifyError):
-                        CatalogClient().latest_online_product_ids()
+                        CatalogClient().online_product_ids()
+
+    def test_later_page_failure_does_not_return_a_partial_online_catalog(self):
+        from stock.services.shopify_catalog_client import CatalogClient
+        from stock.services.shopify_client import ShopifyError
+        with mock.patch.object(CatalogClient, 'graphql', side_effect=[
+                self.page([self.node(1)], more=True, cursor='next'), ShopifyError('temporary')]):
+            with self.assertRaises(ShopifyError):
+                CatalogClient().online_product_ids()
 
     def test_valid_empty_online_catalog_is_supported(self):
         from stock.services.shopify_catalog_client import CatalogClient
         with mock.patch.object(CatalogClient, 'graphql', return_value=self.page([])):
-            self.assertEqual(CatalogClient().latest_online_product_ids(), [])
+            self.assertEqual(CatalogClient().online_product_ids(), set())
+
+
+class CatalogAvailabilityTests(SimpleTestCase):
+    def test_reorder_uses_actual_manual_order_after_switching_sort_mode(self):
+        from stock.services.shopify_catalog_client import CatalogClient
+        api = CatalogClient()
+        with mock.patch.object(api, 'collection_product_ids', side_effect=[['A', 'B', 'C'], ['C', 'B', 'A']]), \
+             mock.patch.object(api, '_collection_update'), \
+             mock.patch.object(api, 'graphql', return_value={
+                 'collectionReorderProducts': {'job': None, 'userErrors': []}}) as graphql:
+            api.reorder_collection_products('ordinary', ['B', 'A', 'C'])
+        self.assertEqual(graphql.call_args.args[1]['moves'], [
+            {'id': 'B', 'newPosition': '0'}, {'id': 'A', 'newPosition': '1'}])
+
+    def test_variant_metadata_and_no_sku_availability_follow_all_catalog_pages(self):
+        from stock.services.shopify_catalog_client import CatalogClient
+        api = CatalogClient()
+        def variant(sku, quantity, tracked=True, policy='DENY'):
+            return {'id': 'variant-'+sku, 'sku': sku, 'inventoryQuantity': quantity,
+                    'inventoryPolicy': policy, 'inventoryItem': {'id': 'item-'+sku, 'tracked': tracked}}
+        def page(nodes, more=False, cursor=None):
+            return {'nodes': nodes, 'pageInfo': {'hasNextPage': more, 'endCursor': cursor}}
+        def product(gid, variants):
+            return {'id': gid, 'status': 'ACTIVE', 'variants': page(variants)}
+        first = product('decant', [variant('DEC', 0)])
+        first['variants']['pageInfo'] = {'hasNextPage': True, 'endCursor': 'variants-next'}
+        def graphql(query, variables):
+            self.assertIn('inventoryQuantity', query)
+            self.assertIn('inventoryPolicy', query)
+            self.assertIn('tracked', query)
+            if 'CatalogMoreVariants' in query:
+                self.assertEqual(variables['after'], 'variants-next')
+                return {'product': {'variants': page([variant('DEC-5ML', 3)])}}
+            if variables['cursor']:
+                return {'products': page([
+                    product('untracked-no-sku', [variant('', 0, tracked=False)]),
+                    product('continue', [variant('PREORDER', -2, policy='CONTINUE')]),
+                    product('out', [variant('OUT', 0)])])}
+            return {'products': page([first], more=True, cursor='products-next')}
+        with mock.patch.object(api, 'graphql', side_effect=graphql):
+            variants = api.all_variants_by_sku()
+        self.assertEqual(variants['DEC-5ML']['available'], 3)
+        self.assertEqual(variants['OUT']['tracked'], True)
+        self.assertEqual(variants['PREORDER']['policy'], 'CONTINUE')
+        self.assertEqual(api.availability_tiers, {
+            'decant': 1, 'untracked-no-sku': 0, 'continue': 0, 'out': 2})
+
+    def test_variant_tiers_obey_shopify_buyability_and_authoritative_decant_skus(self):
+        from stock.services.shopify_catalog_client import variant_availability_tier
+        cases = [('FULL', 2, True, 'DENY', 0), ('FULL', 0, True, 'DENY', 2),
+                 ('FULL', 0, False, 'DENY', 0), ('FULL', -2, True, 'CONTINUE', 0),
+                 ('PERFUME-5ML', 1, True, 'DENY', 1), ('PERFUME-10ML', 0, True, 'DENY', 2),
+                 ('PERFUME-10ML', 0, False, 'DENY', 1), ('PERFUME-5ML', 0, True, 'CONTINUE', 1),
+                 ('PERFUME-50ML', 1, True, 'DENY', 0), ('', 1, True, 'DENY', 0)]
+        for sku, quantity, tracked, policy, expected in cases:
+            with self.subTest(sku=sku, quantity=quantity, tracked=tracked, policy=policy):
+                self.assertEqual(variant_availability_tier(sku, {
+                    'available': quantity, 'tracked': tracked, 'policy': policy}), expected)
+
+    def test_collection_pagination_moves_later_page_stock_ahead_without_changing_membership(self):
+        from stock.services.shopify_catalog_client import CatalogClient
+        api = CatalogClient()
+        current = [f'out-{n}' for n in range(50)] + ['full']
+        def graphql(query, variables):
+            if 'CatalogMembers' in query:
+                if variables['after']:
+                    return {'collection': {'products': {'nodes': [{'id': 'full'}],
+                        'pageInfo': {'hasNextPage': False, 'endCursor': None}}}}
+                return {'collection': {'products': {'nodes': [{'id': p} for p in current[:50]],
+                    'pageInfo': {'hasNextPage': True, 'endCursor': 'next'}}}}
+            self.assertIn('CatalogReorder', query)
+            self.assertEqual(variables['moves'], [{'id': 'full', 'newPosition': '0'}])
+            return {'collectionReorderProducts': {'job': None, 'userErrors': []}}
+        with mock.patch.object(api, 'graphql', side_effect=graphql), \
+             mock.patch.object(api, '_collection_update') as update:
+            loaded = api.collection_product_ids('ordinary')
+            self.assertEqual(loaded, current)
+            api.reorder_collection_products('ordinary', ['full']+current[:-1], current=loaded)
+        update.assert_called_once_with({'id': 'ordinary', 'sortOrder': 'MANUAL'})
 
 
 class CatalogLookupTests(SimpleTestCase):
