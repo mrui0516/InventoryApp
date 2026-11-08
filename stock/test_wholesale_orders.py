@@ -332,7 +332,7 @@ class CataloguePageTests(PagesMixin):
     def test_the_answer_holds_no_stock(self):
         response = self.client.post(reverse("wholesale_cart_add"), {"product": self.item.pk, "quantity": 1},
                                     headers={"X-Requested-With": "fetch"})
-        self.assertEqual(set(response.json()), {"units", "in_cart", "subtotal", "message", "url"})
+        self.assertEqual(set(response.json()), {"units", "in_cart", "subtotal", "message", "percent", "url"})
 
     def test_a_refused_add_says_why(self):
         gone = self._product(name="Gone", units=0)

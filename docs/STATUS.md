@@ -11,7 +11,7 @@
 | 维度 | 状态 | 说明 |
 |---|---|---|
 | 线上运行 | ✅ PythonAnywhere 欧盟区 | `https://scentory.eu.pythonanywhere.com`，两家店（Khan Perfume、Scentory）日常收银、入库都在线上；线上 `db.sqlite3` 是唯一准数据 |
-| 自动化测试 | ✅ 1787 个全部通过 | `python manage.py test stock restock_alerts`，在干净导出上跑 |
+| 自动化测试 | ✅ 1797 个全部通过 | `python manage.py test stock restock_alerts`，在干净导出上跑 |
 | 数据库迁移 | ✅ 最新 `0093_b2b_is_scentory`，无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
 | 生产配置 | ✅ `DEBUG=False`，密钥只在服务器 `.env` | `settings.py` 的 `if not DEBUG` 块：强制 HTTPS、安全 Cookie、HSTS、防点击劫持 |
 | 数据备份 | ✅ 每日快照 + 本机拉取 | PA 定时任务 `backup_db --keep 30`，本机 `scripts/pull_backup_from_pa.py` 拉到 U 盘；Settings → Tools 可手动下载。见 [BACKUP.md](./BACKUP.md) |
@@ -35,7 +35,7 @@
 
 ## 3. 测试与质量
 
-- `python manage.py test stock restock_alerts` → **1787 个测试全部通过**（约 50 秒；测试时用 MD5 密码哈希，生产不变）；`python manage.py check` 无问题。
+- `python manage.py test stock restock_alerts` → **1797 个测试全部通过**（约 50 秒；测试时用 MD5 密码哈希，生产不变）；`python manage.py check` 无问题。
 - 外部集成（Shopify / Cloudinary）的测试全部 mock，不发真实网络请求。
 - 提交前在 `git archive HEAD` 的干净导出上跑全套：工作区里可能有别的进行中的改动，会让结果失真。
 
@@ -73,6 +73,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-11-08: **B2B 新款 / 补货和新外观**：Novidades、Reposição 分类；横向栏加箭头且不再上下晃动；购物车栏一行贴底；深色按钮、金色强调、分段页签。
 - 2026-11-08: **B2B 只给 Scentory**（迁移 0093）：批发订单和客户页电话用 Scentory；Decante 产品改为 Amostra；菜单记住滚动位置；删除死代码（旧表单、Pedido 草稿刷新接口、未用 Bootstrap 文件、未用 import）。
 - 2026-11-08: **第三轮 B2B**：补货申请详情、删除、到货等待通知；目录排序和容量/浓度筛选；长列表和菜单折叠；Pedidos 来源标签；Pedido 加 Mix/Amostra 先选款，选择显示在产品下方和 PDF 里；修复客户设密码时约 1% 被误判“与用户名太相似”。
 - 2026-11-08: **第二轮 B2B**（迁移 0092）：Amostra 可选只剩样品的香水并可筛选排序；手机号区号；到货 WhatsApp 通知；Pedidos 合并页；菜单 Stock → Products → B2B；Products 批量改价。

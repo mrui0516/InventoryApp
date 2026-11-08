@@ -700,6 +700,9 @@ Excel 和 PDF 用**同一套判断和同一组颜色**，两份文件不会互�
 - 扫码识别：`html5-qrcode.min.js` 调用摄像头扫码 → 调用 `check_barcode` API 联想填充商品信息。
 - 自动补全：客户（`customers_autocomplete`）、产品（`products_autocomplete`）均为简单 JSON API + 前端下拉建议。
 - 模板自定义过滤器：`math_extras.py` 提供 `mul`、`digits`（wa.me / tel 链接）、`absval`、`eur_pt`。
+- B2B 新款 / 补货：`services/wholesale_collections.py` 的 `arrivals(ids)` 按非调货的 Purchase 算第一次和最后一次到货日期（30 天）；`catalog_view` 用 `col=new|restock` 过滤并给每行 `arrival`。
+- 横向滚动栏：`wholesale_base.html` 的 `[data-wc-scroll]` 包住一个 `[data-wc-track]`，脚本按 scrollLeft 显示左右箭头和渐隐，选中的 `a.on` 滚到可见处；`app.css` 的 `.ftabs` 用 inset 阴影画底线并 `overflow-y:hidden`，不会上下晃动。
+- 客户页面（`portal_base.html`）把 `--tabbar-h` / `--tabbar-live` 设为 0：没有底部导航栏。
 - 菜单滚动位置：`base.html` 把 `#erpSidebar` 的 scrollTop 存在 sessionStorage（`navScroll`），换页后恢复；没有记录时把当前页面的链接滚到可见处。
 - 测试速度：`settings.py` 在 `manage.py test` 时改用 MD5 密码哈希（生产仍是 PBKDF2），全量测试约 50 秒。
 - 2026-11-08 清理：删除无人使用的 `BarcodeForm` / `PurchaseForm` / `SaleForm`、`charge_payments`、`build_customer_product_title`、`sum_list` / `map_attr` 过滤器、`_sales_order_entry.html`、Pedido 草稿列表的刷新接口 `pedido/drafts/`（列表已搬到 B2B → Pedidos），以及没引用的 Bootstrap CSS 变体；各文件没用到的 import 一并删掉。

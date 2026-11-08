@@ -24,6 +24,7 @@ from .permissions import manager_required
 from .services import submissions
 from .services.wholesale_cart import add_to_cart, cart_quote, set_quantity, submit_request
 from .services.wholesale_catalog import PAGE_SIZE, brand_sort_key, catalog_rows
+from .services import wholesale_collections as collections
 from .services import portal
 from .services.portal import catalog_access
 from .services.wholesale_discount import last_discount
@@ -113,6 +114,16 @@ def catalog_view(request):
     # The tabs count what the rest of the page allows, so each row of filters is
     # worked out from the list before it.
     everything = catalog_rows(query=query, gender=gender, show_all=show_all, viewer=request.user, customer=customer)
+    # Novidades / Reposição: a collection above the types, counted on the whole list.
+    arrived = collections.arrivals(row['pk'] for row in everything)
+    for row in everything:
+        row['arrival'], row['arrived_at'] = arrived.get(row['pk'], ('', None))
+    by_collection = Counter(row['arrival'] for row in everything if row['arrival'])
+    collection = request.GET.get('col', '').strip()
+    collection = collection if collection in collections.LABELS else ''
+    all_total = len(everything)
+    if collection:
+        everything = [row for row in everything if row['arrival'] == collection]
     by_type = Counter(row['type_code'] for row in everything)
     rows = [row for row in everything if not kind or row['type_code'] == kind]
     # Size and strength: offered from what the chosen type has, then applied.
@@ -130,6 +141,8 @@ def catalog_view(request):
     sort = request.GET.get('sort', '')
     sort = sort if sort in SORTS else ''
     rows = _sorted(rows, sort)
+    if collection and not sort:      # what came in last, first
+        rows.sort(key=lambda row: row['arrived_at'], reverse=True)
     page_obj = Paginator(rows, PAGE_SIZE).get_page(request.GET.get('page'))
     return render(request, 'stock/catalog.html', {
         'tab': 'catalog',
@@ -146,7 +159,10 @@ def catalog_view(request):
         'brand_total': sum(by_brand.values()),
         'brand_tabs': brand_tabs(by_brand),
         'genders': [{'value': value, 'label': label} for value, label in Product.GENDER_SHOPIFY_TAGS.items()],
-        'sort': sort, 'sorts': SORTS.items(), 'grouped': not sort,
+        'sort': sort, 'sorts': SORTS.items(), 'grouped': not sort and not collection,
+        'collection': collection, 'all_total': all_total,
+        'collection_tabs': [{'value': key, 'label': label, 'n': by_collection[key]}
+                            for key, label in collections.LABELS.items() if by_collection.get(key)],
         'ml': ml, 'volumes': volumes, 'strength': strength, 'strengths': strengths,
         'keep': [(k, v) for k, v in request.GET.items() if k not in ('sort', 'ml', 'strength', 'page') and v],
         'pick_brands': pick_brands() if any(row.get('pick_mode') == 'perfume' for row in page_obj) else [],
@@ -202,7 +218,7 @@ def cart_add(request):
             line = next((l for l in quote['lines'] if l['product_id'] == product.pk), None)
             return JsonResponse({'units': quote['units'], 'in_cart': line['quantity'] if line else 0,
                                  'subtotal': f"{quote['subtotal']:.2f}", 'message': quote['progress']['message'],
-                                 'url': reverse('wholesale_cart')})
+                                 'percent': quote['progress']['percent'], 'url': reverse('wholesale_cart')})
     from .views import _back_to
     return _back_to(request, 'catalog')
 

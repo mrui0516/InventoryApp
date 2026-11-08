@@ -3,17 +3,34 @@
 {% block wholesale %}
   {% include "stock/_fbar.html" with placeholder="Nome, marca, tipo ou EAN" drop="stock" %}
 
-  <nav class="ftabs" aria-label="Tipo">
-    <a class="{% if not type %}on{% endif %}" href="{% querystring type=None brand=None page=None %}">Todos <span class="n">{{ type_total }}</span></a>
-    {% for t in type_tabs %}<a class="{% if type == t.value %}on{% endif %}" href="{% querystring type=t.value brand=None page=None %}">{{ t.label }} <span class="n">{{ t.n }}</span></a>{% endfor %}
+  {% if collection_tabs %}
+  <nav class="wc-coll" aria-label="Coleções">
+    <a class="{% if not collection %}on{% endif %}" href="{% querystring col=None type=None brand=None page=None %}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg><span>Tudo</span> <span class="n">{{ all_total }}</span></a>
+    {% for c in collection_tabs %}<a class="is-{{ c.value }}{% if collection == c.value %} on{% endif %}" href="{% querystring col=c.value type=None brand=None page=None %}">{% if c.value == 'new' %}<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>{% else %}<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4L21 8"/><path d="M21 3v5h-5"/></svg>{% endif %}<span>{{ c.label }}</span> <span class="n">{{ c.n }}</span></a>{% endfor %}
   </nav>
+  {% endif %}
 
-  <nav class="wc-brands" aria-label="Marca">
-    <a class="{% if not brand %}on{% endif %}" href="{% querystring brand=None page=None %}">Todas <span class="n">{{ brand_total }}</span></a>
-    {% for b in brand_tabs %}<a class="{% if brand|lower == b.name|lower %}on{% endif %}" href="{% querystring brand=b.name page=None %}">{% brand_logo b.brand size=18 fallback=b.name %}<span>{{ b.name }}</span> <span class="n">{{ b.n }}</span></a>{% endfor %}
-  </nav>
+  <div class="wc-scroll" data-wc-scroll>
+    <button type="button" class="wc-scroll-btn prev" aria-hidden="true" tabindex="-1" hidden><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <nav class="ftabs" data-wc-track aria-label="Tipo">
+      <a class="{% if not type %}on{% endif %}" href="{% querystring type=None brand=None page=None %}">Todos <span class="n">{{ type_total }}</span></a>
+      {% for t in type_tabs %}<a class="{% if type == t.value %}on{% endif %}" href="{% querystring type=t.value brand=None page=None %}">{{ t.label }} <span class="n">{{ t.n }}</span></a>{% endfor %}
+    </nav>
+    <button type="button" class="wc-scroll-btn next" aria-hidden="true" tabindex="-1" hidden><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>
+  </div>
 
-  <div class="wc-filters">
+  <div class="wc-scroll" data-wc-scroll>
+    <button type="button" class="wc-scroll-btn prev" aria-hidden="true" tabindex="-1" hidden><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <nav class="wc-brands" data-wc-track aria-label="Marca">
+      <a class="{% if not brand %}on{% endif %}" href="{% querystring brand=None page=None %}">Todas <span class="n">{{ brand_total }}</span></a>
+      {% for b in brand_tabs %}<a class="{% if brand|lower == b.name|lower %}on{% endif %}" href="{% querystring brand=b.name page=None %}">{% brand_logo b.brand size=18 fallback=b.name %}<span>{{ b.name }}</span> <span class="n">{{ b.n }}</span></a>{% endfor %}
+    </nav>
+    <button type="button" class="wc-scroll-btn next" aria-hidden="true" tabindex="-1" hidden><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>
+  </div>
+
+  <div class="wc-scroll wc-scroll-filters" data-wc-scroll>
+  <button type="button" class="wc-scroll-btn prev" aria-hidden="true" tabindex="-1" hidden><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+  <div class="wc-filters" data-wc-track>
     <span class="wc-seg" role="group" aria-label="Disponibilidade">
       <a class="{% if not show_all %}on{% endif %}" href="{% if query %}{% querystring stock='in' page=None %}{% else %}{% querystring stock=None page=None %}{% endif %}">Disponíveis</a>
       <a class="{% if show_all %}on{% endif %}" href="{% querystring stock='all' page=None %}">Todos</a>
@@ -40,6 +57,8 @@
     </form>
     <span class="wc-count">{{ total }} produto{{ total|pluralize }}</span>
   </div>
+  <button type="button" class="wc-scroll-btn next" aria-hidden="true" tabindex="-1" hidden><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>
+  </div>
   {% if ml or strength or sort %}
   <div class="fchips">
     {% if sort %}<a class="fchip" href="{% querystring sort=None page=None %}">{% for value, label in sorts %}{% if value == sort %}{{ label }}{% endif %}{% endfor %} &times;</a>{% endif %}
@@ -60,7 +79,7 @@
         <span class="wc-photo">{% if row.image_url %}<img src="{{ row.image_url }}" alt="" loading="lazy">{% else %}&mdash;{% endif %}</span>
         <span class="wc-main">
           <span class="wc-brand"><span>{{ row.ean }}</span></span>
-          <span class="wc-title">{{ row.title }}</span>
+          <span class="wc-title">{% if row.arrival %}<span class="wc-flag is-{{ row.arrival }}">{% if row.arrival == 'new' %}Novo{% else %}Reposto{% endif %}</span>{% endif %}{{ row.title }}</span>
           {% if row.contents %}<span class="wc-contents d-block">{{ row.contents|join:" · " }}</span>{% endif %}
         </span>
         <span class="wc-kind">{{ row.kind }}</span>

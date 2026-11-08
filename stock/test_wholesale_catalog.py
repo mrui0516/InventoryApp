@@ -242,12 +242,12 @@ class PageTests(CatalogMixin):
         panel = html[html.index(f'<template id="wc-{mix.pk}">'):]
         self.assertIn("Fragrâncias", panel[:panel.index("</template>")])
 
-    def test_there_are_no_notes(self):
+    def test_there_are_no_best_seller_notes(self):
+        # Since 2026-11-08 new arrivals have their own collection (Novidades) and
+        # a "Novo" flag, at the owner's request; best sellers still get no badge.
         product = self._product(units=9, days_ago=1)
         self._sold(product, 50)
-        html = self._get().content.decode()
-        self.assertNotIn("Novidade", html)
-        self.assertNotIn("Mais vendido", html)
+        self.assertNotIn("Mais vendido", self._get().content.decode())
 
     def test_the_description_leaves_out_what_inspired_it(self):
         self._product(units=9, description="Doce", inspired_by_text="Baccarat")
