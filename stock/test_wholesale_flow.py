@@ -41,19 +41,21 @@ class ThePedidoTests(FlowMixin):
     def test_the_shipping_goes_with_it(self):
         self.assertEqual(self._send().pedido.shipping, D("5"))
 
-    def test_the_customers_choice_is_in_the_note(self):
+    def test_the_customers_choice_is_on_its_line(self):
         mix = self._product(name="Mix", units=9, is_mix=True, product_type_id="body_spray", wholesale_price=D("100"))
         one = ProductContent.objects.create(owner=mix, name="Yara", sort_order=1)
         ProductContent.objects.create(owner=mix, name="Asad", sort_order=2)
         add_to_cart(self.boss, mix, None, picks=[{"id": one.pk, "quantity": 3}])
-        note = self._send().pedido.note
-        self.assertIn("3 × Yara", note)
-        self.assertIn("Urgente", note)
+        draft = self._send().pedido
+        line = next(l for l in draft.lines if l["product_id"] == mix.pk)
+        self.assertEqual([(p["name"], p["quantity"]) for p in line["picks"]], [("Yara", 3)])
+        self.assertEqual(draft.note, "Urgente")
 
     def test_the_draft_list_says_where_it_came_from(self):
         order = self._send()
         with mock.patch("stock.pedido_views.resolve_active_store", return_value=(order.pedido.store, False)):
-            self.assertContains(self.client.get(reverse("pedido")), f"Online #{order.pk}")
+            # Since 2026-11-08 the list is B2B -> Pedidos; the opened draft names its order.
+            self.assertContains(self.client.get(reverse("pedido"), {"draft": order.pedido.pk}), f"B2B #{order.pk}")
 
 
 class TheCustomerSideTests(FlowMixin):

@@ -6,6 +6,12 @@
   .oq h1{ margin:0; font-size:1.4rem; font-weight:800; }
   .oq-head{ display:flex; align-items:center; justify-content:space-between; gap:.75rem; }
   a.oq-row{ color:inherit; text-decoration:none; }
+  .src{ display:inline-block; margin-right:.4rem; padding:0 .4rem; font-size:.75rem; font-weight:800; letter-spacing:.02em; border-radius:4px; vertical-align:1px; }
+  .src.b2b{ color:#1e40af; background:#dbeafe; }
+  .src.app{ color:#57534e; background:var(--app-surface-2); }
+  .oq-src{ display:inline-flex; width:max-content; max-width:100%; overflow-x:auto; border:1px solid var(--app-border-strong); border-radius:var(--app-radius-sm); }
+  .oq-src a{ padding:.3rem .7rem; font-size:.88rem; font-weight:700; color:var(--app-muted); text-decoration:none; white-space:nowrap; }
+  .oq-src a.on{ color:var(--app-surface); background:var(--app-text); }
   .oq-list{ background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--app-radius); overflow:hidden; }
   .oq-row{ display:grid; grid-template-columns:4rem minmax(0,1fr) 7rem 4.5rem 6.5rem 6rem; gap:.75rem; align-items:center; width:100%; padding:.55rem .85rem; border:0; border-top:1px solid var(--app-border); background:none; color:inherit; text-align:left; font-variant-numeric:tabular-nums; }
   .oq-row:first-child{ border-top:0; }
@@ -30,19 +36,24 @@
 <div class="oq">
   <div class="oq-head"><h1>Pedidos</h1><a class="btn btn-primary btn-sm" href="{% url 'pedido' %}">+ New Pedido</a></div>
   <nav class="ftabs" aria-label="Status">
-    <a class="{% if not show %}on{% endif %}" href="?">Open <span class="n">{{ counts.open }}</span></a>
-    <a class="{% if show == 'to_confirm' %}on{% endif %}" href="?show=to_confirm">To confirm <span class="n">{{ counts.to_confirm }}</span></a>
-    <a class="{% if show == 'confirmed' %}on{% endif %}" href="?show=confirmed">Stock confirmed <span class="n">{{ counts.confirmed }}</span></a>
-    <a class="{% if show == 'drafts' %}on{% endif %}" href="?show=drafts">Shop drafts <span class="n">{{ counts.drafts }}</span></a>
-    <a class="{% if show == 'sold' %}on{% endif %}" href="?show=sold">Sold <span class="n">{{ counts.sold }}</span></a>
-    <a class="{% if show == 'cancelled' %}on{% endif %}" href="?show=cancelled">Cancelled <span class="n">{{ counts.cancelled }}</span></a>
-    <a class="{% if show == 'all' %}on{% endif %}" href="?show=all">All <span class="n">{{ counts.all }}</span></a>
+    <a class="{% if not show %}on{% endif %}" href="?{% if src %}src={{ src }}{% endif %}">Open <span class="n">{{ counts.open }}</span></a>
+    <a class="{% if show == 'to_confirm' %}on{% endif %}" href="?show=to_confirm{% if src %}&amp;src={{ src }}{% endif %}">To confirm <span class="n">{{ counts.to_confirm }}</span></a>
+    <a class="{% if show == 'confirmed' %}on{% endif %}" href="?show=confirmed{% if src %}&amp;src={{ src }}{% endif %}">Stock confirmed <span class="n">{{ counts.confirmed }}</span></a>
+    <a class="{% if show == 'drafts' %}on{% endif %}" href="?show=drafts{% if src %}&amp;src={{ src }}{% endif %}">Shop drafts <span class="n">{{ counts.drafts }}</span></a>
+    <a class="{% if show == 'sold' %}on{% endif %}" href="?show=sold{% if src %}&amp;src={{ src }}{% endif %}">Sold <span class="n">{{ counts.sold }}</span></a>
+    <a class="{% if show == 'cancelled' %}on{% endif %}" href="?show=cancelled{% if src %}&amp;src={{ src }}{% endif %}">Cancelled <span class="n">{{ counts.cancelled }}</span></a>
+    <a class="{% if show == 'all' %}on{% endif %}" href="?show=all{% if src %}&amp;src={{ src }}{% endif %}">All <span class="n">{{ counts.all }}</span></a>
   </nav>
-  <section class="oq-list" aria-label="Pedidos">
+  <nav class="oq-src" aria-label="Source">
+    <a class="{% if not src %}on{% endif %}" href="?{% if show %}show={{ show }}{% endif %}">Every source</a>
+    <a class="{% if src == 'b2b' %}on{% endif %}" href="?src=b2b{% if show %}&amp;show={{ show }}{% endif %}">B2B platform</a>
+    <a class="{% if src == 'app' %}on{% endif %}" href="?src=app{% if show %}&amp;show={{ show }}{% endif %}">Made in the app</a>
+  </nav>
+  <section class="oq-list" aria-label="Pedidos" data-fold="20">
     {% for draft in drafts %}
-      <a class="oq-row" href="{% url 'pedido' %}?draft={{ draft.id }}&amp;switch=1">
+      <a class="oq-row" href="{% url 'pedido' %}?draft={{ draft.id }}&amp;switch=1" data-fold-item>
         <b>P{{ draft.id }}</b>
-        <span class="oq-main">{{ draft.customer.name|default:draft.customer_name|default:"No customer" }}<small>Shop &middot; {{ draft.store.name }}{% if draft.customer_phone %} &middot; {{ draft.customer_phone }}{% endif %}</small></span>
+        <span class="oq-main"><span class="src app">App</span>{{ draft.customer.name|default:draft.customer_name|default:"No customer" }}<small> {{ draft.store.name }}{% if draft.customer_phone %} &middot; {{ draft.customer_phone }}{% endif %}</small></span>
         <span class="oq-date">{{ draft.updated_at|date:"d/m/y H:i" }}</span>
         <span class="oq-units">{{ draft.line_count }} line{{ draft.line_count|pluralize }}</span>
         <span class="oq-total">&euro;{{ draft.total|floatformat:2 }}</span>
@@ -50,9 +61,9 @@
       </a>
     {% endfor %}
     {% for order in orders %}
-      <button type="button" class="oq-row" data-layer="oq-{{ order.id }}">
+      <button type="button" class="oq-row" data-layer="oq-{{ order.id }}" data-fold-item>
         <b>#{{ order.id }}</b>
-        <span class="oq-main">{{ order.customer.name|default:order.contact_name }}<small>{{ order.phone }}{% if order.city %} &middot; {{ order.city }}{% endif %}</small></span>
+        <span class="oq-main"><span class="src b2b">B2B</span>{{ order.customer.name|default:order.contact_name }}<small>{{ order.phone }}{% if order.city %} &middot; {{ order.city }}{% endif %}</small></span>
         <span class="oq-date">{{ order.created_at|date:"d/m/y H:i" }}</span>
         <span class="oq-units">{{ order.units }} pcs</span>
         <span class="oq-total">&euro;{{ order.total|floatformat:2 }}</span>

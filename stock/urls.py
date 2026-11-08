@@ -47,6 +47,8 @@ urlpatterns = [
     path('products/<int:pk>/restock-request/', catalog_views.restock_request, name='restock_request'),
     path('restock-requests/', catalog_views.restock_requests, name='restock_requests'),
     path('restock-requests/<int:pk>/tell/', catalog_views.restock_notify, name='restock_notify'),
+    path('restock-requests/<int:pk>/delete/', catalog_views.restock_delete, name='restock_delete'),
+    path('restock-requests/product/<int:product_id>/clear/', catalog_views.restock_clear, name='restock_clear'),
     path('products/<int:pk>/delete/', views.delete_product_view, name='delete_product'),
 
     path('export-sales-purchases-pdf/', views.export_sales_purchases_pdf, name='export_sales_purchases_pdf'),

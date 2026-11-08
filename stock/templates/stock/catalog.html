@@ -22,8 +22,31 @@
       <a class="{% if not gender %}on{% endif %}" href="{% querystring gender=None page=None %}">Todos</a>
       {% for g in genders %}<a class="{% if gender == g.value %}on{% endif %}" href="{% querystring gender=g.value page=None %}">{{ g.label }}</a>{% endfor %}
     </span>
+    <form method="get" class="wc-sorts" aria-label="Ordenar e filtrar">
+      {% for k, v in keep %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+      <select name="sort" class="form-select" aria-label="Ordenar" onchange="this.form.submit()">
+        <option value="">Ordenar: por marca</option>
+        {% for value, label in sorts %}<option value="{{ value }}"{% if sort == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+      {% if volumes %}<select name="ml" class="form-select" aria-label="Volume" onchange="this.form.submit()">
+        <option value="">Volume</option>
+        {% for v in volumes %}<option value="{{ v }}"{% if ml == v %} selected{% endif %}>{{ v }} ml</option>{% endfor %}
+      </select>{% endif %}
+      {% if strengths %}<select name="strength" class="form-select" aria-label="Concentração" onchange="this.form.submit()">
+        <option value="">Concentração</option>
+        {% for v in strengths %}<option value="{{ v }}"{% if strength == v %} selected{% endif %}>{{ v }}</option>{% endfor %}
+      </select>{% endif %}
+      <noscript><button type="submit" class="btn btn-sm btn-outline-secondary">OK</button></noscript>
+    </form>
     <span class="wc-count">{{ total }} produto{{ total|pluralize }}</span>
   </div>
+  {% if ml or strength or sort %}
+  <div class="fchips">
+    {% if sort %}<a class="fchip" href="{% querystring sort=None page=None %}">{% for value, label in sorts %}{% if value == sort %}{{ label }}{% endif %}{% endfor %} &times;</a>{% endif %}
+    {% if ml %}<a class="fchip" href="{% querystring ml=None page=None %}">{{ ml }} ml &times;</a>{% endif %}
+    {% if strength %}<a class="fchip" href="{% querystring strength=None page=None %}">{{ strength }} &times;</a>{% endif %}
+  </div>
+  {% endif %}
 
   <section class="wc-list" aria-label="Produtos">
     <div class="wc-headrow" aria-hidden="true">
@@ -31,7 +54,7 @@
       <span class="wc-price">Preço grossista</span><span>Disponibilidade</span><span></span>
     </div>
     {% for row in page_obj %}
-      {% ifchanged row.brand %}<div class="wc-group">{% brand_logo row.logo_brand size=22 fallback=row.brand %}<span>{{ row.brand }}</span></div>{% endifchanged %}
+      {% if grouped %}{% ifchanged row.brand %}<div class="wc-group">{% brand_logo row.logo_brand size=22 fallback=row.brand %}<span>{{ row.brand }}</span></div>{% endifchanged %}{% endif %}
       <div class="wc-item">
       <button type="button" class="wc-row{% if row.state == 'out-stock' %} is-out{% endif %}" data-layer="wc-{{ row.pk }}">
         <span class="wc-photo">{% if row.image_url %}<img src="{{ row.image_url }}" alt="" loading="lazy">{% else %}&mdash;{% endif %}</span>

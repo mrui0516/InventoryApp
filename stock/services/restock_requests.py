@@ -57,57 +57,81 @@ def requested_ids(user, product_ids):
 TELL_DAYS = 60
 
 
-def arrived_rows():
-    """Requests a delivery has answered and nobody was told about yet, by product:
-    ``[{product, asks: [{request, name, phone}]}]``. Only those we can reach."""
-    since = timezone.now() - timedelta(days=TELL_DAYS)
-    rows = list(RestockRequest.objects.filter(notified_at__isnull=True, created_at__gte=since)
+def _requester(row):
+    """Who asked, for the shop to read: the customer, how, and who typed it."""
+    customer = row.customer
+    account = getattr(row.requested_by, 'customer_account', None) if row.requested_by_id else None
+    if customer is None and account is not None:
+        customer = account.customer
+    if account is not None:
+        via = 'B2B'
+    elif row.requested_by_id:
+        via = f'Staff · {row.requested_by.username}'
+    else:
+        via = ''
+    return {'request': row, 'customer': customer, 'via': via,
+            'name': customer.name if customer else (row.requested_by.username if row.requested_by_id else '?'),
+            'phone': (customer.phone or '') if customer else ''}
+
+
+def _requests(**filters):
+    return list(RestockRequest.objects.filter(product__archived_at__isnull=True, **filters)
                 .select_related('product', 'customer', 'requested_by__customer_account__customer'))
+
+
+def _split():
+    """``(still_missing, back)``: requests a delivery or stock on hand has answered
+    go to ``back`` until the customer is told; the rest are still missing."""
+    rows = _requests(notified_at__isnull=True, created_at__gte=timezone.now() - timedelta(days=TELL_DAYS))
     delivered = _opened_after({row.product_id for row in rows})
+    stock = sellable_units(list({row.product_id for row in rows}))
+    missing, back = [], []
+    for row in rows:
+        answered = (row.product_id in delivered and delivered[row.product_id] > row.created_at) \
+            or stock.get(row.product_id, 0) > 0
+        (back if answered else missing).append(row)
+    return missing, back
+
+
+def _by_product(rows):
     grouped = defaultdict(list)
     for row in rows:
-        if row.product_id not in delivered or delivered[row.product_id] <= row.created_at:
-            continue
-        customer = row.customer
-        if customer is None and row.requested_by_id:
-            account = getattr(row.requested_by, 'customer_account', None)
-            customer = account.customer if account else None
-        if customer is None or not customer.phone:
-            continue
-        grouped[row.product_id].append({'request': row, 'customer': customer})
-    out = []
-    for asks in grouped.values():
-        out.append({'product': asks[0]['request'].product, 'asks': asks})
+        grouped[row.product_id].append(_requester(row))
+    return grouped
+
+
+def arrived_rows():
+    """Back in stock, by product: ``[{product, asks: [requester]}]``, to tell each customer."""
+    _missing, back = _split()
+    out = [{'product': asks[0]['request'].product, 'asks': asks} for asks in _by_product(back).values()]
     out.sort(key=lambda r: r['product'].list_name.lower())
     return out
 
 
 def tell_message(request_row, catalog_url):
-    customer = request_row.customer or request_row.requested_by.customer_account.customer
-    name = customer.name.split()[0] if customer.name else ''
+    customer = _requester(request_row)['customer']
+    name = customer.name.split()[0] if customer and customer.name else ''
     product = f'{request_row.product.brand} {request_row.product.list_name}'.strip()
     return (f'Olá {name}! O {product} que pediu já chegou. '
             f'Pode encomendar no nosso catálogo: {catalog_url}')
 
 
 def demand_rows():
-    """What was asked for: the most wanted first, then the best selling."""
-    grouped = defaultdict(list)
-    for row in _open_requests():
-        grouped[row.product_id].append(row)
-    products = Product.objects.filter(pk__in=grouped)
+    """Still missing: the most wanted first, then the best selling, each with who asked."""
+    missing, _back = _split()
+    grouped = _by_product(missing)
     since = timezone.now() - timedelta(days=SALES_DAYS)
     sold = dict(Sale.objects.filter(product_id__in=grouped, date__gte=since).values_list('product')
                 .annotate(units=Sum('quantity')).order_by())
     units = sellable_units(list(grouped))
     rows = []
-    for product in products:
-        asks = grouped[product.pk]
+    for asks in grouped.values():
+        product = asks[0]['request'].product
         rows.append({
-            'product': product,
-            'requests': len({_who(row) for row in asks}),
+            'product': product, 'asks': asks,
+            'requests': len({_who(a['request']) for a in asks}),
             'sold_90': sold.get(product.pk, 0),
-            'last_request': max(row.created_at for row in asks),
+            'last_request': max(a['request'].created_at for a in asks),
             'state_label': availability(units.get(product.pk, 0))[1],
         })
     rows.sort(key=lambda row: (-row['requests'], -row['sold_90'], row['product'].list_name.lower()))

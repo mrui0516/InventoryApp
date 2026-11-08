@@ -377,6 +377,26 @@ def restock_requests(request):
 @login_required
 @manager_required
 @require_POST
+def restock_delete(request, pk):
+    from .models import RestockRequest
+    RestockRequest.objects.filter(pk=pk).delete()
+    messages.success(request, 'Request deleted.')
+    return redirect('restock_requests')
+
+
+@login_required
+@manager_required
+@require_POST
+def restock_clear(request, product_id):
+    from .models import RestockRequest
+    n, _ = RestockRequest.objects.filter(product_id=product_id).delete()
+    messages.success(request, f'{n} request{"" if n == 1 else "s"} cleared.')
+    return redirect('restock_requests')
+
+
+@login_required
+@manager_required
+@require_POST
 def restock_notify(request, pk):
     """Open WhatsApp with the message ready, and remember the customer was told."""
     from django.utils import timezone
@@ -390,7 +410,9 @@ def restock_notify(request, pk):
     if not url:
         messages.error(request, 'No WhatsApp number for this customer.')
         return redirect('restock_requests')
-    RestockRequest.objects.filter(pk=ask.pk).update(notified_at=timezone.now())
+    # Told once: every open request of this customer for this product.
+    RestockRequest.objects.filter(product=ask.product, notified_at__isnull=True).filter(
+        Q(customer=customer) | Q(requested_by__customer_account__customer=customer)).update(notified_at=timezone.now())
     text = tell_message(ask, request.build_absolute_uri(reverse('catalog')))
     return redirect(f'{url}?text={quote(text)}')
 

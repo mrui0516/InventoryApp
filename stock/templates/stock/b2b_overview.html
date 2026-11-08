@@ -21,12 +21,12 @@
     <input type="search" name="q" value="{{ query }}" class="form-control" placeholder="Customer or phone" aria-label="Search">
   </form>
 
-  <div class="b2-list">
+  <div class="b2-list" data-fold="25">
     <div class="b2-row b2-headrow" aria-hidden="true">
       <span>Customer</span><span>Account</span><span>Last seen</span><span>Online orders</span><span>Cart</span><span class="r">Sales</span>
     </div>
     {% for r in rows %}
-      <button type="button" class="b2-row" data-layer="b2-{{ r.customer.id }}">
+      <button type="button" class="b2-row" data-layer="b2-{{ r.customer.id }}" data-fold-item>
         <span class="b2-cust"><b>{{ r.customer.name }}</b><small>{{ r.customer.phone|default:"no phone" }}</small></span>
         <span class="b2-acct"><span class="b2-state {{ r.state }}">{{ r.state_label }}</span>{% if r.state == 'invited' %}<small class="{% if r.link_expired or not r.link %}late{% endif %}">{% if r.link and not r.link_expired %}link until {{ r.link.expires_at|date:"d/m H:i" }}{% else %}link expired{% endif %}</small>{% endif %}</span>
         <span class="b2-seen">{% if r.last_seen %}{{ r.last_seen|timesince }} ago<small>{{ r.days_active }} day{{ r.days_active|pluralize }} &middot; {{ r.views }} views / 30d</small>{% else %}&mdash;{% endif %}</span>

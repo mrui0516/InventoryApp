@@ -982,9 +982,14 @@ def inbound_receive_view(request, order_id):
                     order.pending_items.all().delete()
                     if terms:
                         finance.apply_terms(order, terms, request.user)
+                    from .models import RestockRequest
+                    asked = (RestockRequest.objects.filter(product__in=[it.product_id for it in remaining_items],
+                                                           notified_at__isnull=True)
+                             .values('product').distinct().count())
                     messages.success(
                         request,
                         f'Order #{order.id} received. {len(remaining_items)} product(s) added to stock.'
+                        + (f' Customers asked for {asked} of them: tell them on Restock requests.' if asked else '')
                     )
                     return redirect('inbound')
                 if terms:
@@ -5288,7 +5293,7 @@ def quick_import(request):
 
 def _quick_import_product(product):
     """Everything any of the three pages needs to add the product as a line."""
-    from .pedido_views import _availability_label, _on_order_ids
+    from .pedido_views import _availability_label, _on_order_ids, pick_fields
     ctx = _sell_line_ctx(product)
     ctx.update({
         'id': product.id,
@@ -5296,6 +5301,7 @@ def _quick_import_product(product):
         'wholesale_price': ctx['wholesale'],
         'discount_ok': discount_applies(product),
         'availability': _availability_label(product, _on_order_ids()),
+        **pick_fields(product),
     })
     return ctx
 
@@ -6100,6 +6106,7 @@ def delete_customer(request, pk):
 
 @login_required
 def products_autocomplete(request):
+    from .pedido_views import pick_fields
     q = request.GET.get('q', '').strip()
     product_id = request.GET.get('product_id', '').strip()
     results = []
@@ -6184,6 +6191,7 @@ def products_autocomplete(request):
             'wholesale_price': float(p.wholesale_price) if p.wholesale_price is not None else None,
             'discount_ok': discount_applies(p),
             'image_url': get_product_image_url(p),
+            **pick_fields(p),
         })
     return JsonResponse({'results': results})
 

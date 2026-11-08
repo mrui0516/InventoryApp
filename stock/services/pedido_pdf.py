@@ -15,6 +15,16 @@ from . import doc_pdf
 from .doc_pdf import money, pdf_safe  # noqa: F401  (part of this module's API)
 
 
+def _product_cell(style, line):
+    """The product, with the scents of a mix or a sample one per line under it."""
+    picks = line.get('picks') or []
+    if not picks:
+        return line['title']
+    chosen = '<br/>'.join(f"{pick['quantity']} \u00d7 {doc_pdf.esc(pick['name'])}" for pick in picks)
+    return Paragraph(f"{doc_pdf.esc(line['title'])}<br/><font size=\"7.5\" color=\"#57534e\">{chosen}</font>",
+                     style['cell'])
+
+
 def _payment_block(style, payment_info):
     safe = pdf_safe(payment_info).strip()
     if not safe:
@@ -49,7 +59,7 @@ def build_pedido_pdf(*, profile, lines, totals, date_label, valid_until_label=''
     if customer is not None:
         story += [customer, Spacer(1, 8)]
 
-    rows = [[line['title'], line.get('barcode') or '', line.get('availability') or '',
+    rows = [[_product_cell(style, line), line.get('barcode') or '', line.get('availability') or '',
              str(line['quantity']), money(line['unit_price']), money(line['line_total'])]
             for line in lines]
     story.append(doc_pdf.data_table(

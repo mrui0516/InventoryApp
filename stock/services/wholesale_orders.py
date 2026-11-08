@@ -39,14 +39,17 @@ def _address(order):
     return f'{order.address}\n{place}'.strip()
 
 
-def _note(order):
-    """What the shop reads on the quote: the customer's note, then each choice."""
-    parts = [order.note] if order.note else []
-    for line in order.lines.all():
-        if line.picks:
-            chosen = ', '.join(f"{pick['quantity']} {TIMES} {pick['name']}" for pick in line.picks)
-            parts.append(f'{line.name}: {chosen}')
-    return '\n'.join(parts)
+def _draft_line(line):
+    """An order line as a Pedido line; the scents chosen go with it (since
+    2026-11-08 they show under the product, not in the note)."""
+    row = {'product_id': line.product_id, 'quantity': line.quantity, 'unit_price': str(line.final_price)}
+    if line.picks:
+        row['picks'] = line.picks
+    return row
+
+
+def _pick_key(picks):
+    return tuple(sorted((pick['id'], int(pick['quantity'])) for pick in picks or []))
 
 
 def save_to_pedido(order):
@@ -59,10 +62,9 @@ def save_to_pedido(order):
     draft.customer_name = (order.contact_name or order.business_name)[:100]
     draft.customer_phone = order.phone[:40]
     draft.customer_address = _address(order)
-    draft.lines = [{'product_id': line.product_id, 'quantity': line.quantity, 'unit_price': str(line.final_price)}
-                   for line in order.lines.all()]
+    draft.lines = [_draft_line(line) for line in order.lines.all() if line.product_id]
     draft.shipping = order.shipping_fee or Decimal('0')
-    draft.note = _note(order)
+    draft.note = order.note
     draft.goods_total = order.goods_total
     draft.total = order.total
     draft.save()
@@ -74,18 +76,21 @@ def save_to_pedido(order):
 def _follows_quote(order, draft):
     """The shop may have changed the quote before printing it. What it printed is
     what was agreed, so that is what the customer's order now says."""
-    ordered = sorted((line.product_id, line.quantity, line.final_price) for line in order.lines.all())
-    quoted = sorted((line['product_id'], int(line['quantity']), pedido_math.money(line['unit_price']))
-                    for line in draft.lines)
+    ordered = sorted((line.product_id, line.quantity, line.final_price, _pick_key(line.picks))
+                     for line in order.lines.all())
+    quoted = sorted((line['product_id'], int(line['quantity']), pedido_math.money(line['unit_price']),
+                     _pick_key(line.get('picks'))) for line in draft.lines)
+    chosen = {line['product_id']: line.get('picks') for line in draft.lines}
     if ordered == quoted and draft.total == order.total:
         return
     old = {line.product_id: line for line in order.lines.all()}
     products = {product.pk: product for product in Product.objects.filter(pk__in=[row[0] for row in quoted])}
     rows = []
-    for product_id, quantity, price in quoted:
+    for product_id, quantity, price, _picks in quoted:
         before, product = old.get(product_id), products.get(product_id)
+        picks = chosen.get(product_id) or (before.picks if before else [])
         rows.append(OrderRequestLine(
-            request=order, product_id=product_id, quantity=quantity, picks=before.picks if before else [],
+            request=order, product_id=product_id, quantity=quantity, picks=picks,
             name=before.name if before else f'{product.brand} {display_title(product)}'.strip(),
             barcode=before.barcode if before else product.barcode, base_price=price,
             customer_discount=Decimal('0'), catalog_price=price, tier_discount=Decimal('0'), final_price=price,

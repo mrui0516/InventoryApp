@@ -50,6 +50,29 @@ def _customer(request):
     return customer
 
 
+SORTS = {'sold': 'Populares', 'new': 'Mais recentes', 'price_asc': 'Preço: mais baixo',
+         'price_desc': 'Preço: mais alto', 'name': 'Nome A–Z'}
+
+
+def _sorted(rows, sort):
+    """The list in the order asked for. Without one it keeps the catalogue's own:
+    by brand, each brand's best lines first (catalog_rows)."""
+    if not sort:
+        return rows
+    if sort == 'name':
+        return sorted(rows, key=lambda r: (r['title'].lower(), r['brand'].lower()))
+    if sort in ('price_asc', 'price_desc'):
+        priced = [r for r in rows if r['price']]
+        priced.sort(key=lambda r: r['price'], reverse=sort == 'price_desc')
+        return priced + [r for r in rows if not r['price']]
+    if sort == 'new':
+        added = dict(Product.objects.filter(pk__in=[r['pk'] for r in rows]).values_list('pk', 'created_at'))
+        return sorted(rows, key=lambda r: added.get(r['pk']) or timezone.now().replace(year=2000), reverse=True)
+    from .services.wholesale_catalog import units_sold
+    sold = units_sold([r['pk'] for r in rows])
+    return sorted(rows, key=lambda r: -sold.get(r['pk'], 0))
+
+
 def brand_tabs(counts):
     names = sorted(counts, key=lambda name: brand_sort_key(name, counts[name]))
     logos = {b.name.lower(): b for b in Brand.objects.filter(name__in=names)}
@@ -92,9 +115,21 @@ def catalog_view(request):
     everything = catalog_rows(query=query, gender=gender, show_all=show_all, viewer=request.user, customer=customer)
     by_type = Counter(row['type_code'] for row in everything)
     rows = [row for row in everything if not kind or row['type_code'] == kind]
+    # Size and strength: offered from what the chosen type has, then applied.
+    volumes = sorted({row['volume_ml'] for row in rows if row['volume_ml']})
+    strengths = sorted({row['strength'] for row in rows if row['strength']})
+    ml = _number(request.GET.get('ml'))
+    strength = request.GET.get('strength', '').strip()
+    if ml:
+        rows = [row for row in rows if row['volume_ml'] == ml]
+    if strength:
+        rows = [row for row in rows if row['strength'] == strength]
     by_brand = Counter(row['brand'] for row in rows)
     if brand:
         rows = [row for row in rows if row['brand'].lower() == brand.lower()]
+    sort = request.GET.get('sort', '')
+    sort = sort if sort in SORTS else ''
+    rows = _sorted(rows, sort)
     page_obj = Paginator(rows, PAGE_SIZE).get_page(request.GET.get('page'))
     return render(request, 'stock/catalog.html', {
         'tab': 'catalog',
@@ -111,6 +146,9 @@ def catalog_view(request):
         'brand_total': sum(by_brand.values()),
         'brand_tabs': brand_tabs(by_brand),
         'genders': [{'value': value, 'label': label} for value, label in Product.GENDER_SHOPIFY_TAGS.items()],
+        'sort': sort, 'sorts': SORTS.items(), 'grouped': not sort,
+        'ml': ml, 'volumes': volumes, 'strength': strength, 'strengths': strengths,
+        'keep': [(k, v) for k, v in request.GET.items() if k not in ('sort', 'ml', 'strength', 'page') and v],
         'pick_brands': pick_brands() if any(row.get('pick_mode') == 'perfume' for row in page_obj) else [],
         **_shared(request, customer),
     })
@@ -370,7 +408,14 @@ def order_requests(request):
         show = ''
         orders = orders.filter(status__in=OrderRequest.SHOP_CAN_CANCEL)
         shown_drafts = open_drafts
+    src = request.GET.get('src', '')
+    if src == 'b2b':
+        shown_drafts = PedidoDraft.objects.none()
+    elif src == 'app':
+        orders = orders.none()
+    else:
+        src = ''
     counts['open'] = counts['to_confirm'] + counts['confirmed'] + counts['drafts']
     counts['all'] = OrderRequest.objects.count() + open_drafts.count()
     return render(request, 'stock/order_requests.html', {'orders': orders, 'drafts': shown_drafts, 'show': show,
-                                                         'counts': counts})
+                                                         'counts': counts, 'src': src})

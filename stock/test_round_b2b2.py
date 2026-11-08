@@ -90,6 +90,17 @@ class PhonePrefixTests(PortalMixin):
         self.assertRedirects(response, reverse("catalog"), fetch_redirect_response=False)
 
 
+class PasswordTests(PortalMixin):
+    def test_the_internal_username_never_refuses_a_password(self):
+        from unittest import mock
+        with mock.patch("stock.services.portal.secrets.token_hex", return_value="a2026a"):
+            token = self.token_of(self.invite())
+        self.client.logout()
+        self.client.post(reverse("portal_invite", args=[token]), {"phone": "912345678",
+                                                                  "password1": PASSWORD, "password2": PASSWORD})
+        self.assertTrue(CustomerAccount.objects.get(customer=self.shop).user.check_password(PASSWORD))
+
+
 class RestockWhatsappTests(PortalMixin):
     def setUp(self):
         super().setUp()

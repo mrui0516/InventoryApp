@@ -867,8 +867,8 @@ class DashboardViewTests(TestCase):
         # The employee still has a way to each of their jobs. The menu groups
         # were renamed by task on 2026-10-16 (Operations / Sales & Clients ->
         # Sell / Customers), and Orders now sits in the Business tabs.
-        self.assertContains(response, '<div class="erp-nav-group">Stock</div>')
-        self.assertContains(response, '<div class="erp-nav-group">Customers</div>')
+        self.assertContains(response, '<div class="erp-nav-group" data-nav-fold>Stock</div>')
+        self.assertContains(response, '<div class="erp-nav-group" data-nav-fold>Customers</div>')
         self.assertContains(response, reverse("sales_records"))
         self.assertContains(response, reverse("customer_search"))
 
@@ -8962,10 +8962,13 @@ class PedidoDraftTests(TestCase):
         mine = self.Draft.objects.create(store=self.store, customer_name="Mine Lda", total=Decimal("10"))
         self.Draft.objects.create(store=self.other, customer_name="Theirs Lda", total=Decimal("10"))
         self.Draft.objects.create(store=self.store, customer_name="Sold Lda", status='sold')
-        html = self.client.get(reverse("pedido")).content.decode()
+        # Since 2026-11-08 the drafts are listed on B2B -> Pedidos (every shop's open
+        # ones); a draft opened in Pedido carries its own Vender and Apagar.
+        html = self.client.get(reverse("order_requests")).content.decode()
         self.assertIn("Mine Lda", html)
-        self.assertNotIn("Theirs Lda", html)
+        self.assertIn("Theirs Lda", html)
         self.assertNotIn("Sold Lda", html)
+        html = self.client.get(reverse("pedido") + f"?draft={mine.id}").content.decode()
         self.assertIn(f'{reverse("outbound")}?pedido={mine.id}', html)
         self.assertIn(reverse("pedido_draft_delete", args=[mine.id]), html)
 

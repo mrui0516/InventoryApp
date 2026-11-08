@@ -45,6 +45,40 @@
   .pd-row.needs-price input.price{ border-color:var(--danger); }
   .pd-why{ display:none; font-size:.84rem; color:var(--danger); font-weight:700; }
   .pd-row.needs-price .pd-why{ display:block; }
+  .pd-picker{ border:1.5px solid var(--app-primary); border-radius:.7rem; background:var(--app-surface-2, #f8fafc);
+               padding:.7rem .8rem; margin-bottom:.8rem; }
+  .pd-picker-head{ display:flex; flex-wrap:wrap; gap:.15rem .6rem; align-items:baseline; margin-bottom:.5rem; }
+  .pd-picker-head b{ font-size:.98rem; color:var(--ink); }
+  .pd-picker-hint{ font-size:.86rem; color:var(--label); }
+  .pd-picker input[type=search]{ width:100%; border:1px solid var(--border); border-radius:.55rem;
+                                 padding:.48rem .6rem; font-size:.95rem; background:#fff; color:var(--ink); }
+  .pd-picker-hits{ display:grid; gap:.25rem; margin:.4rem 0; max-height:220px; overflow:auto; }
+  .pd-picker-hits:empty{ display:none; }
+  .pd-picker-hits button{ text-align:left; border:1px solid var(--border); background:#fff; border-radius:.5rem;
+                          padding:.45rem .6rem; font-size:.9rem; color:var(--ink); }
+  .pd-picker-hits button:hover, .pd-picker-hits button:focus{ background:#eff6ff; }
+  .pd-picker-hits .s2{ display:block; font-size:.82rem; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .pd-picker-none{ font-size:.88rem; color:var(--label); padding:.3rem .1rem; }
+  .pd-picker-list{ display:grid; gap:.3rem; }
+  .pd-pick{ display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.5rem; align-items:center; background:#fff;
+            border:1px solid #e7e5e4; border-radius:.5rem; padding:.25rem .3rem .25rem .6rem; }
+  .pd-pick .nm{ font-size:.92rem; font-weight:700; color:var(--ink); overflow-wrap:anywhere; }
+  .pd-step{ display:inline-flex; align-items:center; gap:.2rem; }
+  .pd-step button{ width:38px; height:38px; border:1px solid var(--border); background:#fff; border-radius:.45rem;
+                   font-weight:900; font-size:1.05rem; color:var(--ink); }
+  .pd-step input{ width:54px; height:38px; border:1px solid var(--border); border-radius:.45rem; text-align:center;
+                  font-size:.95rem; font-weight:800; color:var(--ink); }
+  .pd-picker-foot{ display:flex; align-items:center; gap:.5rem; margin-top:.6rem; }
+  .pd-picker-foot .tot{ margin-right:auto; font-size:.92rem; color:var(--label); }
+  .pd-picker-foot .tot b{ color:var(--ink); font-size:1rem; }
+  .pd-picks{ margin-top:.2rem; font-size:.86rem; color:var(--ink); line-height:1.35; }
+  .pd-picks:empty{ display:none; }
+  .pd-pick-edit{ border:0; background:none; padding:0; font-size:.84rem; font-weight:700; color:var(--accent);
+                 text-decoration:underline; cursor:pointer; }
+  .pd-need{ display:none; font-size:.84rem; color:var(--danger); font-weight:700; }
+  .pd-row.needs-picks{ background:var(--danger-soft); }
+  .pd-row.needs-picks .pd-need{ display:block; }
+  .pd-table input.qty[readonly]{ background:#f5f5f4; color:var(--ink); }
   .pd-x{ border:0; background:none; color:var(--danger); font-weight:900;
          font-size:1.05rem; line-height:1; padding:.2rem .4rem; cursor:pointer; }
   .pd-empty{ color:var(--label); font-size:.92rem; padding:.6rem .2rem; }
@@ -68,6 +102,11 @@
   .pd-head .pd-new{ margin-left:auto; font-size:.9rem; font-weight:700; }
   .qi-label-row{ display:flex; align-items:center; justify-content:space-between; gap:.6rem; margin-bottom:.35rem; } .qi-label-row .form-label, .qi-label-row label{ margin:0; } .qi-open{ display:inline-flex; align-items:center; gap:.35rem; font-weight:700; min-height:36px; white-space:nowrap; flex:0 0 auto; }
   .pd-editing{ font-size:.92rem; font-weight:700; color:var(--accent); }
+  .pd-src{ padding:0 .45rem; font-size:.78rem; font-weight:800; border-radius:4px; }
+  .pd-src.b2b{ color:#1e40af; background:#dbeafe; }
+  .pd-src.app{ color:#57534e; background:#f5f5f4; }
+  .pd-all{ font-size:.88rem; font-weight:700; }
+  .pd-del{ display:inline; margin:0; }
   .pd-saved{ font-size:.9rem; font-weight:700; color:var(--app-good); }
 
   /* drafts: one compact row each, the Orders-page density */
@@ -127,6 +166,12 @@
 <div class="pd-wrap">
   <div class="pd-head">
     <h2>Pedido</h2>
+    {% if draft %}<span class="pd-src {% if draft.order_request %}b2b{% else %}app{% endif %}">{% if draft.order_request %}B2B #{{ draft.order_request.id }}{% else %}App{% endif %}</span>{% endif %}
+    <a class="pd-all" href="{% url 'order_requests' %}">All Pedidos</a>
+    {% if draft %}
+      <a class="pd-draft-btn is-sell" href="{% url 'outbound' %}?pedido={{ draft.id }}">Vender</a>
+      <form method="post" action="{% url 'pedido_draft_delete' draft.id %}" class="pd-del" onsubmit="return confirm('Apagar este rascunho?');">{% csrf_token %}<button type="submit" class="pd-draft-btn is-del">Apagar</button></form>
+    {% endif %}
     {% if draft %}<span class="pd-editing" id="pd-editing">Rascunho #{{ draft.id }}</span>{% else %}<span class="pd-editing" id="pd-editing" hidden></span>{% endif %}
     <span class="pd-saved" id="pd-saved" hidden>Rascunho guardado</span>
     {% if not pedido_blocked %}<a class="pd-new" href="{% url 'pedido' %}">+ Novo pedido</a>{% endif %}
@@ -147,7 +192,7 @@
     </div>
   {% endif %}
 
-  <div id="pd-drafts">{% include 'stock/_pedido_drafts.html' with current_draft_id=draft.id %}</div>
+
 
   {% if errors %}
     <div class="pd-errors">
@@ -200,6 +245,20 @@
         </div>
         <input type="text" id="pd-prod-q" autocomplete="off" placeholder="Escreva para procurar">
         <div class="pd-sugg" id="pd-prod-sugg" hidden></div>
+      </div>
+
+      <div class="pd-picker" id="pd-picker" hidden>
+        <div class="pd-picker-head"><b id="pd-picker-title"></b><span class="pd-picker-hint" id="pd-picker-hint"></span></div>
+        <div id="pd-picker-find" hidden>
+          <input type="search" id="pd-picker-q" autocomplete="off" placeholder="Procurar perfume com stock (nome, marca, EAN)" aria-label="Procurar perfume com stock">
+          <div class="pd-picker-hits" id="pd-picker-hits"></div>
+        </div>
+        <div class="pd-picker-list" id="pd-picker-list"></div>
+        <div class="pd-picker-foot">
+          <span class="tot"><b id="pd-picker-total">0</b> un.</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="pd-picker-cancel">Cancelar</button>
+          <button type="button" class="btn btn-sm btn-primary" id="pd-picker-ok" disabled>Adicionar</button>
+        </div>
       </div>
 
       <table class="pd-table">
@@ -438,12 +497,143 @@
                                             : fmt(Math.round(p.wholesale_price * 100));
     const bits = [p.barcode || '', p.availability || '', price].filter(Boolean);
     return esc(p.display_name) + '<span class="s2">' + esc(bits.join(' · ')) + '</span>';
-  }).addEventListener('pd:pick', function (e) { addRow(e.detail); });
+  }).addEventListener('pd:pick', function (e) { choose(e.detail); });
+
+  // ---- mixes and samples: the scents first, then the row ----------------
+  // A mix is quoted as so many of each of its own scents, a sample as the
+  // perfumes in stock it is poured from. Their units are the row's quantity.
+  const picker = document.getElementById('pd-picker');
+  const pickList = document.getElementById('pd-picker-list');
+  const pickQ = document.getElementById('pd-picker-q');
+  const pickHits = document.getElementById('pd-picker-hits');
+  const pickOk = document.getElementById('pd-picker-ok');
+  const pickTotal = document.getElementById('pd-picker-total');
+  const PICK_SEARCH = '{% url "wholesale_pick_search" %}?q=';
+  let picking = null;   // {p, tr, picks: [{id, name, quantity}]}
+
+  function rowFor(id) {
+    const input = rows.querySelector('input[name="product_id"][value="' + id + '"]');
+    return input ? input.closest('tr') : null;
+  }
+  function choose(p) {
+    if (p.pick_mode) { openPicker(p, rowFor(p.id)); return; }
+    addRow(p);
+  }
+  function rowPicks(tr) {
+    try { return JSON.parse(tr.querySelector('input[name="picks"]').value || '[]'); } catch (err) { return []; }
+  }
+  function openPicker(p, tr) {
+    const had = tr ? rowPicks(tr) : [];
+    const qty = {};
+    had.forEach(function (x) { qty[x.id] = x.quantity; });
+    const picks = p.pick_mode === 'list'
+      ? (p.pick_options || []).map(function (o) { return { id: o.id, name: o.name, quantity: qty[o.id] || 0 }; })
+      : had.map(function (x) { return { id: x.id, name: x.name, quantity: x.quantity }; });
+    picking = { p: p, tr: tr, picks: picks };
+    document.getElementById('pd-picker-title').textContent = p.display_name;
+    document.getElementById('pd-picker-hint').textContent = p.pick_mode === 'list'
+      ? 'Quantas de cada fragrância?' : 'De que perfumes são as amostras? Só aparecem perfumes com stock.';
+    document.getElementById('pd-picker-find').hidden = p.pick_mode !== 'perfume';
+    pickQ.value = '';
+    pickHits.innerHTML = '';
+    pickOk.textContent = tr ? 'Guardar' : 'Adicionar';
+    picker.hidden = false;
+    drawPicks();
+    picker.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    if (p.pick_mode === 'perfume') pickQ.focus({ preventScroll: true });
+  }
+  function closePicker() { picker.hidden = true; picking = null; }
+  function pickCount() {
+    const n = picking.picks.reduce(function (sum, x) { return sum + (x.quantity || 0); }, 0);
+    pickTotal.textContent = n;
+    pickOk.disabled = n < 1;
+  }
+  function drawPicks() {
+    pickList.innerHTML = '';
+    picking.picks.forEach(function (x) {
+      const row = document.createElement('div');
+      row.className = 'pd-pick';
+      row.innerHTML = '<span class="nm">' + esc(x.name) + '</span><span class="pd-step">' +
+        '<button type="button" data-d="-1" aria-label="Menos">&minus;</button>' +
+        '<input type="number" min="0" max="999" inputmode="numeric" aria-label="Quantidade de ' + esc(x.name) +
+        '" value="' + (x.quantity || 0) + '">' +
+        '<button type="button" data-d="1" aria-label="Mais">+</button></span>';
+      const input = row.querySelector('input');
+      row.querySelectorAll('button').forEach(function (b) {
+        b.addEventListener('click', function () {
+          x.quantity = Math.min(Math.max((x.quantity || 0) + Number(b.dataset.d), 0), 999);
+          input.value = x.quantity;
+          pickCount();
+        });
+      });
+      input.addEventListener('input', function () {
+        x.quantity = Math.min(Math.max(parseInt(input.value || '0', 10) || 0, 0), 999);
+        pickCount();
+      });
+      pickList.appendChild(row);
+    });
+    pickCount();
+  }
+  let pickTimer = null;
+  pickQ.addEventListener('input', function () {
+    const q = pickQ.value.trim();
+    clearTimeout(pickTimer);
+    if (q.length < 2) { pickHits.innerHTML = ''; return; }
+    pickTimer = setTimeout(function () {
+      fetch(PICK_SEARCH + encodeURIComponent(q))
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (!picking) return;
+          const found = (data && data.results) || [];
+          pickHits.innerHTML = found.length ? '' : '<div class="pd-picker-none">Nenhum perfume com stock.</div>';
+          found.forEach(function (hit) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.innerHTML = esc(hit.name) + '<span class="s2">' + esc(hit.ean || '') + '</span>';
+            b.addEventListener('click', function () {
+              const same = picking.picks.find(function (x) { return x.id === hit.id; });
+              if (same) same.quantity += 1;
+              else picking.picks.push({ id: hit.id, name: hit.name, quantity: 1 });
+              pickQ.value = '';
+              pickHits.innerHTML = '';
+              drawPicks();
+              pickQ.focus();
+            });
+            pickHits.appendChild(b);
+          });
+        })
+        .catch(function () { pickHits.innerHTML = ''; });
+    }, 220);
+  });
+  // Enter inside the panel must not post the quote; Escape closes it.
+  picker.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') e.preventDefault();
+    if (e.key === 'Escape') closePicker();
+  });
+  document.getElementById('pd-picker-cancel').addEventListener('click', closePicker);
+  pickOk.addEventListener('click', function () {
+    const chosen = picking.picks.filter(function (x) { return x.quantity > 0; });
+    if (!chosen.length) return;
+    if (picking.tr) setPicks(picking.tr, chosen);
+    else addRow(picking.p, null, chosen);
+    closePicker();
+  });
+  function setPicks(tr, picks) {
+    const sum = picks.reduce(function (n, x) { return n + (x.quantity || 0); }, 0);
+    tr.querySelector('input[name="picks"]').value = picks.length ? JSON.stringify(picks) : '';
+    tr.querySelector('.pd-picks').innerHTML = picks.map(function (x) {
+      return '<div>' + x.quantity + ' &times; ' + esc(x.name) + '</div>';
+    }).join('');
+    tr.querySelector('input.qty').value = String(sum);
+    tr.classList.toggle('needs-picks', !sum);
+    tr.querySelector('.pd-pick-edit').textContent = sum ? 'Alterar escolha' : 'Escolher fragrâncias';
+    recalc();
+  }
 
   // ---- product rows -----------------------------------------------------
   // ``quoted`` carries the quantity and price of a reopened draft's line.
-  function addRow(p, quoted) {
-    if (!quoted && rows.querySelector('input[name="product_id"][value="' + p.id + '"]')) {
+  function addRow(p, quoted, picks) {
+    if (!quoted && !p.pick_mode && rows.querySelector('input[name="product_id"][value="' + p.id + '"]')) {
       const existing = rows.querySelector('input[name="product_id"][value="' + p.id + '"]')
                            .closest('tr').querySelector('input.qty');
       existing.value = String(parseInt(existing.value || '0', 10) + 1);
@@ -465,17 +655,30 @@
     tr.innerHTML =
       '<td><div class="pd-name">' + esc(p.display_name) + '</div>' +
       '<div class="pd-ean">' + esc(p.barcode || '') + '</div>' +
+      '<div class="pd-picks"></div>' +
+      (p.pick_mode ? '<button type="button" class="pd-pick-edit"></button>' +
+                     '<div class="pd-need">Escolha as fragrâncias antes de gerar o pedido.</div>' : '') +
       '<div class="pd-why">Sem preço grossista — escreva o preço.</div>' +
+      '<input type="hidden" name="picks" value="">' +
       '<input type="hidden" name="product_id" value="' + p.id + '"></td>' +
       '<td data-l="Disponibilidade"><span class="pd-avail">' + esc(p.availability || '') + '</span></td>' +
       '<td class="num" data-l="Qtd."><input class="qty" name="quantity" type="number" min="1" step="1" value="' +
-        (quoted ? quoted.quantity : 1) + '"></td>' +
+        (quoted ? quoted.quantity : 1) + '"' + (p.pick_mode ? ' readonly title="A soma das fragrâncias escolhidas"' : '') +
+        '></td>' +
       '<td class="num" data-l="Preço unit."><input class="price" name="unit_price" type="text" inputmode="decimal" value="' +
         startPrice.replace('.', ',') + '"><span class="pd-last" hidden></span></td>' +
       '<td class="num" data-l="Total"><span class="line">0,00 EUR</span></td>' +
       '<td><button type="button" class="pd-x" aria-label="Remover">&times;</button></td>';
     rows.appendChild(tr);
-    tr.querySelector('.pd-x').addEventListener('click', function () { tr.remove(); recalc(); });
+    tr.querySelector('.pd-x').addEventListener('click', function () {
+      if (picking && picking.tr === tr) closePicker();
+      tr.remove();
+      recalc();
+    });
+    if (p.pick_mode) {
+      tr.querySelector('.pd-pick-edit').addEventListener('click', function () { openPicker(p, tr); });
+      setPicks(tr, picks || (quoted && quoted.picks) || []);
+    }
     tr.querySelectorAll('input.qty, input.price').forEach(function (el) {
       el.addEventListener('input', recalc);
     });
@@ -546,9 +749,11 @@
     document.getElementById('pd-t-total').textContent = fmt(total);
 
     empty.hidden = lines > 0;
-    submit.disabled = submit.dataset.blocked === '1' || lines === 0 || missing > 0;
+    const unpicked = rows.querySelectorAll('tr.pd-row.needs-picks').length;
+    submit.disabled = submit.dataset.blocked === '1' || lines === 0 || missing > 0 || unpicked > 0;
     saveButton.disabled = submit.disabled;
-    block.style.display = missing > 0 ? 'block' : 'none';
+    block.style.display = (missing > 0 || unpicked > 0) ? 'block' : 'none';
+    block.textContent = unpicked > 0 ? 'Escolha as fragrâncias em falta.' : 'Preencha os preços em falta.';
   }
 
   ['pd-shipping', 'pd-discount-value', 'pd-discount-kind'].forEach(function (id) {
@@ -624,7 +829,7 @@
     setTimeout(function () { saved.hidden = true; }, 3000);
     fetch('{% url "pedido_drafts_partial" %}?current=' + encodeURIComponent(id))
       .then(function (r) { return r.text(); })
-      .then(function (html) { document.getElementById('pd-drafts').innerHTML = html; })
+      .then(function (html) { var box = document.getElementById('pd-drafts'); if (box) box.innerHTML = html; })
       .catch(function () { /* the list catches up on the next visit */ });
   }
 

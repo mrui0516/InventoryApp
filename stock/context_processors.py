@@ -14,8 +14,10 @@ def _waiting(user, store):
     if not has_manager_access(user):
         return {}
     drafts = PedidoDraft.objects.filter(status=PedidoDraft.OPEN, order_request__status__in=OrderRequest.SHOP_CAN_CANCEL)
+    from .services.restock_requests import arrived_rows
     return {'requests_waiting': OrderRequest.objects.filter(status=OrderRequest.SUBMITTED).count(),
-            'pedido_waiting': drafts.filter(store=store).count() if store is not None else 0}
+            'pedido_waiting': drafts.filter(store=store).count() if store is not None else 0,
+            'restock_waiting': len(arrived_rows())}
 
 
 def phone_prefixes(request):

@@ -23,6 +23,7 @@ Rules worth knowing before changing this:
   so the product search runs with ``scope=stock`` (the whole catalogue) and each
   line prints its availability instead of being hidden.
 """
+import json
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
@@ -38,6 +39,8 @@ from .models import BusinessSettings, Customer, PedidoDraft, PrintProfile, Produ
 from .permissions import manager_required
 from .services.wholesale_discount import discount_applies
 from .services import pedido as pedido_math
+from .services.wholesale_catalog import pick_mode, pick_options
+from .services.wholesale_picks import clean_picks
 from .services import pedido_pdf
 from .services import shopify_sync
 from .services import wholesale_orders
@@ -82,6 +85,23 @@ def _availability_label(product, on_order_ids):
     return PT_AVAILABILITY.get(state, '')
 
 
+def pick_fields(product):
+    """What the form needs to ask which scents a mix or a sample is made of:
+    'list' brings the mix's own names, 'perfume' searches the perfumes in stock."""
+    mode = pick_mode(product)
+    options = [{'id': o['id'], 'name': o['name']} for o in pick_options(product)] if mode == 'list' else []
+    return {'pick_mode': mode, 'pick_options': options}
+
+
+def _read_picks(product, raw):
+    """The chosen scents as stored, or ValueError in the shop's words."""
+    try:
+        wanted = json.loads(raw or '[]')
+    except ValueError:
+        wanted = None
+    return clean_picks(product, wanted)
+
+
 def _read_lines(request):
     """Turn the posted parallel arrays into lines, plus any complaint.
 
@@ -92,6 +112,7 @@ def _read_lines(request):
     product_ids = request.POST.getlist('product_id')[:MAX_LINES]
     quantities = request.POST.getlist('quantity')
     unit_prices = request.POST.getlist('unit_price')
+    raw_picks = request.POST.getlist('picks')
 
     wanted = []
     for index, raw_id in enumerate(product_ids):
@@ -99,17 +120,28 @@ def _read_lines(request):
             continue
         wanted.append((int(raw_id),
                        _int(quantities[index] if index < len(quantities) else '', 0),
-                       (unit_prices[index] if index < len(unit_prices) else '')))
+                       (unit_prices[index] if index < len(unit_prices) else ''),
+                       (raw_picks[index] if index < len(raw_picks) else '')))
 
     products = {p.id: p for p in Product.objects.filter(
-        id__in=[pid for pid, _, _ in wanted])}
+        id__in=[pid for pid, _, _, _ in wanted]).prefetch_related('contents__linked')}
     on_order_ids = _on_order_ids()
 
     lines, errors = [], []
-    for product_id, quantity, raw_price in wanted:
+    for product_id, quantity, raw_price, raw_pick in wanted:
         product = products.get(product_id)
         if product is None:
             continue
+        # A mix or a sample is quoted as the scents it is made of; their units
+        # are the line's quantity, whatever the box said.
+        picks = []
+        if pick_mode(product):
+            try:
+                picks = _read_picks(product, raw_pick)
+            except ValueError as error:
+                errors.append(f'{product.display_name}: {error}')
+                continue
+            quantity = sum(pick['quantity'] for pick in picks)
         if quantity < 1:
             errors.append(f'{product.display_name}: indique uma quantidade.')
             continue
@@ -128,6 +160,7 @@ def _read_lines(request):
             'quantity': quantity,
             'unit_price': pedido_math.money(unit_price),
             'line_total': pedido_math.line_total(quantity, unit_price),
+            'picks': picks,
         })
     return lines, errors
 
@@ -184,7 +217,9 @@ def _form_rows(lines):
                                  if line['product'].wholesale_price is not None else None),
              'discount_ok': discount_applies(line['product']),
              'quantity': line['quantity'],
-             'unit_price': str(line['unit_price'])}
+             'unit_price': str(line['unit_price']),
+             'picks': line.get('picks') or [],
+             **pick_fields(line['product'])}
             for line in lines]
 
 
@@ -232,7 +267,8 @@ def _save_draft(request, *, store, draft, customer, lines, totals, discount_kind
     draft.customer_phone = customer['phone'][:40]
     draft.customer_address = customer['address']
     draft.lines = [{'product_id': line['product'].id, 'quantity': line['quantity'],
-                    'unit_price': str(line['unit_price'])} for line in lines]
+                    'unit_price': str(line['unit_price']),
+                    **({'picks': line['picks']} if line.get('picks') else {})} for line in lines]
     draft.shipping = totals['shipping']
     draft.extras = [{'label': e['label'], 'amount': str(e['amount'])} for e in totals['extras']]
     draft.discount_value = pedido_math.money(_decimal(request.POST.get('discount_value')))

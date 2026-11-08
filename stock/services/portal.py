@@ -131,7 +131,10 @@ def use_link(token, phone, password, again):
     if password != again:
         raise ValueError('As palavras-passe não coincidem.')
     try:
-        validate_password(password, account.user)
+        # No user here: the username is an internal 'customer-<id>-<random>' the
+        # customer never sees, and about 1 in 100 of them made Django call a good
+        # password "too similar to the username".
+        validate_password(password)
     except ValidationError:
         raise ValueError('Escolha uma palavra-passe com pelo menos 8 caracteres, que não seja só números nem '
                          'demasiado comum.')

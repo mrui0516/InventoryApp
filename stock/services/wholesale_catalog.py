@@ -123,6 +123,9 @@ def _row(product, units, requested=False, customer=None, in_cart=0, on_way=False
         'title': display_title(product),
         'kind': kind.customer_label or kind.name,
         'type_code': product.product_type_id,
+        'volume_ml': product.volume_ml,
+        'strength': product.strength_short if hasattr(product, 'strength_short') else (
+            getattr(product.concentration, 'short', '') if product.concentration_id else ''),
         'gender': Product.GENDER_SHOPIFY_TAGS.get(product.gender, ''),
         'price': price,
         'base_price': product.wholesale_price,

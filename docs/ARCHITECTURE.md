@@ -519,7 +519,7 @@ PDF 的 `_brand_logo` 文件缺失时跳过。`empty_brands` 默认不包括有 
 - `services/wholesale_benefits.py`：纯计算，不读数据库。`build_quote(lines, destination)` 给出所有金额、运费状态、进度文案和指纹。先算 S 再定档位，所以优惠不会把订单拉回门槛以下。
 - `services/wholesale_cart.py`：页面只传产品和数量，价格每次在服务器算。提交时比对 `fingerprint`，再由 `submissions.claim` 防重复，都在一个事务里。
 - 路由名用 `wholesale_` 前缀；不要用 `catalog_` 开头，那是 Settings → Catalog。
-- 选款：`services/wholesale_picks.py`。`pick_mode` 返回 list / perfume / 空，`CartLine.picks` 和 `OrderRequestLine.picks` 存 `{id, name, barcode, quantity}`，`id` 在 list 模式是 ProductContent，在 perfume 模式是 Product。有选款时数量只来自 picks，页面传的 quantity 不算。
+- 选款：`services/wholesale_picks.py`。`pick_mode` 返回 list / perfume / 空，`CartLine.picks` 和 `OrderRequestLine.picks` 存 `{id, name, barcode, quantity}`，`id` 在 list 模式是 ProductContent，在 perfume 模式是 Product。有选款时数量只来自 picks，页面传的 quantity 不算。Pedido 也一样：每行一个隐藏的 `picks`（JSON，和 `product_id` 平行），`pedido_views._read_lines` 用 `clean_picks` 校验，存在 `PedidoDraft.lines[i]['picks']`；`pick_fields()` 给产品搜索和 Quick import 返回 `pick_mode` / `pick_options`；`pedido_pdf._product_cell` 把选择印在产品下方。线上订单转 Pedido 时 picks 随行带过去，`_follows_quote` 把店主改过的 picks 写回订单行。
 - 订单状态：`services/wholesale_orders.py`。`OrderRequest.pedido` 一对一连 `PedidoDraft`。`pedido_view` 下载 PDF 时调 `confirm_from_pedido`，`views` 售出时调 `complete_from_sale`。客户改单用 session 的 `wholesale_editing` 记住订单；店里先确认的话，购物车里的修改被丢弃并提示，否则会发成第二张单。
 - 在路上：`availability(units, on_way)` 只有 `out-stock` 不能下单，`product_ids_on_order` 是唯一来源。措辞和 PDF、Pedido 的 `incoming` 一致。
 - 客户折扣：`wholesale_views._customer` 用 `last_discount` 算好放到 `customer.portal_discount`，一次请求只算一次，`customer_price` 读这个值。这和架构文档 6.1（只用明确设置的折扣）不同，接账号系统时要定下来。

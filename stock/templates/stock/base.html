@@ -32,6 +32,11 @@
   .erp-nav-link .nav-n{ display:inline-grid; place-items:center; min-width:1.35rem; height:1.35rem; margin-left:.45rem; padding:0 .35rem;
     font-size:.8rem; font-weight:800; line-height:1; color:#fff; background:#dc2626; border-radius:999px; vertical-align:middle; }
   .erp-tabbar :has(> .nav-dot){ position:relative; }
+  [data-nav-fold]{ cursor:pointer; user-select:none; }
+  [data-nav-fold]::after{ content:"▾"; margin-left:.35rem; font-size:.75em; opacity:.6; }
+  [data-nav-fold].folded::after{ content:"▸"; }
+  .fold-more{ display:block; width:100%; margin-top:.35rem; padding:.45rem; font-size:.88rem; font-weight:700; color:var(--app-accent);
+    background:var(--app-surface); border:1px dashed var(--app-border-strong); border-radius:var(--app-radius-sm); }
   .erp-tabbar .nav-dot{ position:absolute; top:.3rem; right:calc(50% - 1rem); width:.6rem; height:.6rem; background:#dc2626; border-radius:999px; }
 </style>
 </head>
@@ -107,7 +112,7 @@
 
         {# Stock: what comes in, moves between the shops and goes out at the till. #}
         {# Sell needs one shop, so under "All stores" it is left out.              #}
-        <div class="erp-nav-group">Stock</div>
+        <div class="erp-nav-group" data-nav-fold>Stock</div>
         {% if not active_store_is_all %}
         <a class="erp-nav-link {% if current_url == 'outbound' %}active{% endif %}" href="{% url 'outbound' %}">Sell</a>
         {% endif %}
@@ -119,26 +124,26 @@
         <a class="erp-nav-link {% if current_url in 'inbound_checklists,inbound_checklist' %}active{% endif %}" href="{% url 'inbound_checklists' %}">Deliveries</a>
         {% endif %}
 
-        <div class="erp-nav-group">Products</div>
+        <div class="erp-nav-group" data-nav-fold>Products</div>
         <a class="erp-nav-link {% if current_url in 'product_list,product_detail,edit_product,add_product,product_prices' %}active{% endif %}" href="{% url 'product_list' %}">Products</a>
 
         {# The wholesale path in its order: who the resellers are and what they do, #}
         {# their orders (online and the shop's own Pedidos), the catalogue, what they miss. #}
         {% if user|is_manager_user %}
-        <div class="erp-nav-group">B2B</div>
+        <div class="erp-nav-group" data-nav-fold>B2B</div>
         <a class="erp-nav-link {% if current_url == 'b2b_overview' %}active{% endif %}" href="{% url 'b2b_overview' %}">Overview</a>
         <a class="erp-nav-link {% if current_url == 'order_requests' or current_url == 'pedido' %}active{% endif %}" href="{% url 'order_requests' %}">Pedidos{% if requests_waiting %}<span class="nav-n" aria-label="{{ requests_waiting }} to confirm">{{ requests_waiting }}</span>{% endif %}</a>
         <a class="erp-nav-link {% if current_url == 'catalog' or current_url|slice:":10" == 'wholesale_' %}active{% endif %}" href="{% url 'catalog' %}">Catalog View</a>
-        <a class="erp-nav-link {% if current_url == 'restock_requests' %}active{% endif %}" href="{% url 'restock_requests' %}">Restock requests</a>
+        <a class="erp-nav-link {% if current_url == 'restock_requests' %}active{% endif %}" href="{% url 'restock_requests' %}">Restock requests{% if restock_waiting %}<span class="nav-n" aria-label="{{ restock_waiting }} back in stock">{{ restock_waiting }}</span>{% endif %}</a>
         {% endif %}
 
-        <div class="erp-nav-group">Customers</div>
+        <div class="erp-nav-group" data-nav-fold>Customers</div>
         <a class="erp-nav-link {% if current_url in 'customer_search,customer_detail,edit_customer' %}active{% endif %}" href="{% url 'customer_search' %}">Customers</a>
         {% if user|is_manager_user %}
         <a class="erp-nav-link {% if current_url in 'ar_list,ar_detail,ar_new,ar_add_payment,ar_add_items' %}active{% endif %}" href="{% url 'ar_list' %}">IOU</a>
 
         {% if user.is_superuser %}
-        <div class="erp-nav-group">Finance</div>
+        <div class="erp-nav-group" data-nav-fold>Finance</div>
         <a class="erp-nav-link {% if current_url|slice:":7" == 'finance' %}active{% endif %}" href="{% url 'finance' %}">Finance</a>
         {% endif %}
 
@@ -253,6 +258,53 @@
 
   {% if user.is_authenticated %}
   {% include "stock/_side_panel.html" %}
+  <script>
+    // Long lists show their first rows and a button for the rest; menu groups
+    // fold on a tap and stay as they were left (the open page's group never folds).
+    (function () {
+      document.querySelectorAll('[data-fold]').forEach(function (box) {
+        var keep = Number(box.dataset.fold) || 10;
+        var rows = Array.prototype.filter.call(box.children, function (el) { return el.hasAttribute('data-fold-item'); });
+        if (rows.length <= keep + 2) return;
+        rows.slice(keep).forEach(function (el) { el.hidden = true; });
+        var more = document.createElement('button');
+        more.type = 'button'; more.className = 'fold-more';
+        more.textContent = 'Show all ' + rows.length;
+        more.addEventListener('click', function () {
+          var open = more.dataset.open === '1';
+          rows.slice(keep).forEach(function (el) { el.hidden = open; });
+          more.dataset.open = open ? '' : '1';
+          more.textContent = open ? 'Show all ' + rows.length : 'Show fewer';
+        });
+        box.after(more);
+      });
+      var KEY = 'navFolded', folded = [];
+      try { folded = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) {}
+      document.querySelectorAll('[data-nav-fold]').forEach(function (head) {
+        var items = [], el = head.nextElementSibling;
+        while (el && !el.matches('[data-nav-fold], details')) { items.push(el); el = el.nextElementSibling; }
+        if (!items.length) return;
+        var name = head.textContent.trim();
+        head.setAttribute('role', 'button'); head.tabIndex = 0;
+        function set(fold) {
+          items.forEach(function (i) { i.hidden = fold; });
+          head.classList.toggle('folded', fold);
+          head.setAttribute('aria-expanded', fold ? 'false' : 'true');
+        }
+        var active = items.some(function (i) { return i.classList.contains('active'); });
+        set(folded.indexOf(name) >= 0 && !active);
+        function toggle() {
+          var fold = !head.classList.contains('folded');
+          set(fold);
+          folded = folded.filter(function (n) { return n !== name; });
+          if (fold) folded.push(name);
+          try { localStorage.setItem(KEY, JSON.stringify(folded)); } catch (e) {}
+        }
+        head.addEventListener('click', toggle);
+        head.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+      });
+    })();
+  </script>
   <script>
     // Navigation trail of this tab (sessionStorage): every page visited, in
     // order. Coming back to a page cuts the trail back to it; the same page

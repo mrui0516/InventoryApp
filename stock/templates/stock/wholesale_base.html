@@ -18,6 +18,8 @@
   .wc-brands a.on .n{ color:inherit; opacity:.8; }
   .wc-filters{ display:flex; flex-wrap:wrap; align-items:center; gap:.5rem .75rem; }
   .wc-filters .wc-count{ margin-left:auto; }
+  .wc-sorts{ display:flex; gap:.4rem; margin:0; }
+  .wc-sorts .form-select{ width:auto; min-height:34px; padding:.2rem 2rem .2rem .6rem; font-size:.88rem; font-weight:600; }
   .wc-group{ display:flex; align-items:center; gap:.5rem; padding:.4rem .85rem; font-weight:800; background:var(--app-surface-2); border-top:1px solid var(--app-border); }
   .wc-group + .wc-item{ border-top:0; }
   .wc-tag{ font-size:.85rem; font-weight:700; padding:.1rem .55rem; border-radius:999px; background:var(--app-surface-2); color:var(--app-muted); }
@@ -139,7 +141,8 @@
     .wc-internal, .wc-filters .wc-count{ display:none; }
     .wc-brands{ flex-wrap:nowrap; overflow-x:auto; padding-bottom:.15rem; scrollbar-width:none; }
     .wc-filters{ flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; }
-    .wc-filters .wc-seg{ flex:none; }
+    .wc-filters .wc-seg, .wc-sorts{ flex:none; }
+    .wc-sorts .form-select{ font-size:16px; }
     .wc-as{ margin-left:0; width:100%; }
     .wc-as select{ max-width:none; flex:1 1 auto; }
     .wc-item{ grid-template-columns:minmax(0,1fr); }

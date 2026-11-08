@@ -11,7 +11,7 @@
 | 维度 | 状态 | 说明 |
 |---|---|---|
 | 线上运行 | ✅ PythonAnywhere 欧盟区 | `https://scentory.eu.pythonanywhere.com`，两家店（Khan Perfume、Scentory）日常收银、入库都在线上；线上 `db.sqlite3` 是唯一准数据 |
-| 自动化测试 | ✅ 1727 个全部通过 | `python manage.py test stock restock_alerts`，在干净导出上跑 |
+| 自动化测试 | ✅ 1766 个全部通过 | `python manage.py test stock restock_alerts`，在干净导出上跑 |
 | 数据库迁移 | ✅ 最新 `0092_restock_notified`，无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
 | 生产配置 | ✅ `DEBUG=False`，密钥只在服务器 `.env` | `settings.py` 的 `if not DEBUG` 块：强制 HTTPS、安全 Cookie、HSTS、防点击劫持 |
 | 数据备份 | ✅ 每日快照 + 本机拉取 | PA 定时任务 `backup_db --keep 30`，本机 `scripts/pull_backup_from_pa.py` 拉到 U 盘；Settings → Tools 可手动下载。见 [BACKUP.md](./BACKUP.md) |
@@ -73,6 +73,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-11-08: **第三轮 B2B**：补货申请详情、删除、到货等待通知；目录排序和容量/浓度筛选；长列表和菜单折叠；Pedidos 来源标签；Pedido 加 Mix/Amostra 先选款，选择显示在产品下方和 PDF 里；修复客户设密码时约 1% 被误判“与用户名太相似”。
 - 2026-11-08: **第二轮 B2B**（迁移 0092）：Amostra 可选只剩样品的香水并可筛选排序；手机号区号；到货 WhatsApp 通知；Pedidos 合并页；菜单 Stock → Products → B2B；Products 批量改价。
 - 2026-11-08: **B2B 一组和 Overview**（迁移 0090）：批发页面集中到菜单 B2B 组；客户页名称 Scentory B2B；Overview 显示每个批发客户的账号、访问、搜索、购物车、订单和成交。
 - 2026-11-08: **客户列表**能看到并搜到新客户；下过单的排前面。
