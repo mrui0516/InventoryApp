@@ -8,7 +8,7 @@ from urllib.parse import urljoin, urlsplit
 
 from django.conf import settings
 from django.db import close_old_connections
-from django.db.models import Exists, OuterRef, Subquery
+from django.db.models import Exists, OuterRef, Subquery, Sum
 from django.utils import timezone
 
 from stock.models import InboundPendingItem, Product, Purchase, Sale, ShopifyCatalogLease, ShopifyCatalogState
@@ -33,6 +33,7 @@ CREATE_DEFINITION = '''mutation IncomingDefinition($definition: MetafieldDefinit
 READ_PRODUCTS = '''query IncomingCards($ids: [ID!]!) {
   nodes(ids: $ids) { ... on Product {
     id title vendor status onlineStoreUrl featuredMedia { ... on MediaImage { image { url altText } } }
+    variants(first: 50) { nodes { id title sku inventoryPolicy } }
   } }
 }'''
 WRITE_FEED = '''mutation IncomingWrite($metafields: [MetafieldsSetInput!]!) {
@@ -47,6 +48,7 @@ def incoming_products():
             .annotate(_pending=Exists(pending),
                       _bought=Exists(Purchase.objects.filter(product_id=OuterRef('pk'))),
                       _sold=Exists(Sale.objects.filter(product_id=OuterRef('pk'))),
+                      _incoming_units=Subquery(pending.order_by().values('product_id').annotate(total=Sum('quantity')).values('total')[:1]),
                       _incoming_at=Subquery(pending.order_by('-inbound_order__created_at')
                                            .values('inbound_order__created_at')[:1]))
             .filter(_pending=True, _bought=False, _sold=False)
@@ -94,12 +96,23 @@ def _cards(products, client):
         public_path = urlsplit(public).path if public else ''
         if '/products/' not in public_path:
             public_path = ''
+        variants = (node.get('variants') or {}).get('nodes', [])
+        full = next((v for v in variants if v.get('sku') == p.barcode.strip()), {})
+        has_decants = any(v.get('sku') in {p.barcode.strip() + '-5ML', p.barcode.strip() + '-10ML'} for v in variants)
+        from .shopify_sync import DECANT_RESERVE, is_non_decant_type
+        reserve = DECANT_RESERVE if has_decants and not is_non_decant_type(p.product_type_id) else 0
         cards.append({
             'title': node.get('title') or p.display_name,
             'brand': node.get('vendor') or p.brand or '',
             'image_url': _https(image.get('url')) or _local_image(p),
             'image_alt': image.get('altText') or node.get('title') or p.display_name,
             'url': public_path,
+            'product_id': str(node.get('id') or '').rsplit('/', 1)[-1],
+            'variant_id': str(full.get('id') or '').rsplit('/', 1)[-1],
+            'variant_title': full.get('title') or '',
+            'variant_sku': full.get('sku') or '',
+            'inventory_policy': full.get('inventoryPolicy') or 'DENY',
+            'preorder_capacity': max(0, int(p._incoming_units or 0) - reserve),
         })
     return cards
 
@@ -115,6 +128,8 @@ def sync_incoming(client=None, *, dry_run=False):
             token=token, expires_at=now + timedelta(minutes=10)):
         return {'busy': True}
     try:
+        from .shopify_preorders import reconcile_preorder_policies
+        preorder_guard = reconcile_preorder_policies(client)
         # Read the digest before the database: an older in-flight snapshot must
         # never overwrite a later receipt/cancellation written by another worker.
         current = client.graphql(READ_FEED)
@@ -140,7 +155,7 @@ def sync_incoming(client=None, *, dry_run=False):
         }]})['metafieldsSet']
         if result.get('userErrors'):
             raise ShopifyError('Incoming feed not written: ' + str(result['userErrors']))
-        return {'busy': False, 'products': len(payload['products'])}
+        return {'busy': False, 'products': len(payload['products']), 'preorders': preorder_guard}
     finally:
         ShopifyCatalogLease.objects.filter(name='incoming', token=token).update(
             token='', expires_at=timezone.now())

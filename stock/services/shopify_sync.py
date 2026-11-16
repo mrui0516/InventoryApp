@@ -172,6 +172,7 @@ def sync_product_price_inventory(product, client=None, *, do_price=True, do_inve
             return INV_NOT_IN_SHOPIFY, f'no Shopify variant with sku {barcode}'
 
         parts, writes = [], []
+        stoq_location_id = None
         no_decants = is_non_decant_type(getattr(product, 'product_type_id', None))
 
         if do_price:
@@ -205,12 +206,37 @@ def sync_product_price_inventory(product, client=None, *, do_price=True, do_inve
                 rec = shop_variants.get(sku)
                 if rec is None:
                     continue
-                # A variant must track inventory and refuse overselling, or its
-                # quantity is ignored and it stays buyable (the decant bug).
-                needs_policy = (rec.get('tracked') is False) or (rec.get('policy') not in (None, 'DENY'))
+                # STOQ owns Continue selling for explicitly enabled whole-bottle
+                # offers. Never reopen an exhausted offer or extend it to decants.
+                stoq_managed = False
+                stoq_active = False
+                expected_available = None
+                if sku == barcode and rec.get('tracked') is True:
+                    from .shopify_preorders import remembers_preorder
+                    reader = getattr(client, 'active_preorder_variant_ids', None)
+                    members = reader() if callable(reader) else set()
+                    stoq_active = isinstance(members, (set, frozenset)) and rec['variant_id'] in members
+                    history_reader = getattr(client, 'preorder_variant_ids', None)
+                    historical = history_reader() if callable(history_reader) else set()
+                    if not isinstance(historical, (set, frozenset)):
+                        historical = set()
+                    offered_ids = historical | (members if isinstance(members, (set, frozenset)) else set())
+                    stoq_managed = remembers_preorder(product, rec['variant_id'], offered_ids, dry_run=dry_run)
+                stoq_preorder = False
+                if stoq_managed:
+                    from .shopify_preorders import incoming_capacity
+                    stoq_location_id = stoq_location_id or location_id or client.get_location_id()
+                    snapshot = client.preorder_inventory_snapshot(rec['inventory_item_id'], stoq_location_id)
+                    committed, expected_available = snapshot['committed'], snapshot['available']
+                    target -= committed
+                    stoq_preorder = (stoq_active and rec.get('policy') == 'CONTINUE'
+                                     and incoming_capacity(product, set(shop_variants)) > committed)
+                needs_policy = (rec.get('tracked') is False) or (
+                    rec.get('policy') not in (None, 'DENY') and not stoq_preorder)
                 if no_decants and sku != barcode:
                     needs_policy = rec.get('tracked') is not True or rec.get('policy') != 'DENY'
-                needs_qty = rec.get('available') != target
+                current_available = expected_available if expected_available is not None else rec.get('available')
+                needs_qty = current_available != target
                 # Switching a variant to tracked makes Shopify (re)initialise its
                 # inventory level, which starts at 0 — an untracked variant never
                 # had a real level, so its reported quantity means nothing. Always
@@ -224,7 +250,7 @@ def sync_product_price_inventory(product, client=None, *, do_price=True, do_inve
                        ([f"qty {rec.get('available')}->{target}"] if needs_qty else [])
                 parts.append(f"{_variant_label(barcode, sku)} {' '.join(bits)}")
                 writes.append(('inv', rec['product_id'], rec['variant_id'],
-                               rec['inventory_item_id'], target, needs_policy, needs_qty))
+                               rec['inventory_item_id'], target, needs_policy, needs_qty, expected_available))
 
         if not writes:
             return INV_UNCHANGED, ''
@@ -232,17 +258,18 @@ def sync_product_price_inventory(product, client=None, *, do_price=True, do_inve
         if dry_run:
             return INV_WOULD_UPDATE, detail
 
-        loc = None
+        loc = stoq_location_id
         for w in writes:
             if w[0] == 'price':
                 client.update_variant_price(w[1], w[2], w[3])
             else:
-                _, product_id, variant_id, inv_item_id, target, needs_policy, needs_qty = w
+                _, product_id, variant_id, inv_item_id, target, needs_policy, needs_qty, expected_available = w
                 if needs_policy:
                     client.set_variant_stocked(product_id, variant_id)
                 if needs_qty:
                     loc = loc or location_id or client.get_location_id()
-                    client.set_inventory_available(inv_item_id, loc, target)
+                    options = {'expected_available': expected_available} if expected_available is not None else {}
+                    client.set_inventory_available(inv_item_id, loc, target, **options)
         return INV_UPDATED, detail
     except ShopifyError as exc:
         return INV_ERROR, str(exc)

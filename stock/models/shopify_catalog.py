@@ -10,6 +10,7 @@ class ShopifyCatalogState(models.Model):
     synced_revision = models.PositiveBigIntegerField(default=0)
     last_restocked_at = models.DateTimeField(null=True, blank=True, db_index=True)
     product_gid = models.CharField(max_length=100, blank=True, default='')
+    preorder_variant_gid = models.CharField(max_length=100, blank=True, default='')
     creation_handle = models.CharField(max_length=255, blank=True, default='')
     published_by_automation = models.BooleanField(default=False)
     allow_create = models.BooleanField(default=False)

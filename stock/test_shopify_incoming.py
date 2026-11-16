@@ -58,7 +58,7 @@ class IncomingProductsTests(TestCase):
 
     def test_writer_preserves_canonical_shopify_name_and_hides_unpublished_link(self):
         self.product('NEW')
-        client = mock.Mock()
+        client = mock.Mock(active_preorder_variant_ids=mock.Mock(return_value=set()), preorder_variant_ids=mock.Mock(return_value=set()))
         client.find_product_by_sku.return_value = {'id': 'gid://shopify/Product/1'}
         client.graphql.side_effect = [
             {'shop': {'id': 'gid://shopify/Shop/1', 'incoming': {'compareDigest': 'original'}},
@@ -81,13 +81,30 @@ class IncomingProductsTests(TestCase):
         client.set_product_status.assert_not_called()
 
     def test_dry_run_never_calls_shopify(self):
-        self.product('NEW'); client = mock.Mock()
+        self.product('NEW'); client = mock.Mock(active_preorder_variant_ids=mock.Mock(return_value=set()), preorder_variant_ids=mock.Mock(return_value=set()))
         from stock.services.shopify_incoming import sync_incoming
         self.assertEqual(sync_incoming(client=client, dry_run=True)['products'], 1)
         self.assertEqual(client.mock_calls, [])
 
+    def test_feed_exposes_exact_whole_bottle_id_and_capacity_after_sample_reserve(self):
+        p = self.product('NEW')
+        from stock.services.shopify_incoming import incoming_products, _cards
+        node = {'id': 'gid://shopify/Product/11', 'title': 'Verified 100ml', 'status': 'ACTIVE',
+                'onlineStoreUrl': 'https://www.scentory.pt/products/verified', 'variants': {'nodes': [
+                    {'id': 'gid://shopify/ProductVariant/22', 'sku': 'NEW', 'title': '100ml', 'inventoryPolicy': 'CONTINUE'},
+                    {'id': 'gid://shopify/ProductVariant/23', 'sku': 'NEW-5ML', 'title': '5ml', 'inventoryPolicy': 'DENY'},
+                ]}}
+        client = mock.Mock(active_preorder_variant_ids=mock.Mock(return_value=set()), preorder_variant_ids=mock.Mock(return_value=set()))
+        client.find_product_by_sku.return_value = {'id': node['id']}
+        client.graphql.return_value = {'nodes': [node]}
+        card = _cards(list(incoming_products()), client)[0]
+        self.assertEqual(card['variant_id'], '22')
+        self.assertEqual(card['product_id'], '11')
+        self.assertEqual(card['preorder_capacity'], 1)  # 3 inbound minus 2 shop samples.
+        self.assertEqual(card['inventory_policy'], 'CONTINUE')
+
     def test_empty_inbound_list_clears_previous_teasers(self):
-        client = mock.Mock()
+        client = mock.Mock(active_preorder_variant_ids=mock.Mock(return_value=set()), preorder_variant_ids=mock.Mock(return_value=set()))
         client.graphql.side_effect = [
             {'shop': {'id': 'gid://shopify/Shop/1', 'incoming': {'compareDigest': 'old'}},
              'metafieldDefinitions': {'nodes': [{'type': {'name': 'json'}, 'access': {'storefront': 'PUBLIC_READ'}}]}},
@@ -99,7 +116,7 @@ class IncomingProductsTests(TestCase):
         self.assertEqual(json.loads(field['value'])['products'], [])
 
     def test_failed_compare_and_set_releases_lease_for_retry(self):
-        client = mock.Mock()
+        client = mock.Mock(active_preorder_variant_ids=mock.Mock(return_value=set()), preorder_variant_ids=mock.Mock(return_value=set()))
         client.graphql.side_effect = [
             {'shop': {'id': 'gid://shopify/Shop/1', 'incoming': {'compareDigest': 'old'}},
              'metafieldDefinitions': {'nodes': [{'type': {'name': 'json'}, 'access': {'storefront': 'PUBLIC_READ'}}]}},

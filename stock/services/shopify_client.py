@@ -13,6 +13,8 @@ there); only the two GraphQL calls use the Admin token.
 """
 import mimetypes
 import os
+import json
+import time
 
 import requests
 from django.conf import settings
@@ -23,6 +25,76 @@ class ShopifyError(RuntimeError):
 
 
 class ShopifyClient:
+    def preorder_inventory_snapshot(self, inventory_item_id, location_id):
+        """Read available and committed together for a conditional stock write."""
+        result = self.graphql('''query ScentoryPreorderStock($id: ID!, $location: ID!) {
+          inventoryItem(id: $id) { inventoryLevel(locationId: $location) {
+            quantities(names: ["available", "committed"]) { name quantity }
+          } }
+        }''', {'id': inventory_item_id, 'location': location_id})
+        level = (result.get('inventoryItem') or {}).get('inventoryLevel') or {}
+        counts = {r.get('name'): r.get('quantity') for r in level.get('quantities', [])}
+        if (type(counts.get('available')) is not int or type(counts.get('committed')) is not int
+                or counts['committed'] < 0):
+            raise ShopifyError('Cannot safely read preorder inventory snapshot.')
+        return counts
+
+    def committed_quantity(self, inventory_item_id, location_id):
+        """Outstanding Shopify commitments must survive an App stock refresh."""
+        result = self.graphql('''query ScentoryStoqCommitted($id: ID!, $location: ID!) {
+          inventoryItem(id: $id) { inventoryLevel(locationId: $location) {
+            quantities(names: ["committed"]) { name quantity }
+          } }
+        }''', {'id': inventory_item_id, 'location': location_id})
+        level = (result.get('inventoryItem') or {}).get('inventoryLevel')
+        if not level:
+            raise ShopifyError('Cannot safely read committed preorder inventory.')
+        for row in level.get('quantities', []):
+            if row.get('name') == 'committed' and type(row.get('quantity')) is int and row['quantity'] >= 0:
+                return row['quantity']
+        raise ShopifyError('Invalid committed preorder inventory response.')
+
+    def active_preorder_variant_ids(self):
+        """Only enabled offers with full payment can keep taking preorders."""
+        return self.preorder_variant_ids(active_only=True)
+
+    def preorder_variant_ids(self, *, active_only=False):
+        """Include disabled offers for reservation backfill; cache the raw offers."""
+        cached = getattr(self, '_stoq_variant_cache', None)
+        if cached and cached[0] > time.monotonic():
+            offers = cached[1]
+            expires_at = cached[0]
+        else:
+            result = self.graphql('''query ScentoryStoqOffers {
+              shop { offers: metafield(namespace: "restockrocket_production", key: "selling_plans") { value } }
+            }''')
+            try:
+                field = result['shop']['offers']
+                offers = json.loads(field['value']) if field else []
+                expires_at = time.monotonic() + 30
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ShopifyError('Cannot safely read STOQ preorder offers.') from exc
+        try:
+            if not isinstance(offers, list):
+                raise ValueError('Expected a list of STOQ offers.')
+            ids = set()
+            for offer in offers:
+                if not isinstance(offer, dict):
+                    raise ValueError('Expected a STOQ offer object.')
+                if active_only and (offer.get('enabled') is not True or offer.get('payment_type') != 'full'):
+                    continue
+                variants = offer.get('variant_ids', [])
+                if not isinstance(variants, list):
+                    raise ValueError('Expected a list of STOQ variant IDs.')
+                for variant in variants:
+                    value = str(variant).removeprefix('gid://shopify/ProductVariant/')
+                    if value.isdecimal():
+                        ids.add('gid://shopify/ProductVariant/' + value)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ShopifyError('Cannot safely read STOQ preorder offers.') from exc
+        self._stoq_variant_cache = (expires_at, offers)
+        return ids
+
     def __init__(self, domain=None, token=None, api_version=None, timeout=30):
         self.domain = (domain or settings.SHOPIFY_STORE_DOMAIN or '').strip()
         self.token = (token or settings.SHOPIFY_ADMIN_TOKEN or '').strip()
@@ -264,7 +336,7 @@ class ShopifyClient:
         variants = result.get('productVariants') or []
         return variants[0]['id'] if variants else None
 
-    def set_inventory_available(self, inventory_item_id, location_id, quantity):
+    def set_inventory_available(self, inventory_item_id, location_id, quantity, *, expected_available=None):
         """Set the 'available' quantity for an inventory item at a location."""
         data = self.graphql(
             """
@@ -278,11 +350,12 @@ class ShopifyClient:
             {'input': {
                 'name': 'available',
                 'reason': 'correction',
-                'ignoreCompareQuantity': True,
+                'ignoreCompareQuantity': expected_available is None,
                 'quantities': [{
                     'inventoryItemId': inventory_item_id,
                     'locationId': location_id,
                     'quantity': int(quantity),
+                    **({'compareQuantity': int(expected_available)} if expected_available is not None else {}),
                 }],
             }},
         )

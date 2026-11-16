@@ -118,7 +118,7 @@ class CatalogClient(ShopifyClient):
         if data.get('userErrors'):
             raise ShopifyError(str(data['userErrors']))
 
-    def set_inventory_available(self, inventory_item_id, location_id, quantity):
+    def set_inventory_available(self, inventory_item_id, location_id, quantity, *, expected_available=None):
         """App-authoritative absolute stock using the 2026-04+ input contract."""
         data = self.graphql('''mutation CatalogInventory(
           $input: InventorySetQuantitiesInput!, $idempotencyKey: String!
@@ -129,7 +129,7 @@ class CatalogClient(ShopifyClient):
         }''', {'input': {
             'name': 'available', 'reason': 'correction',
             'quantities': [{'inventoryItemId': inventory_item_id, 'locationId': location_id,
-                            'quantity': int(quantity), 'changeFromQuantity': None}],
+                            'quantity': int(quantity), 'changeFromQuantity': expected_available}],
         }, 'idempotencyKey': str(uuid.uuid4())})
         result = data.get('inventorySetQuantities') or {}
         if result.get('userErrors'):
