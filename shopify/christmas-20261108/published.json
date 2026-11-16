@@ -1,0 +1,45 @@
+[
+  {
+    "kind": "page",
+    "id": "gid://shopify/Page/719304753500",
+    "title": "Presentes de Natal para empresas",
+    "handle": "presentes-natal-empresas",
+    "isPublished": true,
+    "templateSuffix": "contact"
+  },
+  {
+    "kind": "article",
+    "id": "gid://shopify/Article/1009041768796",
+    "title": "O que oferecer aos colaboradores no Natal? Perfumes e coffrets",
+    "handle": "presentes-natal-colaboradores-perfumes-coffrets",
+    "isPublished": true
+  },
+  {
+    "kind": "article",
+    "id": "gid://shopify/Article/1009041801564",
+    "title": "Como escolher presentes de Natal para a equipa dentro do orçamento",
+    "handle": "presentes-natal-equipa-orcamento",
+    "isPublished": true
+  },
+  {
+    "kind": "article",
+    "id": "gid://shopify/Article/1009041834332",
+    "title": "Perfume ou coffret para oferecer no Natal: como escolher",
+    "handle": "perfume-ou-coffret-oferecer-natal",
+    "isPublished": true
+  },
+  {
+    "kind": "article",
+    "id": "gid://shopify/Article/1009041867100",
+    "title": "Não sabe o que oferecer no Natal? Um guia para escolher perfumes",
+    "handle": "nao-sabe-o-que-oferecer-natal-perfumes",
+    "isPublished": true
+  },
+  {
+    "kind": "article",
+    "id": "gid://shopify/Article/1009041899868",
+    "title": "Perfumes para o amigo secreto: como escolher dentro do orçamento",
+    "handle": "perfumes-amigo-secreto-orcamento",
+    "isPublished": true
+  }
+]
