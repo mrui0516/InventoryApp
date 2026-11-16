@@ -143,6 +143,9 @@ def process_catalog(client=None, *, limit=25):
                 result['failed'] += 1
         _renew(token)
         result['collections'] = sync_storefront(client=client)
+        if getattr(settings, 'SHOPIFY_INCOMING_SYNC', False):
+            from .shopify_incoming import sync_incoming
+            result['incoming'] = sync_incoming(client=client)
         if getattr(settings, 'RESTOCK_NOTIFICATIONS_ENABLED', False):
             from restock_alerts.services import wake_worker
             wake_worker()

@@ -289,6 +289,9 @@ SHOPIFY_CATALOG_AUTOMATION = os.environ.get('SHOPIFY_CATALOG_AUTOMATION', '') in
 SHOPIFY_CATALOG_API_VERSION = os.environ.get('SHOPIFY_CATALOG_API_VERSION', '2026-10')
 SHOPIFY_ONLINE_STORE_PUBLICATION_ID = os.environ.get('SHOPIFY_ONLINE_STORE_PUBLICATION_ID', '').strip()
 SHOPIFY_RESTOCK_DAYS = int(os.environ.get('SHOPIFY_RESTOCK_DAYS', '30'))
+# Reuse the existing catalogue automation switch; an explicit 0 opts out.
+SHOPIFY_INCOMING_SYNC = os.environ.get('SHOPIFY_INCOMING_SYNC', os.environ.get('SHOPIFY_CATALOG_AUTOMATION', '')) in {'1', 'true', 'True', 'yes', 'on'}
+SHOPIFY_INCOMING_MEDIA_BASE_URL = os.environ.get('SHOPIFY_INCOMING_MEDIA_BASE_URL', 'https://scentory.eu.pythonanywhere.com')
 # When auto-sync is on, also CREATE the product in Shopify if it doesn't exist yet
 # (otherwise only attach images to products already there).
 SHOPIFY_AUTO_CREATE = os.environ.get('SHOPIFY_AUTO_CREATE', '') in {'1', 'true', 'True', 'yes', 'on'}
