@@ -675,6 +675,10 @@ def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_
     )
     if selected_category_ids:
         purchases_qs = purchases_qs.filter(product__category_id__in=selected_category_ids)
+    if store is not None:
+        # A shop's spend is what was delivered to it. A transfer keeps the shop
+        # and the day of delivery, so moving goods neither adds nor removes spend.
+        purchases_qs = purchases_qs.filter(Q(received_store=store) | Q(received_store__isnull=True, store=store))
 
     purchases = list(purchases_qs)
     month_purchase_amount = Decimal("0.00")
@@ -788,10 +792,11 @@ def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_
     rolling_sales = {}
     period_qty_by_product = {product_id: bucket["qty"] for product_id, bucket in product_buckets.items()}
     if inventory_product_ids:
+        # One shop picked: its own shelf, so its own last sale.
         last_sale_dates = {
             row["product_id"]: row["last_sold_at"]
             for row in (
-                Sale.objects
+                _apply_store(Sale.objects, store)
                 .annotate(business_at=Coalesce("order__created_at", "date"))
                 .filter(product_id__in=inventory_product_ids)
                 .values("product_id")
@@ -803,7 +808,7 @@ def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_
         rolling_sales = {
             row["product_id"]: row["qty"]
             for row in (
-                Sale.objects
+                _apply_store(Sale.objects, store)
                 .annotate(business_at=Coalesce("order__created_at", "date"))
                 .filter(
                     product_id__in=inventory_product_ids,
@@ -959,7 +964,7 @@ def build_monthly_dashboard_snapshot(month_start, period_end, selected_category_
         "capital_locked_products": capital_locked_products,
         "slow_movers": slow_movers,
         "month_fast_movers": fast_movers,
-        "sell_through": sell_through(period_end, selected_category_ids or ()),
+        "sell_through": sell_through(period_end, selected_category_ids or (), store=store),
         "best_sales_day": best_sales_day,
         "chart_data": chart_data,
     }

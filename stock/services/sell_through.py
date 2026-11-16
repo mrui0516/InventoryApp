@@ -18,10 +18,15 @@ from django.db.models.functions import Coalesce
 from .low_stock import alert_below
 
 
-def sell_through(period_end, category_ids=(), days=90, limit=8):
+def sell_through(period_end, category_ids=(), days=90, limit=8, store=None):
+    """With ``store``, one shop's shelf: the batches it holds, its stock and its sales."""
     from ..models import Purchase, Sale
+
+    def shop(queryset):
+        return queryset.filter(store=store) if store is not None else queryset
+
     since = period_end - timedelta(days=days)
-    batches = (Purchase.objects
+    batches = (shop(Purchase.objects)
                .filter(date__date__gte=since, date__date__lte=period_end, product__archived_at__isnull=True)
                .select_related('product')
                .prefetch_related('product__images')
@@ -35,16 +40,16 @@ def sell_through(period_end, category_ids=(), days=90, limit=8):
         return []
     ids = list(latest)
 
-    on_hand = dict(Purchase.objects.filter(product_id__in=ids, remaining__gt=0)
+    on_hand = dict(shop(Purchase.objects).filter(product_id__in=ids, remaining__gt=0)
                    .values_list('product_id').annotate(s=Sum('remaining')).order_by())
     later_deliveries = defaultdict(int)
-    for product_id, qty, at, batch_id in (Purchase.objects.filter(product_id__in=ids)
+    for product_id, qty, at, batch_id in (shop(Purchase.objects).filter(product_id__in=ids)
                                           .values_list('product_id', 'quantity', 'date', 'id')):
         batch = latest[product_id]
         if batch_id != batch.id and at > batch.date:
             later_deliveries[product_id] += qty
     sales = defaultdict(list)
-    for product_id, at, qty in (Sale.objects.filter(product_id__in=ids)
+    for product_id, at, qty in (shop(Sale.objects).filter(product_id__in=ids)
                                 .annotate(at=Coalesce('order__created_at', 'date'))
                                 .order_by('at').values_list('product_id', 'at', 'quantity')):
         sales[product_id].append((at, qty))

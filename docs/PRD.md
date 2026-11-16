@@ -284,6 +284,7 @@
   - **Catalog View 改为批发目录样板(2026-11-05)**:只有经理能看,页面标"Pré-visualização interna"。全部是列表,文字用葡语,显示批发价(没有批发价写 Sob consulta)、Tipo、Género 和三种库存状态,不显示件数和成本。平时只显示有货,可以切到 Todos,搜索时缺货产品也能找到(排在有货后面);可按品牌、Type、性别筛选;每页 24 个;没有图片的产品也显示。排序:有货优先,然后 Lattafa、品牌大小、Type,同一 Type 内型号按累计销量从多到少。点一行打开详情。这是客户门户的样板,还没有客户入口、购物车和客户专属价。
   - **供应商付款条件(2026-11-06,迁移 0084)**:未付入库单默认从发票日期起 30 天到期(没有发票日期用收货日,还没收货用下单日)。库存照常入库,和付款无关。Admin 在 Receive 选 Paid / Pay later / Instalments,经理看不到这部分。分期填期数,每月等额,订单金额改了自动跟着变;付款先冲最早一期。Finance → Payables 显示到期日、逾期金额、每家货款,可以改到期日和期数;总览有 Supplier payments due 和 Goods received。
   - **B2B 只给 Scentory(2026-11-08,迁移 0093)**:批发订单进 Scentory 的 Pedido,客户页面显示 Scentory 的电话(Print Header);Shop settings 原来没选或选的是默认店的,迁移改成 Scentory,之后仍可在 Shop settings 改。名称或系列含 "decant" 却登记成 Perfume 的产品改为 Amostra,客户在 B2B 搜索有货香水来选(不用像 Mix 那样预先列款式)。
+  - **Dashboard 按店铺(2026-11-16)**:选一家店时,Purchase Spend、进货件数和单数、Top suppliers、进货/销售比都只算送到这家店的货(按收货店铺;调货保留原店和原日期,所以调货不改变任何一家的进货额);积压产品的“最后卖出”、45 天销量和 Sell-through 也只看这家店。All stores 时是两家合计。
   - **B2B 新款和补货、交互和外观(2026-11-08)**:
     - 目录最上面加 Tudo / Novidades / Reposição。Novidades:第一次从供应商到货在 30 天内;Reposição:以前到过货、30 天内又到货。店间调货不算到货。选了之后最新到的排最前,行内产品名前有 Novo / Reposto 标签。没有新款或补货时不显示这一排。
     - 可以左右滑动的栏(Type、品牌、筛选)两边有渐隐和箭头按钮,点箭头滑动;滑动时不再上下晃动;选中的项自动滑到看得见的位置。品牌在桌面也只占一行。

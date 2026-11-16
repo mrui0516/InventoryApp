@@ -30,13 +30,17 @@ class ArrivalTests(CollectionMixin):
         self.assertEqual(found[self.back.pk][0], RESTOCK)
         self.assertNotIn(self.old.pk, found)
 
-    def test_a_move_between_the_shops_is_not_a_delivery(self):
+    def test_a_whole_batch_moved_keeps_its_delivery(self):
         transfer = StockTransfer.objects.create(from_store=self.khan, to_store=self.scentory)
         line = StockTransferLine.objects.create(transfer=transfer, product=self.old, quantity=1,
                                                 cost_total=D("17.77"), amount=D("17.77"))
-        batch = self._batch(self.old, 1, 1, store=self.scentory)
-        Purchase.objects.filter(pk=batch.pk).update(transfer_line=line)
-        self.assertNotIn(self.old.pk, arrivals([self.old.pk]))
+        # The move keeps the day it was delivered: a new product moved whole to
+        # the other shop is still new, an old one stays old.
+        Purchase.objects.filter(product=self.fresh).update(transfer_line=line, store=self.scentory)
+        Purchase.objects.filter(product=self.old).update(transfer_line=line, store=self.scentory)
+        found = arrivals([self.fresh.pk, self.old.pk])
+        self.assertEqual(found[self.fresh.pk][0], NEW)
+        self.assertNotIn(self.old.pk, found)
 
 
 class CataloguePageTests(CollectionMixin):
