@@ -345,6 +345,8 @@ Orders → Purchases（`orders_views.load_purchases`）、供应商页、产品�
 **Shopify 不变**：推送的仍是两店合计（`shopify_sync._inventory_targets`，有分装的 100ml 款 = 合计 − `DECANT_RESERVE`(2)，
 正好是两家店各一瓶样品）。调货不改变合计，所以不推送。
 
+**Shopify 分装售价（2026-11-17）**：`shopify_sync.decant_price` 同时服务建品和价格同步；10ml = 正装价 × 10% + €2.00，5ml = 正装价 × 5% + €2.50，沿用 HALF_UP 到分。两个固定费用各增加 €2.00，库存目标与预售保护独立于此定价规则。
+
 **期初**：`manage.py split_opening_stock --to Scentory --units 2 [--apply]`：每款从默认店给目标店 N 件（不足 N 件全给，
 已归档产品不动），一张 `OPENING` 调拨，不记欠款；第二次执行被拒绝。
 
