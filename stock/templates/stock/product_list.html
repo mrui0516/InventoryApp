@@ -112,6 +112,11 @@
     .pm-edit{ flex:0 0 44px; display:grid; place-items:center; color:var(--pl-muted); border-left:1px solid var(--pl-border); }
     .pm-edit:active{ background:var(--app-surface-2); }
   }
+  .pl-warn{ display:inline-flex; align-items:center; gap:.4rem; margin-top:.6rem; padding:.3rem .7rem; border-radius:999px;
+             background:var(--app-warn-soft); color:var(--app-warn); font-size:.88rem; font-weight:700; text-decoration:none; max-width:100%; }
+  .pl-warn svg{ flex:none; }
+  .pl-warn:hover{ text-decoration:underline; }
+  .pl-missing{ font-size:.85rem; font-weight:700; color:var(--app-warn); overflow-wrap:anywhere; }
 </style>
 
 <div class="page-shell">
@@ -140,15 +145,19 @@
       <a class="{% if not perfume_type %}on{% endif %}" href="{% querystring type=None page=None %}">All <span class="n">{{ type_total }}</span></a>
       {% for t in type_tabs %}<a class="{% if perfume_type == t.value %}on{% endif %}" href="{% querystring type=t.value page=None %}">{{ t.label }} <span class="n">{{ t.n }}</span></a>{% endfor %}
     </nav>
+    {% if info_missing and not info %}
+      <a class="pl-warn" href="{% querystring info='incomplete' page=None %}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><span>{{ info_missing }} perfume{{ info_missing|pluralize }} in stock missing description, notes or families</span></a>
+    {% endif %}
     {% if query or filters_on %}
       <div class="fchips">
         {% if query %}<a class="fchip" href="{% querystring q=None page=None %}">&ldquo;{{ query }}&rdquo;<span aria-hidden="true">&times;</span></a>{% endif %}
         {% for b in brands %}{% if b.id == selected_brand %}<a class="fchip" href="{% querystring brand=None page=None %}">{% brand_logo b size=18 %} {{ b.name }}<span aria-hidden="true">&times;</span></a>{% endif %}{% endfor %}
         {% for c in concentrations %}{% if c.id|stringformat:"s" == concentration %}<a class="fchip" href="{% querystring conc=None page=None %}">{{ c.short|default:c.name }}<span aria-hidden="true">&times;</span></a>{% endif %}{% endfor %}
         {% for value, label in genders %}{% if value == gender %}<a class="fchip" href="{% querystring gender=None page=None %}">{{ label }}<span aria-hidden="true">&times;</span></a>{% endif %}{% endfor %}
+        {% if info %}<a class="fchip" href="{% querystring info=None page=None %}">Missing scent info<span aria-hidden="true">&times;</span></a>{% endif %}
         {% if stock_status %}<a class="fchip" href="{% querystring stock_status=None page=None %}">{% if stock_status == 'in_stock' %}In stock{% elif stock_status == 'low_stock' %}Low stock{% else %}Out of stock{% endif %}<span aria-hidden="true">&times;</span></a>{% endif %}
         {% if sort_by != 'latest' %}<a class="fchip" href="{% querystring sort=None page=None %}">Sort: {% if sort_by == 'name_asc' %}Name A-Z{% elif sort_by == 'name_desc' %}Name Z-A{% elif sort_by == 'stock_desc' %}Stock high-low{% elif sort_by == 'stock_asc' %}Stock low-high{% elif sort_by == 'price_desc' %}Price high-low{% elif sort_by == 'price_asc' %}Price low-high{% elif sort_by == 'sales_desc' %}Best selling{% elif sort_by == 'sales_asc' %}Least sold{% else %}Best selling 30d{% endif %}<span aria-hidden="true">&times;</span></a>{% endif %}
-        <a class="fchip-clear" href="{% querystring q=None brand=None stock_status=None sort=None conc=None gender=None page=None %}">Clear all</a>
+        <a class="fchip-clear" href="{% querystring q=None brand=None stock_status=None sort=None conc=None gender=None info=None page=None %}">Clear all</a>
       </div>
     {% endif %}
     <template id="fb-panel">
@@ -188,7 +197,7 @@
           </section>
         </div>
       </div>
-      <div data-part="foot"><a class="btn btn-outline-secondary" href="{% querystring q=None brand=None stock_status=None sort=None conc=None gender=None page=None %}">Clear all</a></div>
+      <div data-part="foot"><a class="btn btn-outline-secondary" href="{% querystring q=None brand=None stock_status=None sort=None conc=None gender=None info=None page=None %}">Clear all</a></div>
     </template>
 
     {# Export what the list shows now - every filter above goes with it. #}
@@ -290,6 +299,7 @@
                         </div>
                         <a class="product-name mt-2 d-block text-reset text-decoration-none" href="{% url 'product_detail' product.id %}" data-panel="{% url 'product_panel' product.id %}">{{ product.list_name }}</a>
                         <div class="product-meta">{{ product.barcode }}</div>
+                        {% if product.missing %}<div class="pl-missing">Missing {{ product.missing|join:", " }}</div>{% endif %}
                       </div>
                     </div>
 
@@ -305,6 +315,7 @@
                           <div class="pm-brand">{{ product.brand }}</div>
                           <div class="pm-name">{{ product.list_name }}</div>
                           <div class="pm-sub">{{ product.barcode }}{% if show_sales_sensitive %} · Sold {{ product.total_sold_qty }} · 30d {{ product.recent_sold_qty }}{% endif %}</div>
+                          {% if product.missing %}<div class="pl-missing">Missing {{ product.missing|join:", " }}</div>{% endif %}
                         </div>
                         <div class="pm-fig">
                           <span class="pm-price">{% if product.default_price %}€{{ product.default_price|floatformat:2 }}{% else %}&mdash;{% endif %}</span>

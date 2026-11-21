@@ -91,6 +91,8 @@ InventoryApp/
     │   ├── sell_through.py           # 看板 Sell-through：近 90 天到货 → 跌破低库存线用了几天
     │   ├── quick_import.py           # 快速识别：粘贴文字 / 文字 PDF → 行 → 匹配产品
     │   ├── note_parser.py            # 从已有描述里读出香调三层
+    │   ├── scent_text.py             # 描述里的香调标签行：快速导入、保存清理、迁移 0096
+    │   ├── scent_info.py             # 有货香水缺描述 / 香调 / 家族（产品列表提醒）
     │   ├── contacts.py               # 电话同号判定、WhatsApp 链接
     │   ├── pedido.py / pedido_drafts.py / pedido_pdf.py   # 报价单金额、草稿 → Sell 购物车、PDF
     │   ├── doc_pdf.py                # 对外 PDF 共用版式
@@ -576,6 +578,15 @@ PDF 的 `_brand_logo` 文件缺失时跳过。`empty_brands` 默认不包括有 
 - `also_in` 把 `scent_versions`（默认 manager，不含归档）排在清单所有者后面；`product_page_links` 返回 `scent_source`，版本标签用 `version_label`（Type + 容量）。
 - `pdf_links` 把版本当作一行清单：版本 → 香水（香水归档时 `target_id` 为空），香水 → 能买到的版本。内容行和版本只调用一次 `offerable_ids`，查询数固定（`test_links_cost_a_fixed_number_of_queries`）。
 - 迁移 0095 的 `forward` 规则同 `save_contents`，最后把连接链压平；两个产品互相连接时只转换先处理的那一个，不会成环。Shopify 文件没有改。
+
+### 5.13y4 香调文字：快速导入、清理、提醒（2026-11-21，迁移 0096）
+
+`services/scent_text.py` 只处理字符串，不碰 ORM（迁移用历史模型调用它），家族以 `(id, name, tag)` 传入。
+- `read_scent_text(text, families, gender=False, phrases=False)` 逐行读：三层香调（`LAYER_LINE`，分隔符为冒号或破折号；`BARE_LAYER_LINE` 没有分隔符，值里必须有逗号）、`FAMILY_LINE`、`INSPIRED_LINE`（要有冒号或 `KNOWN_HOUSES` 里的品牌，"Inspirado na natureza" 不算）；`gender` / `phrases` 只给快速导入用。值要过 `_is_list`：不含句子标记（沿用 `note_parser` 的 `PROSE_MARKERS`、`TAIL_CLAUSE`）、不含带空格的破折号、不以冠词开头、每项不超过 40 字。带行内值、下一行紧跟普通文字的标签当作小标题，不读（`_runs_on`）。emoji 在写入字段前去掉。没删任何行时 `prose` 等于原文。
+- 家族词：先对家族的 name / tag 分词匹配，再用 `FAMILY_STEMS`（葡语词干 → 英文家族词）；有一个词对不上，整行就不算（快速导入在句子里只取开头连续能认出的词）。
+- `tidy(data, families)`：名称等于型号时清空；认出的行从描述删掉，字段空着才填，家族只在没有时填。`ProductForm._tidy_scent` 在 `clean()` 末尾调用它，迁移 0096 用 `values()` + `update()` 对每个产品调用一次，家族用 through 表 `bulk_create`。
+- 快速导入：`catalog_views.parse_scent`（`api/parse-scent/`，经理权限，POST `text`）返回 `notes`、`families`、`inspiration`、`gender`、`description`；页面只替换返回了值的字段。
+- `services/scent_info.py`：`incomplete_q()` = Perfume + 有剩余批次 +（描述为空 / 三层香调连同 `scent_source` 都空 / 自己和 `scent_source` 都没有家族，用 `Exists`）。产品列表的 `info=incomplete` 经 `product_list_extras` 进 `get_filtered_product_list_state`，所以导出也按它筛；经理看到 `incomplete_count()`；筛选时当前页 prefetch 家族，再用 `missing_parts` 写出每行缺哪几项。
 
 ### 5.13z 空品牌、空系列自动删除（2026-11-05）
 

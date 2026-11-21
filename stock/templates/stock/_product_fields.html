@@ -53,6 +53,12 @@
     .pf-card{ padding:.85rem; }
     .pf-bar .btn{ flex:1 1 0; }
   }
+  .pfs-import{ margin:-.25rem 0 .85rem; font-size:.9rem; }
+  .pfs-import summary{ cursor:pointer; color:var(--app-muted); font-weight:700; }
+  .pfs-import textarea{ margin:.4rem 0; }
+  .pfs-import-row{ display:flex; align-items:center; gap:.6rem; min-height:32px; }
+  .pfs-import-row .btn{ flex:none; }
+  .pfs-status{ flex:1 1 auto; min-width:0; font-size:.85rem; font-weight:700; color:var(--app-muted); overflow-wrap:anywhere; }
 </style>
 
 {{ form.category.as_hidden }}
@@ -133,6 +139,14 @@
 
     <section class="pf-card" id="pfScent">
       <h2>Scent</h2>
+      <details class="pfs-import">
+        <summary>Quick import</summary>
+        <textarea class="form-control" id="pfScentPaste" rows="5" aria-label="Paste a scent description"></textarea>
+        <div class="pfs-import-row">
+          <button type="button" class="btn btn-sm btn-outline-primary" id="pfScentFill">Fill the form</button>
+          <span class="pfs-status" id="pfScentStatus" aria-live="polite"></span>
+        </div>
+      </details>
       <div class="pf-grid">
         <div class="pf-field wide">
           <label>Fragrance family <span class="opt">any that apply</span></label>
@@ -284,6 +298,49 @@ document.addEventListener('DOMContentLoaded', () => {
     const r = await fetch(btn.dataset.delImg, { method: 'POST', body, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
     const data = await r.json().catch(() => ({}));
     if (data.success) btn.closest('.pf-photo').remove(); else alert('Could not delete the photo.');
+  });
+});
+</script>
+<script>
+// Quick import: a pasted paragraph fills what it states; the rest stays.
+document.addEventListener('DOMContentLoaded', () => {
+  const form = document.getElementById('product-form');
+  const paste = document.getElementById('pfScentPaste');
+  const status = document.getElementById('pfScentStatus');
+  if (!form || !paste) return;
+  function set(name, value) {
+    const field = form.querySelector(`[name="${name}"]`);
+    if (!field) return;
+    field.value = value;
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  document.getElementById('pfScentFill').addEventListener('click', () => {
+    if (!paste.value.trim()) return;
+    const body = new FormData();
+    body.append('text', paste.value);
+    body.append('csrfmiddlewaretoken', form.querySelector('[name="csrfmiddlewaretoken"]').value);
+    fetch("{% url 'parse_scent' %}", { method: 'POST', body })
+      .then((r) => r.json())
+      .then((data) => {
+        const filled = [];
+        if (data.families.length) {
+          form.querySelectorAll('[name="fragrance_families"]').forEach((box) => {
+            box.checked = data.families.includes(Number(box.value));
+            box.dispatchEvent(new Event('change', { bubbles: true }));
+          });
+          filled.push('Families');
+        }
+        [['top', 'Top'], ['heart', 'Heart'], ['base', 'Base']].forEach(([layer, label]) => {
+          if (data.notes[layer]) { set(`notes_${layer}`, data.notes[layer]); filled.push(label); }
+        });
+        if (data.inspiration) { set('inspired_by_text', data.inspiration); filled.push('Inspired by'); }
+        if (data.gender) { set('gender', data.gender); filled.push('For'); }
+        if (data.description) { set('description', data.description); filled.push('Description'); }
+        status.textContent = filled.length ? `Filled: ${filled.join(' \u00b7 ')}` : 'Nothing found';
+        if (filled.length) paste.value = '';
+      })
+      .catch(() => { status.textContent = 'Could not read the text'; });
   });
 });
 </script>

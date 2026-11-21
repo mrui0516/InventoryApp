@@ -353,6 +353,20 @@ def parse_contents(request):
     return JsonResponse({'rows': parse_pasted(_text(request, 'brand', 80), request.POST.get('text') or '')})
 
 
+@login_required
+@manager_required
+@require_POST
+def parse_scent(request):
+    """The product form's quick import: a pasted paragraph, read into fields.
+    Only what was found comes back filled; the page leaves the rest alone."""
+    from .models import FragranceFamily
+    from .services.scent_text import read_scent_text
+    families = list(FragranceFamily.objects.values_list('id', 'name', 'shopify_tag'))
+    read = read_scent_text((request.POST.get('text') or '')[:20000], families, gender=True, phrases=True)
+    return JsonResponse({'notes': read.notes, 'families': read.families, 'inspiration': read.inspiration,
+                         'gender': read.gender, 'description': read.prose})
+
+
 @catalog_access
 @require_POST
 def restock_request(request, pk):

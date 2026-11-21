@@ -1318,6 +1318,18 @@ def product_list_view(request):
         p.display_price = p.default_price
         p.primary_image_url = get_product_image_url(p)
         p.in_transit = transit.get(p.id, 0)
+    if state['info']:
+        from django.db.models import prefetch_related_objects
+        from .services.scent_info import missing_parts
+        prefetch_related_objects(list(page_obj), 'fragrance_families', 'scent_source__fragrance_families')
+        for p in page_obj:
+            p.missing = missing_parts(p)
+    can_manage = has_manager_access(request.user)
+    if can_manage:
+        from .services.scent_info import incomplete_count
+        info_missing = incomplete_count()
+    else:
+        info_missing = 0
 
     total_stock = sum(p.list_stock for p in page_obj)
     query_params = request.GET.copy()
@@ -1337,7 +1349,10 @@ def product_list_view(request):
         'total_stock': total_stock,
         'filter_querystring': query_params.urlencode(),
         'active_filter_labels': active_filter_labels,
-        'filters_on': bool(selected_brand_id or stock_status or state['concentration'] or state['gender']) or sort_by != 'latest',
+        'filters_on': bool(selected_brand_id or stock_status or state['concentration'] or state['gender']
+                           or state['info']) or sort_by != 'latest',
+        'info': state['info'],
+        'info_missing': info_missing,
         'perfume_type': state['perfume_type'],
         'concentration': state['concentration'],
         'gender': state['gender'],
@@ -1346,7 +1361,7 @@ def product_list_view(request):
         'type_total': sum(state['type_counts'].values()),
         'concentrations': Concentration.objects.order_by('sort_order', 'name'),
         'genders': [c for c in Product.GENDER_CHOICES if c[0]],
-        'can_manage': has_manager_access(request.user),
+        'can_manage': can_manage,
         'show_sales_sensitive': show_sales_sensitive,
         'export_defaults': {
             'price_mode': 'retail',
@@ -1390,11 +1405,12 @@ def product_list_extras(request):
         'perfume_type': (request.GET.get('type') or '').strip(),
         'concentration': (request.GET.get('conc') or '').strip(),
         'gender': (request.GET.get('gender') or '').strip(),
+        'info': (request.GET.get('info') or '').strip(),
     }
 
 
 def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_category, selected_brand, stock_status, sort_by, store=None,
-                                    perfume_type='', concentration='', gender='', stock_store=None):
+                                    perfume_type='', concentration='', gender='', stock_store=None, info=''):
     """``stock_store``: the stock filters and sorts count that shop's units
     (``list_stock``); without it, both shops together (as exports need)."""
     recent_sales_start = timezone.now() - timedelta(days=30)
@@ -1470,6 +1486,11 @@ def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_cat
         products_qs = products_qs.filter(Product.gender_q(gender))
     else:
         gender = ''
+    if info == 'incomplete':
+        from .services.scent_info import incomplete_q
+        products_qs = products_qs.filter(incomplete_q())
+    else:
+        info = ''
 
     brand_options = (
         Brand.objects
@@ -1578,6 +1599,7 @@ def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_cat
         'perfume_type': perfume_type,
         'concentration': concentration,
         'gender': gender,
+        'info': info,
     }
 
 

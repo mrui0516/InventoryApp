@@ -282,7 +282,26 @@ class ProductForm(forms.ModelForm):
 
         cleaned['resolved_brand_master'] = brand
         cleaned['resolved_series_master'] = series
+        self._tidy_scent(cleaned, series)
         return cleaned
+
+    def _tidy_scent(self, cleaned, series):
+        """What migration 0096 did once, on every save: a name equal to the
+        series goes, and labelled note / family / reference lines leave the
+        description for their fields (services/scent_text.tidy)."""
+        from .models import FragranceFamily
+        from .services.scent_text import NOTE_FIELDS, tidy
+        families = cleaned.get('fragrance_families')
+        text_fields = ['name', 'description', 'inspired_by_text', *NOTE_FIELDS.values()]
+        data = {key: cleaned.get(key) or '' for key in text_fields}
+        data['model'] = series.name if series else (self.instance.model or '')
+        data['family_ids'] = [family.pk for family in families] if families is not None else []
+        tidied = tidy(data, list(FragranceFamily.objects.values_list('id', 'name', 'shopify_tag')))
+        for key in text_fields:
+            if key in cleaned and tidied[key] != data[key]:
+                cleaned[key] = tidied[key]
+        if families is not None and tidied['family_ids'] != data['family_ids']:
+            cleaned['fragrance_families'] = FragranceFamily.objects.filter(pk__in=tidied['family_ids'])
 
     def save(self, commit=True):
         product = super().save(commit=False)

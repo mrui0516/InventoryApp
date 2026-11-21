@@ -121,6 +121,7 @@ urlpatterns = [
     path('direct-purchases/<int:purchase_id>/edit/', views.direct_purchase_edit_view, name='direct_purchase_edit'),
     path('api/products_autocomplete/', views.products_autocomplete, name='products_autocomplete'),
     path('api/parse-contents/', catalog_views.parse_contents, name='parse_contents'),
+    path('api/parse-scent/', catalog_views.parse_scent, name='parse_scent'),
 
     path('catalog/', wholesale_views.catalog_view, name='catalog'),
     path('b2b/', portal_views.portal_home, name='portal_home'),
