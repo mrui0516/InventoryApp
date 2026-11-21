@@ -588,6 +588,11 @@ PDF 的 `_brand_logo` 文件缺失时跳过。`empty_brands` 默认不包括有 
 - 快速导入：`catalog_views.parse_scent`（`api/parse-scent/`，经理权限，POST `text`）返回 `notes`、`families`、`inspiration`、`gender`、`description`；页面只替换返回了值的字段。
 - `services/scent_info.py`：`incomplete_q()` = Perfume + 有剩余批次 +（描述为空 / 三层香调连同 `scent_source` 都空 / 自己和 `scent_source` 都没有家族，用 `Exists`）。产品列表的 `info=incomplete` 经 `product_list_extras` 进 `get_filtered_product_list_state`，所以导出也按它筛；经理看到 `incomplete_count()`；筛选时当前页 prefetch 家族，再用 `missing_parts` 写出每行缺哪几项。
 
+### 5.13y5 Inspired by 批量填写（2026-11-21）
+
+`management/commands/fill_inspirations.py` 读 `stock/data/inspirations.csv`（列 `brand,line,name,inspired_by`），按 `(brand, model, name)` 小写分组匹配在售 Perfume（`scent_source` 为空的）。同组已有值时取最常见的那个补给空着的容量，否则用清单的值；从不覆盖已有值。默认只打印计划，`--apply` 才在一个事务里 `update()`。按文字分组而不是按 id，所以清单在本机整理、到 PA 上执行也对得上；报告列出仍空着的产品和没对上产品的清单行。
+显示：`product_detail.html` 在描述下方单独一行 `.pdp-insp`（在 5 行折叠之外，始终可见）；`wholesale_catalog._row` 用 `composed_description()`（带 Inspirado em）；`shopify_sync` 仍传 `include_inspiration=False`。
+
 ### 5.13z 空品牌、空系列自动删除（2026-11-05）
 
 `services/catalog_prune.py`。`stock/signals.py` 在产品改品牌/系列、硬删除、归档时，只检查它**离开的那个**品牌和系列，

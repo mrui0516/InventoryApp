@@ -394,10 +394,9 @@ class Product(models.Model):
         if notes:
             blocks.append(chr(10).join(notes))
 
-        # Named on the shop's own paperwork, not on the public storefront:
-        # printing another house's product on a listing is a trademark risk the
-        # shop should take deliberately, not as a side effect of tidying up a
-        # description. shopify_sync passes include_inspiration=False.
+        # Naming another house's product on a listing is a trademark risk the
+        # shop takes deliberately: on 2026-11-21 the owner chose to show it in
+        # the B2B catalogue too. shopify_sync still passes include_inspiration=False.
         inspiration = self.inspiration_label if include_inspiration else ''
         if inspiration:
             blocks.append(f'Inspirado em: {inspiration}')

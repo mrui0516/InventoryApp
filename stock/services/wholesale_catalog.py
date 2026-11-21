@@ -134,7 +134,8 @@ def _row(product, units, requested=False, customer=None, in_cart=0, on_way=False
         'state_label': state_label,
         'image_url': image_url(product),
         'contents': [content_label(row) for row in contents],
-        'description': product.composed_description(include_inspiration=False),
+        # The owner chose to name the reference to B2B customers (2026-11-21).
+        'description': product.composed_description(),
         'requested': requested,
         'pick_mode': pick_mode(product),
         'pick_options': pick_options(product),

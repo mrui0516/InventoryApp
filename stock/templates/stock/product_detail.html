@@ -67,6 +67,7 @@
   .pdp-desc{ font-size:.9rem; color:var(--app-primary); margin-top:.6rem; line-height:1.5; }
   .pdp-desc:not(.is-open){ display:-webkit-box; -webkit-line-clamp:5; -webkit-box-orient:vertical; overflow:hidden; }
   .pdp-desc-more{ border:0; background:none; padding:.2rem 0; font-weight:700; color:var(--app-accent); font-size:.86rem; }
+  .pdp-insp{ font-size:.9rem; font-weight:700; color:var(--app-primary); margin-top:.6rem; overflow-wrap:anywhere; }
   .pdp-gallery{ display:grid; grid-template-columns:repeat(auto-fill,minmax(72px,1fr)); gap:.5rem; }
   .pdp-gallery img{ width:100%; aspect-ratio:1; object-fit:contain; background:#fff; border:1px solid var(--app-border); border-radius:var(--app-radius-sm); cursor:zoom-in; }
 
@@ -189,7 +190,6 @@
             {% if product.scent_top %}<div><dt>Top notes</dt><dd>{{ product.scent_top }}</dd></div>{% endif %}
             {% if product.scent_heart %}<div><dt>Heart notes</dt><dd>{{ product.scent_heart }}</dd></div>{% endif %}
             {% if product.scent_base %}<div><dt>Base notes</dt><dd>{{ product.scent_base }}</dd></div>{% endif %}
-            {% if show_sensitive and product.inspiration_label %}<div><dt>Inspired by</dt><dd>{{ product.inspiration_label }}</dd></div>{% endif %}
           {% else %}
             {% if product.spec %}<div><dt>Spec</dt><dd>{{ product.spec }}</dd></div>{% endif %}
           {% endif %}
@@ -201,6 +201,7 @@
           <button type="button" class="pdp-desc-more" id="descMore" hidden
                   onclick="var t=document.getElementById('descText');t.classList.toggle('is-open');this.textContent=t.classList.contains('is-open')?'Show less':'Show more';">Show more</button>
         {% endif %}
+        {% if product.inspiration_label %}<div class="pdp-insp">Inspirado em: {{ product.inspiration_label }}</div>{% endif %}
       </section>
 
       {% if show_sensitive and supplier_costs %}

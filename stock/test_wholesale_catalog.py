@@ -249,8 +249,9 @@ class PageTests(CatalogMixin):
         self._sold(product, 50)
         self.assertNotIn("Mais vendido", self._get().content.decode())
 
-    def test_the_description_leaves_out_what_inspired_it(self):
+    def test_the_description_names_what_inspired_it(self):
+        # Left out until 2026-11-21, when the owner chose to show it.
         self._product(units=9, description="Doce", inspired_by_text="Baccarat")
         html = self._get().content.decode()
         self.assertIn("Doce", html)
-        self.assertNotIn("Baccarat", html)
+        self.assertIn("Inspirado em: Baccarat", html)
