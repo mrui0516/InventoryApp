@@ -211,7 +211,7 @@ def build_catalog_pdf(brand_groups, *, price_mode='retail', include_images=True,
                 if include_images:
                     row.append(_thumb(product) or '')
                 row.append(_title_cell(product, links.get(product.pk), style))
-                row.append(Paragraph(Product.GENDER_SHOPIFY_TAGS.get(product.gender, '-'), style['cell']))
+                row.append(Paragraph(Product.GENDER_SHOPIFY_TAGS.get(product.scent_gender, '-'), style['cell']))
                 # The same numbers the spreadsheet prints: PVP is the till
                 # price plus the uplift, wholesale carries this export's
                 # discount. Both are worked out before we get here.

@@ -126,7 +126,7 @@ def _row(product, units, requested=False, customer=None, in_cart=0, on_way=False
         'volume_ml': product.volume_ml,
         'strength': product.strength_short if hasattr(product, 'strength_short') else (
             getattr(product.concentration, 'short', '') if product.concentration_id else ''),
-        'gender': Product.GENDER_SHOPIFY_TAGS.get(product.gender, ''),
+        'gender': Product.GENDER_SHOPIFY_TAGS.get(product.scent_gender, ''),
         'price': price,
         'base_price': product.wholesale_price,
         'in_cart': in_cart,
@@ -149,7 +149,9 @@ def catalog_rows(query='', brand='', kind='', gender='', show_all=False, viewer=
     """The list, in order: sold out last, then by brand and type, each type's
     best-selling lines first. A brand stays together whatever its stock levels."""
     products = (Product.objects.select_related('brand_master')
-                .prefetch_related('images', 'contents__linked', 'fragrance_families'))
+                .select_related('scent_source')
+                .prefetch_related('images', 'contents__linked', 'fragrance_families',
+                                  'scent_source__fragrance_families'))
     if query:
         products = products.filter(product_search_q(query))
     if brand:
@@ -157,7 +159,7 @@ def catalog_rows(query='', brand='', kind='', gender='', show_all=False, viewer=
     if kind:
         products = products.filter(product_type=kind)
     if gender:
-        products = products.filter(gender=gender)
+        products = products.filter(Product.gender_q(gender))
     products = list(products)
 
     units = sellable_units([p.pk for p in products])

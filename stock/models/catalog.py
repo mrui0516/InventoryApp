@@ -4,7 +4,7 @@ import re
 from decimal import Decimal
 
 from django.db import models
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.utils import timezone
 
 from .product_types import ProductType
@@ -202,8 +202,14 @@ class Product(models.Model):
     OIL_PERFUME, BODY_MIST = 'oil_perfume', 'body_mist'
     product_type = models.ForeignKey(ProductType, to_field='code', default=PERFUME, on_delete=models.PROTECT,
                                      related_name='products', verbose_name='Type')
-    # One product for many scents, sold and counted as one; ProductContent lists them.
+    # One product for many scents, the customer picks one: set by save_contents
+    # (2026-11-16) for a list of two or more on anything but a gift.
     is_mix = models.BooleanField(default=False)
+    # The perfume this is a version of: a body mist, a mini, a refill of it. Its
+    # scent (families, notes, inspiration, gender) is read from there unless this
+    # product has its own (the scent_* properties).
+    scent_source = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True,
+                                     related_name='scent_versions')
     fragrance_families = models.ManyToManyField('FragranceFamily', blank=True, related_name='products')
     inspired_by = models.ForeignKey('Inspiration', on_delete=models.SET_NULL,
                                     null=True, blank=True, related_name='products')
@@ -302,18 +308,70 @@ class Product(models.Model):
         return text
 
     @property
+    def scent_parent(self):
+        """The perfume this is a version of, or None. Read even once that perfume
+        is archived: its notes still describe this bottle."""
+        parent = self.scent_source if self.scent_source_id else None
+        if parent is None or parent.pk == self.pk:
+            return None
+        return parent
+
+    def _own_or_parent(self, field):
+        own = (getattr(self, field) or '').strip()
+        if own:
+            return own
+        parent = self.scent_parent
+        return (getattr(parent, field) or '').strip() if parent else ''
+
+    @property
+    def scent_top(self):
+        return self._own_or_parent('notes_top')
+
+    @property
+    def scent_heart(self):
+        return self._own_or_parent('notes_heart')
+
+    @property
+    def scent_base(self):
+        return self._own_or_parent('notes_base')
+
+    @property
+    def scent_gender(self):
+        return self.gender or (self.scent_parent.gender if self.scent_parent else '') or ''
+
+    @property
+    def scent_gender_label(self):
+        return dict(self.GENDER_CHOICES).get(self.scent_gender, '')
+
+    @staticmethod
+    def gender_q(gender):
+        """Filter by gender: a version with none of its own reads the perfume's."""
+        return Q(gender=gender) | Q(gender='', scent_source__gender=gender)
+
+    def scent_families(self):
+        """Its own families, or the perfume's when it has none."""
+        own = list(self.fragrance_families.all())
+        if own or self.scent_parent is None:
+            return own
+        return list(self.scent_parent.fragrance_families.all())
+
+    @property
     def inspiration_label(self):
-        """What this is inspired by - the typed text, or the old lookup row."""
+        """What this is inspired by - the typed text, or the old lookup row, else
+        the perfume's."""
         typed = (self.inspired_by_text or '').strip()
-        return typed or (str(self.inspired_by) if self.inspired_by_id else '')
+        own = typed or (str(self.inspired_by) if self.inspired_by_id else '')
+        if own or self.scent_parent is None:
+            return own
+        return self.scent_parent.inspiration_label
 
     @property
     def note_lines(self):
         """``[(label, notes)]`` for the layers that have been filled in."""
-        pairs = [('Notas de Topo', self.notes_top),
-                 ('Notas de Coração', self.notes_heart),
-                 ('Notas de Base', self.notes_base)]
-        return [(label, value.strip()) for label, value in pairs if (value or '').strip()]
+        pairs = [('Notas de Topo', self.scent_top),
+                 ('Notas de Coração', self.scent_heart),
+                 ('Notas de Base', self.scent_base)]
+        return [(label, value) for label, value in pairs if value]
 
     def composed_description(self, include_inspiration=True):
         """The short description with the structured details written under it.
@@ -328,7 +386,7 @@ class Product(models.Model):
         if body:
             blocks.append(body)
 
-        families = ', '.join(f.name for f in self.fragrance_families.all())
+        families = ', '.join(f.name for f in self.scent_families())
         if families:
             blocks.append(f'Família olfativa: {families}')
 

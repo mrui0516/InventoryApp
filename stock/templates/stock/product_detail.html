@@ -96,11 +96,12 @@
         {% if product.product_type_id != 'perfume' %}<span>{{ product.type_info.name }}</span>{% endif %}
         {% if product.concentration %}<span>{{ product.concentration.name }}</span>{% endif %}
         {% if product.volume_ml %}<span>{{ product.volume_ml }} ml</span>{% endif %}
-        {% if product.gender %}<span>{{ product.get_gender_display }}</span>{% endif %}
+        {% if product.scent_gender %}<span>{{ product.scent_gender_label }}</span>{% endif %}
         {% if product.archived_at %}<span class="archived">Deleted {{ product.archived_at|date:"Y-m-d" }}</span>{% endif %}
       </div>
-      {% if links.contents or links.also_in %}
+      {% if links.scent_source or links.contents or links.also_in %}
       <div class="pdp-links">
+        {% if links.scent_source %}<div><b>Same scent as:</b> <a href="{% url 'product_detail' links.scent_source.id %}">{{ links.scent_source.list_name }}</a></div>{% endif %}
         {% if links.contents %}<div><b>{{ links.contents_title }}:</b> {% for c in links.contents %}{% if c.product %}<a href="{% url 'product_detail' c.product.id %}">{{ c.label }}</a>{% else %}{{ c.label }}{% endif %}{% if not forloop.last %} &middot; {% endif %}{% endfor %}</div>{% endif %}
         {% if links.also_in %}<div><b>Also in:</b> {% for a in links.also_in %}<a href="{% url 'product_detail' a.product.id %}">{{ a.label }}</a> <span class="n">{{ a.stock }}</span>{% if not forloop.last %} &middot; {% endif %}{% endfor %}</div>{% endif %}
       </div>
@@ -184,11 +185,11 @@
           {% if product.model %}<div><dt>Line</dt><dd>{{ product.model }}</dd></div>{% endif %}
           {% if product.name %}<div><dt>Name</dt><dd>{{ product.name }}</dd></div>{% endif %}
           {% if is_perfume %}
-            <div><dt>Fragrance family</dt><dd>{% for f in product.fragrance_families.all %}{{ f.name }}{% if not forloop.last %}, {% endif %}{% empty %}&mdash;{% endfor %}</dd></div>
-            {% if product.notes_top %}<div><dt>Top notes</dt><dd>{{ product.notes_top }}</dd></div>{% endif %}
-            {% if product.notes_heart %}<div><dt>Heart notes</dt><dd>{{ product.notes_heart }}</dd></div>{% endif %}
-            {% if product.notes_base %}<div><dt>Base notes</dt><dd>{{ product.notes_base }}</dd></div>{% endif %}
-            {% if show_sensitive and product.inspired_by_text %}<div><dt>Inspired by</dt><dd>{{ product.inspired_by_text }}</dd></div>{% endif %}
+            <div><dt>Fragrance family</dt><dd>{% for f in product.scent_families %}{{ f.name }}{% if not forloop.last %}, {% endif %}{% empty %}&mdash;{% endfor %}</dd></div>
+            {% if product.scent_top %}<div><dt>Top notes</dt><dd>{{ product.scent_top }}</dd></div>{% endif %}
+            {% if product.scent_heart %}<div><dt>Heart notes</dt><dd>{{ product.scent_heart }}</dd></div>{% endif %}
+            {% if product.scent_base %}<div><dt>Base notes</dt><dd>{{ product.scent_base }}</dd></div>{% endif %}
+            {% if show_sensitive and product.inspiration_label %}<div><dt>Inspired by</dt><dd>{{ product.inspiration_label }}</dd></div>{% endif %}
           {% else %}
             {% if product.spec %}<div><dt>Spec</dt><dd>{{ product.spec }}</dd></div>{% endif %}
           {% endif %}

@@ -48,7 +48,7 @@ def perfume_choices(query='', brand='', gender='', sort='sold'):
     if brand:
         products = products.filter(brand__iexact=brand)
     if gender:
-        products = products.filter(gender=gender)
+        products = products.filter(Product.gender_q(gender))
     products = list(products)
     ids = [product.pk for product in products]
     units, sold = _in_stock(ids), units_sold(ids)

@@ -1,4 +1,4 @@
-"""Mix, coffret and single-scent products link to the products they relate to."""
+"""Mix, coffret and version products link to the products they relate to."""
 import importlib
 import json
 from decimal import Decimal
@@ -46,7 +46,7 @@ class ScentNameTests(ContentsMixin):
 
 
 class ListsContentsTests(ContentsMixin):
-    def test_a_ticked_mix_lists(self):
+    def test_a_mix_lists(self):
         self.assertTrue(self.mix.lists_contents)
 
     def test_a_type_with_contents_lists_without_a_tick(self):
@@ -63,24 +63,24 @@ class ListsContentsTests(ContentsMixin):
 
 class LabelTests(ContentsMixin):
     def test_a_linked_scent_follows_the_perfume_name(self):
-        save_contents(self.mix, [{"name": "Old", "linked_id": self.khamrah.id}])
+        save_contents(self.gift, [{"name": "Old", "linked_id": self.khamrah.id}])
         Product.objects.filter(pk=self.khamrah.pk).update(model="Khamrah Qahwa")
-        row = ProductContent.objects.select_related("linked").get(owner=self.mix)
+        row = ProductContent.objects.select_related("linked").get(owner=self.gift)
         self.assertEqual(content_label(row), "Khamrah Qahwa")
 
     def test_saving_writes_the_linked_name_back(self):
-        save_contents(self.mix, [{"name": "Old", "linked_id": self.khamrah.id}])
-        self.assertEqual(ProductContent.objects.get(owner=self.mix).name, "Khamrah")
+        save_contents(self.gift, [{"name": "Old", "linked_id": self.khamrah.id}])
+        self.assertEqual(ProductContent.objects.get(owner=self.gift).name, "Khamrah")
 
     def test_an_archived_perfume_leaves_the_stored_name(self):
-        save_contents(self.mix, [{"name": "", "linked_id": self.khamrah.id}])
+        save_contents(self.gift, [{"name": "", "linked_id": self.khamrah.id}])
         Product.objects.filter(pk=self.khamrah.pk).update(archived_at=timezone.now(), model="Gone")
-        self.assertEqual(content_label(ProductContent.objects.select_related("linked").get(owner=self.mix)), "Khamrah")
+        self.assertEqual(content_label(ProductContent.objects.select_related("linked").get(owner=self.gift)), "Khamrah")
 
     def test_a_deleted_perfume_leaves_the_stored_name(self):
-        save_contents(self.mix, [{"name": "", "linked_id": self.khamrah.id}])
+        save_contents(self.gift, [{"name": "", "linked_id": self.khamrah.id}])
         Product.all_objects.filter(pk=self.khamrah.pk).delete()
-        row = ProductContent.objects.get(owner=self.mix)
+        row = ProductContent.objects.get(owner=self.gift)
         self.assertIsNone(row.linked)
         self.assertEqual(content_label(row), "Khamrah")
 
@@ -151,8 +151,8 @@ class AlsoInTests(ContentsMixin):
         Product.objects.filter(pk=self.mix.pk).update(archived_at=timezone.now())
         self.assertEqual(also_in(self.yara), [])
 
-    def test_also_in_skips_an_unticked_mix(self):
-        save_contents(self.mix, [{"name": "", "linked_id": self.yara.id}])
+    def test_also_in_skips_a_mix_that_no_longer_lists(self):
+        save_contents(self.mix, [{"name": "", "linked_id": self.yara.id}, {"name": "", "linked_id": self.khamrah.id}])
         Product.objects.filter(pk=self.mix.pk).update(is_mix=False, product_type_id="perfume")
         self.assertEqual(also_in(self.yara), [])
 
@@ -204,8 +204,8 @@ class FormTests(ContentsMixin):
     def _rows(self, *rows):
         return json.dumps([{"name": n, "linked_id": linked} for n, linked in rows])
 
-    def test_ticking_mix_saves_the_list(self):
-        response = self._add("perfume", "6290000081001", is_mix="on",
+    def test_two_scents_make_a_mix_without_a_tick(self):
+        response = self._add("perfume", "6290000081001",
                              contents_json=self._rows(("Khamrah", self.khamrah.id), ("Oud Novo", None)))
         self.assertEqual(response.status_code, 302)
         product = Product.objects.get(barcode="6290000081001")
@@ -219,33 +219,36 @@ class FormTests(ContentsMixin):
         self.assertFalse(product.is_mix)
         self.assertEqual(product.contents.count(), 1)
 
-    def test_a_single_body_spray_links_with_no_tick(self):
+    def test_one_linked_scent_on_a_body_spray_is_its_source(self):
         self._add("body_spray", "6290000081003", contents_json=self._rows(("Yara", self.yara.id)))
-        self.assertEqual(Product.objects.get(barcode="6290000081003").contents.first().linked, self.yara)
+        product = Product.objects.get(barcode="6290000081003")
+        self.assertEqual(product.scent_source, self.yara)
+        self.assertEqual(product.contents.count(), 0)
+        self.assertFalse(product.is_mix)
 
-    def test_an_ordinary_perfume_has_no_list(self):
+    def test_one_typed_name_on_a_perfume_is_not_a_mix(self):
         self._add("perfume", "6290000081004", contents_json=self._rows(("Yara", None)))
-        self.assertEqual(Product.objects.get(barcode="6290000081004").contents.count(), 0)
+        self.assertFalse(Product.objects.get(barcode="6290000081004").is_mix)
 
-    def test_unticking_mix_keeps_the_rows_hidden(self):
-        save_contents(self.mix, [{"name": "Yara", "linked_id": self.yara.id}])
+    def test_dropping_to_one_scent_ends_the_mix(self):
+        save_contents(self.mix, [{"name": "", "linked_id": self.yara.id}, {"name": "Oud Novo", "linked_id": None}])
         Product.objects.filter(pk=self.mix.pk).update(product_type_id="perfume")
         self.mix.refresh_from_db()
-        self._edit(self.mix, contents_json=self._rows(("Yara", self.yara.id)))
+        self.assertTrue(self.mix.is_mix)
+        self._edit(self.mix, contents_json=self._rows(("Oud Novo", None)))
         self.mix.refresh_from_db()
         self.assertFalse(self.mix.is_mix)
-        self.assertEqual(self.mix.contents.count(), 1)
         self.assertEqual(also_in(self.yara), [])
 
     def test_the_form_comes_back_with_the_list(self):
-        save_contents(self.mix, [{"name": "Yara", "linked_id": self.yara.id}])
+        save_contents(self.mix, [{"name": "Yara", "linked_id": self.yara.id}, {"name": "Oud Novo", "linked_id": None}])
         html = self.client.get(reverse("edit_product", args=[self.mix.pk])).content.decode()
         self.assertIn('name="contents_json"', html)
         self.assertIn(f"&quot;linked_id&quot;: {self.yara.id}", html)
 
     def test_an_edit_without_the_field_keeps_the_list(self):
         save_contents(self.mix, [{"name": "Yara", "linked_id": None}])
-        self._edit(self.mix, is_mix="on")
+        self._edit(self.mix)
         self.assertEqual(self.mix.contents.count(), 1)
 
     def test_broken_json_does_not_lose_the_product(self):
@@ -315,7 +318,7 @@ class DetailPageTests(ContentsMixin):
         self.assertIn("Contains", self._page(self.gift))
 
     def test_a_perfume_page_says_also_in_with_stock(self):
-        save_contents(self.mix, [{"name": "", "linked_id": self.yara.id}])
+        save_contents(self.mix, [{"name": "", "linked_id": self.yara.id}, {"name": "Oud Novo", "linked_id": None}])
         Purchase.objects.create(product=self.mix, quantity=7, remaining=7, cost_price=Decimal("2"))
         html = self._page(self.yara)
         section = html[html.index('class="pdp-links"'):]
@@ -366,5 +369,5 @@ class PasteChoosesTheRightProductTests(ContentsMixin):
         self.assertIn("100ml", row["linked_label"])
 
     def test_the_form_list_says_which_product_it_linked(self):
-        save_contents(self.mix, [{"name": "", "linked_id": self.big.id}])
-        self.assertIn("100ml", contents_for_form(self.mix)[0]["linked_label"])
+        save_contents(self.gift, [{"name": "", "linked_id": self.big.id}])
+        self.assertIn("100ml", contents_for_form(self.gift)[0]["linked_label"])

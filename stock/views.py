@@ -1454,7 +1454,7 @@ def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_cat
         )
     products_qs = (
         products_qs
-        .select_related('category', 'brand_master', 'series_master')
+        .select_related('category', 'brand_master', 'series_master', 'scent_source')
         .prefetch_related('images')
     )
 
@@ -1467,7 +1467,7 @@ def get_filtered_product_list_state(*, show_sales_sensitive, query, selected_cat
     if concentration.isdigit():
         products_qs = products_qs.filter(concentration_id=int(concentration))
     if gender in dict(Product.GENDER_CHOICES):
-        products_qs = products_qs.filter(gender=gender)
+        products_qs = products_qs.filter(Product.gender_q(gender))
     else:
         gender = ''
 
@@ -2229,7 +2229,9 @@ def product_detail_view(request, pk):
     is_manager = has_manager_access(request.user)
     # The full reconstructed Stock Ledger lives on the dedicated /sales-history/
     # page (merged with sales detail); the product page just links there.
-    is_perfume = bool(product.category and 'perfum' in (product.category.name or '').lower())
+    # A body mist linked to its perfume shows the scent it reads from there.
+    is_perfume = bool((product.category and 'perfum' in (product.category.name or '').lower())
+                      or product.scent_source_id)
 
     from .services.store_stock import shop_split
     return render(request, 'stock/product_detail.html', {

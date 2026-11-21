@@ -9,7 +9,7 @@ from django.forms import inlineformset_factory
 from django.utils import timezone
 
 from .services.names import title_case
-from .services.product_contents import contents_for_form, save_contents
+from .services.product_contents import adopt_versions, contents_for_form, save_contents
 from .models import (
     ARInvoice,
     ARItem,
@@ -94,7 +94,7 @@ class ProductForm(forms.ModelForm):
             'volume_ml',
             'concentration',
             'product_type',
-            'is_mix',
+            'scent_source',
             'fragrance_families',
             'notes_top',
             'notes_heart',
@@ -107,6 +107,7 @@ class ProductForm(forms.ModelForm):
         ]
         widgets = {
             'gender': forms.Select(attrs={'class': 'form-select'}),
+            'scent_source': forms.HiddenInput(),
             'concentration': forms.Select(attrs={'class': 'form-select'}),
             'product_type': forms.Select(attrs={'class': 'form-select'}),
             # a perfume usually sits in several families
@@ -139,6 +140,9 @@ class ProductForm(forms.ModelForm):
         self.fields['volume_ml'].label = 'Volume (ml)'
         if self.instance.pk:
             self.fields['contents_json'].initial = json.dumps(contents_for_form(self.instance))
+        # An archived perfume can stay the source: its notes still hold.
+        self.fields['scent_source'].queryset = Product.all_objects.all()
+        self.fields['scent_source'].required = False
         self.fields['concentration'].label = 'Concentration'
         self.fields['concentration'].empty_label = 'Not set'
         # Left out (an older form, a script): an ordinary perfume.
@@ -218,6 +222,25 @@ class ProductForm(forms.ModelForm):
             raise forms.ValidationError('The list could not be read.')
         return [row for row in rows if isinstance(row, dict)]
 
+    @property
+    def scent_source_choice(self):
+        """The product the hidden field holds - the posted one after an error."""
+        value = str(self['scent_source'].value() or '')
+        return Product.all_objects.filter(pk=int(value)).first() if value.isdigit() else None
+
+    def clean_scent_source(self):
+        """The perfume itself, never this product or a version of a version."""
+        from .services.product_contents import scent_root
+        picked = self.cleaned_data.get('scent_source')
+        chosen = scent_root(picked)
+        if chosen is None:
+            return None
+        if self.instance.pk and chosen.pk == self.instance.pk:
+            if picked.pk == self.instance.pk:
+                raise forms.ValidationError('A product cannot be a version of itself.')
+            raise forms.ValidationError(f'{picked.list_name} is already a version of this product.')
+        return chosen
+
     def clean_product_type(self):
         return self.cleaned_data.get('product_type') or ProductType.objects.get(code=Product.PERFUME)
 
@@ -279,8 +302,9 @@ class ProductForm(forms.ModelForm):
                 product.brand_master.categories.add(product.category)
             self.save_m2m()
             rows = self.cleaned_data.get('contents_json')
-            if rows is not None and product.lists_contents:
+            if rows is not None:
                 save_contents(product, rows)
+            adopt_versions(product)
         return product
 
 

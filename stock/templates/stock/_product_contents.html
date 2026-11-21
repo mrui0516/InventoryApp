@@ -1,4 +1,4 @@
-<section class="pf-card d-none" id="pfContents">
+<section class="pf-card" id="pfContents">
   <style>
     .pfc-row{ display:flex; align-items:center; gap:.5rem; padding:.35rem 0; border-top:1px solid var(--app-border); }
     .pfc-row:first-child{ border-top:0; }
@@ -15,8 +15,26 @@
     .pfc-paste{ margin-top:.5rem; font-size:.9rem; }
     .pfc-paste summary{ cursor:pointer; color:var(--app-muted); font-weight:700; }
     .pfc-paste textarea{ margin:.35rem 0; }
+    .pfc-sub{ margin:.9rem 0 .2rem; font-size:.92rem; font-weight:800; line-height:1.5rem; }
+    .pfc-mix{ display:inline-block; margin-left:.35rem; padding:0 .45rem; border-radius:999px; background:var(--app-accent-soft); color:var(--app-accent); font-size:.85rem; line-height:1.35rem; vertical-align:top; }
+    .pfc-mix[hidden]{ display:none; }
+    #pfScentChosen{ border:1px solid var(--app-border); border-radius:var(--app-radius-sm); padding:.25rem .3rem .25rem .6rem; }
   </style>
-  <h2 id="pfContentsTitle">Scents</h2>
+  <h2>Linked products</h2>
+  {% with chosen=form.scent_source_choice %}
+  <div class="pf-field">
+    <label for="pfScentSearch">Same scent as</label>
+    {{ form.scent_source }}
+    <div class="pfc-row" id="pfScentChosen"{% if not chosen %} hidden{% endif %}>
+      <span class="pfc-name" id="pfScentName">{{ chosen.display_name }}</span>
+      <button type="button" class="pfc-x" id="pfScentClear" aria-label="Remove the link">&times;</button>
+    </div>
+    <input class="form-control" id="pfScentSearch" autocomplete="off" placeholder="Search the perfume, e.g. Esta Pura 100ml"{% if chosen %} hidden{% endif %}>
+    <div class="pfc-hits" id="pfScentHits"></div>
+    {% for e in form.scent_source.errors %}<div class="pf-err">{{ e }}</div>{% endfor %}
+  </div>
+  {% endwith %}
+  <h3 class="pfc-sub"><span id="pfContentsTitle">Scents</span> <span class="pfc-mix" id="pfMixTag" hidden>Mix</span></h3>
   {{ form.contents_json }}
   {% for e in form.contents_json.errors %}<div class="pf-err">{{ e }}</div>{% endfor %}
   <div id="pfContentList"></div>
@@ -41,7 +59,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const hits = document.getElementById('pfContentHits');
   const paste = document.getElementById('pfContentPaste');
   const kind = form.querySelector('[name="product_type"]');
-  const mix = form.querySelector('[name="is_mix"]');
   const rules = JSON.parse(document.getElementById('pfTypeRules').textContent);
   let rows = [];
   try { rows = JSON.parse(store.value || '[]'); } catch (e) { rows = []; }
@@ -77,6 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
       list.appendChild(line);
     });
     store.value = JSON.stringify(rows);
+    shown();
   }
   function add(name, linkedId, linkedLabel) {
     const clean = (name || '').trim();
@@ -86,9 +104,50 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   function shown() {
     const rule = rules[kind.value] || {};
-    box.classList.toggle('d-none', !(rule.contents || mix.checked));
     document.getElementById('pfContentsTitle').textContent = rule.gift ? 'Contains' : 'Scents';
+    // Two or more scents on anything but a gift is a mix: save_contents sets it.
+    document.getElementById('pfMixTag').hidden = !!rule.gift || rows.length < 2;
   }
+
+  // The perfume this is a version of: a body mist, a mini.
+  const source = form.querySelector('[name="scent_source"]');
+  const chosen = document.getElementById('pfScentChosen');
+  const sourceName = document.getElementById('pfScentName');
+  const sourceSearch = document.getElementById('pfScentSearch');
+  const sourceHits = document.getElementById('pfScentHits');
+  let sourceTimer = null, sourceAsked = 0;
+  function setSource(id, label) {
+    source.value = id || '';
+    sourceName.textContent = label || '';
+    chosen.hidden = !id;
+    sourceSearch.hidden = !!id;
+    sourceHits.textContent = '';
+    sourceSearch.value = '';
+  }
+  document.getElementById('pfScentClear').addEventListener('click', () => { setSource(null, ''); sourceSearch.focus(); });
+  sourceSearch.addEventListener('keydown', (e) => { if (e.key === 'Enter') e.preventDefault(); });
+  sourceSearch.addEventListener('input', () => {
+    clearTimeout(sourceTimer);
+    sourceTimer = setTimeout(() => {
+      const q = sourceSearch.value.trim();
+      const mine = ++sourceAsked;
+      if (q.length < 2) { sourceHits.textContent = ''; return; }
+      fetch(`{% url 'products_autocomplete' %}?scope=stock&exclude_mix=1&q=${encodeURIComponent(q)}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (mine !== sourceAsked) return;
+          sourceHits.textContent = '';
+          data.results.filter((r) => String(r.id) !== '{{ form.instance.pk|default:"" }}').slice(0, 8).forEach((r) => {
+            const pick = document.createElement('button');
+            pick.type = 'button';
+            pick.textContent = r.display_name;
+            pick.addEventListener('click', () => setSource(r.id, r.display_name));
+            sourceHits.appendChild(pick);
+          });
+        })
+        .catch(() => { sourceHits.textContent = ''; });
+    }, 200);
+  });
   let timer = null, asked = 0;
   function find() {
     const q = search.value.trim();
@@ -134,7 +193,6 @@ document.addEventListener('DOMContentLoaded', () => {
       .then((data) => { data.rows.forEach((row) => add(row.name, row.linked_id, row.linked_label)); paste.value = ''; });
   });
   kind.addEventListener('change', shown);
-  mix.addEventListener('change', shown);
   render();
   shown();
 });

@@ -111,8 +111,8 @@ class PdfLinkTests(TestCase):
     def test_an_empty_list_adds_no_line(self):
         self.assertNotIn("Fragrâncias", self._text(self.mix))
 
-    def test_an_unticked_mix_shows_nothing(self):
-        save_contents(self.mix, [{"name": "Oud", "linked_id": self.yara.id}])
+    def test_a_mix_that_no_longer_lists_shows_nothing(self):
+        save_contents(self.mix, [{"name": "Oud", "linked_id": self.yara.id}, {"name": "Rosa", "linked_id": None}])
         Product.objects.filter(pk=self.mix.pk).update(is_mix=False, product_type_id="perfume")
         self.mix.refresh_from_db()
         text = self._text(self.yara, self.mix)

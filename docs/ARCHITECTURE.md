@@ -559,12 +559,23 @@ PDF 的 `_brand_logo` 文件缺失时跳过。`empty_brands` 默认不包括有 
 ### 5.13y2 产品之间的连接（`ProductContent`，2026-11-05）
 
 `services/product_contents.py`。一行是一个名称，`linked` 可空；`name` 总是存着，所以被连接的产品归档或删除后名称还在。
-`Product.lists_contents`（`is_mix` 或 Type 的 `has_contents`）决定这份清单是否生效：取消勾选 Mix 时行留着，只是不再显示，也不会被保存改动。
+`Product.lists_contents`（`is_mix` 或 Type 的 `has_contents`）决定这份清单是否显示。2026-11-16 起 `is_mix` 不再由表单勾选，而是 `save_contents` 写入：非礼盒、2 行以上为 True。
 
 **只用于显示，任何地方都不看它来动库存。** 不能连接到自己或 Mix（`_clean_link`）。
 
 客户 PDF 用 `pdf_links(products)` 一次取齐，`target_id` 只在目标也在这份 PDF 时才有值：reportlab 碰到不存在的锚点会直接抛错，导出失败。
 锚点是 `p<id>`，名称过 `xml.sax.saxutils.escape`。
+
+### 5.13y3 同款香味（`Product.scent_source`，2026-11-16，迁移 0095）
+
+`scent_source` 是指向自己表的 FK（`SET_NULL`，反向 `scent_versions`），永远指向最初的香水：
+- `save_contents`：非礼盒、只有 1 行且连接到产品时，把它（经 `scent_root` 上溯一层）写进 `scent_source` 并清掉这一行；表单已选了另一款时不覆盖，行照留。
+- `ProductForm.clean_scent_source` 拒绝自己和自己的版本，选了版本就换成它的香水；`save` 之后 `adopt_versions` 把本产品原来的版本改指向它的新香水，所以只需上溯一层。表单字段的 queryset 是 `all_objects`，香水归档后编辑版本不会报错；`scent_source_choice` 让卡片在表单报错后显示刚提交的那一款。
+- 继承属性：`scent_parent`（不看归档）、`scent_top` / `scent_heart` / `scent_base`、`scent_gender` / `scent_gender_label`、`scent_families()`、`inspiration_label`、`note_lines`、`composed_description`。筛选用 `Product.gender_q(g)`：`Q(gender=g) | Q(gender='', scent_source__gender=g)`。
+- 读继承值的列表都要 `select_related('scent_source')`：`_build_product_queryset`（产品列表和导出）、`catalog_rows`（另外 prefetch `scent_source__fragrance_families`）。
+- `also_in` 把 `scent_versions`（默认 manager，不含归档）排在清单所有者后面；`product_page_links` 返回 `scent_source`，版本标签用 `version_label`（Type + 容量）。
+- `pdf_links` 把版本当作一行清单：版本 → 香水（香水归档时 `target_id` 为空），香水 → 能买到的版本。内容行和版本只调用一次 `offerable_ids`，查询数固定（`test_links_cost_a_fixed_number_of_queries`）。
+- 迁移 0095 的 `forward` 规则同 `save_contents`，最后把连接链压平；两个产品互相连接时只转换先处理的那一个，不会成环。Shopify 文件没有改。
 
 ### 5.13z 空品牌、空系列自动删除（2026-11-05）
 

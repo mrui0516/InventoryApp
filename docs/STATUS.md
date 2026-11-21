@@ -11,8 +11,8 @@
 | 维度 | 状态 | 说明 |
 |---|---|---|
 | 线上运行 | ✅ PythonAnywhere 欧盟区 | `https://scentory.eu.pythonanywhere.com`，两家店（Khan Perfume、Scentory）日常收银、入库都在线上；线上 `db.sqlite3` 是唯一准数据 |
-| 自动化测试 | ✅ 1834 个全部通过 | `python manage.py test stock restock_alerts`，在隔离工作区跑 |
-| 数据库迁移 | ✅ 最新 `0094_shopify_preorder_reservations`，无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
+| 自动化测试 | ✅ 1871 个全部通过 | `python manage.py test stock restock_alerts`，在隔离工作区跑 |
+| 数据库迁移 | ✅ 最新 `0095_scent_source`，无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
 | 生产配置 | ✅ `DEBUG=False`，密钥只在服务器 `.env` | `settings.py` 的 `if not DEBUG` 块：强制 HTTPS、安全 Cookie、HSTS、防点击劫持 |
 | 数据备份 | ✅ 每日快照 + 本机拉取 | PA 定时任务 `backup_db --keep 30`，本机 `scripts/pull_backup_from_pa.py` 拉到 U 盘；Settings → Tools 可手动下载。见 [BACKUP.md](./BACKUP.md) |
 | 错误日志 | ✅ Settings → Audit → Errors | 500 崩溃、安全警告、Cloudinary/Shopify 警告写入 `ErrorLog` 与 PA 错误日志 |
@@ -35,7 +35,7 @@
 
 ## 3. 测试与质量
 
-- `python manage.py test stock restock_alerts` → **1834 个测试全部通过**（约 53 秒；测试时用 MD5 密码哈希，生产不变）；`python manage.py check` 无问题。
+- `python manage.py test stock restock_alerts` → **1871 个测试全部通过**（约 45 秒；测试时用 MD5 密码哈希，生产不变）；`python manage.py check` 无问题。
 - 外部集成（Shopify / Cloudinary）的测试全部 mock，不发真实网络请求。
 - 提交前在 `git archive HEAD` 的干净导出上跑全套：工作区里可能有别的进行中的改动，会让结果失真。
 
@@ -73,6 +73,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-11-21: **同款香味与自动 Mix**（迁移 0095，会改数据，部署前先 `backup_db`）：产品可选 Same scent as，版本实时继承香水的香调家族、三层香调、灵感来源和性别（描述、产品页、B2B、客户 PDF、性别筛选）；去掉 This is a mix 勾选，非礼盒 2 款以上自动为 Mix；Linked products 卡片总是显示；现有清单按同一规则转换。
 - 2026-11-17: **Scentory 每个分装规格加 €2**：231 个商品的 462 个 5ml/10ml 规格已逐项改价并全量回读；其余 309 个规格价格、库存和预售政策未改。App 的建品和后续同步采用 10ml = 10% + €2.00、5ml = 5% + €2.50。
 - 2026-11-16: **Dashboard 按店铺区分**：选了店铺时，进货额、进货件数、供应商排行、进货/销售比、积压产品的最后卖出时间、Sell-through 都只算这家店；进货按收货店铺算，调货不增不减。B2B 新款/补货修正：整批调货的批次不再被漏算。
 - 2026-11-08: **B2B 行对齐**：Novo/Reposto 不再推动产品名；状态长文字不超框；平板隐藏 Tipo/Género；筛选栏同高同形、Limpar。

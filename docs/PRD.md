@@ -276,7 +276,14 @@
   - **条形码必填**(扫码或输入 EAN,8–13 位数字);编辑时保留原条码(旧的内部条码照旧有效)。**名称可空**。
   - **类型**(新字段 `Product.perfume_type`,迁移 0066):Perfume(默认)/ Mini / Oil perfume / Body mist / splash / Body spray(Deo)/ Air freshener / Coffret(礼盒)。
   - **Type 自己管理(2026-11-05,迁移 0075)**:Settings → Catalog → Types 可以添加、改名、排序、删除 Type,每个 Type 有开关:浓度、容量、Scent 区块、批发折扣、礼盒。新 Type 默认不打折、不显示 Scent。有产品的 Type 删除前要选一个 Type 转移产品;Perfume 是默认值,不能删。只有管理员能用。
-  - **产品之间的连接(2026-11-05,迁移 0078)**:Mix(表单勾 **This is a mix**,所有 Type 都能用)、Coffret、Body mist、Body spray、Air freshener 有一份清单,每项连接到产品或只写名称。输入时提示产品,也可以一次粘贴多个名称,同品牌名称完全相同的自动连接。只用于显示:库存、进货、销售都按产品本身,卖出 Coffret 不扣香水库存,Mix 不分款式计库存。产品页互相显示("Also in: Body spray (Mix)")。系列名为 Mix 的现有产品自动标记为 Mix,清单由店主自己填。
+  - **产品之间的连接(2026-11-05,迁移 0078)**:Mix(2026-11-16 起不再勾选,见下一条)、Coffret、Body mist、Body spray、Air freshener 有一份清单,每项连接到产品或只写名称。输入时提示产品,也可以一次粘贴多个名称,同品牌名称完全相同的自动连接。只用于显示:库存、进货、销售都按产品本身,卖出 Coffret 不扣香水库存,Mix 不分款式计库存。产品页互相显示("Also in: Body spray (Mix)")。系列名为 Mix 的现有产品自动标记为 Mix,清单由店主自己填。
+  - **同款香味与自动 Mix(2026-11-16,迁移 0095)**:
+    - 每个产品可以选一个 **Same scent as**:它是哪款香水的另一个版本(Body mist、Mini、小瓶)。版本的版本自动指向最初的香水;不能选自己,也不能选自己的版本。一款香水变成别人的版本时,它原来的版本改指向新的香水。
+    - 去掉 **This is a mix** 勾选:非礼盒产品列了 2 款以上就是 Mix(标题旁显示 Mix 标签);非礼盒产品只列了 1 款且连接到产品,保存为 Same scent as,不留清单行(已经手动选了另一款香水时,这一行照旧留在清单里)。礼盒照旧是清单,不算 Mix。
+    - 产品表单上的 **Linked products** 卡片总是显示。
+    - **实时继承**:版本自己没填的香调家族、三层香调、灵感来源、性别读它的香水,自己填了的以自己为准;香水归档后照样继承。用到的地方:组合描述(B2B 目录详情、Shopify 同步的描述)、产品页、B2B 行和客户 PDF 的 Género、产品列表 / B2B 目录 / Amostra 选款的性别筛选。Shopify 的性别 tag 仍只看产品自己的性别。
+    - 产品页:版本显示 "Same scent as: 香水",香水的 Also in 列出版本("Body mist 250ml"),带库存。客户 PDF:版本行下写 `Fragrâncias: 香水`,香水行的 `Também em:` 列出客人能买到的版本;香水已归档时只写名字,不跳转。
+    - 迁移 0095 按同一规则转换现有数据:1 个连接行 → Same scent as;2 款以上 → Mix;勾了 Mix 但没有清单的取消 Mix;版本的版本改指向最初的香水。
   - **禁止分装的 Type（2026-11-08，全局规则）**：所有品牌的 Coffret、Oil perfume、Mini perfume 都只整套／整件销售，不生成 5ml／10ml、不扣分装试香预留、不计算分装价格、不归入“仅分装有货”。历史误建分装规格停售并从前台选项和价格中排除；Mini 的不同香型保留为正常款式。该规则适用于现有商品和未来新增商品。
   - **产品名称带 Type(2026-11-05)**:除 Perfume 外,名称以 Type 开头("Lattafa - Body spray Yara 200ml"),没有名称的产品就叫它的 Type;名称里已经有这个词时不重复。Shopify 标题不变。
   - **搜索(2026-11-05)**:所有产品搜索框都能搜 Type,多个词可以来自不同字段("yara body spray")。Quick import 也读 Type。
