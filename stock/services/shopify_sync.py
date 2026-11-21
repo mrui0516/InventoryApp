@@ -74,7 +74,7 @@ DECANTABLE_VOLUME_ML = 100
 
 # Permanent storefront policy, also applied when an existing price is synced.
 DECANT_PRICE_RATIO = {'-10ML': Decimal('0.10'), '-5ML': Decimal('0.05')}
-DECANT_FIXED_FEE = {'-10ML': Decimal('0.00'), '-5ML': Decimal('0.50')}
+DECANT_FIXED_FEE = {'-10ML': Decimal('2.00'), '-5ML': Decimal('2.50')}
 DECANT_PRICE_STEP = Decimal('0.01')
 
 # The storefront is Portuguese and its size option is called Tamanho; a new
@@ -108,7 +108,7 @@ def is_decantable(product):
 
 
 def decant_price(full_price, suffix):
-    """10ml = 10%; 5ml = 5% + EUR0.50, rounded half-up to cents."""
+    """10ml = 10% + EUR2; 5ml = 5% + EUR2.50, rounded half-up to cents."""
     if full_price is None:
         return Decimal('0.00')
     ratio = DECANT_PRICE_RATIO.get(suffix)
