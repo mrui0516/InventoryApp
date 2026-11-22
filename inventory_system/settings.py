@@ -207,6 +207,17 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
+        # SQLite has one writer at a time. In the default DEFERRED mode a
+        # transaction that reads and then writes fails at once with "database
+        # is locked" when another connection is writing - it does not wait.
+        # IMMEDIATE takes the write lock at BEGIN, so writers queue for up to
+        # ``timeout`` seconds instead (2026-11-22: the till showed errors for
+        # sales it had in fact recorded). WAL stays off: PythonAnywhere's
+        # network file system cannot share its memory index safely.
+        'OPTIONS': {
+            'transaction_mode': 'IMMEDIATE',
+            'timeout': 20,
+        },
     }
 }
 

@@ -11,7 +11,7 @@
 | 维度 | 状态 | 说明 |
 |---|---|---|
 | 线上运行 | ✅ PythonAnywhere 欧盟区 | `https://scentory.eu.pythonanywhere.com`，两家店（Khan Perfume、Scentory）日常收银、入库都在线上；线上 `db.sqlite3` 是唯一准数据 |
-| 自动化测试 | ✅ 1911 个全部通过 | `python manage.py test stock restock_alerts`，在隔离工作区跑 |
+| 自动化测试 | ✅ 1921 个全部通过 | `python manage.py test stock restock_alerts`，在隔离工作区跑 |
 | 数据库迁移 | ✅ 最新 `0096_tidy_scent_text`，无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
 | 生产配置 | ✅ `DEBUG=False`，密钥只在服务器 `.env` | `settings.py` 的 `if not DEBUG` 块：强制 HTTPS、安全 Cookie、HSTS、防点击劫持 |
 | 数据备份 | ✅ 每日快照 + 本机拉取 | PA 定时任务 `backup_db --keep 30`，本机 `scripts/pull_backup_from_pa.py` 拉到 U 盘；Settings → Tools 可手动下载。见 [BACKUP.md](./BACKUP.md) |
@@ -35,7 +35,7 @@
 
 ## 3. 测试与质量
 
-- `python manage.py test stock restock_alerts` → **1911 个测试全部通过**（约 45 秒；测试时用 MD5 密码哈希，生产不变）；`python manage.py check` 无问题。
+- `python manage.py test stock restock_alerts` → **1921 个测试全部通过**（约 45 秒；测试时用 MD5 密码哈希，生产不变）；`python manage.py check` 无问题。
 - 外部集成（Shopify / Cloudinary）的测试全部 mock，不发真实网络请求。
 - 提交前在 `git archive HEAD` 的干净导出上跑全套：工作区里可能有别的进行中的改动，会让结果失真。
 
@@ -51,7 +51,7 @@
 | Chart.js 从 CDN 加载且未锁版本 | `cdn.jsdelivr.net/npm/chart.js` 会自动跟到新大版本，可能哪天图表突然坏掉 | 中 |
 | `views.py` 约 6,200 行 | 按 ARCHITECTURE 第 8 节路线图逐步拆分 | 低 |
 | 利润按 FIFO 全量重放 | 当前规模（约 2,000 张订单）没有性能问题，规模大了再看 | 低 |
-| SQLite 单文件 | 两家店的并发量足够；有每日快照 | 低 |
+| SQLite 单文件 | 两家店的并发量足够；有每日快照。2026-11-22 起写入排队（IMMEDIATE + 20 秒），撞锁不再误报；Shopify 目录线程重复重试同一任务会放大写入（SKU 6294015190656 在 Shopify 有重复商品，需在 Shopify 后台处理） | 低 |
 
 **已审查并确认维持现状的事项**（不应在后续代码审查中重复提出）：
 
@@ -73,6 +73,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-11-22: **收银撞锁误报修复**：已入账的销售不再显示 "Unexpected error: database is locked"，手动建单不再 500（原因：提交后的日汇总重算撞上 SQLite 写锁）。SQLite 改 IMMEDIATE 事务 + 20 秒等待；日汇总每笔每天只算一次、失败只记日志；真的没记上时明确提示；重复的警告 60 秒内只写一次 ErrorLog。
 - 2026-11-21: **Inspired by 显示与批量填写**：产品页描述下方和 B2B 目录描述显示 "Inspirado em"；新命令 `fill_inspirations`（先预演）从 `stock/data/inspirations.csv` 只填空着的 Inspired by。Shopify 描述未改。
 - 2026-11-21: **香调快速导入、描述清理、信息不全提醒**（迁移 0096，会改数据，部署前先 `backup_db`，无预览）：Scent 区块的 Quick import 粘贴一段文字自动填家族、香调、灵感来源、性别和描述；保存产品和迁移都会清空与系列相同的名称，并把描述里的香调 / 家族 / Inspirado em 标签行移进字段（字段已有内容的以字段为准）；产品列表提醒有货香水缺描述、香调或家族，并可筛选。
 - 2026-11-21: **同款香味与自动 Mix**（迁移 0095，会改数据，部署前先 `backup_db`）：产品可选 Same scent as，版本实时继承香水的香调家族、三层香调、灵感来源和性别（描述、产品页、B2B、客户 PDF、性别筛选）；去掉 This is a mix 勾选，非礼盒 2 款以上自动为 Mix；Linked products 卡片总是显示；现有清单按同一规则转换。

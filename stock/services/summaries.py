@@ -1,3 +1,4 @@
+import logging
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal
@@ -6,6 +7,8 @@ from django.db import transaction
 from django.utils.timezone import make_naive
 
 from ..models import DailySalesSummary, Purchase, Sale
+
+logger = logging.getLogger(__name__)
 
 
 def recalc_summary_for_date(day: date):
@@ -80,5 +83,36 @@ def rebuild_all_daily_summaries():
     return len(sale_days)
 
 
+class _SummaryRecalc:
+    """One day's recalculation, run once after the commit.
+
+    It runs after the sale has committed, so it must not fail the request: a
+    summary that could not be written is logged, and the next sale that day
+    (or ``rebuild_dailysummary``) brings it up to date."""
+    __qualname__ = 'recalc_summary_for_date'
+
+    def __init__(self, day):
+        self.day, self.done = day, False
+
+    def __call__(self):
+        self.done = True
+        try:
+            recalc_summary_for_date(self.day)
+        except Exception:
+            logger.exception('Daily sales summary for %s was not updated', self.day)
+
+
 def schedule_summary_recalc(day: date):
-    transaction.on_commit(lambda summary_day=day: recalc_summary_for_date(summary_day))
+    """Recalculate ``day`` once, after the transaction commits (2026-11-22).
+
+    Every sale line used to schedule its own full-history replay, and when one
+    of them hit "database is locked" the error reached the till as a failed
+    sale - which had in fact been recorded. One pending callback per day, and
+    it never raises."""
+    connection = transaction.get_connection()
+    if connection.in_atomic_block:
+        for pending in connection.run_on_commit:
+            callback = pending[1]
+            if isinstance(callback, _SummaryRecalc) and callback.day == day and not callback.done:
+                return
+    transaction.on_commit(_SummaryRecalc(day), robust=True)

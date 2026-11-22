@@ -9,11 +9,38 @@ loggers (``stock.*``: Cloudinary, Shopify, signals).
 import hashlib
 import logging
 import threading
+import time
 import traceback
 from datetime import timedelta
 
 KEEP_DAYS = 90
 _busy = threading.local()
+
+# A warning repeated within this many seconds is counted, not written. A
+# Shopify job retrying in a loop logged the same line thousands of times, and
+# each write competed with the till for SQLite's single write lock
+# (2026-11-22). Errors, failed logins and security warnings are always written.
+REPEAT_SECONDS = 60
+UNTHROTTLED = ('stock.auth', 'django.security')
+_recent = {}                 # fingerprint -> [monotonic time written, repeats not yet written]
+_recent_lock = threading.Lock()
+
+
+def _held_back(fingerprint, level, source):
+    """``(skip, repeats)``: whether to skip this write, and how many earlier
+    repeats to add to the count when it is written."""
+    if level != 'WARNING' or source.startswith(UNTHROTTLED):
+        return False, 0
+    now = time.monotonic()
+    with _recent_lock:
+        entry = _recent.get(fingerprint)
+        if entry and now - entry[0] < REPEAT_SECONDS:
+            entry[1] += 1
+            return True, 0
+        if len(_recent) > 500:
+            _recent.clear()
+        _recent[fingerprint] = [now, 0]
+        return False, entry[1] if entry else 0
 
 
 def _describe(record):
@@ -51,13 +78,20 @@ def _store(record):
     title, key, detail = _describe(record)
     level = 'ERROR' if record.levelno >= logging.ERROR else 'WARNING'
     fingerprint = hashlib.sha1(f"{level}|{key}".encode('utf-8', 'replace')).hexdigest()
+    skip, repeats = _held_back(fingerprint, level, record.name)
+    if skip:
+        # A read, not a write; the row may be gone if its transaction rolled back.
+        if ErrorLog.objects.filter(fingerprint=fingerprint).exists():
+            return
+        with _recent_lock:
+            _recent[fingerprint] = [time.monotonic(), 0]
     request = getattr(record, 'request', None)
     path = (getattr(request, 'path', '') or '')[:300]
     user = getattr(request, 'user', None)
     user = user if getattr(user, 'is_authenticated', False) else None
     now = timezone.now()
     with transaction.atomic():
-        changes = {'count': F('count') + 1, 'last_seen': now, 'resolved_at': None, 'title': title}
+        changes = {'count': F('count') + 1 + repeats, 'last_seen': now, 'resolved_at': None, 'title': title}
         if detail:
             changes['detail'] = detail
         if path:

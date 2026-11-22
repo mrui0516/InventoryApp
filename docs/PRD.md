@@ -210,7 +210,8 @@
 - **F2.4.4** **FIFO 扣减**：按批次创建时间顺序（`date` 升序）依次扣减 `Purchase.remaining`，直到满足销售数量；用于后续成本/利润核算。
 - **F2.4.5** 创建一个 `SaleOrder`（订单头）+ 若干 `Sale`（行项目；`payment_method` = **该行支付方式**，拆分行取主方式=金额最大者）+ 若干 `SaleOrderPayment`（按方式汇总的支付记录，见 2.4.9）。
 - **F2.4.6** **幂等性保护**：对提交内容（含 `payments_json`）计算 SHA256 摘要 + `cache.add()` 8 秒窗口，防止重复提交生成重复订单。
-- **F2.4.7** 销售记录创建/更新/删除会触发 `DailySalesSummary` 异步重算（通过 Django signal + `transaction.on_commit`，见模块 2.10）。
+- **F2.4.7** 销售记录创建/更新/删除会触发 `DailySalesSummary` 异步重算（通过 Django signal + `transaction.on_commit`，见模块 2.10）。2026-11-22 起同一笔每天只算一次，算失败只记日志，不影响这笔销售。
+- **F2.4.7a 数据库忙时的提示(2026-11-22)**:以前销售已经记上,收尾步骤撞上 SQLite 写锁时 Sell 页却显示 "Unexpected error: database is locked",Orders → 手动新建订单则直接 500。现在:提交后的步骤不再报错;万一提交后还有步骤失败,Sell 页显示 "The sale was recorded, but a step after it failed. Check it in Orders."(凭一次性令牌判断是否已入账);真的没记上时显示 "The database was busy, so this sale was NOT recorded. Please enter it again.";手动建单 / 删单页显示 "…was NOT saved / NOT deleted. Please try again.",不再 500。
 - **F2.4.8** 出货操作要求登录（任意角色均可执行）。
 - **F2.4.9 `SaleOrderPayment`（按方式汇总的支付记录）**：`order`（FK→SaleOrder，related_name `payments`）、`method`（cash/card/mbway）、`amount`、`created_at`。记录订单按支付方式汇总的金额（一笔订单可有多行）。当前各行支付方式即 `Sale.payment_method`，故仪表盘/年度的分类口径"支付占比"按 `Sale.payment_method` 聚合即与之一致。
 

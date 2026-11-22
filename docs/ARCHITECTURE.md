@@ -11,7 +11,7 @@
 | 层 | 技术 |
 |---|---|
 | 后端框架 | Django 5.2.4（单体应用，无 DRF / 无前后端分离） |
-| 数据库 | SQLite（`db.sqlite3`，单文件） |
+| 数据库 | SQLite（`db.sqlite3`，单文件）；`OPTIONS`: `transaction_mode="IMMEDIATE"`、`timeout=20`（2026-11-22，见 5.0 并发写入） |
 | 前端 | Django Template + Bootstrap 5（本地静态资源，非 CDN）+ `django-widget-tweaks` |
 | 扫码 | `html5-qrcode.min.js`（浏览器端摄像头扫码） |
 | 图表 | Chart.js（jsDelivr CDN，未锁定版本；调色板经 `window.CHART_PALETTE` 读 CSS 令牌） |
@@ -212,7 +212,7 @@ PrintProfile       —— 单例配置表（固定 pk=1）
 ### 5.3 每日汇总的异步重算
 - `stock/signals.py` 监听 `Sale` 的 `pre_save`/`post_save`/`post_delete`。
 - `pre_save` 记录变更前的日期，`post_save`/`post_delete` 对比变更前后日期，调用 `services/summaries.py::schedule_summary_recalc()`。
-- `schedule_summary_recalc` 通过 `transaction.on_commit()` 注册回调，确保**事务成功提交后**才重算 `DailySalesSummary`（避免在回滚的事务中计算出错误汇总）。
+- `schedule_summary_recalc` 通过 `transaction.on_commit(..., robust=True)` 注册回调，确保**事务成功提交后**才重算 `DailySalesSummary`（避免在回滚的事务中计算出错误汇总）。2026-11-22 起回调是 `_SummaryRecalc` 对象：同一事务里同一天只排一个（检查 `connection.run_on_commit` 里还没执行的同类回调），执行时自己捕获异常并写日志，绝不抛回请求。原因：每行商品各排一次全量重放，其中一次撞上 "database is locked" 就让 Sell 页把已入账的销售报成失败、让手动建单页 500。
 - `rebuild_all_daily_summaries()` + Django Admin 批量 action 提供全量重建能力。
 
 ### 5.4 权限分层（见 `stock/permissions.py`）
@@ -587,6 +587,14 @@ PDF 的 `_brand_logo` 文件缺失时跳过。`empty_brands` 默认不包括有 
 - `tidy(data, families)`：名称等于型号时清空；认出的行从描述删掉，字段空着才填，家族只在没有时填。`ProductForm._tidy_scent` 在 `clean()` 末尾调用它，迁移 0096 用 `values()` + `update()` 对每个产品调用一次，家族用 through 表 `bulk_create`。
 - 快速导入：`catalog_views.parse_scent`（`api/parse-scent/`，经理权限，POST `text`）返回 `notes`、`families`、`inspiration`、`gender`、`description`；页面只替换返回了值的字段。
 - `services/scent_info.py`：`incomplete_q()` = Perfume + 有剩余批次 +（描述为空 / 三层香调连同 `scent_source` 都空 / 自己和 `scent_source` 都没有家族，用 `Exists`）。产品列表的 `info=incomplete` 经 `product_list_extras` 进 `get_filtered_product_list_state`，所以导出也按它筛；经理看到 `incomplete_count()`；筛选时当前页 prefetch 家族，再用 `missing_parts` 写出每行缺哪几项。
+
+### 5.0 并发写入（SQLite，2026-11-22）
+
+SQLite 同时只有一个写入者。默认 DEFERRED 事务"先读后写"时，遇到另一个连接正在写会**立即** `database is locked`（死锁检测，不等 `timeout`）。线上同时写库的有：两家店的收银、每笔销售后被唤醒的 Shopify 目录后台线程（`SHOPIFY_CATALOG_AUTOMATION=1`）、PA 定时 / 常驻任务。
+- `settings.DATABASES.OPTIONS`：`transaction_mode="IMMEDIATE"`（每个 `atomic()` 在 BEGIN 就拿写锁，排队等待）+ `timeout=20`。不开 WAL：PA 的网络文件系统无法安全共享 `-shm`。
+- 副作用：`TestCase` 的外层事务从一开始就是写事务，在同一连接上做 SQLite 在线备份会一直 SQLITE_LOCKED，所以 `BackupDbCommandTests`、`DownloadDbBackupViewTests` 用 `TransactionTestCase`。线上 `backup_db` 和下载备份都在 autocommit 下运行，不受影响。
+- 提交后的回调不得抛回请求：日汇总见 5.3；`outbound_view` 的兜底 `except` 走 `_sell_failed`：令牌已被认领 = 已入账 → 警告并跳转，否则 `OperationalError` → "NOT recorded"；`_sale_order_correction_view` 捕获 `OperationalError` → 表单错误，不再 500。
+- `system_log`：同一条 WARNING（指纹相同）60 秒内只写一次库，期间的次数在下一次写入时补上；ERROR、`stock.auth`（失败登录）、`django.security` 不节流。跳过前先查这一行是否还在（回滚后会不在）。
 
 ### 5.13y5 Inspired by 批量填写（2026-11-21）
 

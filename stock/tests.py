@@ -7294,7 +7294,13 @@ class DecantInventoryPushTests(TestCase):
         self.assertEqual(calls, {"I0": 3, "I1": 10, "I2": 10})  # N=5 -> 100ml=3, decants=10
 
 
-class BackupDbCommandTests(TestCase):
+class BackupDbCommandTests(TransactionTestCase):
+    # Like DownloadDbBackupViewTests: since 2026-11-22 every atomic block begins
+    # IMMEDIATE, so TestCase's outer block is a write transaction from the start,
+    # and SQLite's online backup of that same connection spins on SQLITE_LOCKED.
+    # The command runs in autocommit in production.
+    serialized_rollback = True
+
     def test_backup_creates_valid_snapshot_and_prunes(self):
         import os
         import sqlite3

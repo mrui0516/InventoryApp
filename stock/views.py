@@ -3,6 +3,7 @@ import csv
 from decimal import Decimal, InvalidOperation,ROUND_HALF_UP
 import hashlib
 import json
+import logging
 import os
 from io import BytesIO
 from collections import defaultdict
@@ -17,7 +18,7 @@ from django.contrib import messages
 from django.core.paginator import Paginator
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import OperationalError, transaction
 from django.db.models import Q, Sum, Count, Max, Case, When, Exists
 from django.db.models.functions import Coalesce
 from django.http import (
@@ -103,6 +104,8 @@ from openpyxl.drawing.image import Image as XLImage
 from openpyxl.styles import PatternFill, Alignment, Font, Border, Side
 from openpyxl.utils import get_column_letter
 from PIL import Image as PILImage
+
+logger = logging.getLogger(__name__)
 
 
 def build_product_label(product):
@@ -1062,6 +1065,27 @@ def _pedido_cart(draft):
     }
 
 
+BUSY_NOT_RECORDED = 'The database was busy, so this sale was NOT recorded. Please enter it again.'
+
+
+def _sell_failed(request, exc):
+    """A sale that raised. Its one-time token tells whether it was recorded
+    after all: the claim commits with the sale, so a claimed token means the
+    failure came after the commit (2026-11-22: the till said "Unexpected error:
+    database is locked" for sales that were in the books)."""
+    logger.warning('Sale at the till raised %s', type(exc).__name__, exc_info=exc)
+    try:
+        recorded = submissions.already_claimed(request)
+    except Exception:
+        recorded = False
+    if recorded:
+        messages.warning(request, 'The sale was recorded, but a step after it failed. Check it in Orders.')
+        return redirect('outbound')
+    if isinstance(exc, OperationalError):
+        return _sell_error(request, BUSY_NOT_RECORDED)
+    return _sell_error(request, 'Unexpected error: ' + str(exc))
+
+
 def _sell_error(request, message):
     """Sell's error page; a sale from a Pedido draft comes back with its cart."""
     draft = _sell_draft(request, request.POST.get('pedido_draft_id'))
@@ -1251,7 +1275,7 @@ def outbound_view(request):
     except ValueError as e:
         return _sell_error(request, str(e))
     except Exception as e:
-        return _sell_error(request, 'Unexpected error: ' + str(e))
+        return _sell_failed(request, e)
 
     pay_summary = ', '.join(
         f'{label} €{payment_totals[code]:.2f}'
@@ -3965,6 +3989,9 @@ def _sale_order_correction_view(request, order=None):
                     )
                 except ValidationError as exc:
                     form.add_error(None, '; '.join(exc.messages))
+                except OperationalError as exc:
+                    logger.warning('Order delete hit %s', exc, exc_info=exc)
+                    form.add_error(None, 'The database was busy, so the order was NOT deleted. Please try again.')
                 else:
                     messages.success(request, f'Order #{order.id} deleted and stock restored.')
                     return _back_to(request, 'sale_order_correction_center',
@@ -4007,6 +4034,11 @@ def _sale_order_correction_view(request, order=None):
                     messages.error(request, str(exc))
                 except ValidationError as exc:
                     form.add_error(None, '; '.join(exc.messages))
+                except OperationalError as exc:
+                    # After the commit nothing raises any more (the daily summary
+                    # is recalculated quietly), so this one rolled back.
+                    logger.warning('Order save hit %s', exc, exc_info=exc)
+                    form.add_error(None, 'The database was busy, so the order was NOT saved. Please try again.')
                 else:
                     action_label = 'created' if order is None else 'updated'
                     messages.success(request, f'Order #{saved_order.id} {action_label}.')
