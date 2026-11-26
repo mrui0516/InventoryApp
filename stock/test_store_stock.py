@@ -86,10 +86,12 @@ class SaleFromAShopTests(ShopsMixin, TestCase):
         consume_stock_fifo(self.product, 1, self.scentory, sample=True)
         self.assertEqual(self.units(self.scentory), 0)
 
-    def test_a_sample_is_never_taken_from_the_other_shop(self):
+    def test_a_sample_comes_from_the_other_shop_when_this_one_has_none(self):
+        # Until 2026-11-26 a sample never left its shop; now a sample is sold,
+        # never refused: the other shop's units come over, full price first.
         consume_stock_fifo(self.product, 2, self.scentory, sample=True)
-        with self.assertRaisesMessage(ValidationError, "no sample"):
-            consume_stock_fifo(self.product, 1, self.scentory, sample=True)
+        consume_stock_fifo(self.product, 1, self.scentory, sample=True)
+        self.assertEqual((self.units(self.scentory), self.units(self.khan)), (0, 4))
 
     def test_more_than_both_shops_hold_is_refused(self):
         with self.assertRaisesMessage(ValidationError, "Not enough stock"):

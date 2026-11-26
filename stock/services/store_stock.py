@@ -213,6 +213,54 @@ def move_units(product, quantity, from_store, to_store, *, transfer=None, reason
     return line
 
 
+def _sale_transfer(sale_order, source, store):
+    """The till's transfer already written for this sale between these shops."""
+    if source is None or sale_order is None:
+        return None
+    return (StockTransfer.objects
+            .filter(sale_order=sale_order, from_store=source, to_store=store, reason=StockTransfer.SALE).first())
+
+
+def full_price_obtainable(product, store):
+    """The full-price units ``store`` can sell: its own beyond its samples, each
+    other shop's beyond theirs, and batches never given a shop."""
+    total = full_price_units(store, store_units(product, store))
+    for source in [s for s in active_stores() if s.pk != store.pk] + [None]:
+        total += full_price_units(source, store_units(product, source))
+    return total
+
+
+def bring_in_any(product, quantity, store, *, user=None, sale_order=None):
+    """Make ``store`` hold ``quantity`` units, its samples counted (2026-11-26: a
+    sample is sold, never refused). The shortfall comes from the other shops'
+    full-price units first, then their samples, then batches never given a
+    shop. Returns the units brought in."""
+    own = store_units(product, store)
+    short = quantity - own
+    if short <= 0:
+        return 0
+    sources = [s for s in active_stores() if s.pk != store.pk] + [None]
+    left = [store_units(product, source) for source in sources]
+    take = [0] * len(sources)
+    for full_price_only in (True, False):
+        for index, source in enumerate(sources):
+            spare = full_price_units(source, left[index]) if full_price_only else left[index]
+            got = min(short, spare)
+            if got > 0:
+                take[index] += got
+                left[index] -= got
+                short -= got
+    if short > 0:
+        total = own + sum(store_units(product, source) for source in sources)
+        raise ValidationError(f'Not enough stock for {product.display_name}. '
+                              f'Needed {quantity}, both shops have {total}.')
+    for source, units in zip(sources, take):
+        if units:
+            move_units(product, units, source, store, transfer=_sale_transfer(sale_order, source, store),
+                       reason=StockTransfer.SALE, user=user, sale_order=sale_order)
+    return sum(take)
+
+
 def bring_in_for_sale(product, quantity, store, *, user=None, sale_order=None):
     """Make sure ``store`` holds ``quantity`` full-price units of ``product``,
     taking the shortfall from the other shops (their samples stay). Returns
@@ -230,13 +278,8 @@ def bring_in_for_sale(product, quantity, store, *, user=None, sale_order=None):
         take = min(short, spare)
         if take <= 0:
             continue
-        transfer = None
-        if source is not None and sale_order is not None:
-            transfer = (StockTransfer.objects
-                        .filter(sale_order=sale_order, from_store=source, to_store=store,
-                                reason=StockTransfer.SALE).first())
-        move_units(product, take, source, store, transfer=transfer, reason=StockTransfer.SALE,
-                   user=user, sale_order=sale_order)
+        move_units(product, take, source, store, transfer=_sale_transfer(sale_order, source, store),
+                   reason=StockTransfer.SALE, user=user, sale_order=sale_order)
         short -= take
         brought += take
     if short > 0:

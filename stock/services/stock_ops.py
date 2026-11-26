@@ -9,6 +9,7 @@ conditional-update pattern below is safe on SQLite and remains correct if the
 project is ever migrated to a database that does support row locking.
 """
 
+from collections import namedtuple
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
@@ -51,13 +52,13 @@ def consume_stock_fifo(product, quantity, store=None, *, sample=False, own_only=
         return Decimal('0.00')
 
     if store is not None:
-        from .store_stock import bring_in_for_sale, store_units
-        if sample or own_only:
+        from .store_stock import bring_in_any, bring_in_for_sale, store_units
+        if sample:
+            bring_in_any(product, quantity, store, user=user, sale_order=sale_order)
+        elif own_only:
             held = store_units(product, store)
             if held < quantity:
-                raise ValidationError(
-                    f"{store.name} has no sample of {product.display_name} to sell." if sample else
-                    f"{store.name} has only {held} of {product.display_name}.")
+                raise ValidationError(f"{store.name} has only {held} of {product.display_name}.")
         else:
             bring_in_for_sale(product, quantity, store, user=user, sale_order=sale_order)
 
@@ -100,6 +101,35 @@ def consume_stock_fifo(product, quantity, store=None, *, sample=False, own_only=
     # Shopify. Queued here, at the one place the change actually happens.
     queue_inventory_push(product)
     return cost_basis.quantize(Decimal('0.01'))
+
+
+SalePart = namedtuple('SalePart', 'quantity is_sample cost_basis')
+
+
+def split_for_sale(product, quantity, store, *, sample=False):
+    """``[(units, is_sample)]`` for one sale line (2026-11-26).
+
+    A line takes the full-price units it can reach; whatever it needs beyond
+    them comes out of the shops' samples and is its own sample part. A line
+    marked as a sample is all sample. Without shops nothing is held back."""
+    if store is None or sample:
+        return [(quantity, sample)]
+    from .store_stock import full_price_obtainable
+    full = full_price_obtainable(product, store)
+    if quantity <= full:
+        return [(quantity, False)]
+    return [part for part in ((full, False), (quantity - full, True)) if part[0] > 0]
+
+
+@transaction.atomic
+def consume_for_sale(product, quantity, store, *, sample=False, user=None, sale_order=None):
+    """Take one sale line out of stock, split as :func:`split_for_sale` says.
+    Returns one :class:`SalePart` per part: the caller writes a Sale for each."""
+    parts = []
+    for units, is_sample in split_for_sale(product, quantity, store, sample=sample):
+        cost = consume_stock_fifo(product, units, store, sample=is_sample, user=user, sale_order=sale_order)
+        parts.append(SalePart(units, is_sample, cost))
+    return parts
 
 
 @transaction.atomic
