@@ -99,6 +99,8 @@ class OrderRequestLine(models.Model):
     tier_discount = models.DecimalField(max_digits=6, decimal_places=2)
     final_price = models.DecimalField(max_digits=10, decimal_places=2)
     line_total = models.DecimalField(max_digits=10, decimal_places=2)
+    # A Tester: the shop quoted its opened bottle on this line (2026-11-26).
+    is_sample = models.BooleanField(default=False)
 
     class Meta:
         ordering = ['id']

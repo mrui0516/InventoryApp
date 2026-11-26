@@ -45,6 +45,8 @@ def _draft_line(line):
     row = {'product_id': line.product_id, 'quantity': line.quantity, 'unit_price': str(line.final_price)}
     if line.picks:
         row['picks'] = line.picks
+    if line.is_sample:
+        row['sample'] = True
     return row
 
 
@@ -76,21 +78,25 @@ def save_to_pedido(order):
 def _follows_quote(order, draft):
     """The shop may have changed the quote before printing it. What it printed is
     what was agreed, so that is what the customer's order now says."""
-    ordered = sorted((line.product_id, line.quantity, line.final_price, _pick_key(line.picks))
+    ordered = sorted((line.product_id, line.quantity, line.final_price, _pick_key(line.picks), line.is_sample)
                      for line in order.lines.all())
     quoted = sorted((line['product_id'], int(line['quantity']), pedido_math.money(line['unit_price']),
-                     _pick_key(line.get('picks'))) for line in draft.lines)
-    chosen = {line['product_id']: line.get('picks') for line in draft.lines}
+                     _pick_key(line.get('picks')), bool(line.get('sample'))) for line in draft.lines)
     if ordered == quoted and draft.total == order.total:
         return
     old = {line.product_id: line for line in order.lines.all()}
     products = {product.pk: product for product in Product.objects.filter(pk__in=[row[0] for row in quoted])}
     rows = []
-    for product_id, quantity, price, _picks in quoted:
+    # Line by line, in the quote's order: one product may be on two lines
+    # (a Tester beside sealed bottles, 2026-11-26), each with its own picks.
+    for line in draft.lines:
+        product_id, quantity = line['product_id'], int(line['quantity'])
+        price = pedido_math.money(line['unit_price'])
         before, product = old.get(product_id), products.get(product_id)
-        picks = chosen.get(product_id) or (before.picks if before else [])
+        picks = line.get('picks') or (before.picks if before else [])
         rows.append(OrderRequestLine(
             request=order, product_id=product_id, quantity=quantity, picks=picks,
+            is_sample=bool(line.get('sample')),
             name=before.name if before else f'{product.brand} {display_title(product)}'.strip(),
             barcode=before.barcode if before else product.barcode, base_price=price,
             customer_discount=Decimal('0'), catalog_price=price, tier_discount=Decimal('0'), final_price=price,

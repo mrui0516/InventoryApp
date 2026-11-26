@@ -237,3 +237,59 @@ class PedidoTests(ShopsMixin, TestCase):
         draft.lines = [{key: value for key, value in line.items() if key != "sample"} for line in draft.lines]
         draft.save()
         self.assertEqual([line["sample"] for line in _pedido_cart(draft)["lines"]], [False])
+
+
+class WholesaleOrderTests(ShopsMixin, TestCase):
+    """A B2B order follows what the shop quoted, Tester rows included."""
+
+    def setUp(self):
+        super().setUp()
+        from django.contrib.auth import get_user_model
+        from .models import OrderRequest, OrderRequestLine, PedidoDraft
+        self.user = get_user_model().objects.create_superuser("sw_admin", password="pw123456")
+        self.order = OrderRequest.objects.create(
+            submitted_by=self.user, contact_name="Loja", phone="900", subtotal=Decimal("20"),
+            tier_discount=Decimal("0"), tier_total=Decimal("0"), goods_total=Decimal("20"),
+            shipping_state="free", shipping_fee=Decimal("0"))
+        OrderRequestLine.objects.create(
+            request=self.order, product=self.product, name="B Oud", barcode=self.product.barcode, quantity=1,
+            base_price=Decimal("20"), customer_discount=Decimal("0"), catalog_price=Decimal("20"),
+            tier_discount=Decimal("0"), final_price=Decimal("20"), line_total=Decimal("20"))
+        self.draft = PedidoDraft.objects.create(store=self.khan, created_by=self.user,
+                                                goods_total=Decimal("20"), total=Decimal("20"))
+        self.order.pedido = self.draft
+        self.order.save()
+
+    def quote(self, lines):
+        from .services.wholesale_orders import confirm_from_pedido
+        self.draft.lines = lines
+        self.draft.goods_total = self.draft.total = sum(Decimal(l["unit_price"]) * l["quantity"] for l in lines)
+        self.draft.save()
+        confirm_from_pedido(self.draft)
+
+    def test_the_order_follows_a_tester_line(self):
+        self.quote([{"product_id": self.product.pk, "quantity": 1, "unit_price": "20"},
+                    {"product_id": self.product.pk, "quantity": 1, "unit_price": "15", "sample": True}])
+        lines = list(self.order.lines.order_by("id"))
+        self.assertEqual([(l.final_price, l.is_sample) for l in lines], [(Decimal("20"), False), (Decimal("15"), True)])
+
+    def test_picks_stay_with_their_own_line(self):
+        a = [{"id": 1, "name": "Yara", "quantity": 1}]
+        b = [{"id": 2, "name": "Asad", "quantity": 2}]
+        self.quote([{"product_id": self.product.pk, "quantity": 1, "unit_price": "20", "picks": a},
+                    {"product_id": self.product.pk, "quantity": 2, "unit_price": "20", "picks": b}])
+        self.assertEqual([l.picks for l in self.order.lines.order_by("id")], [a, b])
+
+    def test_saved_to_pedido_keeps_the_flag(self):
+        from .services.wholesale_orders import save_to_pedido
+        self.order.lines.update(is_sample=True)
+        save_to_pedido(self.order)
+        self.draft.refresh_from_db()
+        self.assertTrue(self.draft.lines[0].get("sample"))
+
+    def test_the_customer_sees_tester(self):
+        from django.urls import reverse
+        self.order.lines.update(is_sample=True)
+        self.client.force_login(self.user)
+        page = self.client.get(reverse("wholesale_order", args=[self.order.public_id]))
+        self.assertContains(page, "Tester")

@@ -1161,3 +1161,8 @@ a.sp-row:hover{ background:var(--app-surface-2); }
 @keyframes focus-flash{ 0%,40%{ background:var(--app-accent-soft); } 100%{ background:transparent; } }
 .is-focus, .is-focus > td{ animation:focus-flash 2.6s ease-out; }
 @media (prefers-reduced-motion:reduce){ .is-focus, .is-focus > td{ animation:none; background:var(--app-accent-soft); } }
+
+/* A sold sample: "Sample" for staff, "Tester" for customers (2026-11-26). Inline,
+   no wider than a word, so it sits on the line it marks. */
+.tag-sample{ display:inline-block; padding:0 .45rem; border-radius:999px; background:#e7e5e4; color:#292524;
+             font-size:.85rem; font-weight:700; line-height:1.2; vertical-align:baseline; white-space:nowrap; }

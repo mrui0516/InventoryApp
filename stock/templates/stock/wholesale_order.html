@@ -18,7 +18,7 @@
     <p class="wc-small">{{ order.created_at|date:"Y-m-d H:i" }}</p>
     {% for line in order.lines.all %}
       <div class="wc-line" style="grid-template-columns:minmax(0,1fr) auto;">
-        <span class="wc-main"><span class="wc-brand"><span>{{ line.barcode }}</span></span><span class="wc-title">{{ line.name }}</span>{% if line.picks %}<span class="wc-contents d-block">{% include "stock/_wholesale_picks.html" with picks=line.picks %}</span>{% endif %}</span>
+        <span class="wc-main"><span class="wc-brand"><span>{{ line.barcode }}</span>{% if line.is_sample %} <span class="tag-sample">Tester</span>{% endif %}</span><span class="wc-title">{{ line.name }}</span>{% if line.picks %}<span class="wc-contents d-block">{% include "stock/_wholesale_picks.html" with picks=line.picks %}</span>{% endif %}</span>
         <span class="wc-money"><b>&euro;{{ line.line_total|floatformat:2 }}</b> <small>{{ line.quantity }} &times; &euro;{{ line.final_price|floatformat:2 }}</small></span>
       </div>
     {% endfor %}
