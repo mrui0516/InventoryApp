@@ -363,3 +363,17 @@ class PedidoSellTests(SellTests):
         self.assertEqual([s[:2] for s in self.sales()], [(1, False), (1, True)])
         draft.refresh_from_db()
         self.assertEqual(draft.status, PedidoDraft.SOLD)
+
+
+class PedidoButtonsTests(PedidoTests):
+    def test_vender_and_apagar_sit_under_the_pdf_button(self):
+        from unittest import mock
+        from django.urls import reverse
+        draft = self.draft(self.post([(1, False)]))
+        with mock.patch("stock.pedido_views.resolve_active_store", return_value=(self.khan, False)):
+            html = self.client.get(reverse("pedido"), {"draft": draft.pk}).content.decode()
+        pdf = html.index('id="pd-submit"')
+        self.assertLess(pdf, html.index('class="pd-draft-btn is-sell"'))
+        self.assertLess(pdf, html.index('form="pd-del-form"'))
+        # the delete form is its own form, after the Pedido form closes
+        self.assertGreater(html.index('id="pd-del-form"'), html.index("</form>", pdf))

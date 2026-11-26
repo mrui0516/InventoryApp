@@ -109,7 +109,6 @@
   .pd-src.b2b{ color:#1e40af; background:#dbeafe; }
   .pd-src.app{ color:#57534e; background:#f5f5f4; }
   .pd-all{ font-size:.88rem; font-weight:700; }
-  .pd-del{ display:inline; margin:0; }
   .pd-saved{ font-size:.9rem; font-weight:700; color:var(--app-good); }
 
   /* Vender / Apagar on an open draft */
@@ -118,6 +117,7 @@
                  font-size:.86rem; font-weight:800; color:var(--ink); text-decoration:none; cursor:pointer; }
   .pd-draft-btn.is-sell{ background:var(--app-accent); border-color:var(--app-accent); color:#fff; }
   .pd-draft-btn.is-del{ color:var(--danger); }
+  .pd-draft-actions{ display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.6rem; }
 
   .pd-disc{ display:flex; flex-wrap:wrap; align-items:center; gap:.45rem .9rem; margin-top:.7rem; padding-top:.6rem; border-top:1px solid var(--app-border); }
   .pd-disc-note{ font-size:.9rem; font-weight:600; }
@@ -148,10 +148,6 @@
     <h2>Pedido</h2>
     {% if draft %}<span class="pd-src {% if draft.order_request %}b2b{% else %}app{% endif %}">{% if draft.order_request %}B2B #{{ draft.order_request.id }}{% else %}App{% endif %}</span>{% endif %}
     <a class="pd-all" href="{% url 'order_requests' %}">All Pedidos</a>
-    {% if draft %}
-      <a class="pd-draft-btn is-sell" href="{% url 'outbound' %}?pedido={{ draft.id }}">Vender</a>
-      <form method="post" action="{% url 'pedido_draft_delete' draft.id %}" class="pd-del" onsubmit="return confirm('Apagar este rascunho?');">{% csrf_token %}<button type="submit" class="pd-draft-btn is-del">Apagar</button></form>
-    {% endif %}
     {% if draft %}<span class="pd-editing" id="pd-editing">Rascunho #{{ draft.id }}</span>{% else %}<span class="pd-editing" id="pd-editing" hidden></span>{% endif %}
     <span class="pd-saved" id="pd-saved" hidden>Rascunho guardado</span>
     {% if not pedido_blocked %}<a class="pd-new" href="{% url 'pedido' %}">+ Novo pedido</a>{% endif %}
@@ -306,11 +302,21 @@
             <button type="submit" class="btn btn-primary" id="pd-submit" disabled {% if pedido_blocked %}data-blocked="1"{% endif %}>Descarregar PDF</button>
             <span class="pd-why" id="pd-block" style="display:none;">Preencha os preços em falta.</span>
           </div>
+          {# Under the PDF button (2026-11-26): print, then sell or drop the draft. #}
+          {% if draft %}
+          <div class="pd-draft-actions">
+            <a class="pd-draft-btn is-sell" href="{% url 'outbound' %}?pedido={{ draft.id }}">Vender</a>
+            <button type="submit" form="pd-del-form" class="pd-draft-btn is-del">Apagar</button>
+          </div>
+          {% endif %}
           <div class="pd-errors" id="pd-live-errors" hidden style="margin:.7rem 0 0;"></div>
         </div>
       </div>
     </div>
   </form>
+  {% if draft %}
+  <form method="post" action="{% url 'pedido_draft_delete' draft.id %}" id="pd-del-form" onsubmit="return confirm('Apagar este rascunho?');">{% csrf_token %}</form>
+  {% endif %}
 </div>
 
 {{ draft_rows|json_script:"pd-draft-rows" }}
