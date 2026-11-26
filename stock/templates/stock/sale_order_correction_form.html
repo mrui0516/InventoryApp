@@ -62,6 +62,10 @@
   .pay-remaining.bad{color:#b91c1c}
 
   /* item modal */
+  .lm-sample{display:inline-flex;align-items:center;gap:.45rem;min-height:32px;margin-top:.5rem;font-size:.9rem;font-weight:700;cursor:pointer}
+  /* every row holds the tag (hidden when not a sample), so rows keep one height */
+  .cart-sample{display:inline-block;padding:0 .45rem;border-radius:999px;background:#e7e5e4;color:#292524;font-size:.85rem;font-weight:700;line-height:1.2;vertical-align:baseline}
+  .cart-sample.is-off{visibility:hidden}
   .line-modal-product{padding:.7rem .85rem;border-radius:.8rem;background:#f5f5f4;border:1px solid #e8e6e5;margin-bottom:1rem}
   .price-toggle{display:flex;gap:.5rem}
   .price-opt{flex:1 1 0;padding:.55rem .6rem;border-radius:.7rem;border:1.5px solid #d7e0eb;background:#fff;font-weight:700;font-size:.9rem;color:#0c0a09;cursor:pointer}
@@ -309,6 +313,7 @@
             <button type="button" class="price-opt active" data-kind="retail">Retail <span id="line-modal-retail">€0.00</span></button>
             <button type="button" class="price-opt" data-kind="wholesale">Wholesale <span id="line-modal-wholesale">€0.00</span></button>
           </div>
+          <label class="lm-sample"><input type="checkbox" class="form-check-input mt-0" id="line-modal-sample"> Sample</label>
           <div class="input-group input-group-sm mt-2">
             <span class="input-group-text">€</span>
             <input type="text" inputmode="decimal" class="form-control" id="line-modal-base" placeholder="0.00">
@@ -509,7 +514,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ${thumb}
             <div style="min-width:0">
               <div class="fw-semibold cart-name">${escapeHtml(item.title)}</div>
-              <div class="small text-muted">${escapeHtml(item.barcode || '')}</div>
+              <div class="small text-muted">${escapeHtml(item.barcode || '')} <span class="cart-sample${item.sample ? '' : ' is-off'}">Sample</span></div>
             </div>
           </div>
         </td>
@@ -566,7 +571,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     itemsJson.value = JSON.stringify(cart.map((i) => ({
       product_id: i.product_id, qty: i.qty, price: lineFinalUnit(i).toFixed(2),
-      discount: (Number(i.discount) || 0).toFixed(2), payment: linePrimaryMethod(i),
+      discount: (Number(i.discount) || 0).toFixed(2), payment: linePrimaryMethod(i), sample: !!i.sample,
     })));
     paymentsJson.value = JSON.stringify(METHODS.filter((m) => payments[m] > 0).map((m) => ({ method: m, amount: payments[m].toFixed(2) })));
     document.getElementById('charges_json').value = JSON.stringify(charges.map((c) => ({
@@ -663,6 +668,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('line-modal-save').textContent = item ? 'Save changes' : 'Add to cart';
     document.getElementById('line-modal-name').textContent = ctx.title;
     document.getElementById('line-modal-barcode').textContent = ctx.barcode || '';
+    document.getElementById('line-modal-sample').checked = !!(item && item.sample);
     const retail = (ctx.retail != null && isFinite(ctx.retail)) ? Number(ctx.retail) : null;
     const wholesale = (ctx.wholesale != null && isFinite(ctx.wholesale)) ? Number(ctx.wholesale) : null;
     document.getElementById('line-modal-retail').textContent = retail != null ? `€${retail.toFixed(2)}` : '€—';
@@ -709,7 +715,8 @@ document.addEventListener('DOMContentLoaded', () => {
       payment = METHODS.filter((m) => paymentSplit[m] > 0).sort((a, b) => paymentSplit[b] - paymentSplit[a])[0];
     }
 
-    const fields = { qty, base, discount: disc, payment, isSplit: modalSplit, paymentSplit };
+    const fields = { qty, base, discount: disc, payment, isSplit: modalSplit, paymentSplit,
+                     sample: document.getElementById('line-modal-sample').checked };
     if (editingUid) {
       Object.assign(cart.find((i) => i.uid === editingUid), fields);
     } else {
@@ -764,7 +771,7 @@ document.addEventListener('DOMContentLoaded', () => {
         uid: uidSeq++, product_id: row.product_id, barcode: row.barcode || '', title: row.title || '',
         image_url: row.image_url || '', retail: row.retail, wholesale: row.wholesale,
         qty: Number(row.qty) || 1, base: Number(row.price) || 0, discount: 0,
-        payment, isSplit, paymentSplit,
+        payment, isSplit, paymentSplit, sample: !!row.sample,
       });
       lastMethod = payment;
     });

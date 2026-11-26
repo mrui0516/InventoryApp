@@ -123,3 +123,68 @@ class SellTests(ShopsMixin, TestCase):
         self.batch(self.scentory, 1)
         data = self.client.get(reverse("check_barcode"), {"barcode": self.product.barcode}).json()
         self.assertEqual((data["stock"], data["total"]), (0, 2))
+
+
+class CorrectionTests(ShopsMixin, TestCase):
+    """Orders entered or corrected by hand follow the till's rule."""
+
+    def setUp(self):
+        super().setUp()
+        import json
+        from django.contrib.auth import get_user_model
+        self.json = json
+        self.client.force_login(get_user_model().objects.create_superuser("sc_admin", password="pw123456"))
+
+    def post(self, lines, *, order=None, affects_stock=True):
+        from django.urls import reverse
+        from django.utils import timezone
+        items = [{"product_id": self.product.id, "qty": qty, "price": "10.00", "payment": "cash",
+                  **({"sample": True} if sample else {})} for qty, sample in lines]
+        total = sum(qty for qty, _ in lines) * 10
+        data = {"order_datetime": timezone.localtime().strftime("%Y-%m-%dT%H:%M"), "note": "By hand",
+                "reason": "Entered late", "store": self.khan.id, "items_json": self.json.dumps(items),
+                "payments_json": self.json.dumps([{"method": "cash", "amount": f"{total}.00"}])}
+        if affects_stock and order is None:
+            data["affects_stock"] = "on"
+        url = (reverse("sale_order_correction_edit", args=[order.pk]) if order
+               else reverse("sale_order_correction_create"))
+        return self.client.post(url, data)
+
+    def sales(self):
+        from .models import Sale
+        return [(s.quantity, s.is_sample) for s in Sale.objects.order_by("id")]
+
+    def test_a_past_sale_with_only_samples_left_saves(self):
+        self.batch(self.khan, 1)
+        self.assertEqual(self.post([(1, False)]).status_code, 302)
+        self.assertEqual(self.sales(), [(1, True)])
+        self.assertEqual(self.units(self.khan), 0)
+
+    def test_a_past_sale_splits_like_the_till(self):
+        self.batch(self.khan, 2)
+        self.post([(2, False)])
+        self.assertEqual(self.sales(), [(1, False), (1, True)])
+
+    def test_editing_a_split_order_keeps_one_pair(self):
+        from .models import SaleOrder
+        self.batch(self.khan, 2)
+        self.post([(2, False)])
+        order = SaleOrder.objects.get()
+        self.assertEqual(self.post([(1, False), (1, True)], order=order).status_code, 302)
+        self.assertEqual(self.sales(), [(1, False), (1, True)])
+        self.assertEqual(self.units(self.khan), 0)
+
+    def test_a_ticked_line_without_stock_effect_is_marked_only(self):
+        self.batch(self.khan, 3)
+        self.post([(1, True)], affects_stock=False)
+        self.assertEqual(self.sales(), [(1, True)])
+        self.assertEqual(self.units(self.khan), 3)
+
+    def test_the_form_reloads_each_lines_flag(self):
+        from django.urls import reverse
+        from .models import SaleOrder
+        self.batch(self.khan, 2)
+        self.post([(2, False)])
+        html = self.client.get(reverse("sale_order_correction_edit", args=[SaleOrder.objects.get().pk])).content.decode()
+        cart = self.json.loads(html.split('id="initialCart" type="application/json">', 1)[1].split("</script>", 1)[0])
+        self.assertEqual([(row["qty"], row["sample"]) for row in cart], [(1, False), (1, True)])

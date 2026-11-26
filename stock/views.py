@@ -3678,7 +3678,7 @@ def print_profile_edit_view(request):
     })
 
 
-def _correction_cart_item(product, *, qty, price, payment, is_split=False, payment_split=None):
+def _correction_cart_item(product, *, qty, price, payment, is_split=False, payment_split=None, sample=False):
     return {
         'product_id': product.id,
         'barcode': product.barcode,
@@ -3691,6 +3691,7 @@ def _correction_cart_item(product, *, qty, price, payment, is_split=False, payme
         'payment': payment,
         'isSplit': is_split,
         'paymentSplit': payment_split,
+        'sample': bool(sample),
     }
 
 
@@ -3758,7 +3759,7 @@ def _build_correction_cart(order):
 
         cart.append(_correction_cart_item(
             item.product, qty=item.quantity, price=float(item.unit_price),
-            payment=primary, is_split=is_split, payment_split=payment_split,
+            payment=primary, is_split=is_split, payment_split=payment_split, sample=item.is_sample,
         ))
     return cart
 
@@ -3780,7 +3781,8 @@ def _enrich_correction_items(raw_items):
             price = float(row.get('price', 0))
         except (TypeError, ValueError, KeyError):
             continue
-        cart.append(_correction_cart_item(product, qty=qty, price=price, payment=str(row.get('payment', '')).strip()))
+        cart.append(_correction_cart_item(product, qty=qty, price=price, payment=str(row.get('payment', '')).strip(),
+                                          sample=row.get('sample') in (True, 1, '1', 'true')))
     return cart
 
 
@@ -3822,7 +3824,8 @@ def _parse_correction_cart(request):
         order_revenue += line_total
         if line_payment in valid_methods:
             line_payment_totals[line_payment] += line_total
-        parsed.append({'product': product, 'quantity': qty, 'unit_price': price, 'payment': line_payment})
+        parsed.append({'product': product, 'quantity': qty, 'unit_price': price, 'payment': line_payment,
+                       'sample': row.get('sample') in (True, 1, '1', 'true')})
 
     try:
         raw_payments = json.loads(request.POST.get('payments_json') or '[]')
@@ -3858,6 +3861,7 @@ def _parse_correction_cart(request):
             'quantity': row['quantity'],
             'unit_price': row['unit_price'],
             'payment_method': row['payment'] if row['payment'] in valid_methods else primary_method,
+            'sample': row['sample'],
         }
         for row in parsed
     ]

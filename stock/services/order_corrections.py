@@ -3,7 +3,7 @@ from django.db import transaction
 
 from ..models import Sale, SaleOrder, SaleOrderChangeLog, SaleOrderPayment
 from .order_charges import save_charges
-from .stock_ops import consume_stock_fifo, restore_stock_fifo
+from .stock_ops import consume_for_sale, restore_stock_fifo
 
 
 def snapshot_sale_order(order):
@@ -66,16 +66,6 @@ def _summarise_quantities(line_items):
     return list(grouped.values())
 
 
-def _consume_current_stock(line_items, store=None, *, order=None, user=None, sample_products=()):
-    for group in _summarise_quantities(line_items):
-        product = group['product']
-        quantity_needed = group['quantity']
-        if quantity_needed <= 0:
-            continue
-        consume_stock_fifo(product, quantity_needed, store, sample=product.id in sample_products,
-                           user=user, sale_order=order)
-
-
 def _restore_current_stock(line_items, store=None):
     # back into the shop the order was sold from
     for group in _summarise_quantities(line_items):
@@ -120,9 +110,6 @@ def save_sale_order_correction(*, order, customer, note, order_datetime, line_it
         order.store if (order and order.store_id) else None
     )
 
-    # A correction does not know which line was the shop sample; a product
-    # sold as one keeps that flag, so the corrected order sells it the same way.
-    sample_products = set()
     if action == 'update':
         previous_line_items = [
             {
@@ -131,7 +118,6 @@ def save_sale_order_correction(*, order, customer, note, order_datetime, line_it
             }
             for item in order.items.select_related('product').order_by('id')
         ]
-        sample_products = set(order.items.filter(is_sample=True).values_list('product_id', flat=True))
         if effective_affects_stock:
             _restore_current_stock(previous_line_items, order.store)
 
@@ -153,24 +139,30 @@ def save_sale_order_correction(*, order, customer, note, order_datetime, line_it
         order.items.all().delete()
         order.payments.all().delete()
 
-    if effective_affects_stock:
-        _consume_current_stock(line_items, target_store, order=order, user=changed_by,
-                               sample_products=sample_products)
-
+    # Line by line, as the till: units beyond full-price stock are the shops'
+    # samples, sold and written as their own sample line (2026-11-26). Each
+    # line carries its own Sample tick; without a stock effect only the tick counts.
     created_sales = []
     for item in line_items:
-        created_sale = Sale.objects.create(
-            order=order,
-            product=item['product'],
-            customer=customer,
-            store=target_store,
-            quantity=item['quantity'],
-            unit_price=item['unit_price'],
-            payment_method=item['payment_method'],
-            is_sample=item['product'].id in sample_products,
-        )
-        created_sale.date = order_datetime
-        created_sales.append(created_sale)
+        sample = bool(item.get('sample'))
+        if effective_affects_stock:
+            parts = [(part.quantity, part.is_sample) for part in consume_for_sale(
+                item['product'], item['quantity'], target_store, sample=sample, user=changed_by, sale_order=order)]
+        else:
+            parts = [(item['quantity'], sample)]
+        for quantity, is_sample in parts:
+            created_sale = Sale.objects.create(
+                order=order,
+                product=item['product'],
+                customer=customer,
+                store=target_store,
+                quantity=quantity,
+                unit_price=item['unit_price'],
+                payment_method=item['payment_method'],
+                is_sample=is_sample,
+            )
+            created_sale.date = order_datetime
+            created_sales.append(created_sale)
 
     if created_sales:
         Sale.objects.bulk_update(created_sales, ['date'])
