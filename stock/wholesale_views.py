@@ -342,7 +342,7 @@ def sale_view(request, pk):
         raise Http404
     order = get_object_or_404(SaleOrder.objects.prefetch_related('items__product'), pk=pk, customer=customer)
     lines = [{'product': item.product, 'quantity': item.quantity, 'unit_price': item.unit_price,
-              'amount': item.quantity * item.unit_price} for item in order.items.all()]
+              'amount': item.quantity * item.unit_price, 'is_sample': item.is_sample} for item in order.items.all()]
     return render(request, 'stock/wholesale_sale.html', {'tab': 'orders', 'order': order, 'lines': lines,
                                                          **_shared(request, customer)})
 

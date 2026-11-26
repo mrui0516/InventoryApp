@@ -81,7 +81,7 @@
             {% if order.note %}<div><dt>Note</dt><dd>{{ order.note }}</dd></div>{% endif %}
           </dl>
           <section class="sp-sec"><h6>Products</h6>
-            {% for line in order.lines.all %}<div class="sp-row"><span class="sp-row-main">{{ line.quantity }} &times; {{ line.name }}{% if line.is_sample %} <span class="tag-sample">Sample</span>{% endif %}</span><span class="sp-row-fig">&euro;{{ line.line_total|floatformat:2 }}</span></div>{% if line.picks %}<div class="oq-picks">{% for pick in line.picks %}<div>{{ pick.quantity }} &times; {{ pick.name }}{% if pick.barcode %} <small>{{ pick.barcode }}</small>{% endif %}</div>{% endfor %}</div>{% endif %}{% endfor %}
+            {% for line in order.lines.all %}<div class="sp-row"><span class="sp-row-main">{{ line.quantity }} &times; {{ line.name }} <span class="tag-sample{% if not line.is_sample %} is-off{% endif %}">Sample</span></span><span class="sp-row-fig">&euro;{{ line.line_total|floatformat:2 }}</span></div>{% if line.picks %}<div class="oq-picks">{% for pick in line.picks %}<div>{{ pick.quantity }} &times; {{ pick.name }}{% if pick.barcode %} <small>{{ pick.barcode }}</small>{% endif %}</div>{% endfor %}</div>{% endif %}{% endfor %}
           </section>
           <dl class="sp-kv">
             <div><dt>Goods</dt><dd>&euro;{{ order.subtotal|floatformat:2 }}</dd></div>

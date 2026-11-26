@@ -5,7 +5,7 @@
   <p class="wc-small">{{ order.created_at|date:"Y-m-d H:i" }}</p>
   {% for line in lines %}
     <div class="wc-line" style="grid-template-columns:minmax(0,1fr) auto;">
-      <span class="wc-main"><span class="wc-brand"><span>{{ line.product.barcode }}</span></span><span class="wc-title">{{ line.product.brand }} {{ line.product.list_name }}</span></span>
+      <span class="wc-main"><span class="wc-brand"><span>{{ line.product.barcode }}</span> <span class="tag-sample{% if not line.is_sample %} is-off{% endif %}">Tester</span></span><span class="wc-title">{{ line.product.brand }} {{ line.product.list_name }}</span></span>
       <span class="wc-money"><b>&euro;{{ line.amount|floatformat:2 }}</b> <small>{{ line.quantity }} &times; &euro;{{ line.unit_price|floatformat:2 }}</small></span>
     </div>
   {% endfor %}

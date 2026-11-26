@@ -293,3 +293,52 @@ class WholesaleOrderTests(ShopsMixin, TestCase):
         self.client.force_login(self.user)
         page = self.client.get(reverse("wholesale_order", args=[self.order.public_id]))
         self.assertContains(page, "Tester")
+
+
+class MarkTests(ShopsMixin, TestCase):
+    """A sold sample is marked wherever its sale line is listed."""
+    TAG = '<span class="tag-sample">Sample</span>'
+
+    def setUp(self):
+        super().setUp()
+        from django.contrib.auth import get_user_model
+        from .models import Customer, Sale, SaleOrder, SaleOrderPayment
+        self.boss = get_user_model().objects.create_superuser("sm_admin", password="pw123456")
+        self.client.force_login(self.boss)
+        self.customer = Customer.objects.create(name="Loja Marcada", nif="501000001", kind=Customer.REVENDA)
+        self.order = SaleOrder.objects.create(customer=self.customer, store=self.khan)
+        for sample in (False, True):
+            Sale.objects.create(order=self.order, product=self.product, customer=self.customer, store=self.khan,
+                                quantity=1, unit_price=Decimal("20"), payment_method="cash", is_sample=sample)
+        SaleOrderPayment.objects.create(order=self.order, method="cash", amount=Decimal("40"))
+
+    def get(self, name, *args, **params):
+        from django.urls import reverse
+        return self.client.get(reverse(name, args=args), params).content.decode()
+
+    def test_the_order_page_marks_the_sample_line(self):
+        # one layout at a time: A4 by default, the receipt with ?layout=pos
+        self.assertEqual(self.get("sale_order_detail", self.order.pk).count(self.TAG), 1)
+        self.assertEqual(self.get("sale_order_detail", self.order.pk, layout="pos").count(self.TAG), 1)
+
+    def test_the_orders_list_marks_it(self):
+        self.assertIn(self.TAG, self.get("sales_records"))
+
+    def test_the_customer_and_product_pages_mark_it(self):
+        self.assertIn(self.TAG, self.get("customer_detail", self.customer.pk))
+        self.assertIn(self.TAG, self.get("product_detail", self.product.pk))
+
+    def test_the_receipt_says_tester(self):
+        import io
+        from django.urls import reverse
+        from pypdf import PdfReader
+        pdf = self.client.get(reverse("sale_order_receipt_pdf", args=[self.order.pk]))
+        text = " ".join(page.extract_text() for page in PdfReader(io.BytesIO(pdf.content)).pages)
+        self.assertEqual(text.count("Tester"), 1)
+
+    def test_the_customer_sees_tester_on_a_past_purchase(self):
+        from .wholesale_views import SESSION_KEY
+        session = self.client.session
+        session[SESSION_KEY] = self.customer.pk
+        session.save()
+        self.assertIn('<span class="tag-sample">Tester</span>', self.get("wholesale_sale", self.order.pk))

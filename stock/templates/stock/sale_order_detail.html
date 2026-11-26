@@ -268,7 +268,7 @@
                 <tr>
                   <td>
                     <div class="a4-item-name">{{ it.display_name }}</div>
-                    <div class="a4-item-meta">Barcode: {{ it.product.barcode }}</div>
+                    <div class="a4-item-meta">Barcode: {{ it.product.barcode }} <span class="tag-sample{% if not it.is_sample %} is-off{% endif %}">Sample</span></div>
                   </td>
                   <td class="text-end">{{ it.quantity }}</td>
                   {% if show_order_financials %}
@@ -335,7 +335,7 @@
 
         {% for it in items %}
           <div class="pos-row">
-            <div class="pos-name">{{ it.display_name }}</div>
+            <div class="pos-name">{{ it.display_name }} <span class="tag-sample{% if not it.is_sample %} is-off{% endif %}">Sample</span></div>
           </div>
           {% if it.product.brand %}
             <div class="pos-row">

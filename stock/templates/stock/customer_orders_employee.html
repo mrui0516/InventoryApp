@@ -60,7 +60,7 @@
           <thead><tr><th>Item</th><th class="text-end">Qty</th><th class="text-end">Unit</th><th class="text-end">Subtotal</th></tr></thead>
           <tbody>
             {% for it in o.items %}
-            <tr><td>{{ it.name }}</td><td class="num text-end">{{ it.qty }}</td><td class="num text-end">EUR {{ it.unit_price|floatformat:2 }}</td><td class="num text-end">EUR {{ it.line_total|floatformat:2 }}</td></tr>
+            <tr><td>{{ it.name }} <span class="tag-sample{% if not it.is_sample %} is-off{% endif %}">Sample</span></td><td class="num text-end">{{ it.qty }}</td><td class="num text-end">EUR {{ it.unit_price|floatformat:2 }}</td><td class="num text-end">EUR {{ it.line_total|floatformat:2 }}</td></tr>
             {% endfor %}
           </tbody>
           <tfoot><tr class="fw-bold"><td colspan="3" class="text-end">Total ({{ o.payment_label }})</td><td class="num text-end">EUR {{ o.total_amount|floatformat:2 }}</td></tr></tfoot>

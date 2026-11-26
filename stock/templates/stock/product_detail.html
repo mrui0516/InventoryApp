@@ -148,7 +148,7 @@
             <div class="pdp-row">
               <div>
                 <div class="l1">{{ s.business_at|date:"d M Y H:i" }}{% if s.order_id %} &middot; <a href="{% url 'sale_order_detail' s.order_id %}">#{{ s.order_id }}</a>{% endif %}</div>
-                <div class="l2">{% if s.customer %}{{ s.customer.name }}{% elif s.order.customer %}{{ s.order.customer.name }}{% else %}Walk-in{% endif %}{% if s.order.store %} &middot; {{ s.order.store.name }}{% elif s.store %} &middot; {{ s.store.name }}{% endif %} &middot; {{ s.quantity }} &times; &euro;{{ s.unit_price|floatformat:2 }}</div>
+                <div class="l2">{% if s.customer %}{{ s.customer.name }}{% elif s.order.customer %}{{ s.order.customer.name }}{% else %}Walk-in{% endif %}{% if s.order.store %} &middot; {{ s.order.store.name }}{% elif s.store %} &middot; {{ s.store.name }}{% endif %} &middot; {{ s.quantity }} &times; &euro;{{ s.unit_price|floatformat:2 }} <span class="tag-sample{% if not s.is_sample %} is-off{% endif %}">Sample</span></div>
               </div>
               <div class="fig">&euro;{{ s.unit_price|mul:s.quantity|floatformat:2 }}<small>{{ s.payment_method|default:""|capfirst }}</small></div>
             </div>

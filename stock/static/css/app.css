@@ -1166,3 +1166,5 @@ a.sp-row:hover{ background:var(--app-surface-2); }
    no wider than a word, so it sits on the line it marks. */
 .tag-sample{ display:inline-block; padding:0 .45rem; border-radius:999px; background:#e7e5e4; color:#292524;
              font-size:.85rem; font-weight:700; line-height:1.2; vertical-align:baseline; white-space:nowrap; }
+/* on every line, hidden where it does not apply: a mark that appears must not make its line taller */
+.tag-sample.is-off{ visibility:hidden; }

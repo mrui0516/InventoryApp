@@ -216,7 +216,7 @@
                 {% for item in order.items_list %}
                   <div class="co-line">
                     <div>{% if item.product %}<a href="{% url 'product_detail' item.product.id %}">{{ item.display_name }}</a>{% else %}{{ item.display_name }}{% endif %}
-                      <div class="q">&times;{{ item.quantity }}{% if show_sales_sensitive %} @ &euro;{{ item.unit_price|floatformat:2 }} &middot; {{ item.payment_label }}{% endif %}</div></div>
+                      <div class="q">&times;{{ item.quantity }} <span class="tag-sample{% if not item.is_sample %} is-off{% endif %}">Sample</span>{% if show_sales_sensitive %} @ &euro;{{ item.unit_price|floatformat:2 }} &middot; {{ item.payment_label }}{% endif %}</div></div>
                     {% if show_sales_sensitive %}<div class="v">&euro;{{ item.total_price|floatformat:2 }}</div>{% endif %}
                     {% if show_profit %}<div class="p{% if item.line_profit < 0 %} neg{% endif %}">profit &euro;{{ item.line_profit|floatformat:2 }}</div>{% endif %}
                   </div>

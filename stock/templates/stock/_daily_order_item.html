@@ -6,7 +6,7 @@
   {% endif %}
   <div class="ord-name">
     {% if item.product %}<a href="{% url 'product_detail' item.product.id %}">{{ item.display_name }}</a>{% else %}{{ item.display_name }}{% endif %}
-    {% if item.product %}<div class="ord-code">{{ item.product.barcode }}</div>{% endif %}
+    {% if item.product %}<div class="ord-code">{{ item.product.barcode }} <span class="tag-sample{% if not item.is_sample %} is-off{% endif %}">Sample</span></div>{% endif %}
   </div>
   <div class="ord-fig">
     <span class="ord-qty">&times;{{ item.quantity }}</span>

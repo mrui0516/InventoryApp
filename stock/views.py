@@ -3106,7 +3106,8 @@ def sale_order_receipt_pdf(request, order_id):
         customer_name=customer.name if customer else '',
         customer_phone=(customer.phone or '') if customer else '',
         customer_nif=(customer.nif or '') if customer else '',
-        lines=[{'title': build_product_label(item.product),
+        # "Tester": the shop's opened bottle, sold and marked (2026-11-26).
+        lines=[{'title': build_product_label(item.product) + (' (Tester)' if item.is_sample else ''),
                 'barcode': item.product.barcode if item.product else '',
                 'quantity': item.quantity, 'unit_price': item.unit_price or Decimal('0.00'),
                 'line_total': item.line_total} for item in items],
@@ -5169,6 +5170,7 @@ def _employee_sales_day_view(request):
                     'qty': i.quantity,
                     'unit_price': i.unit_price or Decimal('0.00'),
                     'line_total': (i.unit_price or Decimal('0.00')) * i.quantity,
+                    'is_sample': i.is_sample,
                 }
                 for i in items
             ],
@@ -5779,6 +5781,7 @@ def _employee_customer_orders_view(request, customer_id):
                     'qty': i.quantity,
                     'unit_price': i.unit_price or Decimal('0.00'),
                     'line_total': (i.unit_price or Decimal('0.00')) * i.quantity,
+                    'is_sample': i.is_sample,
                 }
                 for i in items
             ],
