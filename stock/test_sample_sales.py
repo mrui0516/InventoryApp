@@ -377,3 +377,17 @@ class PedidoButtonsTests(PedidoTests):
         self.assertLess(pdf, html.index('form="pd-del-form"'))
         # the delete form is its own form, after the Pedido form closes
         self.assertGreater(html.index('id="pd-del-form"'), html.index("</form>", pdf))
+
+
+class PedidoDiscountTests(ShopsMixin, TestCase):
+    def test_the_pedido_cart_carries_its_discount_total(self):
+        from .models import PedidoDraft
+        from .views import _pedido_cart
+        draft = PedidoDraft.objects.create(store=self.khan, lines=[
+            {"product_id": self.product.pk, "quantity": 2, "unit_price": "26.00"},
+            {"product_id": self.product.pk, "quantity": 1, "unit_price": "24.00"}],
+            discount_value=Decimal("10"), discount_kind="amount", goods_total=Decimal("76"), total=Decimal("66"))
+        cart = _pedido_cart(draft)
+        self.assertEqual(cart["discount_total"], "10.00")
+        spread = sum(Decimal(line["discount"]) * line["qty"] for line in cart["lines"])
+        self.assertEqual(spread, Decimal("10.00"))      # the automatic spread stays the default

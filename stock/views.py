@@ -1064,6 +1064,7 @@ def _pedido_cart(draft):
                        sample=bool(line.get('sample')))
                   for line in payload['lines']],
         'charges': [{'label': c['label'], 'amount': f"{c['amount']:.2f}"} for c in payload['charges']],
+        'discount_total': f"{payload['discount_total']:.2f}",
     }
 
 

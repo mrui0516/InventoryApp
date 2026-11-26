@@ -83,4 +83,6 @@ def sell_payload(draft, products):
     discount = min(totals['discount'] + credit, subtotal)
     for line, per_unit in zip(lines, spread_discount(lines, discount)):
         line['discount'] = per_unit
-    return {'lines': lines, 'charges': charges}
+    # ``discount_total``: the quote's whole discount, so the till can let the
+    # shop move it between lines by hand (2026-11-26); the spread is the default.
+    return {'lines': lines, 'charges': charges, 'discount_total': discount}

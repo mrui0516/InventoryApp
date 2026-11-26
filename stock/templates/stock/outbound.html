@@ -95,6 +95,7 @@
           </div>
           <span class="summary-badge" id="summary-line-count">0 products</span>
         </div>
+        <div class="pedido-disc-bar" id="pedido-discount-bar" hidden></div>
 
         <div class="table-responsive">
           <table class="table align-middle cart-table" id="cart-table">
@@ -103,7 +104,7 @@
                 <th>Product</th>
                 <th class="text-center">Qty</th>
                 <th class="text-end">Unit (&euro;)</th>
-                <th class="text-end">Disc (&euro;)</th>
+                <th class="text-end" id="cart-disc-head">Disc (&euro;)</th>
                 <th class="text-center">Pay</th>
                 <th class="text-end">Subtotal (&euro;)</th>
                 <th class="text-end">Actions</th>
@@ -773,6 +774,7 @@
     #cart-table tbody td:nth-child(2)::before{ content:'Qty '; color:var(--app-muted); }
     #cart-table tbody td:nth-child(3)::before{ content:'Unit €'; color:var(--app-muted); }
     #cart-table tbody td:nth-child(4)::before{ content:'Disc '; color:var(--app-muted); }
+    #cart-table.disc-per-unit tbody td:nth-child(4)::before{ content:'Disc / un '; }
     #cart-table tbody td:nth-child(5)::before{ content:'Pay '; color:var(--app-muted); }
     #cart-table tbody td:nth-child(6){ font-weight:800; }
     #cart-table tbody td:nth-child(6)::before{ content:'= €'; color:var(--app-muted); font-weight:600; }
@@ -828,6 +830,15 @@
   .lm-body{ display:grid; gap:.7rem; }
   .lm-row{ display:grid; gap:.4rem; }
   .lm-label{ font-size:.7rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--app-muted); }
+  /* A Pedido's discount, moved between lines by hand (2026-11-26) */
+  .pedido-disc-bar{ display:flex; flex-wrap:wrap; align-items:center; gap:.25rem .6rem; margin:0 0 .6rem; padding:.45rem .7rem;
+                    border-radius:var(--app-radius-sm); background:var(--app-surface-2); border:1px solid var(--app-border);
+                    font-size:.9rem; font-weight:700; font-variant-numeric:tabular-nums; }
+  .pedido-disc-bar[hidden]{ display:none; }
+  .pedido-disc-bar.is-off{ background:var(--app-warn-soft); border-color:var(--app-warn); color:var(--app-warn); }
+  .line-disc{ display:inline-flex; align-items:center; gap:.2rem; font-size:.85rem; color:var(--app-muted); margin:0; }
+  .line-disc-input{ width:3.9rem; min-height:32px; padding:.15rem .35rem; border:1px solid var(--app-border); border-radius:.4rem;
+                    text-align:right; font-size:.9rem; font-weight:700; color:var(--app-text); font-variant-numeric:tabular-nums; }
   .lm-sample{ display:inline-flex; align-items:center; gap:.45rem; min-height:32px; font-size:.9rem; font-weight:700; cursor:pointer; justify-self:start; }
   .lm-label-row{ display:flex; align-items:center; justify-content:space-between; gap:.6rem; }
   .lm-sub-label{ font-size:.72rem; font-weight:600; color:var(--app-muted); }
@@ -1185,6 +1196,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let lastPrices = {};
   // Set when the cart was opened from a Pedido draft.
   let revendaSale = false;
+  // A Pedido's whole discount: spread over the lines by default, movable by hand.
+  let pedidoDiscount = 0;
   function cartDiscount() { return cart.reduce((s, i) => s + (Number(i.discount) || 0) * (Number(i.qty) || 0), 0); }
   function cartQtyTotal() { return cart.reduce((s, i) => s + (Number(i.qty) || 0), 0); }
   function barcodeQtyTotal(barcode) {
@@ -1256,7 +1269,9 @@ document.addEventListener('DOMContentLoaded', () => {
         </td>
         <td class="text-center">${item.qty}</td>
         <td class="text-end">${finalUnit.toFixed(2)}</td>
-        <td class="text-end">${lineDisc > 0 ? '&minus;' + lineDisc.toFixed(2) : '&mdash;'}</td>
+        <td class="text-end">${pedidoDiscount > 0
+          ? `<label class="line-disc"><span>&minus;</span><input type="text" inputmode="decimal" class="line-disc-input" value="${(Number(item.discount) || 0).toFixed(2)}" aria-label="Discount per unit"></label>`
+          : (lineDisc > 0 ? '&minus;' + lineDisc.toFixed(2) : '&mdash;')}</td>
         <td class="text-center">${payCellHtml(item)}</td>
         <td class="text-end fw-semibold">${lineSubtotal(item).toFixed(2)}</td>
         <td class="text-end">
@@ -1268,10 +1283,35 @@ document.addEventListener('DOMContentLoaded', () => {
       tr.querySelector('.js-edit').addEventListener('click', () => openLineModal(item, item));
       tr.querySelector('.js-del').addEventListener('click', () => { cart = cart.filter(x => x.uid !== item.uid); renderCart(); });
       tr.querySelector('.js-preview')?.addEventListener('click', () => openPreviewModal(item.image_url, item.title));
+      tr.querySelector('.line-disc-input')?.addEventListener('change', (e) => {
+        const v = parseMoney(e.target.value);
+        const base = Number(item.base) || 0;
+        if (!isFinite(v) || v < 0 || v >= base) {
+          toastError('The discount must be at least 0 and below the unit price.');
+          e.target.value = (Number(item.discount) || 0).toFixed(2);
+          return;
+        }
+        item.discount = Math.round(v * 100) / 100;
+        renderCart();
+      });
       cartBody.appendChild(tr);
     });
     cartEmpty.classList.toggle('d-none', cart.length > 0);
+    // per unit, as the line dialog's "Discount / unit"
+    document.getElementById('cart-disc-head').textContent = pedidoDiscount > 0 ? 'Disc / un (€)' : 'Disc (€)';
+    document.getElementById('cart-table').classList.toggle('disc-per-unit', pedidoDiscount > 0);
+    renderDiscountBar();
     recalc();
+  }
+  function renderDiscountBar() {
+    const bar = document.getElementById('pedido-discount-bar');
+    bar.hidden = !(pedidoDiscount > 0);
+    if (bar.hidden) return;
+    const allocated = cart.reduce((s, i) => s + (Number(i.discount) || 0) * (Number(i.qty) || 0), 0);
+    const left = Math.round((pedidoDiscount - allocated) * 100) / 100;
+    bar.classList.toggle('is-off', Math.abs(left) >= 0.01);
+    bar.textContent = `Pedido discount ${formatMoney(pedidoDiscount)} · allocated ${formatMoney(allocated)}`
+      + (Math.abs(left) < 0.01 ? ' ✓' : (left > 0 ? ` · ${formatMoney(left)} left` : ` · ${formatMoney(-left)} over`));
   }
 
   // ===== 支付：每行可单一方式或拆分多方式，按方式汇总订单总额 =====
@@ -1813,6 +1853,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const pedido = pedidoEl ? JSON.parse(pedidoEl.textContent || 'null') : null;
   if (pedido) {
     revendaSale = true;
+    pedidoDiscount = Number(pedido.discount_total) || 0;
     (pedido.lines || []).forEach((l) => {
       cart.push({
         uid: uidSeq++, barcode: l.barcode, title: l.title, stock: l.stock, total: l.total,
