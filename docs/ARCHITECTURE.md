@@ -588,6 +588,16 @@ PDF 的 `_brand_logo` 文件缺失时跳过。`empty_brands` 默认不包括有 
 - 快速导入：`catalog_views.parse_scent`（`api/parse-scent/`，经理权限，POST `text`）返回 `notes`、`families`、`inspiration`、`gender`、`description`；页面只替换返回了值的字段。
 - `services/scent_info.py`：`incomplete_q()` = Perfume + 有剩余批次 +（描述为空 / 三层香调连同 `scent_source` 都空 / 自己和 `scent_source` 都没有家族，用 `Exists`）。产品列表的 `info=incomplete` 经 `product_list_extras` 进 `get_filtered_product_list_state`，所以导出也按它筛；经理看到 `incomplete_count()`；筛选时当前页 prefetch 家族，再用 `missing_parts` 写出每行缺哪几项。
 
+### 5.0a 样品销售（2026-11-26，迁移 0097）
+
+- `services/store_stock.py`：`full_price_obtainable(product, store)` = 本店"库存 − 样品" + 其它在用店铺各自的"库存 − 样品" + 未分店批次；`bring_in_any(product, qty, store)` 让本店持有 qty 件（样品算在内），缺的先拿别家的原价件、再拿别家的样品、再拿未分店批次，经 `move_units(..., reason=SALE)` 记调货（同一单复用 `_sale_transfer`）；合计不够才抛 "Not enough stock … both shops have m"。`till_stock` 多返回 `total`（在用店铺 + 未分店的全部件数），Sell 的 `_sell_line_ctx` / `check_barcode` 带出去。
+- `services/stock_ops.py`：`split_for_sale(product, qty, store, sample=False) -> [(units, is_sample)]`；`consume_for_sale(...) -> [SalePart(quantity, is_sample, cost_basis)]` 逐段调用 `consume_stock_fifo`。`consume_stock_fifo(sample=True)` 改用 `bring_in_any`（不再要求本店自己有）。拆分在扣库存的事务里按当时库存算，所以同一单同一款两行时第二行看到的是第一行扣完后的库存。
+- `outbound_view` 和 `order_corrections.save_sale_order_correction` 每行调 `consume_for_sale`，每段写一条 `Sale`；补录不扣库存时一行一条，`is_sample` 取勾选。补录的购物车 JSON 每行带 `sample`（`_correction_cart_item(..., sample)`），旧的 `sample_products` 集合和 `_consume_current_stock` 已删除；归还库存仍按产品汇总。
+- Pedido：`_read_lines` 读平行数组 `sample`；草稿行 JSON 只有勾选时写 `sample: true`（缺省即 False）；`draft_lines_for_form` / `_form_rows` / `sell_payload` / `_pedido_cart` 一路带出；`pedido_pdf._product_cell` 在产品名下方写 "Tester"。`pedido.html` 的 `addRow` 不再合并同款。删除表单移到主表单外（`id="pd-del-form"`），Apagar 按钮用 `form` 属性提交它。
+- `sell_payload` 返回 `discount_total`；Sell 页 `pedidoDiscount > 0` 时显示 `#pedido-discount-bar`，折扣列换成每件折扣输入框（`.line-disc-input`，表头 "Disc / un"），改动只改该行 `item.discount`，不拦提交。
+- B2B：`OrderRequestLine.is_sample`（迁移 0097）；`_follows_quote` 比较和重建都带上 `sample`，按报价的行顺序逐行重建，选款取每行自己的 `picks`（原来按 product_id 查，同一款两行会串）；`_draft_line` 写 `sample`。
+- 显示：`app.css` 的 `.tag-sample`（员工 "Sample"，客户 "Tester"），每行都渲染，不是样品时加 `.is-off`（`visibility:hidden`）占位。收据 PDF 的样品行标题加 " (Tester)"。
+
 ### 5.0 并发写入（SQLite，2026-11-22）
 
 SQLite 同时只有一个写入者。默认 DEFERRED 事务"先读后写"时，遇到另一个连接正在写会**立即** `database is locked`（死锁检测，不等 `timeout`）。线上同时写库的有：两家店的收银、每笔销售后被唤醒的 Shopify 目录后台线程（`SHOPIFY_CATALOG_AUTOMATION=1`）、PA 定时 / 常驻任务。

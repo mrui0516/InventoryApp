@@ -1904,7 +1904,8 @@ document.addEventListener('DOMContentLoaded', () => {
       .then(r => r.json())
       .then(d => {
         if (!d.exists) { toastWarn(`Barcode ${escapeHtml(code)} not found.`); return; }
-        if (d.stock > 0 || d.sample_here) openLineModal(ctxFromCheck(d, code), null);
+        // any unit in either shop, samples included: a sample is sold, never refused
+        if ((Number(d.total != null ? d.total : d.stock) || 0) > 0) openLineModal(ctxFromCheck(d, code), null);
         else toastError(`${escapeHtml(d.name || code)} — no stock`);
       })
       .catch(() => toastError('Lookup failed. Check the connection.'));

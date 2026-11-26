@@ -11,8 +11,8 @@
 | 维度 | 状态 | 说明 |
 |---|---|---|
 | 线上运行 | ✅ PythonAnywhere 欧盟区 | `https://scentory.eu.pythonanywhere.com`，两家店（Khan Perfume、Scentory）日常收银、入库都在线上；线上 `db.sqlite3` 是唯一准数据 |
-| 自动化测试 | ✅ 1921 个全部通过 | `python manage.py test stock restock_alerts`，在隔离工作区跑 |
-| 数据库迁移 | ✅ 最新 `0096_tidy_scent_text`，无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
+| 自动化测试 | ✅ 1963 个全部通过 | `python manage.py test stock restock_alerts`，在隔离工作区跑 |
+| 数据库迁移 | ✅ 最新 `0097_orderrequestline_is_sample`，无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
 | 生产配置 | ✅ `DEBUG=False`，密钥只在服务器 `.env` | `settings.py` 的 `if not DEBUG` 块：强制 HTTPS、安全 Cookie、HSTS、防点击劫持 |
 | 数据备份 | ✅ 每日快照 + 本机拉取 | PA 定时任务 `backup_db --keep 30`，本机 `scripts/pull_backup_from_pa.py` 拉到 U 盘；Settings → Tools 可手动下载。见 [BACKUP.md](./BACKUP.md) |
 | 错误日志 | ✅ Settings → Audit → Errors | 500 崩溃、安全警告、Cloudinary/Shopify 警告写入 `ErrorLog` 与 PA 错误日志 |
@@ -35,7 +35,7 @@
 
 ## 3. 测试与质量
 
-- `python manage.py test stock restock_alerts` → **1921 个测试全部通过**（约 45 秒；测试时用 MD5 密码哈希，生产不变）；`python manage.py check` 无问题。
+- `python manage.py test stock restock_alerts` → **1963 个测试全部通过**（约 45 秒；测试时用 MD5 密码哈希，生产不变）；`python manage.py check` 无问题。
 - 外部集成（Shopify / Cloudinary）的测试全部 mock，不发真实网络请求。
 - 提交前在 `git archive HEAD` 的干净导出上跑全套：工作区里可能有别的进行中的改动，会让结果失真。
 
@@ -73,6 +73,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-11-26: **样品直接卖、只做标记**（迁移 0097，只加字段）：Sell、Pedido 转销售、补录订单都不再因只剩样品被拦，超出原价库存的件数自动拆成 Sample 行；Sell 和补录每行可勾 Sample，数量不限 1；Pedido 每输入一次一行、每行可勾 Tester，PDF 和 B2B 订单带标记；所有显示订单行的地方标 Sample / Tester；Pedido 的 Vender / Apagar 移到 Descarregar PDF 下方；Pedido 转销售时可在 Sell 页逐行分配整单折扣。
 - 2026-11-22: **收银撞锁误报修复**：已入账的销售不再显示 "Unexpected error: database is locked"，手动建单不再 500（原因：提交后的日汇总重算撞上 SQLite 写锁）。SQLite 改 IMMEDIATE 事务 + 20 秒等待；日汇总每笔每天只算一次、失败只记日志；真的没记上时明确提示；重复的警告 60 秒内只写一次 ErrorLog。
 - 2026-11-21: **Inspired by 显示与批量填写**：产品页描述下方和 B2B 目录描述显示 "Inspirado em"；新命令 `fill_inspirations`（先预演）从 `stock/data/inspirations.csv` 只填空着的 Inspired by。Shopify 描述未改。
 - 2026-11-21: **香调快速导入、描述清理、信息不全提醒**（迁移 0096，会改数据，部署前先 `backup_db`，无预览）：Scent 区块的 Quick import 粘贴一段文字自动填家族、香调、灵感来源、性别和描述；保存产品和迁移都会清空与系列相同的名称，并把描述里的香调 / 家族 / Inspirado em 标签行移进字段（字段已有内容的以字段为准）；产品列表提醒有货香水缺描述、香调或家族，并可筛选。
