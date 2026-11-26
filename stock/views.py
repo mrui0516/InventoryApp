@@ -95,7 +95,7 @@ from .services.order_corrections import (
     save_sale_order_correction,
 )
 from .services.profit import sale_profit_map_for_sale_ids
-from .services.stock_ops import consume_stock_fifo
+from .services.stock_ops import consume_for_sale, consume_stock_fifo
 from .services.stock_ledger import build_stock_ledger
 from .services import rebuild_all_daily_summaries
 
@@ -1033,6 +1033,7 @@ def _sell_line_ctx(product, store=None):
         'pname': product.name,
         'spec': ' '.join(filter(None, [product.spec, product.color])),
         'stock': int(stock),
+        'total': int(shop_stock['total']),
         'sampleHere': shop_stock['sample_here'],
         'shops': shop_stock['shops'],
         'retail': float(product.default_price) if product.default_price is not None else None,
@@ -1059,7 +1060,8 @@ def _pedido_cart(draft):
                      if customer else None),
         'customer_name': draft.customer_name,
         'lines': [dict(_sell_line_ctx(line['product'], draft.store), qty=line['quantity'],
-                       base=f"{line['unit_price']:.2f}", discount=f"{line['discount']:.2f}")
+                       base=f"{line['unit_price']:.2f}", discount=f"{line['discount']:.2f}",
+                       sample=bool(line.get('sample')))
                   for line in payload['lines']],
         'charges': [{'label': c['label'], 'amount': f"{c['amount']:.2f}"} for c in payload['charges']],
     }
@@ -1227,27 +1229,25 @@ def outbound_view(request):
                 except Product.DoesNotExist:
                     raise ValueError(f"Product not found by barcode: {row['barcode']}")
 
-                # FIFO 扣减（原子条件更新；select_for_update 在 SQLite 上是 no-op，见 stock_ops）
-                # 返回本次消耗的真实成本，作为这笔销售的成本基准存下来。
-                # Out of this shop; what it lacks comes from the other shop
-                # (a transfer, owed at cost + markup).
-                line_cost = consume_stock_fifo(product, row['qty'], active_store, sample=row['sample'],
-                                               user=request.user, sale_order=order)
-
-                # 行支付方式：旧格式用行内值，新格式（订单级拆分）用主支付方式
+                # Out of this shop; what it lacks comes from the other shop (a
+                # transfer, owed at cost + markup). Units beyond full-price stock
+                # are the shops' samples: sold, never refused, and written as
+                # their own sample line (2026-11-26). Each part keeps its FIFO cost.
                 line_method = row['payment'] if row['payment'] in valid_methods else primary_method
-                Sale.objects.create(
-                    order=order,
-                    product=product,
-                    customer=customer,
-                    store=active_store,
-                    quantity=row['qty'],
-                    unit_price=row['price'],
-                    cost_basis=line_cost,
-                    payment_method=line_method,
-                    is_sample=row['sample'],
-                    date=timezone.now(),
-                )
+                for part in consume_for_sale(product, row['qty'], active_store, sample=row['sample'],
+                                             user=request.user, sale_order=order):
+                    Sale.objects.create(
+                        order=order,
+                        product=product,
+                        customer=customer,
+                        store=active_store,
+                        quantity=part.quantity,
+                        unit_price=row['price'],
+                        cost_basis=part.cost_basis,
+                        payment_method=line_method,
+                        is_sample=part.is_sample,
+                        date=timezone.now(),
+                    )
 
             # 订单级支付拆分（权威记录）
             for method, amount in payment_totals.items():
@@ -3054,6 +3054,7 @@ def check_barcode(request):
             'spec': product.spec or '',
             'color': product.color or '',
             'stock': int(stock),
+            'total': int(shop_stock['total']),
             'sample_here': shop_stock['sample_here'],
             'shops': shop_stock['shops'],
             'last_cost': float(last_cost) if last_cost is not None else None,

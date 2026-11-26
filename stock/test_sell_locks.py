@@ -94,7 +94,7 @@ class InsideTheTransactionTests(SaleFixture, TestCase):
         self.make_fixture("lock_admin2")
 
     def test_sell_says_plainly_that_nothing_was_recorded(self):
-        with mock.patch("stock.views.consume_stock_fifo", side_effect=LOCKED):
+        with mock.patch("stock.views.consume_for_sale", side_effect=LOCKED):
             response = self.sell()
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "The database was busy, so this sale was NOT recorded")

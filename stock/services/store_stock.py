@@ -127,9 +127,14 @@ def till_stock(product, store):
         full += full_price_units(shop, units)
         rows.append({'name': shop.name, 'units': units, 'here': store is not None and shop.pk == store.pk,
                      'sample': bool(sample_reserve(shop, units))})
+    # ``total``: every unit a sale can reach, samples included (the active shops
+    # and batches never given a shop, as bring_in_any) - what a sale may take
+    # since 2026-11-26; beyond ``stock`` it takes samples, marked as such.
+    total = counts.get(None, 0) + sum(row['units'] for row in rows)
     if store is None:
-        return {'stock': sum(counts.values()), 'sample_here': False, 'shops': rows}
-    return {'stock': full, 'sample_here': bool(sample_reserve(store, counts.get(store.id, 0))), 'shops': rows}
+        return {'stock': sum(counts.values()), 'total': total, 'sample_here': False, 'shops': rows}
+    return {'stock': full, 'total': total, 'sample_here': bool(sample_reserve(store, counts.get(store.id, 0))),
+            'shops': rows}
 
 
 def transfer_markup():

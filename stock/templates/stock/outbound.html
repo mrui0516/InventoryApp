@@ -237,8 +237,8 @@
             <button type="button" class="price-opt" data-kind="wholesale">Wholesale <span id="line-modal-wholesale">€0.00</span></button>
             {# What this customer paid last time; only shown when there is one. #}
             <button type="button" class="price-opt d-none" data-kind="last">Last <span id="line-modal-last">€0.00</span><small id="line-modal-last-date"></small></button>
-            <button type="button" class="price-opt d-none" data-kind="sample">Sample <span>type price</span><small>this shop's opened bottle</small></button>
           </div>
+          <label class="lm-sample"><input type="checkbox" class="form-check-input mt-0" id="line-modal-sample"> Sample</label>
           <div class="lm-price">
             <label class="lm-sub-label" for="line-modal-base">Unit price</label>
             <div class="input-group input-group-sm"><span class="input-group-text">€</span><input type="text" inputmode="decimal" class="form-control" id="line-modal-base" placeholder="0.00"></div>
@@ -828,6 +828,7 @@
   .lm-body{ display:grid; gap:.7rem; }
   .lm-row{ display:grid; gap:.4rem; }
   .lm-label{ font-size:.7rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--app-muted); }
+  .lm-sample{ display:inline-flex; align-items:center; gap:.45rem; min-height:32px; font-size:.9rem; font-weight:700; cursor:pointer; justify-self:start; }
   .lm-label-row{ display:flex; align-items:center; justify-content:space-between; gap:.6rem; }
   .lm-sub-label{ font-size:.72rem; font-weight:600; color:var(--app-muted); }
   .lm-disc,.lm-price{ display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:.5rem; }
@@ -841,6 +842,8 @@
   .lm-thumb img{ width:100%; height:100%; object-fit:cover; display:block; }
   .lm-thumb.empty{ display:none; }
   .lm-ident{ min-width:0; }
+  /* no photo: the name takes the whole row, not the photo's 48px column */
+  .lm-thumb.empty + .lm-ident{ grid-column:1 / -1; }
   .lm-brand{ font-size:.68rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--app-muted); line-height:1.25; }
   .lm-name{ font-size:.95rem; font-weight:700; color:var(--app-text); line-height:1.25; overflow-wrap:anywhere; }
   .lm-meta{ display:flex; flex-wrap:wrap; gap:.4rem; margin-top:.15rem; font-size:.74rem; color:var(--app-muted); font-variant-numeric:tabular-nums; }
@@ -1187,15 +1190,19 @@ document.addEventListener('DOMContentLoaded', () => {
   function barcodeQtyTotal(barcode) {
     return cart.filter(i => i.barcode === barcode && !i.sample).reduce((s, i) => s + (Number(i.qty) || 0), 0);
   }
+  // Every unit a sale can reach, the shops' samples included (2026-11-26):
+  // beyond the full-price stock a line takes samples and is recorded as such.
+  function unitsTotal(item) { return Number(item.total != null ? item.total : item.stock) || 0; }
+  function barcodeAllQty(barcode) {
+    return cart.filter(i => i.barcode === barcode).reduce((s, i) => s + (Number(i.qty) || 0), 0);
+  }
 
   function lineValid(item) {
     if (!((Number(item.qty) || 0) >= 1)) return false;
     if (lineFinalUnit(item) <= 0) return false;
-    if (item.sample) return item.sampleHere && Number(item.qty) === 1;
     // A scanned product always has stock; a quoted one may not.
-    const stock = Number(item.stock) || 0;
-    if (stock <= 0 || barcodeQtyTotal(item.barcode) > stock) return false;
-    return true;
+    const total = unitsTotal(item);
+    return total > 0 && barcodeAllQty(item.barcode) <= total;
   }
 
   function lineWarnings(item) {
@@ -1207,8 +1214,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (isFinite(Number(item.lastCost)) && finalUnit < Number(item.lastCost)) w.push({ text: 'Selling below cost', tone: 'danger' });
       return w;
     }
-    if (stock <= 0) w.push({ text: 'No stock', tone: 'danger' });
-    else if (usedQty > stock) w.push({ text: 'Exceeds available stock', tone: 'danger' });
+    const total = unitsTotal(item);
+    if (total <= 0) w.push({ text: 'No stock', tone: 'danger' });
+    else if (barcodeAllQty(item.barcode) > total) w.push({ text: 'Exceeds available stock', tone: 'danger' });
+    else if (usedQty > stock) w.push({ text: `${usedQty - stock} from the shop samples`, tone: 'warn' });
     else if (stock > 0 && usedQty === stock) w.push({ text: 'Uses all remaining stock', tone: 'warn' });
     const lastCost = Number(item.lastCost);
     const wholesale = Number(item.wholesale);
@@ -1461,6 +1470,7 @@ document.addEventListener('DOMContentLoaded', () => {
       pname: d.product_name || '',
       spec: [d.spec, d.color].filter(Boolean).join(' '),
       stock: Number(d.stock) || 0,
+      total: Number(d.total != null ? d.total : d.stock) || 0,
       sampleHere: !!d.sample_here,
       shops: d.shops || [],
       retail: (d.retail_price != null && d.retail_price !== '') ? Number(d.retail_price) : null,
@@ -1519,15 +1529,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // quantities); the hidden #line-modal-qty stays the single source of truth.
   const qtyChipsWrap = document.getElementById('line-modal-qty-chips');
   const qtyMoreChip = document.getElementById('line-modal-qty-more');
-  // The most this line may take: a sample is one bottle; at full price, the
-  // full-price stock (the shops' samples kept back) less what the cart holds.
+  // The most this line may take: every unit both shops hold, samples included,
+  // less what the other lines of this product already take.
   function modalMaxQty() {
     if (!modalCtx) return 1;
-    if (modalKind() === 'sample') return 1;
-    const stock = Number(modalCtx.stock) || 0;
-    const inCart = cart.filter(i => i.barcode === modalCtx.barcode && i.uid !== editingUid && !i.sample)
+    const inCart = cart.filter(i => i.barcode === modalCtx.barcode && i.uid !== editingUid)
       .reduce((s, i) => s + i.qty, 0);
-    return Math.max(0, stock - inCart);
+    return Math.max(0, unitsTotal(modalCtx) - inCart);
   }
   function renderQtyChips() {
     const q = Number(document.getElementById('line-modal-qty').value) || 1;
@@ -1564,7 +1572,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('line-modal-stock').textContent = (ctx.shops && ctx.shops.length)
       ? ctx.shops.slice().sort((a, b) => b.here - a.here).map((s) => `${s.here ? 'Here' : s.name} ${s.units}${s.sample ? ' (1 sample)' : ''}`).join(' · ')
       : `In stock ${ctx.stock}`;
-    document.querySelector('#line-modal-price-toggle .price-opt[data-kind="sample"]').classList.toggle('d-none', !ctx.sampleHere);
+    // Ticked when only the shops' samples are left, so the cart says so.
+    document.getElementById('line-modal-sample').checked = item ? !!item.sample : !(Number(ctx.stock) > 0);
     const thumbWrap = document.getElementById('line-modal-thumb-wrap');
     const thumbImg = document.getElementById('line-modal-thumb');
     if (ctx.image_url) { thumbImg.src = ctx.image_url; thumbWrap.classList.remove('empty'); }
@@ -1587,18 +1596,13 @@ document.addEventListener('DOMContentLoaded', () => {
       : (last != null ? last : (retail != null ? retail : (wholesale != null ? wholesale : '')));
     document.getElementById('line-modal-base').value = (base !== '' && base != null) ? Number(base).toFixed(2) : '';
     document.getElementById('line-modal-discount').value = item ? (Number(item.discount) || 0).toFixed(2) : '0';
-    setPriceToggle(item && item.sample ? 'sample' : 'retail');   // not the last dialog's kind
     setModalQty(item ? item.qty : 1);
     const near = (a, b) => a != null && b != null && Math.abs(Number(a) - Number(b)) < 0.001;
     let kind = 'retail';
-    if (item && item.sample) kind = 'sample';
-    else if (item) kind = near(item.base, last) ? 'last' : (near(item.base, wholesale) ? 'wholesale' : 'retail');
-    else if (!(Number(ctx.stock) > 0) && ctx.sampleHere) kind = 'sample';     // only the sample is left
+    if (item) kind = near(item.base, last) ? 'last' : (near(item.base, wholesale) ? 'wholesale' : 'retail');
     else if (last != null) kind = 'last';
     else if (retail == null && wholesale != null) kind = 'wholesale';
     setPriceToggle(kind);
-    setModalQty(Number(document.getElementById('line-modal-qty').value) || 1);   // the limit follows the price kind
-    if (kind === 'sample' && !item) { document.getElementById('line-modal-base').value = ''; setModalQty(1); }
     modalSplit = !!(item && item.isSplit);
     modalPayMethod = (item && !item.isSplit && METHODS.includes(item.payment)) ? item.payment : lastMethod;
     lineModalSplitToggle.checked = modalSplit;
@@ -1626,17 +1630,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!isFinite(base) || base <= 0) return fail('Enter a valid price.');
     if (disc < 0) return fail('Discount cannot be negative.');
     if (base - disc <= 0) return fail('Discount cannot be equal to or above the price.');
-    const sample = modalKind() === 'sample';
-    const stock = Number(modalCtx.stock) || 0;
-    const otherQty = cart.filter(i => i.barcode === modalCtx.barcode && i.uid !== editingUid && !i.sample).reduce((s, i) => s + i.qty, 0);
-    if (sample) {
-      if (qty !== 1) return fail('A sample is one bottle.');
-      if (cart.some(i => i.barcode === modalCtx.barcode && i.uid !== editingUid && i.sample)) return fail('The sample is already in the cart.');
-    } else if (!(stock > 0)) {
-      return fail('Only the shop samples are left: choose Sample.');
-    } else if (otherQty + qty > stock) {
-      return fail(`Only ${stock} in stock (${otherQty} already in cart).`);
-    }
+    // A sample is sold like any bottle and marked (2026-11-26); only what both
+    // shops hold together limits a line.
+    const sample = document.getElementById('line-modal-sample').checked;
+    const total = unitsTotal(modalCtx);
+    const otherQty = cart.filter(i => i.barcode === modalCtx.barcode && i.uid !== editingUid).reduce((s, i) => s + i.qty, 0);
+    if (otherQty + qty > total) return fail(`Only ${total} in both shops (${otherQty} already in cart).`);
 
     const lineTotal = Math.max(0, base - disc) * qty;
     let payment = modalPayMethod;
@@ -1657,7 +1656,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       cart.push(Object.assign({
         uid: uidSeq++, barcode: modalCtx.barcode, title: modalCtx.title, stock: modalCtx.stock,
-        sampleHere: modalCtx.sampleHere, shops: modalCtx.shops,
+        total: unitsTotal(modalCtx), sampleHere: modalCtx.sampleHere, shops: modalCtx.shops,
         retail: modalCtx.retail, wholesale: modalCtx.wholesale, lastCost: modalCtx.lastCost,
         image_url: modalCtx.image_url,
       }, fields));
@@ -1683,15 +1682,6 @@ document.addEventListener('DOMContentLoaded', () => {
     b.addEventListener('click', () => {
       if (b.disabled) return;
       setPriceToggle(b.dataset.kind);
-      if (b.dataset.kind === 'sample') {
-        // the sample's price is typed each time
-        const input = document.getElementById('line-modal-base');
-        input.value = '';
-        setModalQty(1);
-        input.focus();
-        updateLineModalPreview();
-        return;
-      }
       const v = b.dataset.kind === 'wholesale' ? Number(modalCtx.wholesale)
         : b.dataset.kind === 'last' ? Number((lastPrices[modalCtx.barcode] || {}).price)
         : Number(modalCtx.retail);
@@ -1825,7 +1815,8 @@ document.addEventListener('DOMContentLoaded', () => {
     revendaSale = true;
     (pedido.lines || []).forEach((l) => {
       cart.push({
-        uid: uidSeq++, barcode: l.barcode, title: l.title, stock: l.stock,
+        uid: uidSeq++, barcode: l.barcode, title: l.title, stock: l.stock, total: l.total,
+        sample: !!l.sample, sampleHere: !!l.sampleHere, shops: l.shops || [],
         retail: l.retail, wholesale: l.wholesale, lastCost: l.lastCost, image_url: l.image_url,
         brand: l.brand, model: l.model, pname: l.pname, spec: l.spec,
         qty: Number(l.qty) || 1, base: Number(l.base) || 0, discount: Number(l.discount) || 0,
