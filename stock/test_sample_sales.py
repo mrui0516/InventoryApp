@@ -342,3 +342,24 @@ class MarkTests(ShopsMixin, TestCase):
         session[SESSION_KEY] = self.customer.pk
         session.save()
         self.assertIn('<span class="tag-sample">Tester</span>', self.get("wholesale_sale", self.order.pk))
+
+
+class PedidoSellTests(SellTests):
+    """A Pedido sold at the till: beyond full-price stock it is not "Exceeds
+    available stock" any more; the sample part is split off and the draft is sold."""
+
+    def test_a_pedido_beyond_full_price_sells_with_its_sample_split(self):
+        from django.urls import reverse
+        from .models import PedidoDraft
+        self.batch(self.khan, 2)
+        draft = PedidoDraft.objects.create(store=self.khan, lines=[
+            {"product_id": self.product.pk, "quantity": 2, "unit_price": "10.00"}],
+            goods_total=Decimal("20"), total=Decimal("20"))
+        response = self.client.post(reverse("outbound"), {
+            "items_json": self.json.dumps([{"barcode": self.product.barcode, "qty": 2, "price": "10.00"}]),
+            "payments_json": self.json.dumps([{"method": "cash", "amount": "20.00"}]),
+            "submit_token": "0123456789abcdef0123456789abcd09", "pedido_draft_id": draft.pk})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual([s[:2] for s in self.sales()], [(1, False), (1, True)])
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, PedidoDraft.SOLD)

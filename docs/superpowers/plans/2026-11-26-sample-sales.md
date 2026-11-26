@@ -137,3 +137,22 @@
 - [ ] Update `docs/PRD.md` (F2.4 sample rules; Pedido rows; corrections; B2B), `docs/ARCHITECTURE.md` (`consume_for_sale`, `bring_in_any`, migration 0097), `docs/STATUS.md` (test count, latest migration, changelog line).
 - [ ] `git fetch --all`; merge any new `origin/master` / `origin/codex/*` with `--no-ff`; re-run the full suite and `makemigrations --check`.
 - [ ] Commit guarded on `^OK`; push; give the PA commands (migration 0097 adds a column only; `backup_db` kept; no static change unless CSS files under `stock/static` were touched).
+
+---
+
+## Added by the owner on 2026-11-26 (mid-run)
+
+### Task 8: "Exceeds available stock" caused by samples, on a Pedido cart
+Covered by Task 2 (beyond full-price stock is a warning "N from the shop samples", not "Exceeds"). Prove it on a Pedido cart:
+- [ ] Test `test_a_pedido_beyond_full_price_sells_with_its_sample_split`: draft qty 2, own 2 (one is the sample) → posting the Sell form with `pedido_draft_id` records `[(1, False), (1, True)]` and marks the draft sold.
+- [ ] Playwright: open `/outbound/?pedido=<id>` → the line shows "1 from the shop samples", Review & confirm enabled.
+
+### Task 9: Pedido "Vender" and "Apagar" under "Descarregar PDF"
+- [ ] Test `test_vender_and_apagar_sit_under_the_pdf_button`: on an open draft, "Descarregar PDF" comes before "Vender" and "Apagar" in the page; the delete form is outside the main form and the Apagar button targets it (`form="pd-del-form"`).
+- [ ] Move them; Playwright: both buttons below the PDF button at four widths, nothing overlaps.
+
+### Task 10: Allocate a Pedido's discount line by line on the Sell page
+Owner's choice: on the Sell page. Default stays the automatic spread.
+- [ ] `sell_payload` returns `discount_total` (the quote's discount plus credits); `_pedido_cart` passes it.
+- [ ] Sell page, Pedido cart with `discount_total > 0`: a bar above the cart "Pedido discount €X · allocated €Y"; each row has an inline "−€ / un" input; changing it updates the line, totals and payments; the bar warns "€Z left" / "€Z over" when Y ≠ X (warning, not a block); a discount must stay below the unit price.
+- [ ] Test `test_the_pedido_cart_carries_its_discount_total`; Playwright: edit one row's discount, the bar shows what is left, rows keep one height.
