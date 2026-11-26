@@ -212,6 +212,7 @@
 - **F2.4.6** **幂等性保护**：对提交内容（含 `payments_json`）计算 SHA256 摘要 + `cache.add()` 8 秒窗口，防止重复提交生成重复订单。
 - **F2.4.7** 销售记录创建/更新/删除会触发 `DailySalesSummary` 异步重算（通过 Django signal + `transaction.on_commit`，见模块 2.10）。2026-11-22 起同一笔每天只算一次，算失败只记日志，不影响这笔销售。
 - **F2.4.7a 数据库忙时的提示(2026-11-22)**:以前销售已经记上,收尾步骤撞上 SQLite 写锁时 Sell 页却显示 "Unexpected error: database is locked",Orders → 手动新建订单则直接 500。现在:提交后的步骤不再报错;万一提交后还有步骤失败,Sell 页显示 "The sale was recorded, but a step after it failed. Check it in Orders."(凭一次性令牌判断是否已入账);真的没记上时显示 "The database was busy, so this sale was NOT recorded. Please enter it again.";手动建单 / 删单页显示 "…was NOT saved / NOT deleted. Please try again.",不再 500。
+- **F2.4.1.3 购物车的价格列(2026-11-26)**:Unit 显示原价(打折前);Disc / un 显示每件折扣,有折扣时下面写折后单价("= 22.58");Subtotal = 折后单价 × 数量。整个购物车都没有折扣时不显示折后单价那一行。提交和记录不变(销售单价仍是折后价)。
 - **F2.4.10 样品：直接卖，只做标记(2026-11-26)**:
   - 任何卖货路径(Sell、Pedido 转 Sell、Orders 补录 / 修改订单)都不再因"只剩样品"被拦;只有两家店合起来件数不够时才拒绝("Not enough stock for X. Needed n, both shops have m.")。
   - **自动拆行**:普通行先用样品以外的库存(本店 + 别家店的"库存 − 样品"),超出的件数从样品瓶出,并拆成单独一行 `is_sample`,单价和付款方式同原行,紧跟原行。本店没有样品时可以调用另一家店的样品,照样记调货欠款。

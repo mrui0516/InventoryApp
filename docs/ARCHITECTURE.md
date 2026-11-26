@@ -596,6 +596,7 @@ PDF 的 `_brand_logo` 文件缺失时跳过。`empty_brands` 默认不包括有 
 - Pedido：`_read_lines` 读平行数组 `sample`；草稿行 JSON 只有勾选时写 `sample: true`（缺省即 False）；`draft_lines_for_form` / `_form_rows` / `sell_payload` / `_pedido_cart` 一路带出；`pedido_pdf._product_cell` 在产品名下方写 "Tester"。`pedido.html` 的 `addRow` 不再合并同款。删除表单移到主表单外（`id="pd-del-form"`），Apagar 按钮用 `form` 属性提交它。
 - `sell_payload` 返回 `discount_total`；Sell 页 `pedidoDiscount > 0` 时显示 `#pedido-discount-bar`，折扣列换成每件折扣输入框（`.line-disc-input`，表头 "Disc / un"），改动只改该行 `item.discount`，不拦提交。
 - B2B：`OrderRequestLine.is_sample`（迁移 0097）；`_follows_quote` 比较和重建都带上 `sample`，按报价的行顺序逐行重建，选款取每行自己的 `picks`（原来按 product_id 查，同一款两行会串）；`_draft_line` 写 `sample`。
+- Sell 购物车列：Unit = `item.base`，Disc / un = `item.discount`（Pedido 有整单折扣时是输入框），`.line-net` 写 `lineFinalUnit`（`base − discount`），Subtotal = 折后单价 × 数量；购物车没有任何折扣时表格加 `.no-disc`，`.line-net` 不占位。
 - 显示：`app.css` 的 `.tag-sample`（员工 "Sample"，客户 "Tester"），每行都渲染，不是样品时加 `.is-off`（`visibility:hidden`）占位。收据 PDF 的样品行标题加 " (Tester)"。
 
 ### 5.0 并发写入（SQLite，2026-11-22）

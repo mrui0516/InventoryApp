@@ -104,7 +104,7 @@
                 <th>Product</th>
                 <th class="text-center">Qty</th>
                 <th class="text-end">Unit (&euro;)</th>
-                <th class="text-end" id="cart-disc-head">Disc (&euro;)</th>
+                <th class="text-end">Disc / un (&euro;)</th>
                 <th class="text-center">Pay</th>
                 <th class="text-end">Subtotal (&euro;)</th>
                 <th class="text-end">Actions</th>
@@ -773,8 +773,8 @@
     #cart-table tbody td:nth-child(1){ flex:1 0 100%; white-space:normal; font-size:.95rem; }
     #cart-table tbody td:nth-child(2)::before{ content:'Qty '; color:var(--app-muted); }
     #cart-table tbody td:nth-child(3)::before{ content:'Unit €'; color:var(--app-muted); }
-    #cart-table tbody td:nth-child(4)::before{ content:'Disc '; color:var(--app-muted); }
-    #cart-table.disc-per-unit tbody td:nth-child(4)::before{ content:'Disc / un '; }
+    #cart-table tbody td:nth-child(4)::before{ content:'Disc / un '; color:var(--app-muted); }
+    #cart-table tbody td:nth-child(4) .line-net{ display:inline; margin-left:.3rem; }
     #cart-table tbody td:nth-child(5)::before{ content:'Pay '; color:var(--app-muted); }
     #cart-table tbody td:nth-child(6){ font-weight:800; }
     #cart-table tbody td:nth-child(6)::before{ content:'= €'; color:var(--app-muted); font-weight:600; }
@@ -835,6 +835,10 @@
                     border-radius:var(--app-radius-sm); background:var(--app-surface-2); border:1px solid var(--app-border);
                     font-size:.9rem; font-weight:700; font-variant-numeric:tabular-nums; }
   .pedido-disc-bar[hidden]{ display:none; }
+  /* the unit price after the discount, under it; kept on every row of a cart with any discount */
+  .line-net{ display:block; font-size:.85rem; font-weight:700; color:var(--app-text); white-space:nowrap; }
+  .line-net.is-off{ visibility:hidden; }
+  #cart-table.no-disc .line-net{ display:none !important; }
   .pedido-disc-bar.is-off{ background:var(--app-warn-soft); border-color:var(--app-warn); color:var(--app-warn); }
   .line-disc{ display:inline-flex; align-items:center; gap:.2rem; font-size:.85rem; color:var(--app-muted); margin:0; }
   .line-disc-input{ width:3.9rem; min-height:32px; padding:.15rem .35rem; border:1px solid var(--app-border); border-radius:.4rem;
@@ -1255,7 +1259,9 @@ document.addEventListener('DOMContentLoaded', () => {
         ? `<button type="button" class="cart-product-thumb-wrap js-preview" data-img="${escapeHtml(item.image_url)}"><img src="${escapeHtml(item.image_url)}" class="cart-product-thumb" alt=""></button>`
         : '<div class="cart-product-thumb-empty">No image</div>';
       const flags = warns.map(x => `<span class="line-flag ${x.tone}">${escapeHtml(x.text)}</span>`).join('');
-      const lineDisc = (Number(item.discount) || 0) * (Number(item.qty) || 0);
+      // Unit is the price before the discount; the price after it sits under the
+      // discount, and the subtotal is that times the quantity (2026-11-26).
+      const unitDisc = Number(item.discount) || 0;
       tr.innerHTML = `
         <td>
           <div class="cart-product">
@@ -1268,10 +1274,10 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
         </td>
         <td class="text-center">${item.qty}</td>
-        <td class="text-end">${finalUnit.toFixed(2)}</td>
+        <td class="text-end">${(Number(item.base) || 0).toFixed(2)}</td>
         <td class="text-end">${pedidoDiscount > 0
-          ? `<label class="line-disc"><span>&minus;</span><input type="text" inputmode="decimal" class="line-disc-input" value="${(Number(item.discount) || 0).toFixed(2)}" aria-label="Discount per unit"></label>`
-          : (lineDisc > 0 ? '&minus;' + lineDisc.toFixed(2) : '&mdash;')}</td>
+          ? `<label class="line-disc"><span>&minus;</span><input type="text" inputmode="decimal" class="line-disc-input" value="${unitDisc.toFixed(2)}" aria-label="Discount per unit"></label>`
+          : (unitDisc > 0 ? '&minus;' + unitDisc.toFixed(2) : '&mdash;')}<span class="line-net${unitDisc > 0 ? '' : ' is-off'}">= ${finalUnit.toFixed(2)}</span></td>
         <td class="text-center">${payCellHtml(item)}</td>
         <td class="text-end fw-semibold">${lineSubtotal(item).toFixed(2)}</td>
         <td class="text-end">
@@ -1297,9 +1303,8 @@ document.addEventListener('DOMContentLoaded', () => {
       cartBody.appendChild(tr);
     });
     cartEmpty.classList.toggle('d-none', cart.length > 0);
-    // per unit, as the line dialog's "Discount / unit"
-    document.getElementById('cart-disc-head').textContent = pedidoDiscount > 0 ? 'Disc / un (€)' : 'Disc (€)';
-    document.getElementById('cart-table').classList.toggle('disc-per-unit', pedidoDiscount > 0);
+    // no discount anywhere in the cart: the price-after line takes no room at all
+    document.getElementById('cart-table').classList.toggle('no-disc', !cart.some((i) => (Number(i.discount) || 0) > 0));
     renderDiscountBar();
     recalc();
   }

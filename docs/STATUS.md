@@ -73,6 +73,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-11-26: **Sell 购物车价格列**：Unit 显示原价，Disc / un 下面写折后单价，Subtotal = 折后单价 × 数量（Pedido 转销售时原来 Unit 直接显示折后价，看不清）。
 - 2026-11-26: **样品直接卖、只做标记**（迁移 0097，只加字段）：Sell、Pedido 转销售、补录订单都不再因只剩样品被拦，超出原价库存的件数自动拆成 Sample 行；Sell 和补录每行可勾 Sample，数量不限 1；Pedido 每输入一次一行、每行可勾 Tester，PDF 和 B2B 订单带标记；所有显示订单行的地方标 Sample / Tester；Pedido 的 Vender / Apagar 移到 Descarregar PDF 下方；Pedido 转销售时可在 Sell 页逐行分配整单折扣。
 - 2026-11-22: **收银撞锁误报修复**：已入账的销售不再显示 "Unexpected error: database is locked"，手动建单不再 500（原因：提交后的日汇总重算撞上 SQLite 写锁）。SQLite 改 IMMEDIATE 事务 + 20 秒等待；日汇总每笔每天只算一次、失败只记日志；真的没记上时明确提示；重复的警告 60 秒内只写一次 ErrorLog。
 - 2026-11-21: **Inspired by 显示与批量填写**：产品页描述下方和 B2B 目录描述显示 "Inspirado em"；新命令 `fill_inspirations`（先预演）从 `stock/data/inspirations.csv` 只填空着的 Inspired by。Shopify 描述未改。
