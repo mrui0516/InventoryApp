@@ -39,6 +39,9 @@
   .pd-name{ font-weight:800; font-size:.98rem; color:var(--ink); }
   .pd-ean{ font-size:.82rem; color:var(--muted); font-variant-numeric:tabular-nums; }
   .pd-avail{ font-size:.86rem; font-weight:600; color:var(--label); white-space:nowrap; }
+  .pd-tester{ display:inline-flex; align-items:center; gap:.35rem; margin-top:.2rem; min-height:28px; font-size:.86rem; font-weight:700; color:var(--label); cursor:pointer; }
+  /* .pd-table input makes every field full width; the tick keeps its own size */
+  .pd-table .pd-tester input{ width:1.05em; height:1.05em; max-width:none; padding:0; border-radius:.25em; flex:none; }
   .pd-table .line{ font-weight:800; color:var(--ink); font-variant-numeric:tabular-nums; }
   .pd-label{ display:block; font-size:.86rem; font-weight:700; color:var(--label); margin-bottom:.35rem; }
   .pd-row.needs-price{ background:var(--danger-soft); }
@@ -609,14 +612,9 @@
 
   // ---- product rows -----------------------------------------------------
   // ``quoted`` carries the quantity and price of a reopened draft's line.
+  // Every entry is its own row, never merged into an earlier one of the same
+  // product (2026-11-26), so a Tester can sit beside the sealed bottles.
   function addRow(p, quoted, picks) {
-    if (!quoted && !p.pick_mode && rows.querySelector('input[name="product_id"][value="' + p.id + '"]')) {
-      const existing = rows.querySelector('input[name="product_id"][value="' + p.id + '"]')
-                           .closest('tr').querySelector('input.qty');
-      existing.value = String(parseInt(existing.value || '0', 10) + 1);
-      recalc();
-      return;
-    }
     const tr = document.createElement('tr');
     tr.className = 'pd-row';
     const last = lastPrices[p.id];
@@ -636,7 +634,9 @@
       (p.pick_mode ? '<button type="button" class="pd-pick-edit"></button>' +
                      '<div class="pd-need">Escolha as fragrâncias antes de gerar o pedido.</div>' : '') +
       '<div class="pd-why">Sem preço grossista — escreva o preço.</div>' +
+      '<label class="pd-tester"><input type="checkbox" class="form-check-input mt-0"> Tester</label>' +
       '<input type="hidden" name="picks" value="">' +
+      '<input type="hidden" name="sample" value="">' +
       '<input type="hidden" name="product_id" value="' + p.id + '"></td>' +
       '<td data-l="Disponibilidade"><span class="pd-avail">' + esc(p.availability || '') + '</span></td>' +
       '<td class="num" data-l="Qtd."><input class="qty" name="quantity" type="number" min="1" step="1" value="' +
@@ -647,6 +647,15 @@
       '<td class="num" data-l="Total"><span class="line">0,00 EUR</span></td>' +
       '<td><button type="button" class="pd-x" aria-label="Remover">&times;</button></td>';
     rows.appendChild(tr);
+    // Tester: the shop's opened bottle, sold and marked as such.
+    const tester = tr.querySelector('.pd-tester input');
+    const syncTester = function () {
+      tr.querySelector('input[name="sample"]').value = tester.checked ? '1' : '';
+      tr.querySelector('.pd-avail').textContent = tester.checked ? 'Tester' : (p.availability || '');
+    };
+    tester.checked = !!(quoted && quoted.sample);
+    tester.addEventListener('change', syncTester);
+    syncTester();
     tr.querySelector('.pd-x').addEventListener('click', function () {
       if (picking && picking.tr === tr) closePicker();
       tr.remove();

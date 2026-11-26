@@ -26,7 +26,7 @@ def draft_lines_for_form(draft, products):
             continue
         out.append({'product': product, 'quantity': int(line.get('quantity') or 0),
                     'unit_price': pedido_math.money(line.get('unit_price')),
-                    'picks': line.get('picks') or []})
+                    'picks': line.get('picks') or [], 'sample': bool(line.get('sample'))})
     return out
 
 

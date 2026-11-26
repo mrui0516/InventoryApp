@@ -113,6 +113,8 @@ def _read_lines(request):
     quantities = request.POST.getlist('quantity')
     unit_prices = request.POST.getlist('unit_price')
     raw_picks = request.POST.getlist('picks')
+    # "Tester": the row sells the shop's opened bottle (2026-11-26).
+    raw_samples = request.POST.getlist('sample')
 
     wanted = []
     for index, raw_id in enumerate(product_ids):
@@ -121,14 +123,15 @@ def _read_lines(request):
         wanted.append((int(raw_id),
                        _int(quantities[index] if index < len(quantities) else '', 0),
                        (unit_prices[index] if index < len(unit_prices) else ''),
-                       (raw_picks[index] if index < len(raw_picks) else '')))
+                       (raw_picks[index] if index < len(raw_picks) else ''),
+                       (raw_samples[index] if index < len(raw_samples) else '') == '1'))
 
     products = {p.id: p for p in Product.objects.filter(
-        id__in=[pid for pid, _, _, _ in wanted]).prefetch_related('contents__linked')}
+        id__in=[row[0] for row in wanted]).prefetch_related('contents__linked')}
     on_order_ids = _on_order_ids()
 
     lines, errors = [], []
-    for product_id, quantity, raw_price, raw_pick in wanted:
+    for product_id, quantity, raw_price, raw_pick, sample in wanted:
         product = products.get(product_id)
         if product is None:
             continue
@@ -161,6 +164,7 @@ def _read_lines(request):
             'unit_price': pedido_math.money(unit_price),
             'line_total': pedido_math.line_total(quantity, unit_price),
             'picks': picks,
+            'sample': sample,
         })
     return lines, errors
 
@@ -213,6 +217,7 @@ def _form_rows(lines):
              'quantity': line['quantity'],
              'unit_price': str(line['unit_price']),
              'picks': line.get('picks') or [],
+             'sample': bool(line.get('sample')),
              **pick_fields(line['product'])}
             for line in lines]
 
@@ -261,7 +266,8 @@ def _save_draft(request, *, store, draft, customer, lines, totals, discount_kind
     draft.customer_address = customer['address']
     draft.lines = [{'product_id': line['product'].id, 'quantity': line['quantity'],
                     'unit_price': str(line['unit_price']),
-                    **({'picks': line['picks']} if line.get('picks') else {})} for line in lines]
+                    **({'picks': line['picks']} if line.get('picks') else {}),
+                    **({'sample': True} if line.get('sample') else {})} for line in lines]
     draft.shipping = totals['shipping']
     draft.extras = [{'label': e['label'], 'amount': str(e['amount'])} for e in totals['extras']]
     draft.discount_value = pedido_math.money(_decimal(request.POST.get('discount_value')))

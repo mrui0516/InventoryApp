@@ -188,3 +188,52 @@ class CorrectionTests(ShopsMixin, TestCase):
         html = self.client.get(reverse("sale_order_correction_edit", args=[SaleOrder.objects.get().pk])).content.decode()
         cart = self.json.loads(html.split('id="initialCart" type="application/json">', 1)[1].split("</script>", 1)[0])
         self.assertEqual([(row["qty"], row["sample"]) for row in cart], [(1, False), (1, True)])
+
+
+class PedidoTests(ShopsMixin, TestCase):
+    """Pedido: every entry is its own row, and a row can be a Tester."""
+
+    def setUp(self):
+        super().setUp()
+        from django.contrib.auth import get_user_model
+        self.boss = get_user_model().objects.create_superuser("sp_admin", password="pw123456")
+        self.client.force_login(self.boss)
+
+    def post(self, rows, save_only=True):
+        from unittest import mock
+        from django.urls import reverse
+        with mock.patch("stock.pedido_views.resolve_active_store", return_value=(self.khan, False)):
+            return self.client.post(reverse("pedido"), {
+                "customer_name": "Loja", "discount_kind": "amount",
+                "product_id": [self.product.pk] * len(rows), "quantity": [qty for qty, _ in rows],
+                "unit_price": ["20"] * len(rows), "picks": [""] * len(rows),
+                "sample": ["1" if sample else "" for _, sample in rows],
+                **({"save_only": "1"} if save_only else {})})
+
+    def draft(self, response):
+        from .models import PedidoDraft
+        return PedidoDraft.objects.get(pk=response.json()["draft"])
+
+    def test_two_entries_stay_two_lines(self):
+        self.assertEqual(len(self.draft(self.post([(1, False), (1, False)])).lines), 2)
+
+    def test_tester_is_kept_and_printed(self):
+        import io
+        from pypdf import PdfReader
+        lines = self.draft(self.post([(2, False), (1, True)])).lines
+        self.assertEqual([bool(line.get("sample")) for line in lines], [False, True])
+        pdf = self.post([(2, False), (1, True)], save_only=False)
+        text = " ".join(page.extract_text() for page in PdfReader(io.BytesIO(pdf.content)).pages)
+        self.assertEqual(text.count("Tester"), 1)
+
+    def test_a_tester_line_reaches_the_till(self):
+        from .views import _pedido_cart
+        cart = _pedido_cart(self.draft(self.post([(2, False), (1, True)])))
+        self.assertEqual([(line["sample"], line["base"]) for line in cart["lines"]], [(False, "20.00"), (True, "20.00")])
+
+    def test_an_old_draft_without_the_flag_sells_normally(self):
+        from .views import _pedido_cart
+        draft = self.draft(self.post([(1, True)]))
+        draft.lines = [{key: value for key, value in line.items() if key != "sample"} for line in draft.lines]
+        draft.save()
+        self.assertEqual([line["sample"] for line in _pedido_cart(draft)["lines"]], [False])

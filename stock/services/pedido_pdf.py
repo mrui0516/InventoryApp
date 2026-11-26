@@ -15,13 +15,20 @@ from . import doc_pdf
 from .doc_pdf import money, pdf_safe  # noqa: F401  (part of this module's API)
 
 
+# The shop's opened bottle, as the customer reads it (2026-11-26): "Amostra"
+# already names the decant type, so it would read as a decant.
+TESTER = 'Tester'
+
+
 def _product_cell(style, line):
-    """The product, with the scents of a mix or a sample one per line under it."""
-    picks = line.get('picks') or []
-    if not picks:
+    """The product, with the scents of a mix or a sample one per line under it,
+    and "Tester" under a row that sells the shop's opened bottle."""
+    notes = [f"{pick['quantity']} \u00d7 {doc_pdf.esc(pick['name'])}" for pick in line.get('picks') or []]
+    if line.get('sample'):
+        notes.append(TESTER)
+    if not notes:
         return line['title']
-    chosen = '<br/>'.join(f"{pick['quantity']} \u00d7 {doc_pdf.esc(pick['name'])}" for pick in picks)
-    return Paragraph(f"{doc_pdf.esc(line['title'])}<br/><font size=\"7.5\" color=\"#57534e\">{chosen}</font>",
+    return Paragraph(f"{doc_pdf.esc(line['title'])}<br/><font size=\"7.5\" color=\"#57534e\">{'<br/>'.join(notes)}</font>",
                      style['cell'])
 
 
