@@ -352,7 +352,9 @@ class PurchasesByDateTests(PagesMixin, TestCase):
         today = timezone.localdate()
         keys, page = self.keys(today)
         self.assertEqual(keys, {f"in-{self.order.id}"})
-        self.assertContains(page, f'paid {self.paid_on.day} {self.paid_on:%b}')
+        # The day recorded is "ordered" since 2026-11-27: it was called "paid",
+        # which an order bought on credit was not.
+        self.assertContains(page, f'ordered {self.paid_on.day} {self.paid_on:%b}')
         self.assertEqual(self.keys(self.paid_on)[0], set())
 
     def test_paid_shows_it_on_the_day_paid_and_what_is_on_the_way(self):

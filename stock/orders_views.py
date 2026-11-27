@@ -129,8 +129,11 @@ def resolve_params(get, today):
         'payment': payment,
         # Retail / Revenda (wholesale) by the customer's type; '' = both
         'ch': normalise_channel(get.get('ch')),
-        # Purchases by the day the goods arrived (default) or were paid for
+        # Purchases by the day the goods arrived (default) or were ordered
+        # (recorded); 'paid' stays the URL value so old links still work.
         'pdate': 'paid' if (get.get('pdate') or '').strip().lower() == 'paid' else 'received',
+        # Unpaid: every order still owing, whatever the dates (admins, 2026-11-27)
+        'pay': 'unpaid' if (get.get('pay') or '').strip().lower() == 'unpaid' else '',
         'page': page,
         'year_raw': get.get('year'),
     }
@@ -150,6 +153,7 @@ def page_url(params, **changes):
         'payment': params['payment'] or None,
         'ch': params['ch'] or None,
         'pdate': 'paid' if params.get('pdate') == 'paid' and params['view'] == 'purchases' else None,
+        'pay': 'unpaid' if params.get('pay') == 'unpaid' and params['view'] == 'purchases' else None,
     }
     if merged['layout'] == 'list':
         merged['layout'] = None
@@ -463,13 +467,19 @@ def _pending_lines(order, store):
     return lines
 
 
-def load_purchases(start, end, q, next_url, store=None, by='received', with_payments=False):
+def load_purchases(start, end, q, next_url, store=None, by='received', with_payments=False, unpaid_only=False):
     """Inbound orders and direct purchases in the range, newest first.
 
     ``by='received'``: an order counts on the day its goods came in (its
-    batches' date, as Today counts them). ``by='paid'``: on the day it was
-    recorded / paid for, orders still on the way included (``pending``).
-    Each group carries both dates (``paid_on``, ``received_on``).
+    batches' date, as Today counts them). ``by='paid'`` (labelled "Ordered"):
+    on the day it was recorded, orders still on the way included (``pending``).
+    Each group carries both dates (``ordered_on``, ``received_on``).
+
+    The recorded day is not a payment: since orders can be paid later
+    (2026-11-06) it was wrongly shown as "paid" (fixed 2026-11-27). With
+    ``with_payments`` (admins) a tracked order carries ``pay_state`` - 'paid'
+    with ``last_paid_on``, or 'unpaid' with its next due day. ``unpaid_only``:
+    every order still owing, whatever the dates, soonest due first.
 
     Each product shows once per delivery (merge_batches, by the shop it was
     delivered to). With ``store``: only what that shop received, at its own
@@ -490,14 +500,16 @@ def load_purchases(start, end, q, next_url, store=None, by='received', with_paym
                .prefetch_related('items__product', 'items__product__images',
                                  'items__supplier', 'pending_items__product__images', 'payments')
                .order_by('-created_at'))
-    if by == 'paid':
+    if unpaid_only:
+        pass                    # every order, whatever its dates; the unpaid are kept below
+    elif by == 'paid':
         inbound = inbound.filter(created_at__date__gte=start, created_at__date__lte=end)
     else:
         inbound = inbound.filter(items__date__date__gte=start, items__date__date__lte=end).distinct()
     for order in inbound:
         batches = list(order.items.all())
         pending = not batches and order.status == 'pending_receipt'
-        if pending and by != 'paid':
+        if pending and by != 'paid' and not unpaid_only:
             continue
         items = _annotate_purchase_items(_pending_lines(order, store) if pending else lines_of(batches))
         if not items:
@@ -509,9 +521,15 @@ def load_purchases(start, end, q, next_url, store=None, by='received', with_paym
         if with_payments and (cut_off and order.created_at.date() >= cut_off or order.payments.exists()):
             due, paid_so_far = finance.order_due(order), finance.order_paid(order)
             terms = finance.order_terms(order, due, paid_so_far)
-        paid = timezone.localtime(order.created_at)
+        pay_state = last_paid_on = None
+        if due is not None:
+            pay_state = 'unpaid' if due - paid_so_far > 0 else 'paid'
+            last_paid_on = max((p.paid_on for p in order.payments.all()), default=None)
+        if unpaid_only and pay_state != 'unpaid':
+            continue
+        ordered = timezone.localtime(order.created_at)
         arrived = timezone.localtime(min(b.date for b in batches)) if batches else None
-        created = paid if by == 'paid' or arrived is None else arrived
+        created = ordered if by == 'paid' or arrived is None else arrived
         groups.append({
             'pending': pending,
             'iva_rate': order.iva_rate,
@@ -522,7 +540,9 @@ def load_purchases(start, end, q, next_url, store=None, by='received', with_paym
             'order_owing': None if due is None else due - paid_so_far,
             'next_due': terms.get('next_due'),
             'overdue': terms.get('overdue'),
-            'paid_on': paid.date(),
+            'pay_state': pay_state,
+            'last_paid_on': last_paid_on,
+            'ordered_on': ordered.date(),
             'received_on': arrived.date() if arrived else None,
             'key': f'in-{order.id}',
             'ref': f'Inbound #{order.id}',
@@ -544,11 +564,13 @@ def load_purchases(start, end, q, next_url, store=None, by='received', with_paym
             'rollback_reason': rollback_reason if batches else '',
         })
 
-    direct = (Purchase.objects
-              .filter(inbound_order__isnull=True, date__date__gte=start, date__date__lte=end)
-              .select_related('product', 'supplier')
-              .prefetch_related('product__images')
-              .order_by('date', 'id'))
+    # A stock-in without an order has no payment record: never "unpaid".
+    direct = Purchase.objects.none() if unpaid_only else (
+        Purchase.objects
+        .filter(inbound_order__isnull=True, date__date__gte=start, date__date__lte=end)
+        .select_related('product', 'supplier')
+        .prefetch_related('product__images')
+        .order_by('date', 'id'))
     # One stock-in = the batches saved together (a cart is saved in well under
     # a few seconds; two stock-ins are never that close).
     stock_ins = []
@@ -580,7 +602,8 @@ def load_purchases(start, end, q, next_url, store=None, by='received', with_paym
             'has_supplier': bool(names),
             'created_at': timezone.localtime(max(i.date for i in items)),
             'pending': False,
-            'paid_on': day,
+            'pay_state': None,
+            'ordered_on': day,
             'received_on': day,
             'day': day,
             'items': items,
@@ -607,7 +630,13 @@ def load_purchases(start, end, q, next_url, store=None, by='received', with_paym
                 kept.append(group)
         groups = kept
 
-    groups.sort(key=lambda group: group['created_at'], reverse=True)
+    if unpaid_only:
+        # soonest due first; the day heading is the due day
+        groups.sort(key=lambda group: (group['next_due'] or date.max, group['created_at']))
+        for group in groups:
+            group['day'] = group['next_due']
+    else:
+        groups.sort(key=lambda group: group['created_at'], reverse=True)
     previous_day = None
     for group in groups:
         group['opens_day'] = group['day'] != previous_day
@@ -728,6 +757,7 @@ def orders_page(request):
                                  ('start_date', start.isoformat()), ('end_date', end.isoformat()),
                                  ('q', params['q']), ('payment', params['payment']), ('ch', params['ch']),
                                  ('pdate', params['pdate'] if view == 'purchases' and params['pdate'] == 'paid' else ''),
+                                 ('pay', params['pay'] if view == 'purchases' else ''),
                                  ('year', params['year_raw'] if view == 'analysis' else '')) if v])),
     }
 
@@ -773,19 +803,28 @@ def orders_page(request):
                 return render(request, 'stock/_orders_rows.html', context)
 
     elif view == 'purchases':
+        with_payments = has_admin_access(request.user) and (store_is_all or active_store is None)
+        unpaid_only = with_payments and params['pay'] == 'unpaid'
         purchases = load_purchases(start, end, params['q'], request.get_full_path(),
                                    store=None if store_is_all else active_store, by=params['pdate'],
-                                   with_payments=has_admin_access(request.user) and (store_is_all or active_store is None))
+                                   with_payments=with_payments, unpaid_only=unpaid_only)
         context['pdate'] = params['pdate']
+        # "Ordered", not "Paid": it is the day the order was recorded (2026-11-27)
         context['pdate_urls'] = [{'label': label, 'on': params['pdate'] == value,
                                   'url': page_url(params, pdate=None if value == 'received' else value)}
-                                 for value, label in (('received', 'Received'), ('paid', 'Paid'))]
+                                 for value, label in (('received', 'Received'), ('paid', 'Ordered'))]
+        context['pay'] = 'unpaid' if unpaid_only else ''
+        context['pay_urls'] = ([{'label': label, 'on': context['pay'] == value,
+                                 'url': page_url(params, pay=value or None)}
+                                for value, label in (('', 'All'), ('unpaid', 'Unpaid'))]
+                               if with_payments else [])
         context.update({
             'purchases': purchases,
             'total_purchase_amount': sum((g['cost'] for g in purchases), ZERO),
             'total_purchase_orders': len(purchases),
             'total_purchase_qty': sum(g['qty'] for g in purchases),
             'purchase_shop_totals': _purchase_shop_totals(purchases),
+            'total_owing': sum((g.get('order_owing') or ZERO for g in purchases), ZERO),
         })
 
     else:  # analysis
@@ -851,7 +890,8 @@ def _export_purchases(request, params, store):
     # What suppliers are owed is the company's debt, not one shop's.
     with_payments = has_admin_access(request.user) and store is None
     groups = load_purchases(start, end, params['q'], '', store=store, by=params['pdate'],
-                            with_payments=with_payments)
+                            with_payments=with_payments,
+                            unpaid_only=with_payments and params.get('pay') == 'unpaid')
     pdf = inbound_report_pdf.build_inbound_report_pdf(
         profile=PrintProfile.get_for_store(store),
         range_label=_range_label(start, end),

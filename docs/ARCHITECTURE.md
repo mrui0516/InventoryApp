@@ -599,6 +599,10 @@ PDF 的 `_brand_logo` 文件缺失时跳过。`empty_brands` 默认不包括有 
 - Sell 购物车列：Unit = `item.base`，Disc / un = `item.discount`（Pedido 有整单折扣时是输入框），`.line-net` 写 `lineFinalUnit`（`base − discount`），Subtotal = 折后单价 × 数量；购物车没有任何折扣时表格加 `.no-disc`，`.line-net` 不占位。
 - 显示：`app.css` 的 `.tag-sample`（员工 "Sample"，客户 "Tester"），每行都渲染，不是样品时加 `.is-off`（`visibility:hidden`）占位。收据 PDF 的样品行标题加 " (Tester)"。
 
+### 5.0b 进货记录的付款状态（2026-11-27）
+
+`orders_views.load_purchases(..., with_payments, unpaid_only)`：分组的录入日期叫 `ordered_on`（原 `paid_on`，它从来不是付款日）。`with_payments`（Admin 且 All stores）时，被跟踪的单（录入在 `payables_from` 之后或已有付款）带 `pay_state`（`'paid'` / `'unpaid'`，由 `finance.order_due` − `order_paid` 决定）和 `last_paid_on`（最后一笔 `SupplierPayment.paid_on`）；其余为 None。`unpaid_only`：入库单不按日期过滤，只留 `pay_state == 'unpaid'`，跳过直接入库，按 `next_due` 排序，`day` 换成到期日。URL 参数 `pay=unpaid` 经 `parse_params` / `page_url` 保留，导出 PDF（`_export_purchases`）同样传入。模板：`.op-row.is-unpaid` 淡红底；`.c-line` 弹性一行，名字 `.c-name` 截断、标签不截。
+
 ### 5.0 并发写入（SQLite，2026-11-22）
 
 SQLite 同时只有一个写入者。默认 DEFERRED 事务"先读后写"时，遇到另一个连接正在写会**立即** `database is locked`（死锁检测，不等 `timeout`）。线上同时写库的有：两家店的收银、每笔销售后被唤醒的 Shopify 目录后台线程（`SHOPIFY_CATALOG_AUTOMATION=1`）、PA 定时 / 常驻任务。
