@@ -6,6 +6,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from stock.models import InboundOrder, InboundPendingItem
+from stock.services import finance
 from stock.test_orders_pdfs import PdfMixin
 
 DOC = "stock.services.inbound_report_pdf.build_inbound_doc_pdf"
@@ -44,9 +45,14 @@ class OneDeliveryTests(ShopMixin, TestCase):
         self.assertEqual(kwargs["shops"], [])
         self.assertIn("Scentory", kwargs["right_lines"])
 
-    def test_a_shop_sees_no_payment(self):
+    def test_a_shop_sees_its_part_of_the_payment(self):
+        # 1000 owed: Khan received 600 of it, so a 400 payment covers 240 of Khan's
+        finance.add_payment(self.order, store=self.scentory, amount=Decimal("400"), paid_on=self.today,
+                            method="bank", note="", user=self.admin)
         self.choose(self.khan)
-        self.assertIsNone(self.doc()[1]["payment"])
+        payment = self.doc()[1]["payment"]
+        self.assertEqual((payment["paid"], payment["owing"]), (Decimal("240.00"), Decimal("360.00")))
+        self.assertEqual(sum(part["amount"] for part in payment["schedule"]), Decimal("600"))
 
     def test_an_order_the_shop_got_nothing_of(self):
         order = InboundOrder.objects.create(supplier=self.supplier, status="pending_receipt")
@@ -75,9 +81,29 @@ class TheReportTests(ShopMixin, TestCase):
         self.assertEqual(kwargs["store_label"], "Khan Perfume")
         self.assertTrue(kwargs["one_shop"])
 
-    def test_one_shop_has_no_supplier_debt(self):
+    def test_one_shop_has_its_part_of_the_supplier_debt(self):
         self.choose(self.khan)
-        self.assertFalse(self.report()["with_payments"])
+        kwargs = self.report()
+        self.assertTrue(kwargs["with_payments"])
+        self.assertEqual(kwargs["groups"][0]["order_owing"], Decimal("600.00"))
+
+    def test_the_ordered_date_is_not_called_paid(self):
+        self.choose(None)
+        self.assertEqual(self.report(pdate="paid")["date_label"], "By day ordered")
+
+    def test_the_unpaid_report_is_not_a_date_range(self):
+        self.choose(self.khan)
+        kwargs = self.report(pay="unpaid")
+        self.assertEqual(kwargs["range_label"], "All dates")
+        self.assertIn("Unpaid", kwargs["date_label"])
+        self.assertEqual([g["order_owing"] for g in kwargs["groups"]], [Decimal("600.00")])
+
+    def test_a_real_unpaid_report(self):
+        for store in (None, self.khan):
+            self.choose(store)
+            response = self.export(view="purchases", pay="unpaid")
+            self.assertTrue(response.content.startswith(b"%PDF"), store)
+            self.assertIn("Inbound_unpaid", response["Content-Disposition"])
 
     def test_the_lines_carry_their_prices(self):
         self.choose(None)

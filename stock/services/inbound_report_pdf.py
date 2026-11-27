@@ -62,7 +62,8 @@ def _lines_table(style, items, shops):
 
 def _delivery_head(style, group, with_payments, one_shop):
     """The delivery's line above its goods: what, from whom, and the facts."""
-    title = f"{group['day'].strftime('%d/%m/%Y')}  {group['short_ref']}  {group['supplier_name']}"
+    # the day it is listed under (an unpaid report heads its days by the due day)
+    title = f"{group['created_at'].strftime('%d/%m/%Y')}  {group['short_ref']}  {group['supplier_name']}"
     if group['invoice_no']:
         title += f"  -  invoice {group['invoice_no']}"
     facts = ['On the way' if group['pending'] else
@@ -86,7 +87,8 @@ def _delivery_head(style, group, with_payments, one_shop):
 
 
 def build_inbound_report_pdf(*, profile, range_label, store_label, generated_label, filter_label, groups,
-                             shop_totals, date_label, with_payments, shop_columns=(), one_shop=False):
+                             shop_totals, date_label, with_payments, shop_columns=(), one_shop=False,
+                             empty_text='Nothing came in during this range.'):
     """``groups``: the Purchases page's rows, newest first, already cut to one
     shop's part when one is chosen. ``shop_columns``: ``[(id, label)]`` when
     every shop is shown."""
@@ -106,7 +108,7 @@ def build_inbound_report_pdf(*, profile, range_label, store_label, generated_lab
     story += [doc_pdf.kpi_tiles(style, tiles), Spacer(1, 6)]
 
     if not groups:
-        story.append(Paragraph('Nothing came in during this range.', style['body']))
+        story.append(Paragraph(doc_pdf.esc(empty_text), style['body']))
         return doc_pdf.build(story, title='Inbound report', author=getattr(profile, 'name', ''), footer=footer)
 
     if shop_totals:

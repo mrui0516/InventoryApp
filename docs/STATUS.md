@@ -11,7 +11,7 @@
 | 维度 | 状态 | 说明 |
 |---|---|---|
 | 线上运行 | ✅ PythonAnywhere 欧盟区 | `https://scentory.eu.pythonanywhere.com`，两家店（Khan Perfume、Scentory）日常收银、入库都在线上；线上 `db.sqlite3` 是唯一准数据 |
-| 自动化测试 | ✅ 1973 个全部通过 | `python manage.py test stock restock_alerts`，在隔离工作区跑 |
+| 自动化测试 | ✅ 1982 个全部通过 | `python manage.py test stock restock_alerts`，在隔离工作区跑 |
 | 数据库迁移 | ✅ 最新 `0097_orderrequestline_is_sample`，无待生成迁移 | `makemigrations --check --dry-run` → "No changes detected" |
 | 生产配置 | ✅ `DEBUG=False`，密钥只在服务器 `.env` | `settings.py` 的 `if not DEBUG` 块：强制 HTTPS、安全 Cookie、HSTS、防点击劫持 |
 | 数据备份 | ✅ 每日快照 + 本机拉取 | PA 定时任务 `backup_db --keep 30`，本机 `scripts/pull_backup_from_pa.py` 拉到 U 盘；Settings → Tools 可手动下载。见 [BACKUP.md](./BACKUP.md) |
@@ -35,7 +35,7 @@
 
 ## 3. 测试与质量
 
-- `python manage.py test stock restock_alerts` → **1973 个测试全部通过**（约 45 秒；测试时用 MD5 密码哈希，生产不变）；`python manage.py check` 无问题。
+- `python manage.py test stock restock_alerts` → **1982 个测试全部通过**（约 45 秒；测试时用 MD5 密码哈希，生产不变）；`python manage.py check` 无问题。
 - 外部集成（Shopify / Cloudinary）的测试全部 mock，不发真实网络请求。
 - 提交前在 `git archive HEAD` 的干净导出上跑全套：工作区里可能有别的进行中的改动，会让结果失真。
 
@@ -73,6 +73,7 @@
 
 一条一行，最新在前。细节查 `git log`。
 
+- 2026-11-27: **进货付款状态按店显示 + Unpaid 提速**：选单个店时也显示付款标签、淡红底和 Unpaid 过滤，状态和到期日按整单，金额（Paid / Owing / 总额 / PDF）按本店份额；Unpaid 先只算付款找出欠款单再建明细，并去掉逐行查询（400 单从约 1.2 秒降到约 45 毫秒）；导出 PDF 的 "By day paid" 改为 "By day ordered"，Unpaid 报告抬头写 All dates。
 - 2026-11-27: **进货记录的付款状态**：录入日期不再写成 "paid"（先赊账的单曾在录入那天显示已付），改叫 Ordered；Admin 看到真实付款状态（Paid 日期 / Unpaid · due / Part paid / Overdue），没付清的行淡红底；新增 Payment: Unpaid 过滤，不限日期，按到期日排，顶部显示欠款总额。
 - 2026-11-26: **Sell 购物车价格列**：Unit 显示原价，Disc / un 下面写折后单价，Subtotal = 折后单价 × 数量（Pedido 转销售时原来 Unit 直接显示折后价，看不清）。
 - 2026-11-26: **样品直接卖、只做标记**（迁移 0097，只加字段）：Sell、Pedido 转销售、补录订单都不再因只剩样品被拦，超出原价库存的件数自动拆成 Sample 行；Sell 和补录每行可勾 Sample，数量不限 1；Pedido 每输入一次一行、每行可勾 Tester，PDF 和 B2B 订单带标记；所有显示订单行的地方标 Sample / Tester；Pedido 的 Vender / Apagar 移到 Descarregar PDF 下方；Pedido 转销售时可在 Sell 页逐行分配整单折扣。

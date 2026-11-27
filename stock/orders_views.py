@@ -433,11 +433,12 @@ def _scope_to_shop(items, store):
     return kept
 
 
-def _shop_totals(items, shop_names):
+def _shop_totals(items, shop_names, stores=None):
     """``[{label, qty, cost}]`` - what each active shop received of these lines
     (one that received nothing too, so every record names each shop)."""
     from .services.store_stock import active_stores
-    out = {s.id: {'label': s.name.split()[0], 'qty': 0, 'cost': ZERO} for s in active_stores()}
+    out = {s.id: {'label': s.name.split()[0], 'qty': 0, 'cost': ZERO}
+           for s in (active_stores() if stores is None else stores)}
     if len(out) < 2:
         return []
     for item in items:
@@ -467,6 +468,17 @@ def _pending_lines(order, store):
     return lines
 
 
+def _owing_order_ids(cut_off):
+    """Ids of the tracked orders (recorded from ``cut_off`` on, or paid
+    something) that still owe the supplier: three queries, however many orders."""
+    tracked = Q(payments__isnull=False)
+    if cut_off:
+        tracked |= Q(created_at__date__gte=cut_off)
+    orders = (InboundOrder.objects.filter(tracked).distinct()
+              .prefetch_related('items', 'pending_items', 'payments'))
+    return [order.id for order in orders if finance.order_due(order) - finance.order_paid(order) > 0]
+
+
 def load_purchases(start, end, q, next_url, store=None, by='received', with_payments=False, unpaid_only=False):
     """Inbound orders and direct purchases in the range, newest first.
 
@@ -479,7 +491,9 @@ def load_purchases(start, end, q, next_url, store=None, by='received', with_paym
     (2026-11-06) it was wrongly shown as "paid" (fixed 2026-11-27). With
     ``with_payments`` (admins) a tracked order carries ``pay_state`` - 'paid'
     with ``last_paid_on``, or 'unpaid' with its next due day. ``unpaid_only``:
-    every order still owing, whatever the dates, soonest due first.
+    every order still owing, whatever the dates, soonest due first. With
+    ``store`` the state and due day stay the order's, the money
+    (``order_paid``, ``order_owing``) is that shop's part (2026-11-27).
 
     Each product shows once per delivery (merge_batches, by the shop it was
     delivered to). With ``store``: only what that shop received, at its own
@@ -487,10 +501,13 @@ def load_purchases(start, end, q, next_url, store=None, by='received', with_paym
     (``shops``: quantity and cost) on every line and delivery.
     """
     from .models import BusinessSettings, Store
+    from .services.store_stock import active_stores
+    # the shops are read once, not for every delivery
     shop_names = dict(Store.objects.values_list("id", "name"))
+    shops_now = active_stores()
 
     def lines_of(batches):
-        items = merge_batches(batches, by='received')
+        items = merge_batches(batches, by='received', stores=shops_now, names=shop_names)
         return _scope_to_shop(items, store) if store is not None else items
 
     groups = []
@@ -501,7 +518,9 @@ def load_purchases(start, end, q, next_url, store=None, by='received', with_paym
                                  'items__supplier', 'pending_items__product__images', 'payments')
                .order_by('-created_at'))
     if unpaid_only:
-        pass                    # every order, whatever its dates; the unpaid are kept below
+        # every order, whatever its dates: the owing ones are found first from
+        # their payments and costs alone, so no paid order has its lines built
+        inbound = inbound.filter(pk__in=_owing_order_ids(cut_off))
     elif by == 'paid':
         inbound = inbound.filter(created_at__date__gte=start, created_at__date__lte=end)
     else:
@@ -515,16 +534,16 @@ def load_purchases(start, end, q, next_url, store=None, by='received', with_paym
         if not items:
             continue
         supplier = order.supplier or next((i.supplier for i in items if i.supplier_id), None)
-        rollback_ok, rollback_reason = can_roll_back(order) if batches else (False, '')
-        due = paid_so_far = None
+        rollback_ok, rollback_reason = can_roll_back(order, batches) if batches else (False, '')
+        due = paid_so_far = pay_state = last_paid_on = None
         terms = {}
         if with_payments and (cut_off and order.created_at.date() >= cut_off or order.payments.exists()):
-            due, paid_so_far = finance.order_due(order), finance.order_paid(order)
-            terms = finance.order_terms(order, due, paid_so_far)
-        pay_state = last_paid_on = None
-        if due is not None:
-            pay_state = 'unpaid' if due - paid_so_far > 0 else 'paid'
+            whole_due, whole_paid = finance.order_due(order), finance.order_paid(order)
+            terms = finance.order_terms(order, whole_due, whole_paid)
+            pay_state = 'unpaid' if whole_due - whole_paid > 0 else 'paid'
             last_paid_on = max((p.paid_on for p in order.payments.all()), default=None)
+            due, paid_so_far = ((whole_due, whole_paid) if store is None
+                                else finance.order_share(order, store))
         if unpaid_only and pay_state != 'unpaid':
             continue
         ordered = timezone.localtime(order.created_at)
@@ -555,7 +574,7 @@ def load_purchases(start, end, q, next_url, store=None, by='received', with_paym
             'items': items,
             'qty': sum(i.quantity for i in items),
             'cost': sum((i.line_total for i in items), ZERO),
-            'shops': [] if store is not None else _shop_totals(items, shop_names),
+            'shops': [] if store is not None else _shop_totals(items, shop_names, shops_now),
             'edit_url': (f"{reverse('inbound_order_edit', args=[order.id])}"
                          f"?{urlencode({'next': next_url})}"),
             'rollback_url': (reverse('inbound_order_rollback', args=[order.id])
@@ -609,7 +628,7 @@ def load_purchases(start, end, q, next_url, store=None, by='received', with_paym
             'items': items,
             'qty': sum(i.quantity for i in items),
             'cost': sum((i.line_total for i in items), ZERO),
-            'shops': [] if store is not None else _shop_totals(items, shop_names),
+            'shops': [] if store is not None else _shop_totals(items, shop_names, shops_now),
             'edit_url': '',
         })
 
@@ -803,7 +822,8 @@ def orders_page(request):
                 return render(request, 'stock/_orders_rows.html', context)
 
     elif view == 'purchases':
-        with_payments = has_admin_access(request.user) and (store_is_all or active_store is None)
+        # admins; one shop sees its part of the money (2026-11-27)
+        with_payments = has_admin_access(request.user)
         unpaid_only = with_payments and params['pay'] == 'unpaid'
         purchases = load_purchases(start, end, params['q'], request.get_full_path(),
                                    store=None if store_is_all else active_store, by=params['pdate'],
@@ -887,25 +907,27 @@ def _export_purchases(request, params, store):
     from .services import inbound_report_pdf
 
     start, end = params['start'], params['end']
-    # What suppliers are owed is the company's debt, not one shop's.
-    with_payments = has_admin_access(request.user) and store is None
+    # admins; one shop gets its part of what suppliers are owed, as on the page
+    with_payments = has_admin_access(request.user)
+    unpaid_only = with_payments and params.get('pay') == 'unpaid'
     groups = load_purchases(start, end, params['q'], '', store=store, by=params['pdate'],
-                            with_payments=with_payments,
-                            unpaid_only=with_payments and params.get('pay') == 'unpaid')
+                            with_payments=with_payments, unpaid_only=unpaid_only)
     pdf = inbound_report_pdf.build_inbound_report_pdf(
         profile=PrintProfile.get_for_store(store),
-        range_label=_range_label(start, end),
+        range_label='All dates' if unpaid_only else _range_label(start, end),
         store_label=store.name if store else 'All stores',
         generated_label=_generated(),
         filter_label=f'Filtered: search "{params["q"]}"' if params['q'] else '',
-        date_label='By day paid' if params['pdate'] == 'paid' else 'By day received',
+        date_label=('Unpaid - soonest due first' if unpaid_only else
+                    'By day ordered' if params['pdate'] == 'paid' else 'By day received'),
+        empty_text='Nothing owed to suppliers.' if unpaid_only else 'Nothing came in during this range.',
         groups=groups,
         shop_totals=_purchase_shop_totals(groups),
         shop_columns=[] if store is not None else _shop_columns(),
         one_shop=store is not None,
         with_payments=with_payments,
     )
-    return _pdf_response(pdf, f'Inbound_{_file_range(start, end)}.pdf')
+    return _pdf_response(pdf, f"Inbound_{'unpaid' if unpaid_only else _file_range(start, end)}.pdf")
 
 
 def _export_analysis(request, params, store, today):
@@ -958,7 +980,8 @@ def _pdf_scope(request):
 @login_required
 @manager_required
 def inbound_order_pdf(request, order_id):
-    """One delivery on its own. Costs as on Purchases; the payment for an admin only."""
+    """One delivery on its own. Costs as on Purchases; the payment for an admin
+    only, one shop's part of it when one shop is chosen."""
     from .services import inbound_report_pdf
 
     order = get_object_or_404(InboundOrder.objects.select_related('supplier'), pk=order_id)
@@ -973,9 +996,9 @@ def inbound_order_pdf(request, order_id):
         raise Http404('Nothing of this delivery went to this shop.')
     items = _annotate_purchase_items(items)
     payment = None
-    if (store is None and has_admin_access(request.user)
-            and (finance.tracks_payment(order) or order.payments.exists())):
-        due, paid = finance.order_due(order), finance.order_paid(order)
+    if has_admin_access(request.user) and (finance.tracks_payment(order) or order.payments.exists()):
+        due, paid = ((finance.order_due(order), finance.order_paid(order)) if store is None
+                     else finance.order_share(order, store))
         payment = {'paid': paid, 'owing': due - paid, 'schedule': finance.schedule(order, due, paid)}
     received = order.received_at if batches else None
     summary = []

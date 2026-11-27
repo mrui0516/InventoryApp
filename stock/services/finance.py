@@ -123,6 +123,17 @@ def order_paid(order):
     return sum((p.amount for p in order.payments.all()), ZERO)
 
 
+def order_share(order, store):
+    """``(due, paid)`` for ``store``'s part of ``order``: the cost of what it
+    received (or will) and that fraction of what was paid. A payment covers
+    every shop's part alike (as ``purchase_shares`` splits it), so a shop's
+    part is paid, unpaid or overdue when the order is; only the money differs."""
+    lines = _order_lines(order)
+    total = sum((cost for _shop, _units, cost in lines), ZERO)
+    due = sum((cost for shop, _units, cost in lines if shop == store.id), ZERO)
+    return due, ((order_paid(order) * due / total).quantize(CENT) if total > 0 else ZERO)
+
+
 def tracks_payment(order):
     """Orders from before ``payables_from`` have no record of what was paid."""
     cut_off = BusinessSettings.get().payables_from

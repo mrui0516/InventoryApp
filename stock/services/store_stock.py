@@ -48,7 +48,7 @@ def shop_split(product_ids, here=None):
             for pid in product_ids}
 
 
-def merge_batches(batches, by='store'):
+def merge_batches(batches, by='store', *, stores=None, names=None):
     """One line per product and price for goods that came in together.
 
     A received line is stored as one batch per shop, and a transfer splits a
@@ -61,7 +61,9 @@ def merge_batches(batches, by='store'):
     to correct), ``'received'`` by the shop it was delivered to (purchase
     records). ``by_shop`` is ``{shop_id: quantity}``; ``shops`` lists each
     shop's part (``id``, ``label``, ``quantity``, ``remaining``, ``batches``)
-    when there are several."""
+    when there are several. ``stores`` (``active_stores()``) and ``names``
+    (``{id: name}``) may be given by a caller merging many deliveries, so the
+    shops are read once."""
     shop_of = (lambda b: b.received_store_id) if by == 'received' else (lambda b: b.store_id)
     lines, by_key = [], {}
     for batch in batches:
@@ -75,8 +77,8 @@ def merge_batches(batches, by='store'):
         line.parts.append(batch)
         line.quantity += batch.quantity
         line.remaining += batch.remaining
-    order = {s.id: n for n, s in enumerate(active_stores())}
-    names = dict(Store.objects.values_list('id', 'name'))
+    order = {s.id: n for n, s in enumerate(active_stores() if stores is None else stores)}
+    names = dict(Store.objects.values_list('id', 'name')) if names is None else names
     for line in lines:
         line.by_shop = defaultdict(int)
         for batch in line.parts:

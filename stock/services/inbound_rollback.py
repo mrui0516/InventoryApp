@@ -29,14 +29,16 @@ from django.db import transaction
 from ..models import InboundPendingItem, Purchase
 
 
-def can_roll_back(order):
-    """``(allowed, reason)`` - reason is shown to whoever pressed the button."""
+def can_roll_back(order, batches=None):
+    """``(allowed, reason)`` - reason is shown to whoever pressed the button.
+    ``batches``: the order's, with their products, when already fetched."""
     if order is None:
         return False, 'Order not found.'
     if order.status != 'received':
         return False, 'This order has not been received yet.'
 
-    batches = list(order.items.select_related('product').all())
+    if batches is None:
+        batches = list(order.items.select_related('product').all())
     if not batches:
         return False, 'This order has no stock batches to remove.'
 
